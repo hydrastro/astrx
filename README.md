@@ -9,8 +9,8 @@
 ## Documentation
 
 ## TODO List
--[ ] Modularization
--[ ] Module rewrite/check
--[ ] I18n
--[ ] POST-Redirect-GET
--[ ] API
+- [ ] Modularization
+- [ ] Module rewrite/check
+- [ ] I18n
+- [ ] POST-Redirect-GET
+- [ ] API
