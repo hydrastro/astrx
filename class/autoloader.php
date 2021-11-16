@@ -38,7 +38,7 @@ class Autoloader {
 	
 	/**
 	 * Load Language.
-	 * Loads a module language.
+	 * Loads a module language if there is any set.
 	 *
 	 * @param $class
 	 *
@@ -46,12 +46,15 @@ class Autoloader {
 	 */
 	function loadLang($class) {
 		$lang = $this->config->getConfig("language");
-		require_once(LANG_DIR . "$class.$lang.php");
+		$lang_file = LANG_DIR . "$class.$lang.php";
+		if(file_exists($lang_file)) {
+			require_once(LANG_DIR . "$class.$lang.php");
+		}
 	}
 	
 	/**
 	 * Load Config.
-	 * Loads a module configuration.
+	 * Loads a module configuration if there is any set.
 	 *
 	 * @param $class
 	 *

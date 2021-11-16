@@ -5,6 +5,11 @@ class Config {
 	 */
 	private $_CONF;
 	
+	/**
+	 * Config Constructor.
+	 *
+	 * @throws \Exception
+	 */
 	public function __construct() {
 		$this->_CONF = require(CONFIG_DIR . "config.php");
 		$lang = $this->getConfig("language");
@@ -40,7 +45,7 @@ class Config {
 			throw new Exception(ERROR_INVALID_FILE_NAME);
 		}
 		if(!file_exists($config_file)) {
-			throw new Exception(ERROR_FILE_NOT_FOUND);
+			return;
 		}
 		$this->_CONF = array_merge($this->_CONF, require($config_file));
 	}

@@ -21,3 +21,4 @@ require(CLASS_DIR . "autoloader.php");
 new ErrorHandler();
 $config = new Config();
 new Autoloader($config);
+

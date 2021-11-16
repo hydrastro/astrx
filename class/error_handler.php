@@ -49,7 +49,7 @@ class ErrorHandler {
 	 * It's registered with register_shutdown_function.
 	 */
 	public function shutdownHandler() {
-		if(isset($this->exceptions) && !empty($this->exceptions)) {
+		if(DEBUG_MODE && isset($this->exceptions) && !empty($this->exceptions)) {
 			// Here we may want something nicer
 			echo "<h1>Error</h1><pre>";
 			print_r($this->exceptions);
