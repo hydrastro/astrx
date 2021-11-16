@@ -14,7 +14,6 @@ define("TEMPLATE_DIR", INDEX_DIR . "/template/");
 define("FONT_DIR", INDEX_DIR . "/font/");
 define("DEFAULT_AVATAR_DIR", AVATAR_DIR . "/default/");
 
-
 require(CLASS_DIR . "error_handler.php");
 require(CLASS_DIR . "config.php");
 require(CLASS_DIR . "autoloader.php");

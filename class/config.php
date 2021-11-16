@@ -12,7 +12,7 @@ class Config {
 	}
 	
 	/**
-	 * Add Config Array
+	 * Add Config Array.
 	 * Merges a given configuration array with the existing configuration array.
 	 *
 	 * @param $array
@@ -27,7 +27,7 @@ class Config {
 	}
 	
 	/**
-	 * Load Config File
+	 * Load Config File.
 	 * Loads a configuration file and merges it into the current configuration
 	 * array.
 	 *
@@ -46,10 +46,10 @@ class Config {
 	}
 	
 	/**
-	 * Get Config
+	 * Get Config.
 	 * Returns a config which may be specific for a class.
 	 *
-	 * @param $config_name
+	 * @param      $config_name
 	 * @param null $class_name
 	 *
 	 * @return mixed

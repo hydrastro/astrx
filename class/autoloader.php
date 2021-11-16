@@ -16,11 +16,10 @@ class Autoloader {
 	}
 	
 	/**
-	 * Class autoloader function
-	 *
+	 * Class autoloader function.
 	 * This function auto-loads the project's classes among their configs
-	 * (language files, constants, configuration variables)
-     *
+	 * (language files, constants, configuration variables).
+	 *
 	 * @param $class
 	 *
 	 * @throws \Exception
@@ -38,8 +37,7 @@ class Autoloader {
 	}
 	
 	/**
-	 * Load Language
-	 *
+	 * Load Language.
 	 * Loads a module language.
 	 *
 	 * @param $class
@@ -52,8 +50,7 @@ class Autoloader {
 	}
 	
 	/**
-	 * Load Config
-	 *
+	 * Load Config.
 	 * Loads a module configuration.
 	 *
 	 * @param $class

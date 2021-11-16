@@ -15,7 +15,7 @@ class ErrorHandler {
 	}
 	
 	/**
-	 * Exceptions Handler
+	 * Exceptions Handler.
 	 * Stores exceptions in the class instance for future display.
 	 *
 	 * @param $e
@@ -25,7 +25,7 @@ class ErrorHandler {
 	}
 	
 	/**
-	 * Error Handler
+	 * Error Handler.
 	 * Throws errors as exceptions.
 	 *
 	 * @param $errno
@@ -44,7 +44,7 @@ class ErrorHandler {
 	}
 	
 	/**
-	 * Shutdown handler
+	 * Shutdown handler.
 	 * Called when a script dies, handles fatal errors.
 	 * It's registered with register_shutdown_function.
 	 */
