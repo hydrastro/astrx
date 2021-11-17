@@ -18,14 +18,17 @@ require(CLASS_DIR . "error_handler.php");
 require(CLASS_DIR . "config.php");
 require(CLASS_DIR . "autoloader.php");
 
+// ErrorHandler, config, injector
 $ErrorHandler = new ErrorHandler();
 $config = new Config();
 $ErrorHandler->addClass($config);
-$autoloader = new Autoloader($config);
-$ErrorHandler->addClass($autoloader);
+new Autoloader($config);
+$injector = new Injector($config, $ErrorHandler);
+
+$bazz = $injector->createClass("Bazz");
+
+$bazz->test();
+$bazz->callFoobar();
 
 
-$foobar = new FooBar();
-$ErrorHandler->addClass($foobar);
-$foobar->raiseException();
 

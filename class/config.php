@@ -1,9 +1,9 @@
 <?php
 class Config {
 	/**
-	 * @var array $_CONF Config array.
+	 * @var array $configuration Config array.
 	 */
-	private $_CONF;
+	private $configuration;
 	/**
 	 * @var array $errors Errors string array.
 	 */
@@ -12,15 +12,16 @@ class Config {
 	 * @var array $exceptions Exceptions objects array.
 	 */
 	public $exceptions = array();
+
 	/**
 	 * Config Constructor.
 	 */
 	public function __construct() {
-		$this->_CONF = require(CONFIG_DIR . "config.php");
+		$this->configuration = require(CONFIG_DIR . "config.php");
 		$lang = $this->getConfig("language");
 		require(LANG_DIR . "$lang.php");
 	}
-	
+
 	/**
 	 * Add Config Array.
 	 * Merges a given configuration array with the existing configuration array.
@@ -29,13 +30,30 @@ class Config {
 	 */
 	public function addConfigArray($array) {
 		if(is_array($array)) {
-			$this->_CONF = array_merge($this->_CONF, $array);
+			$this->configuration = array_merge($this->configuration, $array);
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
 		$this->errors[] = $e->getMessage();
 	}
-	
+
+	/**
+	 * Add Specific Config.
+	 * Add a value to a specific index in the config array.
+	 *
+	 * @param $index
+	 * @param $value
+	 */
+	public function addSpecificConfig($index, $value) {
+		if(!is_string($index)) {
+			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
+			$this->exceptions[] = $e;
+			$this->errors[] = $e->getMessage();
+			return;
+		}
+		$this->configuration[$index] = $value;
+	}
+
 	/**
 	 * Load Config File.
 	 * Loads a configuration file if exists and merges it into the current
@@ -44,24 +62,27 @@ class Config {
 	 * @param      $config_file
 	 * @param bool $handle_not_found_exception
 	 */
-	public function loadConfigFile($config_file, $handle_not_found_exception = false) {
+	public function loadConfigFile($config_file,
+		$handle_not_found_exception = false) {
 		if(!is_string($config_file)) {
 			$e = new Exception(ERROR_INVALID_FILE_NAME);
 			$this->exceptions[] = $e;
 			$this->errors[] = $e->getMessage();
+
 			return;
 		}
 		if(!file_exists($config_file)) {
 			if($handle_not_found_exception) {
-				$e = new Exception(ERROR_INEXISTENT_FILE);
+				$e = new Exception(ERROR_NONEXISTENT_FILE);
 				$this->exceptions[] = $e;
 				$this->errors[] = $e->getMessage();
 			}
+
 			return;
 		}
-		$this->_CONF = array_merge($this->_CONF, require($config_file));
+		$this->configuration = array_merge($this->configuration, require($config_file));
 	}
-	
+
 	/**
 	 * Get Config.
 	 * Returns a config which may be specific for a class.
@@ -76,25 +97,27 @@ class Config {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
 			$this->errors[] = $e->getMessage();
+
 			return null;
 		}
 		if($class_name !== null) {
-			if(array_key_exists($class_name, $this->_CONF) &&
-			   array_key_exists($config_name, $this->_CONF[$class_name])) {
-				return $this->_CONF[$class_name][$config_name];
+			if(array_key_exists($class_name, $this->configuration) &&
+			   array_key_exists($config_name, $this->configuration[$class_name])) {
+				return $this->configuration[$class_name][$config_name];
 			}
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
 			$this->errors[] = $e->getMessage();
+
 			return null;
 		}
-		
-		if(array_key_exists($config_name, $this->_CONF)) {
-			return $this->_CONF[$config_name];
+		if(array_key_exists($config_name, $this->configuration)) {
+			return $this->configuration[$config_name];
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;
 		$this->errors[] = $e->getMessage();
+
 		return null;
 	}
 }

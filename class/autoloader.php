@@ -4,14 +4,7 @@ class Autoloader {
 	 * @var \Config $config Config class.
 	 */
 	private $config;
-	/**
-	 * @var array $errors Errors string array.
-	 */
-	public $errors = array();
-	/**
-	 * @var array $exceptions Exceptions objects array.
-	 */
-	public $exceptions = array();
+
 	/**
 	 * Autoloader constructor.
 	 *
@@ -21,7 +14,7 @@ class Autoloader {
 		$this->config = $config;
 		spl_autoload_register(array($this, "classAutoload"));
 	}
-	
+
 	/**
 	 * Class autoloader function.
 	 * This function auto-loads the project's classes among their configs
@@ -40,7 +33,7 @@ class Autoloader {
 		$this->loadConfig($class);
 		require_once("$class_dir$class.php");
 	}
-	
+
 	/**
 	 * Load Language.
 	 * Loads a module language if there is any set.
@@ -54,7 +47,7 @@ class Autoloader {
 			require_once(LANG_DIR . "$class.$lang.php");
 		}
 	}
-	
+
 	/**
 	 * Load Config.
 	 * Loads a module configuration if there is any set.

@@ -12,7 +12,7 @@ class ErrorHandler {
 	 * @var array $exceptions Exceptions (objects).
 	 */
 	protected $exceptions = array();
-	
+
 	/**
 	 * ErrorHandler constructor.
 	 */
@@ -22,7 +22,7 @@ class ErrorHandler {
 		register_shutdown_function(array($this, 'shutdownHandler'));
 		$this->classes[] = $this;
 	}
-	
+
 	/**
 	 * Exceptions Handler.
 	 * Stores exceptions in the class instance for future display (when
@@ -33,7 +33,7 @@ class ErrorHandler {
 	public function exceptionsHandler($e) {
 		$this->exceptions[] = $e;
 	}
-	
+
 	/**
 	 * Error Handler.
 	 * Throws errors as exceptions.
@@ -52,6 +52,7 @@ class ErrorHandler {
 		}
 		throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
 	}
+
 	/**
 	 * Shutdown handler.
 	 * Called when a script dies, handles fatal errors.
@@ -67,6 +68,7 @@ class ErrorHandler {
 			print_r($exceptions);
 		}
 	}
+
 	/**
 	 * Add Class.
 	 * Adds a class to the class array.
@@ -76,12 +78,14 @@ class ErrorHandler {
 	public function addClass($class) {
 		if(is_object($class)) {
 			$this->classes[] = $class;
+
 			return;
 		}
 		$e = new Exception(ERROR_INVALID_OBJECT);
 		$this->exceptions[] = $e;
 		$this->errors[] = $e->getMessage();
 	}
+
 	/**
 	 * Remove Class.
 	 * Removes a class from the class array.
@@ -92,6 +96,7 @@ class ErrorHandler {
 		if(is_object($class)) {
 			if(($key = array_search($class, $this->classes, true)) !== false) {
 				unset($this->classes[$key]);
+
 				return;
 			}
 		}
@@ -99,10 +104,10 @@ class ErrorHandler {
 		$this->exceptions[] = $e;
 		$this->errors[] = $e->getMessage();
 	}
+
 	/**
 	 * Get Exceptions.
 	 * Retrieves and returns the exceptions of all the classes handled.
-	 *
 	 * @return array
 	 */
 	public function getExceptions() {
@@ -111,18 +116,20 @@ class ErrorHandler {
 			return array();
 		}
 		foreach($this->classes as $class) {
-			if(property_exists($class, 'exceptions') && is_array($class->exceptions)) {
+			if(property_exists($class, 'exceptions') &&
+			   is_array($class->exceptions)) {
 				foreach($class->exceptions as $exception) {
 					$exceptions[] = $exception;
 				}
 			}
 		}
+
 		return $exceptions;
 	}
+
 	/**
 	 * Get Errors.
 	 * Retrieves and returns the errors of all the classes handled.
-	 *
 	 * @return array
 	 */
 	public function getErrors() {
@@ -137,6 +144,7 @@ class ErrorHandler {
 				}
 			}
 		}
+
 		return $errors;
 	}
 }
