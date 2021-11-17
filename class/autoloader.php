@@ -4,7 +4,14 @@ class Autoloader {
 	 * @var \Config $config Config class.
 	 */
 	private $config;
-	
+	/**
+	 * @var array $errors Errors string array.
+	 */
+	public $errors = array();
+	/**
+	 * @var array $exceptions Exceptions objects array.
+	 */
+	public $exceptions = array();
 	/**
 	 * Autoloader constructor.
 	 *
@@ -21,8 +28,6 @@ class Autoloader {
 	 * (language files, constants, configuration variables).
 	 *
 	 * @param $class
-	 *
-	 * @throws \Exception
 	 */
 	function classAutoload($class) {
 		$class_dir = (strpos(strtolower($class), "controller")) ?
@@ -41,11 +46,14 @@ class Autoloader {
 	 * Loads a module language if there is any set.
 	 *
 	 * @param $class
-	 *
-	 * @throws \Exception
 	 */
 	function loadLang($class) {
-		$lang = $this->config->getConfig("language");
+		try {
+			$lang = $this->config->getConfig("language");
+		} catch(Exception $e) {
+			$this->errors[] = $e->getMessage();
+			$this->exceptions = $e;
+		}
 		$lang_file = LANG_DIR . "$class.$lang.php";
 		if(file_exists($lang_file)) {
 			require_once(LANG_DIR . "$class.$lang.php");
@@ -57,11 +65,14 @@ class Autoloader {
 	 * Loads a module configuration if there is any set.
 	 *
 	 * @param $class
-	 *
-	 * @throws \Exception
 	 */
 	function loadConfig($class) {
 		$class_path = CONFIG_DIR . "$class.conf.php";
-		$this->config->loadConfigFile($class_path);
+		try {
+			$this->config->loadConfigFile($class_path);
+		} catch(Exception $e) {
+			$this->errors[] = $e->getMessage();
+			$this->exceptions = $e;
+		}
 	}
 }

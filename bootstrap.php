@@ -18,7 +18,8 @@ require(CLASS_DIR . "error_handler.php");
 require(CLASS_DIR . "config.php");
 require(CLASS_DIR . "autoloader.php");
 
-new ErrorHandler();
+$ErrorHandler = new ErrorHandler();
 $config = new Config();
-new Autoloader($config);
-
+$ErrorHandler->addClass($config); // <- unhandled Exception
+$autoloader = new Autoloader($config);
+$ErrorHandler->addClass($autoloader); // <- unhandled Exception
