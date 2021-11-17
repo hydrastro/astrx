@@ -7,11 +7,11 @@ class ErrorHandler {
 	/**
 	 * @var array $errors Errors string array.
 	 */
-	private $errors = array();
+	protected $errors = array();
 	/**
 	 * @var array $exceptions Exceptions (objects).
 	 */
-	private $exceptions = array();
+	protected $exceptions = array();
 	
 	/**
 	 * ErrorHandler constructor.
@@ -108,7 +108,7 @@ class ErrorHandler {
 	public function getExceptions() {
 		$exceptions = array();
 		if(empty($this->classes)) {
-			return $this->exceptions;
+			return array();
 		}
 		foreach($this->classes as $class) {
 			if(property_exists($class, 'exceptions') && is_array($class->exceptions)) {
@@ -117,7 +117,7 @@ class ErrorHandler {
 				}
 			}
 		}
-		return array_merge($this->exceptions, $exceptions);
+		return $exceptions;
 	}
 	/**
 	 * Get Errors.
@@ -128,7 +128,7 @@ class ErrorHandler {
 	public function getErrors() {
 		$errors = array();
 		if(empty($this->classes)) {
-			return $this->errors;
+			return array();
 		}
 		foreach($this->classes as $class) {
 			if(property_exists($class, 'errors') && is_array($class->errors)) {
@@ -137,6 +137,6 @@ class ErrorHandler {
 				}
 			}
 		}
-		return array_merge($this->errors, $errors);
+		return $errors;
 	}
 }
