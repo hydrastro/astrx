@@ -24,11 +24,3 @@ $config = new Config();
 $ErrorHandler->addClass($config);
 new Autoloader($config);
 $injector = new Injector($config, $ErrorHandler);
-
-$bazz = $injector->createClass("Bazz");
-
-$bazz->test();
-$bazz->callFoobar();
-
-
-

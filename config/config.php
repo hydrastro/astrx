@@ -8,5 +8,4 @@ return array("language" => "en",
              "smtp_password" => "ｘ",
              "smtp_ssl" => false, // or "tls"
              "smtp_port" => 25,
-             "switch_page_display_number" => 5,
-			"Bazz"=>array("sample_config"=>"yoooo\n"));
+             "switch_page_display_number" => 5);
