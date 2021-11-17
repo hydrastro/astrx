@@ -48,12 +48,7 @@ class Autoloader {
 	 * @param $class
 	 */
 	function loadLang($class) {
-		try {
-			$lang = $this->config->getConfig("language");
-		} catch(Exception $e) {
-			$this->errors[] = $e->getMessage();
-			$this->exceptions = $e;
-		}
+		$lang = $this->config->getConfig("language");
 		$lang_file = LANG_DIR . "$class.$lang.php";
 		if(file_exists($lang_file)) {
 			require_once(LANG_DIR . "$class.$lang.php");
@@ -68,11 +63,6 @@ class Autoloader {
 	 */
 	function loadConfig($class) {
 		$class_path = CONFIG_DIR . "$class.conf.php";
-		try {
-			$this->config->loadConfigFile($class_path);
-		} catch(Exception $e) {
-			$this->errors[] = $e->getMessage();
-			$this->exceptions = $e;
-		}
+		$this->config->loadConfigFile($class_path);
 	}
 }

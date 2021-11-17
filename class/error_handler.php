@@ -5,6 +5,10 @@ class ErrorHandler {
 	 */
 	private $classes = array();
 	/**
+	 * @var array $errors Errors string array.
+	 */
+	private $errors = array();
+	/**
 	 * @var array $exceptions Exceptions (objects).
 	 */
 	private $exceptions = array();
@@ -16,6 +20,7 @@ class ErrorHandler {
 		set_error_handler(array($this, 'errorHandler'));
 		set_exception_handler(array($this, 'exceptionsHandler'));
 		register_shutdown_function(array($this, 'shutdownHandler'));
+		$this->classes[] = $this;
 	}
 	
 	/**
@@ -53,13 +58,13 @@ class ErrorHandler {
 	 * It's registered with register_shutdown_function.
 	 */
 	public function shutdownHandler() {
-		if(DEBUG_MODE &&
-		   isset($this->exceptions) &&
-		   !empty($this->exceptions)) {
+		$errors = $this->getErrors();
+		$exceptions = $this->getExceptions();
+		if(DEBUG_MODE && !empty($errors) || !empty($exceptions)) {
 			// Here we may want something nicer
 			echo "<h1>Error</h1><pre>";
-			print_r($this->getErrors());
-			print_r($this->exceptions);
+			print_r($errors);
+			print_r($exceptions);
 		}
 	}
 	/**
@@ -67,23 +72,21 @@ class ErrorHandler {
 	 * Adds a class to the class array.
 	 *
 	 * @param $class
-	 *
-	 * @throws \Exception
 	 */
 	public function addClass($class) {
 		if(is_object($class)) {
 			$this->classes[] = $class;
 			return;
 		}
-		throw new Exception(ERROR_INVALID_OBJECT);
+		$e = new Exception(ERROR_INVALID_OBJECT);
+		$this->exceptions[] = $e;
+		$this->errors[] = $e->getMessage();
 	}
 	/**
 	 * Remove Class.
 	 * Removes a class from the class array.
 	 *
 	 * @param $class
-	 *
-	 * @throws \Exception
 	 */
 	public function removeClass($class) {
 		if(is_object($class)) {
@@ -92,17 +95,40 @@ class ErrorHandler {
 				return;
 			}
 		}
-		throw new Exception(ERROR_INVALID_ARRAY_INDEX);
+		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
+		$this->exceptions[] = $e;
+		$this->errors[] = $e->getMessage();
+	}
+	/**
+	 * Get Exceptions.
+	 * Retrieves and returns the exceptions of all the classes handled.
+	 *
+	 * @return array
+	 */
+	public function getExceptions() {
+		$exceptions = array();
+		if(empty($this->classes)) {
+			return $this->exceptions;
+		}
+		foreach($this->classes as $class) {
+			if(property_exists($class, 'exceptions') && is_array($class->exceptions)) {
+				foreach($class->exceptions as $exception) {
+					$exceptions[] = $exception;
+				}
+			}
+		}
+		return array_merge($this->exceptions, $exceptions);
 	}
 	/**
 	 * Get Errors.
 	 * Retrieves and returns the errors of all the classes handled.
+	 *
 	 * @return array
 	 */
 	public function getErrors() {
 		$errors = array();
 		if(empty($this->classes)) {
-			return array();
+			return $this->errors;
 		}
 		foreach($this->classes as $class) {
 			if(property_exists($class, 'errors') && is_array($class->errors)) {
@@ -111,6 +137,6 @@ class ErrorHandler {
 				}
 			}
 		}
-		return $errors;
+		return array_merge($this->errors, $errors);
 	}
 }

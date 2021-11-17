@@ -20,6 +20,12 @@ require(CLASS_DIR . "autoloader.php");
 
 $ErrorHandler = new ErrorHandler();
 $config = new Config();
-$ErrorHandler->addClass($config); // <- unhandled Exception
+$ErrorHandler->addClass($config);
 $autoloader = new Autoloader($config);
-$ErrorHandler->addClass($autoloader); // <- unhandled Exception
+$ErrorHandler->addClass($autoloader);
+
+
+$foobar = new FooBar();
+$ErrorHandler->addClass($foobar);
+$foobar->raiseException();
+
