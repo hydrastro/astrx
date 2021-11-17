@@ -5,10 +5,6 @@ class ErrorHandler {
 	 */
 	private $classes = array();
 	/**
-	 * @var array $errors Errors string array.
-	 */
-	protected $errors = array();
-	/**
 	 * @var array $exceptions Exceptions (objects).
 	 */
 	protected $exceptions = array();
@@ -59,12 +55,10 @@ class ErrorHandler {
 	 * It's registered with register_shutdown_function.
 	 */
 	public function shutdownHandler() {
-		$errors = $this->getErrors();
 		$exceptions = $this->getExceptions();
-		if(DEBUG_MODE && !empty($errors) || !empty($exceptions)) {
+		if(DEBUG_MODE && !empty($exceptions)) {
 			// Here we may want something nicer
 			echo "<h1>Error</h1><pre>";
-			print_r($errors);
 			print_r($exceptions);
 		}
 	}
@@ -83,7 +77,6 @@ class ErrorHandler {
 		}
 		$e = new Exception(ERROR_INVALID_OBJECT);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
 	}
 
 	/**
@@ -102,7 +95,6 @@ class ErrorHandler {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
 	}
 
 	/**
@@ -125,26 +117,5 @@ class ErrorHandler {
 		}
 
 		return $exceptions;
-	}
-
-	/**
-	 * Get Errors.
-	 * Retrieves and returns the errors of all the classes handled.
-	 * @return array
-	 */
-	public function getErrors() {
-		$errors = array();
-		if(empty($this->classes)) {
-			return array();
-		}
-		foreach($this->classes as $class) {
-			if(property_exists($class, 'errors') && is_array($class->errors)) {
-				foreach($class->errors as $error) {
-					$errors[] = $error;
-				}
-			}
-		}
-
-		return $errors;
 	}
 }

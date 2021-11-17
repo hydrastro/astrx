@@ -29,6 +29,7 @@ class Autoloader {
 			'_$0',
 			$class)),
 			'_');
+		echo "loading config for $class";
 		$this->loadLang($class);
 		$this->loadConfig($class);
 		require_once("$class_dir$class.php");

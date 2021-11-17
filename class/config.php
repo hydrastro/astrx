@@ -5,10 +5,6 @@ class Config {
 	 */
 	private $configuration;
 	/**
-	 * @var array $errors Errors string array.
-	 */
-	public $errors = array();
-	/**
 	 * @var array $exceptions Exceptions objects array.
 	 */
 	public $exceptions = array();
@@ -34,7 +30,6 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
 	}
 
 	/**
@@ -48,7 +43,7 @@ class Config {
 		if(!is_string($index)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
+
 			return;
 		}
 		$this->configuration[$index] = $value;
@@ -67,7 +62,6 @@ class Config {
 		if(!is_string($config_file)) {
 			$e = new Exception(ERROR_INVALID_FILE_NAME);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
 
 			return;
 		}
@@ -75,12 +69,12 @@ class Config {
 			if($handle_not_found_exception) {
 				$e = new Exception(ERROR_NONEXISTENT_FILE);
 				$this->exceptions[] = $e;
-				$this->errors[] = $e->getMessage();
 			}
 
 			return;
 		}
-		$this->configuration = array_merge($this->configuration, require($config_file));
+		$this->configuration = array_merge($this->configuration,
+			require($config_file));
 	}
 
 	/**
@@ -96,18 +90,17 @@ class Config {
 		if(!is_string($config_name)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
 
 			return null;
 		}
 		if($class_name !== null) {
 			if(array_key_exists($class_name, $this->configuration) &&
-			   array_key_exists($config_name, $this->configuration[$class_name])) {
+			   array_key_exists($config_name,
+				   $this->configuration[$class_name])) {
 				return $this->configuration[$class_name][$config_name];
 			}
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
 
 			return null;
 		}
@@ -116,7 +109,6 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
 
 		return null;
 	}
