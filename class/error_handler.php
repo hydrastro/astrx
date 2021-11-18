@@ -5,7 +5,8 @@ class ErrorHandler {
 	 */
 	private $classes = array();
 	/**
-	 * @var array $errors Errors array. Format: array(http status code, message)
+	 * @var array $errors Errors array. Format: array(http status code,
+	 * message).
 	 */
 	public $errors = array();
 	/**
@@ -56,13 +57,14 @@ class ErrorHandler {
 		}
 		$e = new ErrorException($errstr, 0, $errno, $errfile, $errline);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
+			HTTP_INTERNAL_SERVER_ERROR : 500;
 		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
 	/**
 	 * Shutdown handler.
-	 * Called when a script dies, either naturally or due a fatal error,
+	 * Called when a script dies, either naturally or due to a fatal error,
 	 * this function handles and displays possible occurred errors and exceptions.
 	 * It's registered with register_shutdown_function.
 	 */
@@ -70,7 +72,8 @@ class ErrorHandler {
 		$exceptions = $this->getExceptions();
 		$errors = $this->getErrors();
 		$messages = $this->getMessages();
-		if(DEBUG_MODE && (!empty($exceptions) || !empty($errors) || !empty($messages))) {
+		if(DEBUG_MODE &&
+		   (!empty($exceptions) || !empty($errors) || !empty($messages))) {
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
 			if(file_exists($failsafe)) {
 				require($failsafe);
@@ -96,10 +99,12 @@ class ErrorHandler {
 
 			return;
 		}
-		$error_message = (defined("ERROR_INVALID_OBJECT")) ? ERROR_INVALID_OBJECT : "Invalid object.";
+		$error_message = (defined("ERROR_INVALID_OBJECT")) ?
+			ERROR_INVALID_OBJECT : "Invalid object.";
 		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
+			HTTP_INTERNAL_SERVER_ERROR : 500;
 		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
@@ -110,22 +115,24 @@ class ErrorHandler {
 	 * @param $class
 	 */
 	public function removeClass($class) {
-		if(is_object($class) && ($key = array_search($class, $this->classes, true)) !== false) {
+		if(is_object($class) &&
+		   ($key = array_search($class, $this->classes, true)) !== false) {
 			unset($this->classes[$key]);
 
 			return;
 		}
-		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ? ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
+		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ?
+			ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
 		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
+			HTTP_INTERNAL_SERVER_ERROR : 500;
 		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
 	/**
 	 * Get Exceptions.
 	 * Retrieves and returns the exceptions of all the classes handled.
-	 *
 	 * @return array
 	 */
 	public function getExceptions() {
@@ -148,7 +155,6 @@ class ErrorHandler {
 	/**
 	 * Get Errors.
 	 * Retrieves and returns the errors of all the classes handled.
-	 *
 	 * @return array
 	 */
 	public function getErrors() {
@@ -166,10 +172,10 @@ class ErrorHandler {
 
 		return $errors;
 	}
+
 	/**
 	 * Get Messages.
 	 * Retrieves and returns the messages of all the classes handled.
-	 *
 	 * @return array
 	 */
 	public function getMessages() {
@@ -178,7 +184,8 @@ class ErrorHandler {
 			return array();
 		}
 		foreach($this->classes as $class) {
-			if(property_exists($class, "messages") && is_array($class->messages)) {
+			if(property_exists($class, "messages") &&
+			   is_array($class->messages)) {
 				foreach($class->messages as $message) {
 					$messages[] = $message;
 				}

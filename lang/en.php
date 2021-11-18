@@ -4,7 +4,8 @@ define("ERROR_INVALID_ARRAY", "Invalid array.");
 define("ERROR_INVALID_ARRAY_INDEX", "Invalid array index.");
 define("ERROR_INVALID_OBJECT", "Invalid object.");
 define("ERROR_NONEXISTENT_FILE", "File doesn't exist.");
-define("ERROR_INVALID_OBJECT_PROPERTY_NAME", "The given object property name is not valid.");
+define("ERROR_INVALID_OBJECT_PROPERTY_NAME",
+	"The given object property name is not valid.");
 
 define("HTTP_CONTINUE", 100);
 define("HTTP_SWITCHING_PROTOCOLS", 101);

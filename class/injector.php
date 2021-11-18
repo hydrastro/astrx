@@ -28,7 +28,7 @@ class Injector {
 	/**
 	 * Injector constructor.
 	 *
-	 * @param Config       $config
+	 * @param Config $config
 	 * @param ErrorHandler $ErrorHandler
 	 */
 	public function __construct(ErrorHandler $ErrorHandler, Config $config) {
@@ -171,7 +171,8 @@ class Injector {
 		if(!class_exists($class_name)) {
 			$e = new Exception(ERROR_CLASS_NOT_FOUND);
 			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
+			                        $e->getMessage());
 
 			return null;
 		}
@@ -180,7 +181,6 @@ class Injector {
 			$dependencies = array();
 			if($reflectedClass->hasMethod("__construct")) {
 				$constructor = $reflectedClass->getMethod("__construct");
-
 				foreach($constructor->getParameters() as $parameter) {
 					$parameter_class = $parameter->getClass();
 					if($parameter_class) {
@@ -189,7 +189,6 @@ class Injector {
 						$arg_name = $parameter->getName();
 					}
 					$arg = $this->getClassArg($class_name, $arg_name);
-
 					if($arg) {
 						$dependencies[] = $arg;
 					} else {
@@ -200,13 +199,14 @@ class Injector {
 								$e = new Exception
 								(ERROR_CLASS_OR_PARAMETER_NOT_FOUND);
 								$this->exceptions[] = $e;
-								$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+								$this->errors[]
+									= array(HTTP_INTERNAL_SERVER_ERROR,
+									        $e->getMessage());
 
 								return null;
 							}
 							$dependency_class_name = $parameter->getClass()
 								->getName();
-
 							$index
 								= $this->getIndexName($dependency_class_name);
 							if(!$this->hasClass($dependency_class_name)) {
@@ -247,7 +247,8 @@ class Injector {
 			return $class;
 		} catch(ReflectionException $e) {
 			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, ERROR_CLASS_REFLECTION . $e->getMessage());
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
+			                        ERROR_CLASS_REFLECTION . $e->getMessage());
 
 			return null;
 		}
@@ -270,7 +271,8 @@ class Injector {
 		if(!is_array($arguments)) {
 			$e = new Exception(ERROR_INVALID_FUNCTION_ARGUMENTS);
 			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
+			                        $e->getMessage());
 
 			return null;
 		}
