@@ -20,6 +20,7 @@ require(CLASS_DIR . "autoloader.php");
 
 // ErrorHandler, config, injector
 $ErrorHandler = new ErrorHandler();
+$MessageHandler = new MessageHandler();
 $config = new Config();
 $ErrorHandler->addClass($config);
 new Autoloader($config);

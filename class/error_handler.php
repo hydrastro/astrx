@@ -5,6 +5,10 @@ class ErrorHandler {
 	 */
 	private $classes = array();
 	/**
+	 * @var array $errors Errors string array.
+	 */
+	public $errors = array();
+	/**
 	 * @var array $exceptions Exceptions (objects).
 	 */
 	protected $exceptions = array();
@@ -28,6 +32,7 @@ class ErrorHandler {
 	 */
 	public function exceptionsHandler($e) {
 		$this->exceptions[] = $e;
+		$this->errors[] = $e->getMessage();
 	}
 
 	/**
@@ -77,6 +82,7 @@ class ErrorHandler {
 		}
 		$e = new Exception(ERROR_INVALID_OBJECT);
 		$this->exceptions[] = $e;
+		$this->errors[] = $e->getMessage();
 	}
 
 	/**
@@ -95,6 +101,7 @@ class ErrorHandler {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;
+		$this->errors[] = $e->getMessage();
 	}
 
 	/**
