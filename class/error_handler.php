@@ -51,7 +51,8 @@ class ErrorHandler {
 		}
 		$e = new ErrorException($errstr, 0, $errno, $errfile, $errline);
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
 	/**
@@ -85,9 +86,11 @@ class ErrorHandler {
 
 			return;
 		}
-		$e = new Exception(ERROR_INVALID_OBJECT);
+		$error_message = (defined("ERROR_INVALID_OBJECT")) ? ERROR_INVALID_OBJECT : "Invalid object.";
+		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
 	/**
@@ -102,9 +105,11 @@ class ErrorHandler {
 
 			return;
 		}
-		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
+		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ? ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
+		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$this->errors[] = array($error_code, $e->getMessage());
 	}
 
 	/**

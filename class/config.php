@@ -93,30 +93,20 @@ class Config {
 	 * @return mixed
 	 */
 	public function getConfig($config_name, $class_name = null) {
-		if(!is_string($config_name)) {
-			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
-			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
-
-			return null;
-		}
-		if($class_name !== null) {
-			if(array_key_exists($class_name, $this->configuration) &&
-			   array_key_exists($config_name, $this->configuration[$class_name])) {
+		if(is_string($config_name)) {
+			if($class_name !== null && array_key_exists($class_name, $this->configuration) &&
+				array_key_exists($config_name, $this->configuration[$class_name])) {
 				return $this->configuration[$class_name][$config_name];
 			}
-			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
-			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
-
-			return null;
+			if(array_key_exists($config_name, $this->configuration)) {
+				return $this->configuration[$config_name];
+			}
 		}
-		if(array_key_exists($config_name, $this->configuration)) {
-			return $this->configuration[$config_name];
-		}
-		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
+		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ? ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
+		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ? HTTP_INTERNAL_SERVER_ERROR : 500;
+		$this->errors[] = array($error_code, $e->getMessage());
 
 		return null;
 	}

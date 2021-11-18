@@ -20,4 +20,10 @@ require(CLASS_DIR . "autoloader.php");
 require(CLASS_DIR . "injector.php");
 
 $injector = new Injector(new ErrorHandler(), new Config());
+/*$injector->createClass("PDO");
+$injector->createClass("ContentManager");
+$injector->callClassMethod("ContentManager", "siu");
 
+require($injector->callClassMethod("ContentManager", "getTemplate"));
+
+*/
