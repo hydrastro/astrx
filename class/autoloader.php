@@ -1,14 +1,14 @@
 <?php
 class Autoloader {
 	/**
-	 * @var \Config $config Config class.
+	 * @var Config $config Config class.
 	 */
 	private $config;
 
 	/**
 	 * Autoloader constructor.
 	 *
-	 * @param \Config $config
+	 * @param Config $config
 	 */
 	public function __construct(Config $config) {
 		$this->config = $config;

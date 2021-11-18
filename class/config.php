@@ -5,7 +5,7 @@ class Config {
 	 */
 	private $configuration;
 	/**
-	 * @var array $errors Errors string array.
+	 * @var array $errors Errors array.
 	 */
 	public $errors = array();
 	/**
@@ -34,7 +34,7 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
+		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 	}
 
 	/**
@@ -48,7 +48,7 @@ class Config {
 		if(!is_string($index)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 			return;
 		}
 		$this->configuration[$index] = $value;
@@ -67,7 +67,7 @@ class Config {
 		if(!is_string($config_file)) {
 			$e = new Exception(ERROR_INVALID_FILE_NAME);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 
 			return;
 		}
@@ -75,7 +75,7 @@ class Config {
 			if($handle_not_found_exception) {
 				$e = new Exception(ERROR_NONEXISTENT_FILE);
 				$this->exceptions[] = $e;
-				$this->errors[] = $e->getMessage();
+				$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 			}
 
 			return;
@@ -96,7 +96,7 @@ class Config {
 		if(!is_string($config_name)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 
 			return null;
 		}
@@ -107,7 +107,7 @@ class Config {
 			}
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = $e->getMessage();
+			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 
 			return null;
 		}
@@ -116,7 +116,7 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;
-		$this->errors[] = $e->getMessage();
+		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 
 		return null;
 	}
