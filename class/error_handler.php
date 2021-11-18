@@ -17,6 +17,11 @@ class ErrorHandler {
 	 * ErrorHandler constructor.
 	 */
 	public function __construct() {
+		if(DEBUG_MODE) {
+			ini_set('display_errors', 1);
+			ini_set('display_startup_errors', 1);
+			error_reporting(E_ALL);
+		}
 		set_error_handler(array($this, 'errorHandler'));
 		set_exception_handler(array($this, 'exceptionsHandler'));
 		register_shutdown_function(array($this, 'shutdownHandler'));
@@ -66,11 +71,16 @@ class ErrorHandler {
 		$errors = $this->getErrors();
 		$messages = $this->getMessages();
 		if(DEBUG_MODE && (!empty($exceptions) || !empty($errors) || !empty($messages))) {
-			// Here we may want something nicer
-			echo "<h1>Error</h1><pre>";
-			print_r($messages);
-			print_r($errors);
-			print_r($exceptions);
+			$failsafe = TEMPLATE_DIR . "failsafe.php";
+			if(file_exists($failsafe)) {
+				require($failsafe);
+			} else {
+				/* Oh no! */
+				echo "<h1>Error</h1><pre>";
+				print_r($messages);
+				print_r($errors);
+				print_r($exceptions);
+			}
 		}
 	}
 
@@ -115,6 +125,7 @@ class ErrorHandler {
 	/**
 	 * Get Exceptions.
 	 * Retrieves and returns the exceptions of all the classes handled.
+	 *
 	 * @return array
 	 */
 	public function getExceptions() {
@@ -137,6 +148,7 @@ class ErrorHandler {
 	/**
 	 * Get Errors.
 	 * Retrieves and returns the errors of all the classes handled.
+	 *
 	 * @return array
 	 */
 	public function getErrors() {
@@ -145,7 +157,7 @@ class ErrorHandler {
 			return array();
 		}
 		foreach($this->classes as $class) {
-			if(property_exists($class, 'errors') && is_array($class->errors)) {
+			if(property_exists($class, "errors") && is_array($class->errors)) {
 				foreach($class->errors as $error) {
 					$errors[] = $error;
 				}
@@ -157,6 +169,7 @@ class ErrorHandler {
 	/**
 	 * Get Messages.
 	 * Retrieves and returns the messages of all the classes handled.
+	 *
 	 * @return array
 	 */
 	public function getMessages() {
@@ -165,7 +178,7 @@ class ErrorHandler {
 			return array();
 		}
 		foreach($this->classes as $class) {
-			if(property_exists($class, 'messages') && is_array($class->messages)) {
+			if(property_exists($class, "messages") && is_array($class->messages)) {
 				foreach($class->messages as $message) {
 					$messages[] = $message;
 				}
