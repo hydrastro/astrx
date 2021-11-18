@@ -34,6 +34,7 @@ class Injector {
 	public function __construct(ErrorHandler $ErrorHandler, Config $config) {
 		$ErrorHandler->addClass($config);
 		new Autoloader($config);
+		require(LANG_DIR . "injector.en.php");
 		$this->setClass($config);
 		$this->setClass($ErrorHandler);
 		$this->setClass($this);
@@ -260,7 +261,7 @@ class Injector {
 	 * @param      $method
 	 * @param null $arguments
 	 *
-	 * @return void
+	 * @return mixed|null
 	 */
 	public function callClassMethod($class_name, $method, $arguments = null) {
 		if($arguments === null) {
@@ -271,7 +272,7 @@ class Injector {
 			$this->exceptions[] = $e;
 			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 
-			return;
+			return null;
 		}
 		if($this->hasClass($class_name)) {
 			if(method_exists($class_name, $method)) {
@@ -285,5 +286,7 @@ class Injector {
 		}
 		$this->exceptions[] = $e;
 		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+
+		return null;
 	}
 }
