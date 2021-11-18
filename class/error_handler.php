@@ -97,12 +97,10 @@ class ErrorHandler {
 	 * @param $class
 	 */
 	public function removeClass($class) {
-		if(is_object($class)) {
-			if(($key = array_search($class, $this->classes, true)) !== false) {
-				unset($this->classes[$key]);
+		if(is_object($class) && ($key = array_search($class, $this->classes, true)) !== false) {
+			unset($this->classes[$key]);
 
-				return;
-			}
+			return;
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 		$this->exceptions[] = $e;

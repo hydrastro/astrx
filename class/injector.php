@@ -32,10 +32,9 @@ class Injector {
 	 * @param ErrorHandler $ErrorHandler
 	 */
 	public function __construct(Config $config, ErrorHandler $ErrorHandler) {
-		$this->config = $config;
-		$this->ErrorHandler = $ErrorHandler;
-		$index = $this->getIndexName(get_class($this));
-		$this->classes[$index] = $this;
+		$this->setClass($config);
+		$this->setClass($ErrorHandler);
+		$this->setClass($this);
 	}
 
 	/**
@@ -88,7 +87,6 @@ class Injector {
 
 			return $this->classes[$name];
 		}
-
 		if($create) {
 			return $this->createClass($class_name);
 		}
