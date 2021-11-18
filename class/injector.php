@@ -31,7 +31,9 @@ class Injector {
 	 * @param Config       $config
 	 * @param ErrorHandler $ErrorHandler
 	 */
-	public function __construct(Config $config, ErrorHandler $ErrorHandler) {
+	public function __construct(ErrorHandler $ErrorHandler, Config $config) {
+		$ErrorHandler->addClass($config);
+		new Autoloader($config);
 		$this->setClass($config);
 		$this->setClass($ErrorHandler);
 		$this->setClass($this);

@@ -17,10 +17,7 @@ define("DEFAULT_AVATAR_DIR", AVATAR_DIR . "/default/");
 require(CLASS_DIR . "error_handler.php");
 require(CLASS_DIR . "config.php");
 require(CLASS_DIR . "autoloader.php");
+require(CLASS_DIR . "injector.php");
 
-// ErrorHandler, config, injector
-$ErrorHandler = new ErrorHandler();
-$config = new Config();
-$ErrorHandler->addClass($config);
-new Autoloader($config);
-$injector = new Injector($config, $ErrorHandler);
+$injector = new Injector(new ErrorHandler(), new Config());
+
