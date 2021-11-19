@@ -19,13 +19,13 @@ class ErrorHandler {
 	 */
 	public function __construct() {
 		if(DEBUG_MODE) {
-			ini_set('display_errors', 1);
-			ini_set('display_startup_errors', 1);
+			ini_set("display_errors", 1);
+			ini_set("display_startup_errors", 1);
 			error_reporting(E_ALL);
 		}
-		set_error_handler(array($this, 'errorHandler'));
-		set_exception_handler(array($this, 'exceptionsHandler'));
-		register_shutdown_function(array($this, 'shutdownHandler'));
+		set_error_handler(array($this, "errorHandler"));
+		set_exception_handler(array($this, "exceptionsHandler"));
+		register_shutdown_function(array($this, "shutdownHandler"));
 		$this->classes[] = $this;
 	}
 
@@ -78,7 +78,7 @@ class ErrorHandler {
 			if(file_exists($failsafe)) {
 				require($failsafe);
 			} else {
-				/* Oh no! */
+				/* Oh, no! */
 				echo "<h1>Error</h1><pre>";
 				print_r($messages);
 				print_r($errors);

@@ -38,6 +38,8 @@ class Injector {
 		$this->setClass($config);
 		$this->setClass($ErrorHandler);
 		$this->setClass($this);
+		$this->ErrorHandler = $ErrorHandler;
+		$this->config = $config;
 	}
 
 	/**
