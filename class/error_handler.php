@@ -5,10 +5,9 @@ class ErrorHandler {
 	 */
 	private $classes = array();
 	/**
-	 * @var array $errors Errors array. Format: array(http status code,
-	 * message).
+	 * @var array $messages Messages array.
 	 */
-	public $errors = array();
+	public $messages = array();
 	/**
 	 * @var array $exceptions Exceptions (objects).
 	 */
@@ -38,7 +37,9 @@ class ErrorHandler {
 	 */
 	public function exceptionsHandler($e) {
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+		                          "text" => $e->getMessage());
 	}
 
 	/**
@@ -59,7 +60,11 @@ class ErrorHandler {
 		$this->exceptions[] = $e;
 		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
 			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$this->errors[] = array($error_code, $e->getMessage());
+		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
+			MESSAGE_LEVEL_ERROR : 0;
+		$this->messages[] = array("level" => $message_level,
+		                          "http_status_code" => $error_code,
+		                          "text" => $e->getMessage());
 	}
 
 	/**
@@ -70,10 +75,8 @@ class ErrorHandler {
 	 */
 	public function shutdownHandler() {
 		$exceptions = $this->getExceptions();
-		$errors = $this->getErrors();
 		$messages = $this->getMessages();
-		if(DEBUG_MODE &&
-		   (!empty($exceptions) || !empty($errors) || !empty($messages))) {
+		if(DEBUG_MODE && (!empty($exceptions) || !empty($messages))) {
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
 			if(file_exists($failsafe)) {
 				require($failsafe);
@@ -81,7 +84,6 @@ class ErrorHandler {
 				/* Oh, no! */
 				echo "<h1>Error</h1><pre>";
 				print_r($messages);
-				print_r($errors);
 				print_r($exceptions);
 			}
 		}
@@ -105,7 +107,11 @@ class ErrorHandler {
 		$this->exceptions[] = $e;
 		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
 			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$this->errors[] = array($error_code, $e->getMessage());
+		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
+			MESSAGE_LEVEL_ERROR : 0;
+		$this->messages[] = array("level" => $message_level,
+		                          "http_status_code" => $error_code,
+		                          "text" => $e->getMessage());
 	}
 
 	/**
@@ -127,7 +133,11 @@ class ErrorHandler {
 		$this->exceptions[] = $e;
 		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
 			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$this->errors[] = array($error_code, $e->getMessage());
+		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
+			MESSAGE_LEVEL_ERROR : 0;
+		$this->messages[] = array("level" => $message_level,
+		                          "http_status_code" => $error_code,
+		                          "text" => $e->getMessage());
 	}
 
 	/**
@@ -150,27 +160,6 @@ class ErrorHandler {
 		}
 
 		return $exceptions;
-	}
-
-	/**
-	 * Get Errors.
-	 * Retrieves and returns the errors of all the classes handled.
-	 * @return array
-	 */
-	public function getErrors() {
-		$errors = array();
-		if(empty($this->classes)) {
-			return array();
-		}
-		foreach($this->classes as $class) {
-			if(property_exists($class, "errors") && is_array($class->errors)) {
-				foreach($class->errors as $error) {
-					$errors[] = $error;
-				}
-			}
-		}
-
-		return $errors;
 	}
 
 	/**

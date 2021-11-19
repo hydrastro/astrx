@@ -1,17 +1,19 @@
 <?php
 /**
  * @var $messages
- * @var $errors
  * @var $exceptions
  */
 ?>
-<html>
-<body bgcolor="black" text="white">
+<html lang="en">
+<head>
+<title>Error</title>
+<style>body {background-color: black;color: white;}</style>
+</head>
+<body>
 <h1>Error</h1>
 <pre>
 <?php
 print_r($messages);
-print_r($errors);
 print_r($exceptions);
 ?>
 </pre>

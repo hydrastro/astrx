@@ -1,5 +1,8 @@
 <?php
 define("DEBUG_MODE", true);
+define("MESSAGE_LEVEL_ERROR", 0);
+define("MESSAGE_LEVEL_WARNING", 1);
+define("MESSAGE_LEVEL_INFO", 2);
 define("INCLUDE_GUARD", true);
 define("INDEX_DIR", __DIR__ . DIRECTORY_SEPARATOR);
 define("CONFIG_DIR", INDEX_DIR . "config/");
