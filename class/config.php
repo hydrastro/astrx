@@ -5,9 +5,9 @@ class Config {
 	 */
 	private $configuration;
 	/**
-	 * @var array $errors Errors array.
+	 * @var array $messages Errors array.
 	 */
-	public $errors = array();
+	public $messages = array();
 	/**
 	 * @var array $exceptions Exceptions objects array.
 	 */
@@ -34,7 +34,9 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
-		$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+		                          "text" => $e->getMessage());
 	}
 
 	/**
@@ -48,8 +50,9 @@ class Config {
 		if(!is_string($index)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                        $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return;
 		}
@@ -69,8 +72,9 @@ class Config {
 		if(!is_string($config_file)) {
 			$e = new Exception(ERROR_INVALID_FILE_NAME);
 			$this->exceptions[] = $e;
-			$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                        $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return;
 		}
@@ -78,8 +82,9 @@ class Config {
 			if($handle_not_found_exception) {
 				$e = new Exception(ERROR_NONEXISTENT_FILE);
 				$this->exceptions[] = $e;
-				$this->errors[] = array(HTTP_INTERNAL_SERVER_ERROR,
-				                        $e->getMessage());
+				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+				                          "text" => $e->getMessage());
 			}
 
 			return;
@@ -115,7 +120,11 @@ class Config {
 		$this->exceptions[] = $e;
 		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
 			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$this->errors[] = array($error_code, $e->getMessage());
+		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
+			MESSAGE_LEVEL_ERROR : 0;
+		$this->messages[] = array("level" => $message_level,
+		                          "http_status_code" => $error_code,
+		                          "text" => $e->getMessage());
 
 		return null;
 	}
