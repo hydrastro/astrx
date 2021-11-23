@@ -49,14 +49,22 @@ class Injector {
 	 * @param       $class_name
 	 * @param array $args
 	 */
-	public function setClassArgs($class_name, array $args) {
+	public function setClassArgs($class_name, $args) {
+		if(!is_array($args)) {
+			$e = new Exception(ERROR_INVALID_ARRAY);
+			$this->exceptions[] = $e;
+			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
+			                          $e->getMessage());
+
+			return;
+		}
 		if(class_exists($class_name)) {
 			$name = $this->getIndexName($class_name);
 			$this->classesArgs[$name] = $args;
 
 			return;
 		}
-		$e = new Exception();
+		$e = new Exception(ERROR_CLASS_NOT_FOUND);
 		$this->exceptions[] = $e;
 		$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
 	}
