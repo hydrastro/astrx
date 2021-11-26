@@ -15,10 +15,11 @@ class TemplateEngine {
 	const TOKEN_TYPE_CHANGE_TAGS = "=";
 	/*
 	 * Token external types are used as internal for practical purposes.
+	 * TOKEN_TYPES contains types with prefixes.
 	 */
 	const TOKEN_TYPES = array(self::TOKEN_TYPE_CHANGE_TAGS,
 		self::TOKEN_TYPE_COMMENT,self::TOKEN_TYPE_PARTIAL,self::TOKEN_TYPE_INVERTED_LOOP_START,
-		self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_START, self::TOKEN_TYPE_UNESCAPED_VAR, self::TOKEN_TYPE_VAR);
+		self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_START, self::TOKEN_TYPE_UNESCAPED_VAR);
 
 	const TEMPLATE_OPEN_TAG = "{{";
 	const TEMPLATE_CLOSE_TAG = "}}";
@@ -170,6 +171,7 @@ class TemplateEngine {
 				$unclosed_token = true;
 				if(in_array($template[$i + $open_tag_length], self::TOKEN_TYPES)) {
 					$type = $template[$i + $open_tag_length];
+					$i +=1;
 				} else {
 					$type = self::TOKEN_TYPE_VAR;
 				}
@@ -178,6 +180,9 @@ class TemplateEngine {
 			while(!(substr($template, $i, $close_tag_length) == $close_tag) && !(substr($template, $i, $open_tag_length) == $open_tag) && $i < $template_length){
 				$buffer.=$template[$i];
 				$i++;
+			}
+			if($unclosed_token){
+				$buffer=trim($buffer);
 			}
 			$tokenized[] = array(
 				"type"=>$type,
@@ -193,8 +198,37 @@ class TemplateEngine {
 		return $tokenized;
 	}
 
-	public function parseTemplate($template) {
+	public function parseTemplate($tokenized) {
+		if(!is_array($tokenized)) {
+			return;
+		}
+		$AST=array();
+		$branch = array();
+		$branch_count = 0;
+		for($i = count($tokenized) - 1; $i >=0; $i--){
+			$type = $tokenized[$i]["type"];
+			if($type == self::TOKEN_TYPE_LOOP_END) {
+				$branch_count++;
+				continue;
+			}
+			if($type == self::TOKEN_TYPE_LOOP_START || $type==self::TOKEN_TYPE_INVERTED_LOOP_START) {
+				/*
+				 * TODO: check for wrong closing tags
+				 *       unclosed tags
+				 */
+				$branch=array($branch);
+				$branch_count--;
+			}
 
+			$branch[] = $tokenized[$i];
+
+			if($branch_count ==0){
+				$AST = array_merge($AST, $branch);
+				$branch = array();
+			}
+		}
+		print_r($AST);
+		return $AST;
 	}
 
 	public function compileTemplate($template, $args) {
