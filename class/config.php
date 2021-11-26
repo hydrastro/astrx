@@ -70,6 +70,18 @@ class Config {
 	}
 
 	/**
+	 * Load Config.
+	 * Loads a module configuration if there is any set.
+	 *
+	 * @param $class
+	 */
+	function loadConfig($class) {
+		$class = toSnakeCase($class);
+		$class_path = CONFIG_DIR . "$class.config.php";
+		$this->loadConfigFile($class_path);
+	}
+
+	/**
 	 * Load Config File.
 	 * Loads a configuration file if exists and merges it into the current
 	 * configuration array.
