@@ -14,7 +14,7 @@ Getters return the requested property or null.
 ### Classes error handling
 Rather than throwing exceptions we store them into the array `$this->exceptions`
 .  
-Errors and messages are stored in another array along with a HTTP status code
+Errors and messages are stored in another array along with an HTTP status code
 and a level:  
 ```php
 $e = new Exception("Exception message");

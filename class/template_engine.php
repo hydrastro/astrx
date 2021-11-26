@@ -119,6 +119,16 @@ class TemplateEngine {
 		return "Template" . ucfirst($template);
 	}
 
+
+
+	public function tokenizeTemplate($template) {
+
+	}
+
+	public function parseTemplate($template) {
+
+	}
+
 	public function compileTemplate($template, $args) {
 		if(!empty($args) && !is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
@@ -140,6 +150,39 @@ class TemplateEngine {
 
 		$template_code = "";
 	}
+
+	/**
+	 * Render Template.
+	 * Compiles and gets a processed template.
+	 *
+	 * @param $template
+	 * @param $args
+	 *
+	 * @return string|null
+	 */
+	public function renderTemplate($template, $args) {
+		return null;
+	}
+
+	/*
+	function foo() {
+		$buffer = '';
+		if(!empty($value)) {
+			$values = $this->isIterable($value) ? $value : array($value);
+			foreach($values as $value) {
+				$value = $value['index_name'];
+				$buffer .= htmlspecialchars($value, 2, 'UTF-8');
+			}
+		}
+
+		return $buffer;
+	}
+	*/
+
+
+
+
+
 
 	/**
 	 * Render.
@@ -190,34 +233,6 @@ class TemplateEngine {
 
 		return !empty($content) ? $content : null;
 	}
-
-	/**
-	 * Render Template.
-	 * Compiles and gets a processed template.
-	 *
-	 * @param $template
-	 * @param $args
-	 *
-	 * @return string|null
-	 */
-	public function renderTemplate($template, $args) {
-		return null;
-	}
-
-	/*
-	function foo() {
-		$buffer = '';
-		if(!empty($value)) {
-			$values = $this->isIterable($value) ? $value : array($value);
-			foreach($values as $value) {
-				$value = $value['index_name'];
-				$buffer .= htmlspecialchars($value, 2, 'UTF-8');
-			}
-		}
-
-		return $buffer;
-	}
-	*/
 
 	public function removeTemplate() {
 	}
