@@ -3,6 +3,29 @@ class TemplateEngine {
 	const PARSE_MODE_PHP = 0;
 	const PARSE_MODE_TEMPLATE = 1;
 	const PARSE_MODES = array(self::PARSE_MODE_PHP, self::PARSE_MODE_TEMPLATE);
+
+	const TOKEN_TYPE_TEXT = "text";
+	const TOKEN_TYPE_VAR = "var";
+	const TOKEN_TYPE_UNESCAPED_VAR = "&";
+	const TOKEN_TYPE_LOOP_START = "#";
+	const TOKEN_TYPE_LOOP_END = "/";
+	const TOKEN_TYPE_INVERTED_LOOP_START = "^";
+	const TOKEN_TYPE_PARTIAL = ">";
+	const TOKEN_TYPE_COMMENT = "!";
+	const TOKEN_TYPE_CHANGE_TAGS = "=";
+	/*
+	 * Token external types are used as internal for practical purposes.
+	 */
+	const TOKEN_TYPES = array(self::TOKEN_TYPE_CHANGE_TAGS,
+		self::TOKEN_TYPE_COMMENT,self::TOKEN_TYPE_PARTIAL,self::TOKEN_TYPE_INVERTED_LOOP_START,
+		self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_END, self::TOKEN_TYPE_LOOP_START, self::TOKEN_TYPE_UNESCAPED_VAR, self::TOKEN_TYPE_VAR);
+
+	const TEMPLATE_OPEN_TAG = "{{";
+	const TEMPLATE_CLOSE_TAG = "}}";
+
+	const TOKENIZER_STATE_TAG = 0;
+	const TOKENIZER_STATE_TEXT = 1;
+
 	/**
 	 * @var array $templates Templates array.
 	 */
@@ -87,7 +110,7 @@ class TemplateEngine {
 
 	/**
 	 * Add Global Args.
-	 * Adds pragmas that will overwrite the template arguments.
+	 * Adds global args that will overwrite the template arguments.
 	 *
 	 * @param $args
 	 *
@@ -120,9 +143,54 @@ class TemplateEngine {
 	}
 
 
-
 	public function tokenizeTemplate($template) {
+		if(!is_string($template)) {
+			return null;
+		}
+		$tokenized = array();
+		$state = self::TOKENIZER_STATE_TEXT;
+		$open_tag="{{{"; $close_tag="}}}";
+		$buffer= "";
+		$type = self::TOKEN_TYPE_TEXT;
+		$template_length=strlen($template);
+		$unclosed_token = false;
+		for($i = 1; $i < $template_length; $i++) {
+			$i--;
+			$open_tag_length = strlen($open_tag);
+			$close_tag_length = strlen($close_tag);
+			if(substr($template, $i, $close_tag_length) == $close_tag){
+				$unclosed_token = false;
+				$type=self::TOKEN_TYPE_TEXT;
+				$i += $close_tag_length;
+			}
+			if(substr($template, $i, $open_tag_length) == $open_tag){
+				if($unclosed_token) {
+					// unclosed tag
+				}
+				$unclosed_token = true;
+				if(in_array($template[$i + $open_tag_length], self::TOKEN_TYPES)) {
+					$type = $template[$i + $open_tag_length];
+				} else {
+					$type = self::TOKEN_TYPE_VAR;
+				}
+				$i+=$open_tag_length;
+			}
+			while(!(substr($template, $i, $close_tag_length) == $close_tag) && !(substr($template, $i, $open_tag_length) == $open_tag) && $i < $template_length){
+				$buffer.=$template[$i];
+				$i++;
+			}
+			$tokenized[] = array(
+				"type"=>$type,
+				"value"=>$buffer
+			);
+			echo "'".$buffer . "'\n";
+			$buffer="";
+		}
+		if($unclosed_token) {
+			// unclosed tag
+		}
 
+		return $tokenized;
 	}
 
 	public function parseTemplate($template) {
@@ -142,6 +210,10 @@ class TemplateEngine {
 		if(!isset($this->templates[$template])) {
 			$this->loadTemplate($template);
 		}
+
+		$this->parse($this->tokenize($template));
+
+
 		$raw_template = $this->templates[$template];
 		$template_class_name = $this->getTemplateClassName($template);
 
