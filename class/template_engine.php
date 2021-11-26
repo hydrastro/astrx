@@ -156,7 +156,6 @@ class TemplateEngine {
 		$template_length=strlen($template);
 		$unclosed_token = false;
 		for($i = 1; $i < $template_length; $i++) {
-			// TODO: check for tags change:
 			// trim $buffer, split in 2 (whitespace) and set
 			$i--;
 			$open_tag_length = strlen($open_tag);
@@ -185,6 +184,15 @@ class TemplateEngine {
 			}
 			if($unclosed_token){
 				$buffer=trim($buffer);
+				if($type == self::TOKEN_TYPE_CHANGE_TAGS) {
+					$tags = explode(" ", $buffer);
+					if(count($tags) != 2){
+						echo "malformed tag change";
+						return;
+					}
+					$open_tag = $tags[0];
+					$close_tag = $tags[1];
+				}
 			}
 			$tokenized[] = array(
 				"type"=>$type,
@@ -206,25 +214,24 @@ class TemplateEngine {
 		}
 		$AST=array();
 		$branch = array();
-		$branch_count = 0;
+		$open_branches = array();
 		for($i = count($tokenized) - 1; $i >=0; $i--){
 			$type = $tokenized[$i]["type"];
 			if($type == self::TOKEN_TYPE_LOOP_END) {
-				$branch_count++;
+				$open_branches[] = $tokenized[$i]["value"];
 				continue;
 			}
 			if($type == self::TOKEN_TYPE_LOOP_START || $type==self::TOKEN_TYPE_INVERTED_LOOP_START) {
-				/*
-				 * TODO: check for wrong closing tags
-				 *       unclosed tags
-				 */
+				if(end($open_branches) != $tokenized[$i]["value"]) {
+					echo "MISMATCH";
+				}
+				array_pop($open_branches);
 				$branch=array($branch);
-				$branch_count--;
 			}
 
 			$branch[] = $tokenized[$i];
 
-			if($branch_count ==0){
+			if(empty($open_branches)){
 				$AST = array_merge($AST, $branch);
 				$branch = array();
 			}
