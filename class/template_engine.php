@@ -156,6 +156,8 @@ class TemplateEngine {
 		$template_length=strlen($template);
 		$unclosed_token = false;
 		for($i = 1; $i < $template_length; $i++) {
+			// TODO: check for tags change:
+			// trim $buffer, split in 2 (whitespace) and set
 			$i--;
 			$open_tag_length = strlen($open_tag);
 			$close_tag_length = strlen($close_tag);
