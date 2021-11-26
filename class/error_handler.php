@@ -18,8 +18,8 @@ class ErrorHandler {
 	 */
 	public function __construct() {
 		if(DEBUG_MODE) {
-			ini_set("display_errors", 1);
-			ini_set("display_startup_errors", 1);
+			ini_set("display_errors", 0);
+			ini_set("display_startup_errors", 0);
 			error_reporting(E_ALL);
 		}
 		set_error_handler(array($this, "errorHandler"));
@@ -77,11 +77,11 @@ class ErrorHandler {
 		$exceptions = $this->getExceptions();
 		$messages = $this->getMessages();
 		if(DEBUG_MODE && (!empty($exceptions) || !empty($messages))) {
+			http_response_code($messages[0]["http_status_code"]);
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
 			if(file_exists($failsafe)) {
 				require($failsafe);
 			} else {
-				/* Oh, no! */
 				echo "<h1>Error</h1><pre>";
 				print_r($messages);
 				print_r($exceptions);
