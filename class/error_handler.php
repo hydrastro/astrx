@@ -119,13 +119,15 @@ class ErrorHandler {
 	 * Removes a class from the class array.
 	 *
 	 * @param $class
+	 *
+	 * @return bool
 	 */
 	public function removeClass($class) {
 		if(is_object($class) &&
 		   ($key = array_search($class, $this->classes, true)) !== false) {
 			unset($this->classes[$key]);
 
-			return;
+			return true;
 		}
 		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ?
 			ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
@@ -138,6 +140,8 @@ class ErrorHandler {
 		$this->messages[] = array("level" => $message_level,
 		                          "http_status_code" => $error_code,
 		                          "text" => $e->getMessage());
+
+		return false;
 	}
 
 	/**

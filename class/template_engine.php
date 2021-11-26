@@ -34,7 +34,9 @@ class TemplateEngine {
 		if(!in_array($parse_mode, self::PARSE_MODES)) {
 			$e = new Exception(ERROR_INVALID_PARSE_MODE);
 			$this->exceptions[] = $e;
-			$this->messages[] = $e->getMessage();
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return;
 		}
@@ -65,21 +67,22 @@ class TemplateEngine {
 	 *
 	 * @param $template
 	 *
-	 * @return null
+	 * @return bool
 	 */
 	public function loadTemplate($template) {
 		if(!file_exists($template)) {
 			$e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
-			return null;
+			return false;
 		}
 		$this->templates[$template]
 			= file_get_contents(TEMPLATE_DIR . $template . "php");
 
-		return null;
+		return true;
 	}
 
 	/**
@@ -88,18 +91,21 @@ class TemplateEngine {
 	 *
 	 * @param $args
 	 *
-	 * @return void|null
+	 * @return bool
 	 */
 	public function addGlobalArgs($args) {
 		if(!is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
-			return null;
+			return false;
 		}
 		$this->args = array_merge($this->args, $args);
+
+		return true;
 	}
 
 	/**
@@ -117,8 +123,9 @@ class TemplateEngine {
 		if(!empty($args) && !is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return null;
 		}
@@ -150,7 +157,9 @@ class TemplateEngine {
 			if(!in_array($parse_mode, self::PARSE_MODES)) {
 				$e = new Exception(ERROR_INVALID_PARSE_MODE);
 				$this->exceptions[] = $e;
-				$this->messages[] = $e->getMessage();
+				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+				                          "text" => $e->getMessage());
 			}
 		} else {
 			$parse_mode = $this->getParseMode();

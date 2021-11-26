@@ -48,25 +48,32 @@ class Injector {
 	 *
 	 * @param       $class_name
 	 * @param array $args
+	 *
+	 * @return bool
 	 */
 	public function setClassArgs($class_name, $args) {
 		if(!is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
-			return;
+			return false;
 		}
 		if(class_exists($class_name)) {
 			$name = $this->getIndexName($class_name);
 			$this->classesArgs[$name] = $args;
 
-			return;
+			return false;
 		}
 		$e = new Exception(ERROR_CLASS_NOT_FOUND);
 		$this->exceptions[] = $e;
-		$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+		                          "text" => $e->getMessage());
+
+		return true;
 	}
 
 	/**
@@ -75,17 +82,23 @@ class Injector {
 	 * array.
 	 *
 	 * @param $class
+	 *
+	 * @return bool
 	 */
 	public function setClass($class) {
 		if(is_object($class)) {
 			$name = $this->getIndexName($class);
 			$this->classes[$name] = $class;
 
-			return;
+			return true;
 		}
 		$e = new Exception(ERROR_INVALID_OBJECT);
 		$this->exceptions[] = $e;
-		$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+		                          "text" => $e->getMessage());
+
+		return false;
 	}
 
 	/**
@@ -181,8 +194,9 @@ class Injector {
 		if(!class_exists($class_name)) {
 			$e = new Exception(ERROR_CLASS_NOT_FOUND);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return null;
 		}
@@ -202,16 +216,15 @@ class Injector {
 					if($arg) {
 						$dependencies[] = $arg;
 					} else {
-						// php 5.0.3
 						if(!$parameter->isOptional()) {
 							if($parameter->getClass() === null) {
-								// or param. not found
 								$e = new Exception
 								(ERROR_CLASS_OR_PARAMETER_NOT_FOUND);
 								$this->exceptions[] = $e;
 								$this->messages[]
-									= array(HTTP_INTERNAL_SERVER_ERROR,
-									        $e->getMessage());
+									= array("level" => MESSAGE_LEVEL_ERROR,
+									        "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+									        "text" => $e->getMessage());
 
 								return null;
 							}
@@ -257,9 +270,10 @@ class Injector {
 			return $class;
 		} catch(ReflectionException $e) {
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          ERROR_CLASS_REFLECTION .
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => ERROR_CLASS_REFLECTION .
+			                                    $e->getMessage());
 
 			return null;
 		}
@@ -282,8 +296,9 @@ class Injector {
 		if(!is_array($arguments)) {
 			$e = new Exception(ERROR_INVALID_FUNCTION_ARGUMENTS);
 			$this->exceptions[] = $e;
-			$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR,
-			                          $e->getMessage());
+			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+			                          "text" => $e->getMessage());
 
 			return null;
 		}
@@ -298,7 +313,9 @@ class Injector {
 			$e = new Exception(ERROR_CLASS_NOT_FOUND);
 		}
 		$this->exceptions[] = $e;
-		$this->messages[] = array(HTTP_INTERNAL_SERVER_ERROR, $e->getMessage());
+		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
+		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
+		                          "text" => $e->getMessage());
 
 		return null;
 	}

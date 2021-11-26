@@ -27,16 +27,22 @@ class Config {
 	 * Merges a given configuration array with the existing configuration array.
 	 *
 	 * @param $array
+	 *
+	 * @return bool
 	 */
 	public function addConfigArray($array) {
 		if(is_array($array)) {
 			$this->configuration = array_merge($this->configuration, $array);
+
+			return true;
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
 		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
 		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
 		                          "text" => $e->getMessage());
+
+		return false;
 	}
 
 	/**
@@ -45,6 +51,8 @@ class Config {
 	 *
 	 * @param $index
 	 * @param $value
+	 *
+	 * @return bool
 	 */
 	public function addSpecificConfig($index, $value) {
 		if(!is_string($index)) {
@@ -54,9 +62,11 @@ class Config {
 			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
 			                          "text" => $e->getMessage());
 
-			return;
+			return false;
 		}
 		$this->configuration[$index] = $value;
+
+		return true;
 	}
 
 	/**
@@ -66,6 +76,8 @@ class Config {
 	 *
 	 * @param      $config_file
 	 * @param bool $handle_not_found_exception
+	 *
+	 * @return bool
 	 */
 	public function loadConfigFile($config_file,
 		$handle_not_found_exception = false) {
@@ -76,7 +88,7 @@ class Config {
 			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
 			                          "text" => $e->getMessage());
 
-			return;
+			return false;
 		}
 		if(!file_exists($config_file)) {
 			if($handle_not_found_exception) {
@@ -87,10 +99,12 @@ class Config {
 				                          "text" => $e->getMessage());
 			}
 
-			return;
+			return false;
 		}
 		$this->configuration = array_merge($this->configuration,
 			require($config_file));
+
+		return true;
 	}
 
 	/**
@@ -100,7 +114,7 @@ class Config {
 	 * @param      $config_name
 	 * @param null $class_name
 	 *
-	 * @return mixed
+	 * @return mixed|null
 	 */
 	public function getConfig($config_name, $class_name = null) {
 		if(is_string($config_name)) {
