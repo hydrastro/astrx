@@ -110,6 +110,8 @@ class Config {
 	/**
 	 * Get Config.
 	 * Returns a config which may be specific for a class.
+	 * It directly maps to $configuration[$class_name][$config_name]
+	 * or $configuration[$config_name] if no class is provided.
 	 *
 	 * @param      $config_name
 	 * @param null $class_name

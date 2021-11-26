@@ -23,7 +23,7 @@ class ContentManager {
 		$injector->setClassArgs("PDO",
 			array("dsn" => $config->getConfig("db_type", "PDO") .
 			               ":host=" .
-			               $config->getConfig("db_host") .
+			               $config->getConfig("db_host", "PDO") .
 			               ";dbname=" .
 			               $config->getConfig("db_name", "PDO") .
 			               ";",
@@ -35,8 +35,8 @@ class ContentManager {
 		$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 		$pdo->setAttribute(PDO::ATTR_ERRMODE,
 			PDO::ERRMODE_EXCEPTION);
+		$this->pdo = $pdo;
 		$this->config = $config;
 		$this->injector = $injector;
-		$this->pdo = $pdo;
 	}
 }
