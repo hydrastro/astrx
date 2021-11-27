@@ -155,19 +155,35 @@ class TemplateEngine {
 		$type = self::TOKEN_TYPE_TEXT;
 		$template_length=strlen($template);
 		$unclosed_token = false;
+
 		for($i = 1; $i < $template_length; $i++) {
 			// trim $buffer, split in 2 (whitespace) and set
 			$i--;
+
 			$open_tag_length = strlen($open_tag);
 			$close_tag_length = strlen($close_tag);
+
 			if(substr($template, $i, $close_tag_length) == $close_tag){
+				if($type == self::TOKEN_TYPE_CHANGE_TAGS) {
+					$tags = explode(" ", $buffer);
+					if(count($tags) != 2) {
+						echo "malformed tag change";
+
+						//return;
+					}
+					$open_tag = $tags[0];
+					$close_tag = $tags[1];
+				}
 				$unclosed_token = false;
 				$type=self::TOKEN_TYPE_TEXT;
+
 				$i += $close_tag_length;
 			}
+			$open_tag_length = strlen($open_tag);
+			$close_tag_length = strlen($close_tag);
 			if(substr($template, $i, $open_tag_length) == $open_tag){
 				if($unclosed_token) {
-					// unclosed tag
+					echo "UNCLOSED TAG";
 				}
 				$unclosed_token = true;
 				if(in_array($template[$i + $open_tag_length], self::TOKEN_TYPES)) {
@@ -178,20 +194,19 @@ class TemplateEngine {
 				}
 				$i+=$open_tag_length;
 			}
-			while(!(substr($template, $i, $close_tag_length) == $close_tag) && !(substr($template, $i, $open_tag_length) == $open_tag) && $i < $template_length){
+			$buffer = "";
+			while(!(substr($template, $i,
+						$close_tag_length) == $close_tag) && !(substr($template, $i, $open_tag_length) == $open_tag) && $i < $template_length){
 				$buffer.=$template[$i];
 				$i++;
 			}
-			if($unclosed_token){
-				$buffer=trim($buffer);
-				if($type == self::TOKEN_TYPE_CHANGE_TAGS) {
-					$tags = explode(" ", $buffer);
-					if(count($tags) != 2){
-						echo "malformed tag change";
-						return;
+			if($unclosed_token) {
+				$buffer = trim($buffer);
+				if($type==self::TOKEN_TYPE_CHANGE_TAGS) {
+					if(substr($buffer, -1) != self::TOKEN_TYPE_CHANGE_TAGS) {
+						// WORNG tag change
 					}
-					$open_tag = $tags[0];
-					$close_tag = $tags[1];
+					$buffer = rtrim($buffer,self::TOKEN_TYPE_CHANGE_TAGS);
 				}
 			}
 			$tokenized[] = array(
@@ -199,10 +214,9 @@ class TemplateEngine {
 				"value"=>$buffer
 			);
 			echo "'".$buffer . "'\n";
-			$buffer="";
 		}
 		if($unclosed_token) {
-			// unclosed tag
+			echo "UNCLOSED TAG";
 		}
 
 		return $tokenized;
