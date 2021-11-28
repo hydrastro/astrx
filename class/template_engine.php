@@ -208,6 +208,9 @@ class TemplateEngine {
 					$buffer = rtrim($buffer,self::TOKEN_TYPE_CHANGE_TAGS);
 				}
 			}
+			if(empty($buffer)) {
+				continue;
+			}
 			$tokenized[] = array(
 				"type"=>$type,
 				"value"=>$buffer
