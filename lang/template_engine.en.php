@@ -5,5 +5,5 @@ define("ERROR_MALFORMED_TAG_CHANGE", "Error: malformed tag change.");
 define("ERROR_UNCLOSED_TOKEN", "Error: unclosed token detected.");
 define("ERROR_INVALID_TEMPLATE", "Error: invalid template.");
 define("ERROR_INVALID_TOKENIZED_TEMPLATE", "Error: invalid tokenized template");
-define("ERROR_TOKEN_MISMATCH", "Error: template tokens mismatch.");
-define("", "");
+define("ERROR_LOOP_TOKEN_MISMATCH", "Error: template tokens mismatch.");
+define("ERROR_UNCLOSED_LOOP_TOKEN", "Error: unclosed token.");

@@ -233,10 +233,8 @@ class TemplateEngine {
 			return null;
 		}
 		$AST=array();
-
 		$branches = array();
 		$branch_names = array();
-
 		for($i = count($tokenized) - 1; $i >=0; $i--){
 			if(!isset($tokenized[$i]["type"]) || !isset($tokenized[$i]["value"])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
@@ -244,7 +242,6 @@ class TemplateEngine {
 				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
 				return null;
 			}
-
 			$type = $tokenized[$i]["type"];
 			$value = $tokenized[$i]["value"];
 
@@ -257,7 +254,10 @@ class TemplateEngine {
 			}
 			if($type == self::TOKEN_TYPE_LOOP_START || $type==self::TOKEN_TYPE_INVERTED_LOOP_START) {
 				if($value != end($branch_names)) {
-					echo "ERROR";
+					$e = new Exception(ERROR_LOOP_TOKEN_MISMATCH);
+					$this->exceptions[] = $e;
+					$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+					return null;
 				}
 				$index=count($branches) - 1;
 				if(!empty($branches[$index])) {
@@ -272,11 +272,32 @@ class TemplateEngine {
 			}
 			$AST[]=$tokenized[$i];
 		}
+		if(!empty($branch_names)) {
+			$e = new Exception(ERROR_UNCLOSED_LOOP_TOKEN);
+			$this->exceptions[] = $e;
+			$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+			return null;
+		}
 		return $AST;
 	}
 
-	public function writeCode($AST){
+	public function writeCode($AST, $sections=null, $section=null) {
 		$code = "";
+		if($sections===null) {
+			$sections = array();
+		}
+
+		if($section !== null) {
+			if(!isset($section["type"]) || !isset($section["value"])) {
+				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
+				$this->exceptions[] = $e;
+				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+				return null;
+			}
+			$code = "}";
+		}
+
+
 		for($i=count($AST); $i >=0;$i--) {
 			if(!isset($AST[$i]["type"]) || !isset($AST[$i]["value"])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
@@ -287,7 +308,7 @@ class TemplateEngine {
 			$value = $AST[$i]["value"];
 			switch($AST[$i]["type"]) {
 				default:
-				case self::TOKEN_TYPE_TEXT:
+				case self::TOKEN_TYPE_TEXT: // var_export?
 					$code = '$buffer .= "' . $value . '";' . "\n$code";
 					break;
 				case self::TOKEN_TYPE_VAR:
@@ -297,20 +318,26 @@ class TemplateEngine {
 					$code = '$buffer .= $this->' . $value . ";\n$code";
 					break;
 				case self::TOKEN_TYPE_LOOP_START:
-					break;
-				case self::TOKEN_TYPE_LOOP_END:
-					break;
 				case self::TOKEN_TYPE_INVERTED_LOOP_START:
 					break;
+					// new function for array loop
+					break;
 				case self::TOKEN_TYPE_PARTIAL:
+					// load partial
 					break;
+				case self::TOKEN_TYPE_LOOP_END:
 				case self::TOKEN_TYPE_COMMENT:
-					break;
 				case self::TOKEN_TYPE_CHANGE_TAGS:
 					break;
 			}
+
 		}
-		return $code;
+
+		if($section !== null) {
+			$code = 'for($i = 0; $i < count($this->' . $section["value"] . '); $i++) {' . "\n$code";
+		}
+
+		return array($code, $sections);
 	}
 
 	public function addCodeSection(){
@@ -377,11 +404,6 @@ class TemplateEngine {
 		return $buffer;
 	}
 	*/
-
-
-
-
-
 
 	/**
 	 * Render.
