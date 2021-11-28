@@ -24,9 +24,6 @@ class TemplateEngine {
 	const TEMPLATE_OPEN_TAG = "{{";
 	const TEMPLATE_CLOSE_TAG = "}}";
 
-	const TOKENIZER_STATE_TAG = 0;
-	const TOKENIZER_STATE_TEXT = 1;
-
 	/**
 	 * @var array $templates Templates array.
 	 */
@@ -143,51 +140,50 @@ class TemplateEngine {
 		return "Template" . ucfirst($template);
 	}
 
-
-	public function tokenizeTemplate($template) {
-		if(!is_string($template)) {
+	public function tokenizeTemplate($template_body) {
+		if(!is_string($template_body)) {
+			$e = new Exception(ERROR_INVALID_TEMPLATE);
+			$this->exceptions[] = $e;
+			$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
 			return null;
 		}
 		$tokenized = array();
-		$state = self::TOKENIZER_STATE_TEXT;
-		$open_tag="{{{"; $close_tag="}}}";
+		$open_tag=self::TEMPLATE_OPEN_TAG;
+		$close_tag=self::TEMPLATE_CLOSE_TAG;
 		$buffer= "";
 		$type = self::TOKEN_TYPE_TEXT;
-		$template_length=strlen($template);
+		$template_length=strlen($template_body);
 		$unclosed_token = false;
-
 		for($i = 1; $i < $template_length; $i++) {
-			// trim $buffer, split in 2 (whitespace) and set
 			$i--;
-
-			$open_tag_length = strlen($open_tag);
 			$close_tag_length = strlen($close_tag);
-
-			if(substr($template, $i, $close_tag_length) == $close_tag){
+			if(substr($template_body, $i, $close_tag_length) == $close_tag){
 				if($type == self::TOKEN_TYPE_CHANGE_TAGS) {
 					$tags = explode(" ", $buffer);
 					if(count($tags) != 2) {
-						echo "malformed tag change";
-
-						//return;
+						$e = new Exception(ERROR_MALFORMED_TAG_CHANGE);
+						$this->exceptions[] = $e;
+						$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+						return null;
 					}
 					$open_tag = $tags[0];
 					$close_tag = $tags[1];
 				}
 				$unclosed_token = false;
 				$type=self::TOKEN_TYPE_TEXT;
-
 				$i += $close_tag_length;
 			}
 			$open_tag_length = strlen($open_tag);
 			$close_tag_length = strlen($close_tag);
-			if(substr($template, $i, $open_tag_length) == $open_tag){
+			if(substr($template_body, $i, $open_tag_length) == $open_tag){
 				if($unclosed_token) {
-					echo "UNCLOSED TAG";
+					$e = new Exception(ERROR_UNCLOSED_TOKEN);
+					$this->exceptions[] = $e;
+					$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
 				}
 				$unclosed_token = true;
-				if(in_array($template[$i + $open_tag_length], self::TOKEN_TYPES)) {
-					$type = $template[$i + $open_tag_length];
+				if(in_array($template_body[$i + $open_tag_length], self::TOKEN_TYPES)) {
+					$type = $template_body[$i + $open_tag_length];
 					$i +=1;
 				} else {
 					$type = self::TOKEN_TYPE_VAR;
@@ -195,16 +191,19 @@ class TemplateEngine {
 				$i+=$open_tag_length;
 			}
 			$buffer = "";
-			while(!(substr($template, $i,
-						$close_tag_length) == $close_tag) && !(substr($template, $i, $open_tag_length) == $open_tag) && $i < $template_length){
-				$buffer.=$template[$i];
+			while(!(substr($template_body, $i,
+						$close_tag_length) == $close_tag) && !(substr($template_body, $i, $open_tag_length) == $open_tag) && $i < $template_length){
+				$buffer.=$template_body[$i];
 				$i++;
 			}
 			if($unclosed_token) {
 				$buffer = trim($buffer);
 				if($type==self::TOKEN_TYPE_CHANGE_TAGS) {
 					if(substr($buffer, -1) != self::TOKEN_TYPE_CHANGE_TAGS) {
-						// WORNG tag change
+						$e = new Exception(ERROR_MALFORMED_TAG_CHANGE);
+						$this->exceptions[] = $e;
+						$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+						return null;
 					}
 					$buffer = rtrim($buffer,self::TOKEN_TYPE_CHANGE_TAGS);
 				}
@@ -213,10 +212,11 @@ class TemplateEngine {
 				"type"=>$type,
 				"value"=>$buffer
 			);
-			echo "'".$buffer . "'\n";
 		}
 		if($unclosed_token) {
-			echo "UNCLOSED TAG";
+			$e = new Exception(ERROR_UNCLOSED_TOKEN);
+			$this->exceptions[] = $e;
+			$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
 		}
 
 		return $tokenized;
@@ -224,34 +224,94 @@ class TemplateEngine {
 
 	public function parseTemplate($tokenized) {
 		if(!is_array($tokenized)) {
-			return;
+			$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
+			$this->exceptions[] = $e;
+			$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+			return null;
 		}
 		$AST=array();
-		$branch = array();
-		$open_branches = array();
+
+		$branches = array();
+		$branch_names = array();
+
 		for($i = count($tokenized) - 1; $i >=0; $i--){
+			if(!isset($tokenized[$i]["type"]) || !isset($tokenized[$i]["value"])) {
+				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
+				$this->exceptions[] = $e;
+				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+				return null;
+			}
+
 			$type = $tokenized[$i]["type"];
+			$value = $tokenized[$i]["value"];
+
 			if($type == self::TOKEN_TYPE_LOOP_END) {
-				$open_branches[] = $tokenized[$i]["value"];
-				continue;
+				$index = count($AST);
+				$AST[$index] = array();
+				$branches[] = &$AST;
+				$AST = &$AST[$index][0];
+				$branch_names[]=$value;
 			}
 			if($type == self::TOKEN_TYPE_LOOP_START || $type==self::TOKEN_TYPE_INVERTED_LOOP_START) {
-				if(end($open_branches) != $tokenized[$i]["value"]) {
-					echo "MISMATCH";
+				if($value != end($branch_names)) {
+					echo "ERROR";
 				}
-				array_pop($open_branches);
-				$branch=array($branch);
+				$index=count($branches) - 1;
+				if(!empty($branches[$index])) {
+					$AST = &$branches[$index];
+				} else {
+					$AST=array($AST);
+				}
+
+				array_pop($branches);
+				array_pop($branch_names);
+
 			}
+			$AST[]=$tokenized[$i];
+		}
+		return $AST;
+	}
 
-			$branch[] = $tokenized[$i];
-
-			if(empty($open_branches)){
-				$AST = array_merge($AST, $branch);
-				$branch = array();
+	public function writeCode($AST){
+		$code = "";
+		for($i=count($AST); $i >=0;$i--) {
+			if(!isset($AST[$i]["type"]) || !isset($AST[$i]["value"])) {
+				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
+				$this->exceptions[] = $e;
+				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+				return null;
+			}
+			$value = $AST[$i]["value"];
+			switch($AST[$i]["type"]) {
+				default:
+				case self::TOKEN_TYPE_TEXT:
+					$code = '$buffer .= "' . $value . '";' . "\n$code";
+					break;
+				case self::TOKEN_TYPE_VAR:
+					$code = '$buffer .= htmlspecialchars($this->' . $value . ");\n$code";
+					break;
+				case self::TOKEN_TYPE_UNESCAPED_VAR:
+					$code = '$buffer .= $this->' . $value . ";\n$code";
+					break;
+				case self::TOKEN_TYPE_LOOP_START:
+					break;
+				case self::TOKEN_TYPE_LOOP_END:
+					break;
+				case self::TOKEN_TYPE_INVERTED_LOOP_START:
+					break;
+				case self::TOKEN_TYPE_PARTIAL:
+					break;
+				case self::TOKEN_TYPE_COMMENT:
+					break;
+				case self::TOKEN_TYPE_CHANGE_TAGS:
+					break;
 			}
 		}
-		print_r($AST);
-		return $AST;
+		return $code;
+	}
+
+	public function addCodeSection(){
+
 	}
 
 	public function compileTemplate($template, $args) {
@@ -268,16 +328,21 @@ class TemplateEngine {
 			$this->loadTemplate($template);
 		}
 
-		$this->parse($this->tokenize($template));
+		$template_body = $this->templates[$template];
+
+		$AST = $this->parseTemplate($this->tokenizeTemplate($template_body));
 
 
-		$raw_template = $this->templates[$template];
 		$template_class_name = $this->getTemplateClassName($template);
-
-		$template_class_variables = "";
+		$template_class_variables = ""; // easy, class variables
 		$template_render_body = "";
+		$template_functions = "";
 
 		$template_code = "";
+
+
+
+		return $template_code;
 	}
 
 	/**
@@ -290,6 +355,8 @@ class TemplateEngine {
 	 * @return string|null
 	 */
 	public function renderTemplate($template, $args) {
+		//$this->compileTemplate();
+		//eval
 		return null;
 	}
 
