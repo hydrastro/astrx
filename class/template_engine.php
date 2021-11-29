@@ -249,7 +249,7 @@ class TemplateEngine {
 				$index = count($AST);
 				$AST[$index] = array();
 				$branches[] = &$AST;
-				$AST = &$AST[$index][0];
+				$AST = &$AST[$index];
 				$branch_names[]=$value;
 			}
 			if($type == self::TOKEN_TYPE_LOOP_START || $type==self::TOKEN_TYPE_INVERTED_LOOP_START) {
@@ -281,46 +281,69 @@ class TemplateEngine {
 		return $AST;
 	}
 
-	public function writeCode($AST, $sections=null, $section=null) {
-		$code = "";
-		if($sections===null) {
-			$sections = array();
+	public function writeCode($AST, $args, $loop_parents=null, &$functions_code=null, $iteration_number=0) {
+		$code = '';
+		if($functions_code === null) {
+			$functions_code = array();
 		}
-
-		if($section !== null) {
-			if(!isset($section["type"]) || !isset($section["value"])) {
-				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
-				$this->exceptions[] = $e;
-				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
-				return null;
+		if(!empty($loop_parents)) {
+			$array_var_name = '$this->' . $loop_parents[0]["value"];
+			for($i = 1; $i < count($loop_parents); $i++) {
+				$array_var_name .= '["' . $loop_parents[$i]["value"] . '"]';
 			}
-			$code = "}";
+			$code .= "function " . end($loop_parents)["value"] . $iteration_number . '() {$buffer="";';
+			// I could have used a foreach here.... nevermind
+			$code .= 'for($i=0; $i < ' . $array_var_name . '; $i++) {';
 		}
-
-
-		for($i=count($AST); $i >=0;$i--) {
+		for($i = count($AST) - 1; $i >= 0; $i--) {
+			$iteration_number++;
 			if(!isset($AST[$i]["type"]) || !isset($AST[$i]["value"])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
-				$this->messages[] = array("level"=>MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text"=>$e->getMessage());
+				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR, "http_status_code" => HTTP_INTERNAL_SERVER_ERROR, "text" => $e->getMessage());
 				return null;
 			}
 			$value = $AST[$i]["value"];
+			if(in_array($AST[$i]["type"], array(self::TOKEN_TYPE_LOOP_START, self::TOKEN_TYPE_INVERTED_LOOP_START, self::TOKEN_TYPE_VAR, self::TOKEN_TYPE_UNESCAPED_VAR))) {
+				if(empty($loop_parents)) {
+					$value = '$this->' . $value;
+				} elseif(isset($args[$loop_parents[0]["value"]])) {
+					$temp = $args[$loop_parents[0]["value"]];
+					for($j = 1; $j < count($loop_parents) - 1; $j++) {
+						$temp = $temp[$loop_parents[$j]["value"]];
+					}
+					if($value =="."){
+						$value=$array_var_name.'[$i]';
+					}elseif(isset(  end($temp)[$value]  )) {
+						$value = $array_var_name . '[$i]["' . $value . '"]';
+					} elseif (isset($args[$value])) {
+						$value = '$this->' . $value;
+					} else {
+						echo "ERROR"; // Element not found in $args
+					}
+				} else {
+					echo "ERROR"; // Element not found in $args
+				}
+			}
 			switch($AST[$i]["type"]) {
 				default:
 				case self::TOKEN_TYPE_TEXT: // var_export?
-					$code = '$buffer .= "' . $value . '";' . "\n$code";
+					$code .= '$buffer .= "' . $value . '";';
 					break;
 				case self::TOKEN_TYPE_VAR:
-					$code = '$buffer .= htmlspecialchars($this->' . $value . ");\n$code";
+					$code .= '$buffer .= htmlspecialchars(' . $value . ");";
 					break;
 				case self::TOKEN_TYPE_UNESCAPED_VAR:
-					$code = '$buffer .= $this->' . $value . ";\n$code";
+					$code .= '$buffer .= ' . $value . ";";
 					break;
 				case self::TOKEN_TYPE_LOOP_START:
 				case self::TOKEN_TYPE_INVERTED_LOOP_START:
-					break;
-					// new function for array loop
+					$function_name = $value . $iteration_number;
+					$code .= '$buffer .= ' . $function_name . "();";
+					$loop_parents[] = $AST[$i];
+					$this->writeCode($AST[$i - 1], $args, $loop_parents, $functions_code, $iteration_number);
+					array_pop($loop_parents);
+					$i--;
 					break;
 				case self::TOKEN_TYPE_PARTIAL:
 					// load partial
@@ -330,18 +353,19 @@ class TemplateEngine {
 				case self::TOKEN_TYPE_CHANGE_TAGS:
 					break;
 			}
-
+		}
+		if(!empty($loop_parents)) {
+			$code .= 'return $buffer;}}';
+			$functions_code[] = $code;
+			array_pop($loop_parents);
 		}
 
-		if($section !== null) {
-			$code = 'for($i = 0; $i < count($this->' . $section["value"] . '); $i++) {' . "\n$code";
+		$arguments = array();
+		foreach($args as $key=>$arg) {
+			$arguments[]='private $'.$key.'='.var_export($arg,true).';';
 		}
-
-		return array($code, $sections);
-	}
-
-	public function addCodeSection(){
-
+		$class_name = 'Template'; // <- TODO
+		return "< ?php class " . $class_name . '{'.implode("\n",$arguments) . 'function renderTemplate(){$buffer="";'.$code.'}'.implode("\n", $functions_code).'} ?>';
 	}
 
 	public function compileTemplate($template, $args) {
@@ -357,22 +381,8 @@ class TemplateEngine {
 		if(!isset($this->templates[$template])) {
 			$this->loadTemplate($template);
 		}
-
 		$template_body = $this->templates[$template];
-
-		$AST = $this->parseTemplate($this->tokenizeTemplate($template_body));
-
-
-		$template_class_name = $this->getTemplateClassName($template);
-		$template_class_variables = ""; // easy, class variables
-		$template_render_body = "";
-		$template_functions = "";
-
-		$template_code = "";
-
-
-
-		return $template_code;
+		return $this->compileTemplate($this->parseTemplate($this->tokenizeTemplate($template_body)), $args);
 	}
 
 	/**
@@ -389,21 +399,6 @@ class TemplateEngine {
 		//eval
 		return null;
 	}
-
-	/*
-	function foo() {
-		$buffer = '';
-		if(!empty($value)) {
-			$values = $this->isIterable($value) ? $value : array($value);
-			foreach($values as $value) {
-				$value = $value['index_name'];
-				$buffer .= htmlspecialchars($value, 2, 'UTF-8');
-			}
-		}
-
-		return $buffer;
-	}
-	*/
 
 	/**
 	 * Render.
