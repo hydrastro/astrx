@@ -106,6 +106,7 @@ class TemplateEngine {
 		}
 		$this->templates[$template]
 			= file_get_contents($template_file);
+
 		return true;
 	}
 
@@ -314,36 +315,35 @@ class TemplateEngine {
 		if($functions_code === null) {
 			$functions_code = array();
 		}
-
-
-
 		if(!empty($loop_parents)) {
 			$array_var_name = '$this->' . $loop_parents[0]["value"];
 			$array_var_value = $args[$loop_parents[0]["value"]];
-
 			for($i = 1; $i < count($loop_parents) - 1; $i++) {
 				$array_var_name .= '["' . $loop_parents[$i]["value"] . '"]';
 				$array_var_value = $array_var_value[$loop_parents[$i]["value"]];
 			}
 
+			if(isset($array_var_value[end($loop_parents)["value"]])) {
+				$parent_value = $array_var_name .
+				                '["' .
+				                end($loop_parents)["value"] .
+				                '"]';
+			} elseif(isset($args[end($loop_parents)["value"]])) {
+				$parent_value = '$this->' . end($loop_parents)["value"];
+			} else {
+				// UNDEFINED ARGUMENT ERROR
+				echo "ERROR";
 
-			if(isset($arrav_var_value[end($loop_parents)["value"]])){
-				$value = $array_var_name . '["' . end($loop_parents)
-					["value"] . '"][$i]';
-			} elseif(isset($args[""]))
-
-
+				return null;
+			}
 
 			$code .= "function " .
 			         end($loop_parents)["value"] .
 			         $iteration_number .
 			         '() {$buffer="";';
 			// I could have used a foreach here....
-			$code .= 'for($i=0; $i < ' . $array_var_name . '; $i++) {';
+			$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
 		}
-
-
-
 
 		for($i = count($AST) - 1; $i >= 0; $i--) {
 			$iteration_number++;
@@ -362,51 +362,32 @@ class TemplateEngine {
 				      self::TOKEN_TYPE_INVERTED_LOOP_START,
 				      self::TOKEN_TYPE_VAR,
 				      self::TOKEN_TYPE_UNESCAPED_VAR))) {
-
-
-
-
-				////////////////////////////////////////////////////////////////////////////////////////////
-
 				if(empty($loop_parents)) {
+					if(!isset($args[$value])) {
+						// UNDEFINED ARG
+						echo "ERROR";
+
+						return null;
+					}
 					$value = '$this->' . $value;
-				} elseif(isset($args[$loop_parents[0]["value"]])) {
-
-
-					$temp = $args[$loop_parents[0]["value"]];
-					for($j = 1; $j < count($loop_parents) - 1; $j++) {
-						$temp = $temp[$loop_parents[$j]["value"]];
-					}
-
-					echo "\n\n\n\n\nAAAAAAAAAAAAA\n";
-					print_r($temp);
-					if(isset($temp[0][$value])) {
-						echo "asd";
-					}
-					echo "\nAAAAAAA $value AAAAAA\n\n\n\n\n";
-
-
-					if($value == ".") {
-						$value = $array_var_name . '[$i]';
-					} elseif(isset(end($temp)[$value])) {
-						$value = $array_var_name . '[$i]["' . $value . '"]';
-					} elseif(isset($args[$value])) {
-						echo "DIOCANE $value";
-						$value = '$this->' . $value;
-					} else {
-						echo "ERROR"; // Element not found in $args
-					}
 				} else {
-					echo "ERROR"; // Element not found in $args
+					if($value == ".") {
+						$value = $parent_value . '[$i]';
+					} else {
+						if(isset($array_var_value[0][$value])) {
+							$value = $array_var_name . '[$i]["' . $value . '"]';
+						} elseif(isset($args[$value])) {
+							// check if it is an array???????
+							// check if last parent
+							$value = '$this->' . $value . ''; /// $i ?????
+
+						} else {
+							echo "ERROR";
+
+							return null;
+						}
+					}
 				}
-
-				////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
 			}
 			switch($AST[$i]["type"]) {
 				default:
@@ -414,7 +395,6 @@ class TemplateEngine {
 					$code .= '$buffer .= "' . $value . '";';
 					break;
 				case self::TOKEN_TYPE_VAR:
-					echo "XA  $value AX ";
 					$code .= '$buffer .= htmlspecialchars(' . $value . ");";
 					break;
 				case self::TOKEN_TYPE_UNESCAPED_VAR:
@@ -443,9 +423,11 @@ class TemplateEngine {
 			}
 		}
 		if(!empty($loop_parents)) {
-			$code .= 'return $buffer;}}';
+			$code .= '} return $buffer; }';
 			$functions_code[] = $code;
 			array_pop($loop_parents);
+		} else {
+			$code .= 'return $buffer;';
 		}
 
 		$arguments = array();
@@ -515,8 +497,6 @@ class TemplateEngine {
 		if($template_class === null) {
 			return null;
 		}
-		echo "<pre>";
-		print_r($template_class);
 		eval("?>" . $template_class);
 
 		$template_name = $this->getTemplateClassName($template, $args);
