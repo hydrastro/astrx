@@ -414,7 +414,8 @@ class TemplateEngine {
 					$i--;
 					break;
 				case self::TOKEN_TYPE_PARTIAL:
-					// load partial
+					$this->loadTemplate($value);
+					$partials_code[] = $this->compileTemplate($value);
 					break;
 				case self::TOKEN_TYPE_LOOP_END:
 				case self::TOKEN_TYPE_COMMENT:
@@ -448,6 +449,23 @@ class TemplateEngine {
 		return $template . md5(json_encode($args));
 	}
 
+	public function assembleCode($class_name, $AST, $args) {
+		$code = $this->writeCode($AST, $args);
+		if($code === null) {
+			return null;
+		}
+
+		return '<?php class ' .
+		       $class_name .
+		       '{' .
+		       implode("\n", $code["class_vars"]) .
+		       'function renderTemplate(){$buffer="";' .
+		       $code["render_body"] .
+		       '}' .
+		       implode("\n", $code["functions_code"]) .
+		       '}';
+	}
+
 	public function compileTemplate($template, $args = null) {
 		$args = (empty($args)) ? array() : $args;
 		if(!isset($this->templates[$template])) {
@@ -465,21 +483,9 @@ class TemplateEngine {
 		if($AST === null) {
 			return null;
 		}
-		$code = $this->writeCode($AST, $args);
-		if($code === null) {
-			return null;
-		}
 		$class_name = $this->getTemplateClassName($template, $args);
 
-		return '<?php class ' .
-		       $class_name .
-		       '{' .
-		       implode("\n", $code["class_vars"]) .
-		       'function renderTemplate(){$buffer="";' .
-		       $code["render_body"] .
-		       '}' .
-		       implode("\n", $code["functions_code"]) .
-		       '}';
+		return $this->assembleCode($class_name, $AST, $args);
 	}
 
 	/**
