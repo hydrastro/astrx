@@ -332,7 +332,7 @@ class TemplateEngine {
 				$parent_value = '$this->' . end($loop_parents)["value"];
 			} else {
 				// UNDEFINED ARGUMENT ERROR
-				echo "ERROR";
+				echo "ERROR udef arg";
 
 				return null;
 			}
@@ -365,7 +365,9 @@ class TemplateEngine {
 				if(empty($loop_parents)) {
 					if(!isset($args[$value])) {
 						// UNDEFINED ARG
-						echo "ERROR";
+						echo "ERROR udef arg 2";
+						print_r($AST);
+						print_r($args);
 
 						return null;
 					}
@@ -415,7 +417,17 @@ class TemplateEngine {
 					break;
 				case self::TOKEN_TYPE_PARTIAL:
 					$this->loadTemplate($value);
-					$partials_code[] = $this->compileTemplate($value);
+					$partials_code[] = $this->compileTemplate($value,
+						$args,
+						true);
+					$class_name = $this->getTemplateClassName($value, $args);
+					$code .= '$' .
+					         $class_name .
+					         ' = new ' .
+					         $class_name .
+					         '();$buffer.=$' .
+					         $class_name .
+					         '->renderTemplate();';
 					break;
 				case self::TOKEN_TYPE_LOOP_END:
 				case self::TOKEN_TYPE_COMMENT:
@@ -466,7 +478,7 @@ class TemplateEngine {
 		       '}';
 	}
 
-	public function compileTemplate($template, $args = null) {
+	public function compileTemplate($template, $args = null, $eval = false) {
 		$args = (empty($args)) ? array() : $args;
 		if(!isset($this->templates[$template])) {
 			if(!$this->loadTemplate($template)) {
@@ -485,7 +497,17 @@ class TemplateEngine {
 		}
 		$class_name = $this->getTemplateClassName($template, $args);
 
-		return $this->assembleCode($class_name, $AST, $args);
+		$code = $this->assembleCode($class_name, $AST, $args);
+
+		if($eval) {
+			$this->evalTemplate($code);
+		}
+
+		return $code;
+	}
+
+	public function evalTemplate($code) {
+		eval("?>" . $code);
 	}
 
 	/**
@@ -503,7 +525,7 @@ class TemplateEngine {
 		if($template_class === null) {
 			return null;
 		}
-		eval("?>" . $template_class);
+		$this->evalTemplate($template_class);
 
 		$template_name = $this->getTemplateClassName($template, $args);
 		if(!class_exists("$template_name")) {

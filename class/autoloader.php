@@ -28,10 +28,11 @@ class Autoloader {
 		$class = toSnakeCase($class);
 		$this->loadLang($class);
 		$this->config->loadConfig($class);
-		require_once("$class_dir$class.php");
+		$class_file = "$class_dir$class.php";
+		if(file_exists($class_file)) {
+			require_once($class_file);
+		}
 	}
-
-
 
 	/**
 	 * Load Language.
