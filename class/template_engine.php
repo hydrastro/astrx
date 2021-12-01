@@ -27,6 +27,10 @@ class TemplateEngine {
 		        self::TOKEN_TYPE_UNESCAPED_VAR);
 	const TEMPLATE_OPEN_TAG = "{{";
 	const TEMPLATE_CLOSE_TAG = "}}";
+
+	const AST_TYPE = 0;
+	const AST_VALUE = 1;
+
 	/**
 	 * @var array $templates Templates array.
 	 */
@@ -222,8 +226,8 @@ class TemplateEngine {
 			if(empty($buffer)) {
 				continue;
 			}
-			$tokenized[] = array("type" => $type,
-			                     "value" => $buffer);
+			$tokenized[] = array(self::AST_TYPE => $type,
+			                     self::AST_VALUE => $buffer);
 		}
 		if($unclosed_token) {
 			$e = new Exception(ERROR_UNCLOSED_TOKEN);
@@ -250,8 +254,8 @@ class TemplateEngine {
 		$branches = array();
 		$branch_names = array();
 		for($i = count($tokenized) - 1; $i >= 0; $i--) {
-			if(!isset($tokenized[$i]["type"]) ||
-			   !isset($tokenized[$i]["value"])) {
+			if(!isset($tokenized[$i][self::AST_TYPE]) ||
+			   !isset($tokenized[$i][self::AST_VALUE])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
 				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
@@ -260,8 +264,8 @@ class TemplateEngine {
 
 				return null;
 			}
-			$type = $tokenized[$i]["type"];
-			$value = $tokenized[$i]["value"];
+			$type = $tokenized[$i][self::AST_TYPE];
+			$value = $tokenized[$i][self::AST_VALUE];
 
 			if($type == self::TOKEN_TYPE_LOOP_END) {
 				$index = count($AST);
@@ -316,20 +320,20 @@ class TemplateEngine {
 			$functions_code = array();
 		}
 		if(!empty($loop_parents)) {
-			$array_var_name = '$this->' . $loop_parents[0]["value"];
-			$array_var_value = $args[$loop_parents[0]["value"]];
+			$array_var_name = '$this->' . $loop_parents[0][self::AST_VALUE];
+			$array_var_value = $args[$loop_parents[0][self::AST_VALUE]];
 			for($i = 1; $i < count($loop_parents) - 1; $i++) {
-				$array_var_name .= '["' . $loop_parents[$i]["value"] . '"]';
-				$array_var_value = $array_var_value[$loop_parents[$i]["value"]];
+				$array_var_name .= '["' . $loop_parents[$i][self::AST_VALUE] . '"]';
+				$array_var_value = $array_var_value[$loop_parents[$i][self::AST_VALUE]];
 			}
 
-			if(isset($array_var_value[end($loop_parents)["value"]])) {
+			if(isset($array_var_value[end($loop_parents)[self::AST_VALUE]])) {
 				$parent_value = $array_var_name .
 				                '["' .
-				                end($loop_parents)["value"] .
+				                end($loop_parents)[self::AST_VALUE] .
 				                '"]';
-			} elseif(isset($args[end($loop_parents)["value"]])) {
-				$parent_value = '$this->' . end($loop_parents)["value"];
+			} elseif(isset($args[end($loop_parents)[self::AST_VALUE]])) {
+				$parent_value = '$this->' . end($loop_parents)[self::AST_VALUE];
 			} else {
 				// UNDEFINED ARGUMENT ERROR
 				echo "ERROR udef arg";
@@ -338,7 +342,7 @@ class TemplateEngine {
 			}
 
 			$code .= "function " .
-			         end($loop_parents)["value"] .
+			         end($loop_parents)[self::AST_VALUE] .
 			         $iteration_number .
 			         '() {$buffer="";';
 			// I could have used a foreach here....
@@ -347,7 +351,7 @@ class TemplateEngine {
 
 		for($i = count($AST) - 1; $i >= 0; $i--) {
 			$iteration_number++;
-			if(!isset($AST[$i]["type"]) || !isset($AST[$i]["value"])) {
+			if(!isset($AST[$i][self::AST_TYPE]) || !isset($AST[$i][self::AST_VALUE])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
 				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
@@ -356,8 +360,8 @@ class TemplateEngine {
 
 				return null;
 			}
-			$value = $AST[$i]["value"];
-			if(in_array($AST[$i]["type"],
+			$value = $AST[$i][self::AST_VALUE];
+			if(in_array($AST[$i][self::AST_TYPE],
 				array(self::TOKEN_TYPE_LOOP_START,
 				      self::TOKEN_TYPE_INVERTED_LOOP_START,
 				      self::TOKEN_TYPE_VAR,
@@ -391,7 +395,7 @@ class TemplateEngine {
 					}
 				}
 			}
-			switch($AST[$i]["type"]) {
+			switch($AST[$i][self::AST_TYPE]) {
 				default:
 				case self::TOKEN_TYPE_TEXT: // var_export?
 					$code .= '$buffer .= "' . $value . '";';
