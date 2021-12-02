@@ -11,7 +11,7 @@ define("PAGE_DIR", INDEX_DIR . "page/");
 define("CLASS_DIR", INDEX_DIR . "class/");
 define("CONTROLLER_DIR", INDEX_DIR . "controller/");
 define("LANG_DIR", INDEX_DIR . "lang/");
-define("DATA_DIR", INDEX_DIR . "lang/");
+define("DATA_DIR", INDEX_DIR . "data/");
 define("AVATAR_DIR", DATA_DIR . "avatar/");
 define("TEMPLATE_DIR", INDEX_DIR . "template/");
 define("FONT_DIR", INDEX_DIR . "font/");
