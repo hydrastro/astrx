@@ -12,6 +12,7 @@ class TemplateEngine {
 	const TOKEN_TYPE_PARTIAL = ">";
 	const TOKEN_TYPE_COMMENT = "!";
 	const TOKEN_TYPE_CHANGE_TAGS = "=";
+	const TOKEN_TYPE_DYNAMIC_PARTIAL = "*";
 	/*
 	 * Token external types are used as internal for practical purposes.
 	 * TOKEN_TYPES contains types with prefixes.
@@ -24,13 +25,17 @@ class TemplateEngine {
 		        self::TOKEN_TYPE_LOOP_END,
 		        self::TOKEN_TYPE_LOOP_END,
 		        self::TOKEN_TYPE_LOOP_START,
+		        self::TOKEN_TYPE_UNESCAPED_VAR,
+		        self::TOKEN_TYPE_DYNAMIC_PARTIAL);
+	const TOKENS_POINTING_TO_ARGS
+		= array(self::TOKEN_TYPE_LOOP_START,
+		        self::TOKEN_TYPE_INVERTED_LOOP_START,
+		        self::TOKEN_TYPE_VAR,
 		        self::TOKEN_TYPE_UNESCAPED_VAR);
 	const TEMPLATE_OPEN_TAG = "{{";
 	const TEMPLATE_CLOSE_TAG = "}}";
-
 	const AST_TYPE = 0;
 	const AST_VALUE = 1;
-
 	/**
 	 * @var array $templates Templates array.
 	 */
@@ -323,8 +328,11 @@ class TemplateEngine {
 			$array_var_name = '$this->' . $loop_parents[0][self::AST_VALUE];
 			$array_var_value = $args[$loop_parents[0][self::AST_VALUE]];
 			for($i = 1; $i < count($loop_parents) - 1; $i++) {
-				$array_var_name .= '["' . $loop_parents[$i][self::AST_VALUE] . '"]';
-				$array_var_value = $array_var_value[$loop_parents[$i][self::AST_VALUE]];
+				$array_var_name .= '["' .
+				                   $loop_parents[$i][self::AST_VALUE] .
+				                   '"]';
+				$array_var_value
+					= $array_var_value[$loop_parents[$i][self::AST_VALUE]];
 			}
 
 			if(isset($array_var_value[end($loop_parents)[self::AST_VALUE]])) {
@@ -351,7 +359,8 @@ class TemplateEngine {
 
 		for($i = count($AST) - 1; $i >= 0; $i--) {
 			$iteration_number++;
-			if(!isset($AST[$i][self::AST_TYPE]) || !isset($AST[$i][self::AST_VALUE])) {
+			if(!isset($AST[$i][self::AST_TYPE]) ||
+			   !isset($AST[$i][self::AST_VALUE])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
 				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
@@ -362,10 +371,7 @@ class TemplateEngine {
 			}
 			$value = $AST[$i][self::AST_VALUE];
 			if(in_array($AST[$i][self::AST_TYPE],
-				array(self::TOKEN_TYPE_LOOP_START,
-				      self::TOKEN_TYPE_INVERTED_LOOP_START,
-				      self::TOKEN_TYPE_VAR,
-				      self::TOKEN_TYPE_UNESCAPED_VAR))) {
+				self::TOKENS_POINTING_TO_ARGS)) {
 				if(empty($loop_parents)) {
 					if(!isset($args[$value])) {
 						// UNDEFINED ARG
@@ -419,7 +425,17 @@ class TemplateEngine {
 					array_pop($loop_parents);
 					$i--;
 					break;
+				case self::TOKEN_TYPE_DYNAMIC_PARTIAL:
 				case self::TOKEN_TYPE_PARTIAL:
+					if($AST[$i][self::AST_TYPE] ==
+					   self::TOKEN_TYPE_DYNAMIC_PARTIAL) {
+						if(!isset($args[$value])) {
+							echo "ERROR";
+
+							return null;
+						}
+						$value = $args[$value];
+					}
 					$this->loadTemplate($value);
 					$partials_code[] = $this->compileTemplate($value,
 						$args,
