@@ -1,17 +1,6 @@
 <?php
 class Autoloader {
-	/**
-	 * @var Config $config Config class.
-	 */
-	private $config;
-
-	/**
-	 * Autoloader constructor.
-	 *
-	 * @param Config $config
-	 */
-	public function __construct(Config $config) {
-		$this->config = $config;
+	public function __construct() {
 		spl_autoload_register(array($this, "classAutoload"));
 	}
 
@@ -26,26 +15,9 @@ class Autoloader {
 		$class_dir = (strpos(strtolower($class), "controller")) ?
 			CONTROLLER_DIR : CLASS_DIR;
 		$class = toSnakeCase($class);
-		$this->loadLang($class);
-		$this->config->loadConfig($class);
 		$class_file = "$class_dir$class.php";
 		if(file_exists($class_file)) {
 			require_once($class_file);
-		}
-	}
-
-	/**
-	 * Load Language.
-	 * Loads a module language if there is any set.
-	 *
-	 * @param $class
-	 */
-	function loadLang($class) {
-		$lang = $this->config->getConfig("language");
-		$class = toSnakeCase($class);
-		$lang_file = LANG_DIR . "$class.$lang.php";
-		if(file_exists($lang_file)) {
-			require_once(LANG_DIR . "$class.$lang.php");
 		}
 	}
 }

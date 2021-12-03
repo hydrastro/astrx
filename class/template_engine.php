@@ -354,7 +354,6 @@ class TemplateEngine {
 			         $end_parent[self::AST_VALUE] .
 			         $iteration_number .
 			         '() {$buffer="";';
-			// I could have used a foreach here....
 			if($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_LOOP_START) {
 				$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
 			} elseif($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_INVERTED_LOOP_START) {
@@ -531,6 +530,12 @@ class TemplateEngine {
 		return $code;
 	}
 
+	/**
+	 * Evaluate Template.
+	 * Evaluates a template code: loads its class into the memory.
+	 *
+	 * @param $code
+	 */
 	public function evalTemplate($code) {
 		eval("?>" . $code);
 	}

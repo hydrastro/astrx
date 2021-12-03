@@ -27,13 +27,13 @@ class Injector {
 
 	/**
 	 * Injector constructor.
-	 *
-	 * @param Config       $config
-	 * @param ErrorHandler $ErrorHandler
 	 */
-	public function __construct(ErrorHandler $ErrorHandler, Config $config) {
+	public function __construct() {
+		// Prelude:
+		$ErrorHandler = new ErrorHandler();
+		$config = new Config();
+		// End Prelude
 		$ErrorHandler->addClass($config);
-		new Autoloader($config);
 		require(LANG_DIR . "injector.en.php");
 		$this->setClass($config);
 		$this->setClass($ErrorHandler);
@@ -242,6 +242,10 @@ class Injector {
 			}
 			$name = $this->getIndexName($class_name);
 			$class = new $class_name(...$dependencies);
+			if(isset($this->config)) {
+				$this->loadLang($class);
+				$this->config->loadConfig();
+			}
 			if($share) {
 				$this->classes[$name] = $class;
 			}
@@ -254,9 +258,14 @@ class Injector {
 								$method);
 							foreach($reflectedMethod->getParameters() as
 							        $parameter) {
-								$args[]
-									= $this->config->getConfig($parameter->getName(),
-									$name);
+								if(isset($this->config)) {
+									$args[]
+										= $this->config->getConfig($parameter->getName(),
+										$name);
+								} else {
+									// ERROR
+									$this->exceptions = new Exception("ASDASD");
+								}
 							}
 							$class->$method(...$args);
 						}
@@ -318,5 +327,20 @@ class Injector {
 		                          "text" => $e->getMessage());
 
 		return null;
+	}
+
+	/**
+	 * Load Language.
+	 * Loads a module language if there is any set.
+	 *
+	 * @param $class
+	 */
+	function loadLang($class) {
+		$lang = $this->config->getConfig("language");
+		$class = toSnakeCase($class);
+		$lang_file = LANG_DIR . "$class.$lang.php";
+		if(file_exists($lang_file)) {
+			require_once(LANG_DIR . "$class.$lang.php");
+		}
 	}
 }
