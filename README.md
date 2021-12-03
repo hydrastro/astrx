@@ -20,19 +20,36 @@ and a level:
 $e = new Exception("Exception message");
 $this->exceptions[] = $e;
 $this->messages[] = array(
-    "level" => MESSAGE_LEVEL_ERROR,
-    "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-    "message"=> $e->getMessage();
+    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+    MESSAGE_TEXT => $e->getMessage()
 );
 ```
 - **Which HTTP status code will be sent when there are multiple differing?**  
 Errors will have the priority.  
-The whole project won't ever face such  cases by structure: if it ever happens
+The whole project won't ever face such cases by structure: if it ever happens
 it will be due third party modules.  
-The messages array `http_status_code` can be optional.
+The messages array `MESSAGE_HTTP_STATUS` (**maybe**) can be optional (and
+assumed `HTTP_OK` if not provided).
 - **Why then having a messages array in the first instance?**  
 Because there ~~are~~ will be some cases where we have multiple messages to
 display. And in all those cases the status code is the same.
+
+### Core errors
+The project assumes that it's core components (`Autoloader`, `Config`,
+`ErrorHandler`) aren't faulty.  
+It's essential for the project to be able to load `constants.php`, therefore
+there will be zero tolerance for its loading failure (which may happen only in
+case someone changes the project core.  
+Once the prelude is complete, meaning that the main language file is loaded,
+error handling will be controlled and errors and exceptions will falls back to
+a template: to the default one or, if things go extremely bad, to the
+`failsafe.php` template.  
+The project prelude:
+```php
+$ErrorHandler = new ErrorHandler();
+$config = new Config();
+```
 
 ### Void return
 `return null;` is preferred over `return;`.
@@ -55,8 +72,9 @@ Config file: `./config/my_module.config.php`
 Lang file: `./lang/my_module.` language code `.php`
 
 ### Template engine interface
+
 ```php
-$TemplateEngine->render($template_name);
+$TemplateEngine->render($template_name, $arguments);
 ```
 Render can be reimplemented to suit your needs.  
 The project supports both plain PHP rendering and a custom template engine

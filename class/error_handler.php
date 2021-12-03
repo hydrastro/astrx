@@ -18,8 +18,8 @@ class ErrorHandler {
 	 */
 	public function __construct() {
 		if(DEBUG_MODE) {
-			ini_set("display_errors", 0);
-			ini_set("display_startup_errors", 0);
+			ini_set("display_errors", 1);
+			ini_set("display_startup_errors", 1);
 			error_reporting(E_ALL);
 		}
 		set_error_handler(array($this, "errorHandler"));
@@ -37,9 +37,9 @@ class ErrorHandler {
 	 */
 	public function exceptionsHandler($e) {
 		$this->exceptions[] = $e;
-		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-		                          "text" => $e->getMessage());
+		$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+		                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+		                          MESSAGE_TEXT => $e->getMessage());
 	}
 
 	/**
@@ -58,13 +58,11 @@ class ErrorHandler {
 		}
 		$e = new ErrorException($errstr, 0, $errno, $errfile, $errline);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
-			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
-			MESSAGE_LEVEL_ERROR : 0;
-		$this->messages[] = array("level" => $message_level,
-		                          "http_status_code" => $error_code,
-		                          "text" => $e->getMessage());
+		$error_code = HTTP_INTERNAL_SERVER_ERROR;
+		$message_level = MESSAGE_LEVEL_ERROR;
+		$this->messages[] = array(MESSAGE_LEVEL => $message_level,
+		                          MESSAGE_HTTP_STATUS => $error_code,
+		                          MESSAGE_TEXT => $e->getMessage());
 	}
 
 	/**
@@ -77,7 +75,7 @@ class ErrorHandler {
 		$exceptions = $this->getExceptions();
 		$messages = $this->getMessages();
 		if(DEBUG_MODE && (!empty($exceptions) || !empty($messages))) {
-			http_response_code($messages[0]["http_status_code"]);
+			http_response_code(HTTP_INTERNAL_SERVER_ERROR);
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
 			if(file_exists($failsafe)) {
 				require($failsafe);
@@ -101,17 +99,14 @@ class ErrorHandler {
 
 			return;
 		}
-		$error_message = (defined("ERROR_INVALID_OBJECT")) ?
-			ERROR_INVALID_OBJECT : "Invalid object.";
+		$error_message = ERROR_INVALID_OBJECT;
 		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
-			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
-			MESSAGE_LEVEL_ERROR : 0;
-		$this->messages[] = array("level" => $message_level,
-		                          "http_status_code" => $error_code,
-		                          "text" => $e->getMessage());
+		$error_code = HTTP_INTERNAL_SERVER_ERROR;
+		$message_level = MESSAGE_LEVEL_ERROR;
+		$this->messages[] = array(MESSAGE_LEVEL => $message_level,
+		                          MESSAGE_HTTP_STATUS => $error_code,
+		                          MESSAGE_TEXT => $e->getMessage());
 	}
 
 	/**
@@ -129,17 +124,14 @@ class ErrorHandler {
 
 			return true;
 		}
-		$error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ?
-			ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
+		$error_message = ERROR_INVALID_ARRAY_INDEX;
 		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
-			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
-			MESSAGE_LEVEL_ERROR : 0;
-		$this->messages[] = array("level" => $message_level,
-		                          "http_status_code" => $error_code,
-		                          "text" => $e->getMessage());
+		$error_code = HTTP_INTERNAL_SERVER_ERROR;
+		$message_level = MESSAGE_LEVEL_ERROR;
+		$this->messages[] = array(MESSAGE_LEVEL => $message_level,
+		                          MESSAGE_HTTP_STATUS => $error_code,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return false;
 	}

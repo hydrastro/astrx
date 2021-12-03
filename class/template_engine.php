@@ -67,9 +67,9 @@ class TemplateEngine {
 		if(!in_array($parse_mode, self::PARSE_MODES)) {
 			$e = new Exception(ERROR_INVALID_PARSE_MODE);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return;
 		}
@@ -107,9 +107,9 @@ class TemplateEngine {
 		if(!file_exists($template_file)) {
 			$e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return false;
 		}
@@ -131,9 +131,9 @@ class TemplateEngine {
 		if(!is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return false;
 		}
@@ -146,9 +146,9 @@ class TemplateEngine {
 		if(!is_string($template_body)) {
 			$e = new Exception(ERROR_INVALID_TEMPLATE);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
@@ -169,9 +169,9 @@ class TemplateEngine {
 						$e = new Exception(ERROR_MALFORMED_TAG_CHANGE);
 						$this->exceptions[] = $e;
 						$this->messages[]
-							= array("level" => MESSAGE_LEVEL_ERROR,
-							        "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-							        "text" => $e->getMessage());
+							= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+							        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+							        MESSAGE_TEXT => $e->getMessage());
 
 						return null;
 					}
@@ -188,9 +188,9 @@ class TemplateEngine {
 				if($unclosed_token) {
 					$e = new Exception(ERROR_UNCLOSED_TOKEN);
 					$this->exceptions[] = $e;
-					$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-					                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-					                          "text" => $e->getMessage());
+					$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+					                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+					                          MESSAGE_TEXT => $e->getMessage());
 				}
 				$unclosed_token = true;
 				if(in_array($template_body[$i + $open_tag_length],
@@ -219,9 +219,9 @@ class TemplateEngine {
 						$e = new Exception(ERROR_MALFORMED_TAG_CHANGE);
 						$this->exceptions[] = $e;
 						$this->messages[]
-							= array("level" => MESSAGE_LEVEL_ERROR,
-							        "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-							        "text" => $e->getMessage());
+							= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+							        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+							        MESSAGE_TEXT => $e->getMessage());
 
 						return null;
 					}
@@ -237,9 +237,9 @@ class TemplateEngine {
 		if($unclosed_token) {
 			$e = new Exception(ERROR_UNCLOSED_TOKEN);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 		}
 
 		return $tokenized;
@@ -249,9 +249,9 @@ class TemplateEngine {
 		if(!is_array($tokenized)) {
 			$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
@@ -263,9 +263,9 @@ class TemplateEngine {
 			   !isset($tokenized[$i][self::AST_VALUE])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
-				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-				                          "text" => $e->getMessage());
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
 
 				return null;
 			}
@@ -284,9 +284,9 @@ class TemplateEngine {
 				if($value != end($branch_names)) {
 					$e = new Exception(ERROR_LOOP_TOKEN_MISMATCH);
 					$this->exceptions[] = $e;
-					$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-					                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-					                          "text" => $e->getMessage());
+					$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+					                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+					                          MESSAGE_TEXT => $e->getMessage());
 
 					return null;
 				}
@@ -305,9 +305,9 @@ class TemplateEngine {
 		if(!empty($branch_names)) {
 			$e = new Exception(ERROR_UNCLOSED_LOOP_TOKEN);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
@@ -367,9 +367,9 @@ class TemplateEngine {
 			   !isset($AST[$i][self::AST_VALUE])) {
 				$e = new Exception(ERROR_INVALID_TOKENIZED_TEMPLATE);
 				$this->exceptions[] = $e;
-				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-				                          "text" => $e->getMessage());
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
 
 				return null;
 			}
@@ -584,9 +584,9 @@ class TemplateEngine {
 			if(!in_array($parse_mode, self::PARSE_MODES)) {
 				$e = new Exception(ERROR_INVALID_PARSE_MODE);
 				$this->exceptions[] = $e;
-				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-				                          "text" => $e->getMessage());
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
 			}
 		} else {
 			$parse_mode = $this->getParseMode();

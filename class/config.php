@@ -18,7 +18,7 @@ class Config {
 	 */
 	public function __construct() {
 		$this->configuration = require(CONFIG_DIR . "config.php");
-		$lang = $this->getConfig("language");
+		$lang = $this->getConfig("languagexx");
 		require(LANG_DIR . "$lang.php");
 	}
 
@@ -38,9 +38,9 @@ class Config {
 		}
 		$e = new Exception(ERROR_INVALID_ARRAY);
 		$this->exceptions[] = $e;
-		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-		                          "text" => $e->getMessage());
+		$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+		                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return false;
 	}
@@ -58,9 +58,9 @@ class Config {
 		if(!is_string($index)) {
 			$e = new Exception(ERROR_INVALID_ARRAY_INDEX);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return false;
 		}
@@ -96,9 +96,9 @@ class Config {
 		if(!is_string($config_file)) {
 			$e = new Exception(ERROR_INVALID_FILE_NAME);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return false;
 		}
@@ -106,9 +106,9 @@ class Config {
 			if($handle_not_found_exception) {
 				$e = new Exception(ERROR_NONEXISTENT_FILE);
 				$this->exceptions[] = $e;
-				$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-				                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-				                          "text" => $e->getMessage());
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
 			}
 
 			return false;
@@ -146,13 +146,11 @@ class Config {
 			ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
 		$e = new Exception($error_message);
 		$this->exceptions[] = $e;
-		$error_code = (defined("HTTP_INTERNAL_SERVER_ERROR")) ?
-			HTTP_INTERNAL_SERVER_ERROR : 500;
-		$message_level = (defined("MESSAGE_LEVEL_ERROR")) ?
-			MESSAGE_LEVEL_ERROR : 0;
-		$this->messages[] = array("level" => $message_level,
-		                          "http_status_code" => $error_code,
-		                          "text" => $e->getMessage());
+		$error_code = HTTP_INTERNAL_SERVER_ERROR;
+		$message_level = MESSAGE_LEVEL_ERROR;
+		$this->messages[] = array(MESSAGE_LEVEL => $message_level,
+		                          MESSAGE_HTTP_STATUS => $error_code,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return null;
 	}

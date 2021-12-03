@@ -29,10 +29,8 @@ class Injector {
 	 * Injector constructor.
 	 */
 	public function __construct() {
-		// Prelude:
 		$ErrorHandler = new ErrorHandler();
 		$config = new Config();
-		// End Prelude
 		$ErrorHandler->addClass($config);
 		require(LANG_DIR . "injector.en.php");
 		$this->setClass($config);
@@ -55,9 +53,9 @@ class Injector {
 		if(!is_array($args)) {
 			$e = new Exception(ERROR_INVALID_ARRAY);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return false;
 		}
@@ -69,9 +67,9 @@ class Injector {
 		}
 		$e = new Exception(ERROR_CLASS_NOT_FOUND);
 		$this->exceptions[] = $e;
-		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-		                          "text" => $e->getMessage());
+		$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+		                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return true;
 	}
@@ -94,9 +92,9 @@ class Injector {
 		}
 		$e = new Exception(ERROR_INVALID_OBJECT);
 		$this->exceptions[] = $e;
-		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-		                          "text" => $e->getMessage());
+		$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+		                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return false;
 	}
@@ -194,9 +192,9 @@ class Injector {
 		if(!class_exists($class_name)) {
 			$e = new Exception(ERROR_CLASS_NOT_FOUND);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
@@ -222,9 +220,9 @@ class Injector {
 								(ERROR_CLASS_OR_PARAMETER_NOT_FOUND);
 								$this->exceptions[] = $e;
 								$this->messages[]
-									= array("level" => MESSAGE_LEVEL_ERROR,
-									        "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-									        "text" => $e->getMessage());
+									= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+									        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+									        MESSAGE_TEXT => $e->getMessage());
 
 								return null;
 							}
@@ -263,7 +261,8 @@ class Injector {
 										= $this->config->getConfig($parameter->getName(),
 										$name);
 								} else {
-									// ERROR
+									// ERROR: no arguments found for
+									// configuration method.
 									$this->exceptions = new Exception("ASDASD");
 								}
 							}
@@ -279,9 +278,9 @@ class Injector {
 			return $class;
 		} catch(ReflectionException $e) {
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => ERROR_CLASS_REFLECTION .
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => ERROR_CLASS_REFLECTION .
 			                                    $e->getMessage());
 
 			return null;
@@ -305,9 +304,9 @@ class Injector {
 		if(!is_array($arguments)) {
 			$e = new Exception(ERROR_INVALID_FUNCTION_ARGUMENTS);
 			$this->exceptions[] = $e;
-			$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-			                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-			                          "text" => $e->getMessage());
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
@@ -322,9 +321,9 @@ class Injector {
 			$e = new Exception(ERROR_CLASS_NOT_FOUND);
 		}
 		$this->exceptions[] = $e;
-		$this->messages[] = array("level" => MESSAGE_LEVEL_ERROR,
-		                          "http_status_code" => HTTP_INTERNAL_SERVER_ERROR,
-		                          "text" => $e->getMessage());
+		$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+		                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+		                          MESSAGE_TEXT => $e->getMessage());
 
 		return null;
 	}
