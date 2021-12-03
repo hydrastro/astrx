@@ -11,14 +11,3 @@ define("ERROR_UNDEFINED_ARGUMENT", "Error: undefined argument.");
 define("ERROR_UNDEFINED_DYNAMIC_PARTIAL", "Error: undefined dynamic partial.");
 define("ERROR_TEMPLATE_CLASS_CREATION",
 	"An error occurred while creating the class for the template.");
-
-
-
-
-
-
-
-
-
-
-

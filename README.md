@@ -97,6 +97,10 @@ rendering.
 {{*dynamic_partial}}
 ```
 
+### Modules i18n
+Modules can either use their own language definitions, or the core class ones.  
+In no case they should use any other module's definitions.
+
 ## TODO List
 - [ ] Modularization
 - [ ] Module rewrite/check
