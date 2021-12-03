@@ -18,7 +18,7 @@ class Config {
 	 */
 	public function __construct() {
 		$this->configuration = require(CONFIG_DIR . "config.php");
-		$lang = $this->getConfig("languagexx");
+		$lang = $this->getConfig("language");
 		require(LANG_DIR . "$lang.php");
 	}
 

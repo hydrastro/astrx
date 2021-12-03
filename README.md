@@ -50,6 +50,10 @@ The project prelude:
 $ErrorHandler = new ErrorHandler();
 $config = new Config();
 ```
+Side note, from the PHP manual: The following error types cannot be handled with
+a user defined function: E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING,
+E_COMPILE_ERROR, E_COMPILE_WARNING independent of where they were raised, and
+most of E_STRICT raised in the file where set_error_handler() is called.
 
 ### Void return
 `return null;` is preferred over `return;`.
@@ -90,6 +94,7 @@ rendering.
 {{!comment}}
 {{=tag change=}}
 {{>partial_load}}
+{{*dynamic_partial}}
 ```
 
 ## TODO List
