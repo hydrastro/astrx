@@ -188,9 +188,10 @@ class TemplateEngine {
 				if($unclosed_token) {
 					$e = new Exception(ERROR_UNCLOSED_TOKEN);
 					$this->exceptions[] = $e;
-					$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-					                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-					                          MESSAGE_TEXT => $e->getMessage());
+					$this->messages[]
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
 				}
 				$unclosed_token = true;
 				if(in_array($template_body[$i + $open_tag_length],
@@ -284,9 +285,10 @@ class TemplateEngine {
 				if($value != end($branch_names)) {
 					$e = new Exception(ERROR_LOOP_TOKEN_MISMATCH);
 					$this->exceptions[] = $e;
-					$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-					                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-					                          MESSAGE_TEXT => $e->getMessage());
+					$this->messages[]
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
 
 					return null;
 				}
@@ -344,8 +346,11 @@ class TemplateEngine {
 			} elseif(isset($args[$end_parent[self::AST_VALUE]])) {
 				$parent_value = '$this->' . $end_parent[self::AST_VALUE];
 			} else {
-				// UNDEFINED ARGUMENT ERROR
-				echo "ERROR udef arg";
+				$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+				$this->exceptions[] = $e;
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
 
 				return null;
 			}
@@ -356,7 +361,8 @@ class TemplateEngine {
 			         '() {$buffer="";';
 			if($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_LOOP_START) {
 				$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
-			} elseif($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_INVERTED_LOOP_START) {
+			} elseif($end_parent[self::AST_TYPE] ==
+			         self::TOKEN_TYPE_INVERTED_LOOP_START) {
 				$code .= 'if(empty(' . $parent_value . ') {';
 			}
 		}
@@ -378,10 +384,12 @@ class TemplateEngine {
 				self::TOKENS_POINTING_TO_ARGS)) {
 				if(empty($loop_parents)) {
 					if(!isset($args[$value])) {
-						// UNDEFINED ARG
-						echo "ERROR udef arg 2";
-						print_r($AST);
-						print_r($args);
+						$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+						$this->exceptions[] = $e;
+						$this->messages
+							= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+							        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+							        MESSAGE_TEXT => $e->getMessage());
 
 						return null;
 					}
@@ -393,12 +401,14 @@ class TemplateEngine {
 						if(isset($array_var_value[0][$value])) {
 							$value = $array_var_name . '[$i]["' . $value . '"]';
 						} elseif(isset($args[$value])) {
-							// check if it is an array???????
-							// check if last parent
-							$value = '$this->' . $value . ''; /// $i ?????
-
+							$value = '$this->' . $value . '';
 						} else {
-							echo "ERROR";
+							$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+							$this->exceptions[] = $e;
+							$this->messages
+								= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+								        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+								        MESSAGE_TEXT => $e->getMessage());
 
 							return null;
 						}
@@ -407,7 +417,7 @@ class TemplateEngine {
 			}
 			switch($AST[$i][self::AST_TYPE]) {
 				default:
-				case self::TOKEN_TYPE_TEXT: // var_export?
+				case self::TOKEN_TYPE_TEXT:
 					$code .= '$buffer .= "' . $value . '";';
 					break;
 				case self::TOKEN_TYPE_VAR:
@@ -434,7 +444,12 @@ class TemplateEngine {
 					if($AST[$i][self::AST_TYPE] ==
 					   self::TOKEN_TYPE_DYNAMIC_PARTIAL) {
 						if(!isset($args[$value])) {
-							echo "ERROR";
+							$e = new Exception(ERROR_UNDEFINED_DYNAMIC_PARTIAL);
+							$this->exceptions[] = $e;
+							$this->messages
+								= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+								        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+								        MESSAGE_TEXT => $e->getMessage());
 
 							return null;
 						}
@@ -559,7 +574,11 @@ class TemplateEngine {
 
 		$template_name = $this->getTemplateClassName($template, $args);
 		if(!class_exists("$template_name")) {
-			echo "errror";
+			$e = new Exception(ERROR_TEMPLATE_CLASS_CREATION);
+			$this->exceptions[] = $e;
+			$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+			                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+			                          MESSAGE_TEXT => $e->getMessage());
 
 			return null;
 		}
