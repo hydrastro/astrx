@@ -334,14 +334,15 @@ class TemplateEngine {
 				$array_var_value
 					= $array_var_value[$loop_parents[$i][self::AST_VALUE]];
 			}
+			$end_parent = end($loop_parents);
 
-			if(isset($array_var_value[end($loop_parents)[self::AST_VALUE]])) {
+			if(isset($array_var_value[$end_parent[self::AST_VALUE]])) {
 				$parent_value = $array_var_name .
 				                '["' .
-				                end($loop_parents)[self::AST_VALUE] .
+				                $end_parent[self::AST_VALUE] .
 				                '"]';
-			} elseif(isset($args[end($loop_parents)[self::AST_VALUE]])) {
-				$parent_value = '$this->' . end($loop_parents)[self::AST_VALUE];
+			} elseif(isset($args[$end_parent[self::AST_VALUE]])) {
+				$parent_value = '$this->' . $end_parent[self::AST_VALUE];
 			} else {
 				// UNDEFINED ARGUMENT ERROR
 				echo "ERROR udef arg";
@@ -350,11 +351,15 @@ class TemplateEngine {
 			}
 
 			$code .= "function " .
-			         end($loop_parents)[self::AST_VALUE] .
+			         $end_parent[self::AST_VALUE] .
 			         $iteration_number .
 			         '() {$buffer="";';
 			// I could have used a foreach here....
-			$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
+			if($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_LOOP_START) {
+				$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
+			} elseif($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_INVERTED_LOOP_START) {
+				$code .= 'if(empty(' . $parent_value . ') {';
+			}
 		}
 
 		for($i = count($AST) - 1; $i >= 0; $i--) {
