@@ -9,6 +9,10 @@ class Injector {
 	 */
 	private $ErrorHandler;
 	/**
+	 * @var MessageHandler $MessageHandler Message Handler class.
+	 */
+	private $MessageHandler;
+	/**
 	 * @var array $classes Injector container classes.
 	 */
 	private $classes = array();
@@ -31,13 +35,19 @@ class Injector {
 	public function __construct() {
 		$ErrorHandler = new ErrorHandler();
 		$config = new Config();
+		$MessageHandler = new MessageHandler();
 		$ErrorHandler->addClass($config);
+		$MessageHandler->addClass($config);
+		$ErrorHandler->addClass($MessageHandler);
+		$MessageHandler->addClass($ErrorHandler);
 		require(LANG_DIR . "injector.en.php");
 		$this->setClass($config);
 		$this->setClass($ErrorHandler);
+		$this->setClass($MessageHandler);
 		$this->setClass($this);
-		$this->ErrorHandler = $ErrorHandler;
 		$this->config = $config;
+		$this->ErrorHandler = $ErrorHandler;
+		$this->MessageHandler = $MessageHandler;
 	}
 
 	/**
@@ -273,6 +283,9 @@ class Injector {
 			}
 			if(isset($this->ErrorHandler)) {
 				$this->ErrorHandler->addClass($class);
+			}
+			if(isset($this->MessageHandler)) {
+				$this->MessageHandler->addClass($class);
 			}
 
 			return $class;

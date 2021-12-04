@@ -1,6 +1,5 @@
 <?php
 /**
- * @var $messages
  * @var $exceptions
  */
 ?>
@@ -12,10 +11,7 @@
 <body>
 <h1>Error</h1>
 <pre>
-<?php
-print_r($messages);
-print_r($exceptions);
-?>
+<?php print_r($exceptions); ?>
 </pre>
 </body>
 </html>

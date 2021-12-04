@@ -73,15 +73,14 @@ class ErrorHandler {
 	 */
 	public function shutdownHandler() {
 		$exceptions = $this->getExceptions();
-		$messages = $this->getMessages();
-		if(DEBUG_MODE && (!empty($exceptions) || !empty($messages))) {
+		if(DEBUG_MODE && (!empty($exceptions))) {
 			http_response_code(HTTP_INTERNAL_SERVER_ERROR);
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
+			print_r($failsafe);
 			if(file_exists($failsafe)) {
 				require($failsafe);
 			} else {
 				echo "<h1>Error</h1><pre>";
-				print_r($messages);
 				print_r($exceptions);
 			}
 		}
@@ -156,27 +155,5 @@ class ErrorHandler {
 		}
 
 		return $exceptions;
-	}
-
-	/**
-	 * Get Messages.
-	 * Retrieves and returns the messages of all the classes handled.
-	 * @return array
-	 */
-	public function getMessages() {
-		$messages = array();
-		if(empty($this->classes)) {
-			return array();
-		}
-		foreach($this->classes as $class) {
-			if(property_exists($class, "messages") &&
-			   is_array($class->messages)) {
-				foreach($class->messages as $message) {
-					$messages[] = $message;
-				}
-			}
-		}
-
-		return $messages;
 	}
 }
