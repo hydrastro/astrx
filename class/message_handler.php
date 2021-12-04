@@ -9,7 +9,7 @@ class MessageHandler {
 	 */
 	public $messages = array();
 	/**
-	 * @var array $exceptions Exceptions aray.
+	 * @var array $exceptions Exceptions array.
 	 */
 	public $exceptions = array();
 
