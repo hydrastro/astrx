@@ -12,7 +12,6 @@ class TemplateEngine {
 	const TOKEN_TYPE_PARTIAL = ">";
 	const TOKEN_TYPE_COMMENT = "!";
 	const TOKEN_TYPE_CHANGE_TAGS = "=";
-	const TOKEN_TYPE_DYNAMIC_PARTIAL = "*";
 	/*
 	 * Token external types are used as internal for practical purposes.
 	 * TOKEN_TYPES contains types with prefixes.
@@ -25,8 +24,7 @@ class TemplateEngine {
 		        self::TOKEN_TYPE_LOOP_END,
 		        self::TOKEN_TYPE_LOOP_END,
 		        self::TOKEN_TYPE_LOOP_START,
-		        self::TOKEN_TYPE_UNESCAPED_VAR,
-		        self::TOKEN_TYPE_DYNAMIC_PARTIAL);
+		        self::TOKEN_TYPE_UNESCAPED_VAR);
 	const TOKENS_POINTING_TO_ARGS
 		= array(self::TOKEN_TYPE_LOOP_START,
 		        self::TOKEN_TYPE_INVERTED_LOOP_START,
@@ -415,6 +413,20 @@ class TemplateEngine {
 					}
 				}
 			}
+			if($value[0] == "*") {
+				$tmp = substr($value, 1);
+				if(!isset($args[$value])) {
+					$e = new Exception(ERROR_UNDEFINED_REFERENCE);
+					$this->exceptions[] = $e;
+					$this->messages
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
+
+					return null;
+				}
+				$value = $args[$tmp];
+			}
 			switch($AST[$i][self::AST_TYPE]) {
 				default:
 				case self::TOKEN_TYPE_TEXT:
@@ -439,22 +451,7 @@ class TemplateEngine {
 					array_pop($loop_parents);
 					$i--;
 					break;
-				case self::TOKEN_TYPE_DYNAMIC_PARTIAL:
 				case self::TOKEN_TYPE_PARTIAL:
-					if($AST[$i][self::AST_TYPE] ==
-					   self::TOKEN_TYPE_DYNAMIC_PARTIAL) {
-						if(!isset($args[$value])) {
-							$e = new Exception(ERROR_UNDEFINED_DYNAMIC_PARTIAL);
-							$this->exceptions[] = $e;
-							$this->messages
-								= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-								        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-								        MESSAGE_TEXT => $e->getMessage());
-
-							return null;
-						}
-						$value = $args[$value];
-					}
 					$this->loadTemplate($value);
 					$partials_code[] = $this->compileTemplate($value,
 						$args,
