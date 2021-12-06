@@ -378,6 +378,20 @@ class TemplateEngine {
 				return null;
 			}
 			$value = $AST[$i][self::AST_VALUE];
+			if($value[0] == "*") {
+				$tmp = substr($value, 1);
+				if(!isset($args[$value])) {
+					$e = new Exception(ERROR_UNDEFINED_REFERENCE);
+					$this->exceptions[] = $e;
+					$this->messages
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
+
+					return null;
+				}
+				$value = $args[$tmp];
+			}
 			if(in_array($AST[$i][self::AST_TYPE],
 				self::TOKENS_POINTING_TO_ARGS)) {
 				if(empty($loop_parents)) {
@@ -412,20 +426,6 @@ class TemplateEngine {
 						}
 					}
 				}
-			}
-			if($value[0] == "*") {
-				$tmp = substr($value, 1);
-				if(!isset($args[$value])) {
-					$e = new Exception(ERROR_UNDEFINED_REFERENCE);
-					$this->exceptions[] = $e;
-					$this->messages
-						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-						        MESSAGE_TEXT => $e->getMessage());
-
-					return null;
-				}
-				$value = $args[$tmp];
 			}
 			switch($AST[$i][self::AST_TYPE]) {
 				default:
