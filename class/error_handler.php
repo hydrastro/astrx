@@ -76,7 +76,6 @@ class ErrorHandler {
 		if(DEBUG_MODE && (!empty($exceptions))) {
 			http_response_code(HTTP_INTERNAL_SERVER_ERROR);
 			$failsafe = TEMPLATE_DIR . "failsafe.php";
-			print_r($failsafe);
 			if(file_exists($failsafe)) {
 				require($failsafe);
 			} else {

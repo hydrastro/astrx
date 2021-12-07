@@ -1,13 +1,15 @@
 <?php
 define("DEBUG_MODE", true);
+define("INCLUDE_GUARD", true);
+define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
+
 define("MESSAGE_LEVEL_ERROR", 0);
 define("MESSAGE_LEVEL_WARNING", 1);
 define("MESSAGE_LEVEL_INFO", 2);
 define("MESSAGE_HTTP_STATUS", 0);
 define("MESSAGE_LEVEL", 1);
 define("MESSAGE_TEXT", 2);
-define("INCLUDE_GUARD", true);
-define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
+
 define("CONFIG_DIR", INDEX_DIR . "config" . DIRECTORY_SEPARATOR);
 define("PAGE_DIR", INDEX_DIR . "page" . DIRECTORY_SEPARATOR);
 define("CLASS_DIR", INDEX_DIR . "class" . DIRECTORY_SEPARATOR);

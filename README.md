@@ -39,7 +39,7 @@ display. And in all those cases the status code is the same.
 The project assumes that it's core components (`Autoloader`, `Config`,
 `ErrorHandler`) aren't faulty.  
 It's essential for the project to be able to load `constants.php`, therefore
-there will be zero tolerance for its loading failure (which may happen only in
+there will be *zero* tolerance for its loading failure (which may happen only in
 case someone changes the project core.  
 Once the prelude is complete, meaning that the main language file is loaded,
 error handling will be controlled and errors and exceptions will falls back to
@@ -94,7 +94,8 @@ rendering.
 {{!comment}}
 {{=tag change=}}
 {{>partial_load}}
-{{*dynamic_partial}}
+{{*dereference}}
+{{>*dynamic_partial}}
 ```
 
 ### Modules i18n
@@ -107,3 +108,4 @@ In no case they should use any other module's definitions.
 - [ ] I18n
 - [ ] POST-Redirect-GET
 - [ ] API
+- [ ] Objects support in the template
