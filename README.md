@@ -7,15 +7,19 @@
 ## Usage
 
 ## Documentation & Dev notes
+
 ### Getters and  Setters
+
 Setters return a boolean: true if set was successful, false otherwise.  
 Getters return the requested property or null.
 
 ### Classes error handling
+
 Rather than throwing exceptions we store them into the array `$this->exceptions`
 .  
 Errors and messages are stored in another array along with an HTTP status code
-and a level:  
+and a level:
+
 ```php
 $e = new Exception("Exception message");
 $this->exceptions[] = $e;
@@ -25,43 +29,73 @@ $this->messages[] = array(
     MESSAGE_TEXT => $e->getMessage()
 );
 ```
+
+- **Why HTTP status codes in the first place?**  
+  Because they have to come from somewhere, let's consider the API responses.  
+  When the project will have an API, its structure will be similar to something
+  like this:
+    1. The HTTP request goes into the single entry point (`index.php`), and it's
+       then passed to `bootstrap.php`.
+    2. The request is routed by the content manager and dispatched to its
+       controller.
+    3. The controller processes the requests and calls the model accordingly.
+    4. The model returns to the controller either the requested data or nothing.
+       It also sets some internal result messages.
+    5. The controller has the faculty to build (and maybe also send) the
+       response.
+    7.
+        1. If it's a normal requests the controller just renders the template.
+        2. If it's an API request the controller builds the JSON response. In
+           either cases the controller has to retrieve the result messages and
+           the possible exceptions from the model.  
+           Since API requests are expected to be compliant with the HTTP status
+           codes, the HTTP status codes have to come from somewhere. And they *
+           must* come from the model (must because the logic is in the models)
+           .  
+           So, the best thing to do is to just couple result messages with an
+           HTTP status code.
 - **Which HTTP status code will be sent when there are multiple differing?**  
-Errors will have the priority.  
-The whole project won't ever face such cases by structure: if it ever happens
-it will be due third party modules.  
-The messages array `MESSAGE_HTTP_STATUS` (**maybe**) can be optional (and
-assumed `HTTP_OK` if not provided).
+  Errors will have the priority.  
+  The whole project won't ever face such cases by structure: if it ever happens
+  it will be due third party modules.  
+  The messages array `MESSAGE_HTTP_STATUS` (**maybe**) can be optional (and
+  assumed `HTTP_OK` if not provided).
 - **Why then having a messages array in the first instance?**  
-Because there ~~are~~ will be some cases where we have multiple messages to
-display. And in all those cases the status code is the same.
+  Because there ~~are~~ will be some cases where we have multiple messages to
+  display. And in all those cases the status code is the same.
 
 ### Core errors
+
 The project assumes that it's core components (`Autoloader`, `Config`,
 `ErrorHandler`) aren't faulty.  
 It's essential for the project to be able to load `constants.php`, therefore
 there will be *zero* tolerance for its loading failure (which may happen only in
 case someone changes the project core.  
 Once the prelude is complete, meaning that the main language file is loaded,
-error handling will be controlled and errors and exceptions will falls back to
-a template: to the default one or, if things go extremely bad, to the
+error handling will be controlled and errors and exceptions will falls back to a
+template: to the default one or, if things go extremely bad, to the
 `failsafe.php` template.  
 The project prelude:
+
 ```php
 $ErrorHandler = new ErrorHandler();
 $config = new Config();
 ```
-Side note, from the PHP manual: The following error types cannot be handled with
-a user defined function: E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING,
+
+Side note, from the PHP manual: "The following error types cannot be handled
+with a user defined function: E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING,
 E_COMPILE_ERROR, E_COMPILE_WARNING independent of where they were raised, and
-most of E_STRICT raised in the file where set_error_handler() is called.
+most of E_STRICT raised in the file where set_error_handler() is called."
 
 ### Void return
+
 `return null;` is preferred over `return;`.
 
 ### Folders structure
+
 ```angular2html
-├───class 
-├───config 
+├───class
+├───config
 ├───controller
 ├───data
 ├───lang
@@ -70,6 +104,7 @@ most of E_STRICT raised in the file where set_error_handler() is called.
 ```
 
 ### Module structure
+
 Class name: `class MyModule`  
 Class file: `./class/my_module.php`  
 Config file: `./config/my_module.config.php`  
@@ -80,11 +115,13 @@ Lang file: `./lang/my_module.` language code `.php`
 ```php
 $TemplateEngine->render($template_name, $arguments);
 ```
+
 Render can be reimplemented to suit your needs.  
 The project supports both plain PHP rendering and a custom template engine
 rendering.
 
 ### Template engine syntax
+
 ```
 {{variable}}
 {{&unecaped_variable}}
@@ -99,10 +136,12 @@ rendering.
 ```
 
 ### Modules i18n
+
 Modules can either use their own language definitions, or the core class ones.  
 In no case they should use any other module's definitions.
 
 ## TODO List
+
 - [ ] Modularization
 - [ ] Module rewrite/check
 - [ ] I18n
