@@ -248,12 +248,12 @@ class Injector {
 					}
 				}
 			}
+			if(isset($this->config)) {
+				$this->loadLang($class_name);
+				$this->config->loadConfig($class_name);
+			}
 			$name = $this->getIndexName($class_name);
 			$class = new $class_name(...$dependencies);
-			if(isset($this->config)) {
-				$this->loadLang($class);
-				$this->config->loadConfig();
-			}
 			if($share) {
 				$this->classes[$name] = $class;
 			}

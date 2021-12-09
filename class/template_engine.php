@@ -380,8 +380,8 @@ class TemplateEngine {
 			$value = $AST[$i][self::AST_VALUE];
 			if($value[0] == "*") {
 				$tmp = substr($value, 1);
-				if(!isset($args[$value])) {
-					$e = new Exception(ERROR_UNDEFINED_REFERENCE);
+				if(!isset($args[$tmp])) {
+					$e = new Exception(ERROR_UNDEFINED_REFERENCE . "$value");
 					$this->exceptions[] = $e;
 					$this->messages
 						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
