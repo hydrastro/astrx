@@ -63,7 +63,7 @@ $this->messages[] = array(
 - **Why then having a messages array in the first instance?**  
   Because there ~~are~~ will be some cases where we have multiple messages to
   display. And in all those cases the status code is the same.
-- **Why not throwing errors/exceptions?**
+- **Why not throwing errors/exceptions?**  
   For multiple reasons:
   All thrown exceptions would have to be caught in a try-catch block because
   uncaught exceptions become fatal errors.
@@ -75,18 +75,18 @@ $this->messages[] = array(
   execution (but we can always wrap the code into blocks that check for new
   errors), errors identification within the code may be hard since they lack
   of a global class name (exceptions are always `new Exception("message")`).
-- **Why not making a dataclass for the messages, instead of using an array?**
+- **Why not making a dataclass for the messages, instead of using an array?**  
   Because it would be an additional abstraction layer, which will eventually
   result in more error handling (checking for valid error levels, checking if
   the HTTP status is correct, that the text is a string), also it couples code
   more tightly with the new hypothetical `ResultMessage` class.
-- **Type checking has to be done somewhere tho..**
+- **Type checking has to be done somewhere tho..**  
   Yes, it will be done when the message locator/handler will retrieve/display
   them.
 - **Why not wrapping HTTP_ constants into the result/response class and then,
-  when storing an error, refer to those with `Response::HTTP_`?**
+  when storing an error, refer to those with `Response::HTTP_`?**  
   Because, as said above, it couples the code with the `Response` class.
-- **Templating error/exception messages?**
+- **Templating error/exception messages?**  
   It's too complex for core errors: it requires that the TemplateEngine isn't
   failing, which is something that isn't assured, also there's the exception
   call stack we can use for getting all the debugging info.
