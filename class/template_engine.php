@@ -390,7 +390,8 @@ class TemplateEngine {
 
 					return null;
 				}
-				$value = $args[$tmp];
+				$value = '{$this->' . $tmp . '}';
+				//$value = $args[$tmp];
 			}
 			if(in_array($AST[$i][self::AST_TYPE],
 				self::TOKENS_POINTING_TO_ARGS)) {
