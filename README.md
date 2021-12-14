@@ -177,3 +177,9 @@ In no case they should use any other module's definitions.
 - [ ] POST-Redirect-GET
 - [ ] API
 - [ ] Objects support in the template
+- [ ] ZKP login method. ( challenge-text, challenge-input)
+- [ ] Generate a password for me
+- [ ] Check for parameter validations redundancy e.g.: parent validates
+  paramenters and calls child who revalidates the same paramenters
+- [ ] Define how to handle validation redundancy
+- [ ] Check functions scope

@@ -315,6 +315,142 @@ class TemplateEngine {
 		return $AST;
 	}
 
+	private function resolveParent($args, $parents) {
+		if(!array($parents)) {
+			return null;
+		}
+		if(empty($parents)) {
+			return null;
+		}
+
+		if(!isset($parents[0][self::AST_VALUE])) {
+			return null;
+		}
+		$result = '$this->' . $parents[0][self::AST_VALUE];
+		$loop_parent = $parents[0][self::AST_VALUE];
+
+		$success = true;
+
+		/*
+		 *
+		 * TODO: Split dotted names before calling this function \
+		 * so in the write code func.
+		 *
+		 *
+		 */
+
+		for($i = 1; $i < count($parents); $i++) {
+			$parent_raw_value = $parents[$i][self::AST_VALUE];
+			$dereference_levels = 0;
+			for($j=0;$j<strlen($parent_raw_value);$j++){
+				if($parent_raw_value[$j] == "*") {
+					$dereference_levels++;
+				} else {
+					break;
+				}
+			}
+			$parent_value = substr($parent_raw_value, $dereference_levels + 1);
+			if(isset($loop_parent[$parent_value])) {
+				$loop_parent = $loop_parent[$parent_value];
+				$result .= '["' . $parent_value . '"]';
+			} elseif(method_exists($loop_parent,
+				$parent_value)) {
+				$loop_parent = $loop_parent->{$parent_value};
+				$result .= '->' . $parent_value . '()';
+			} else {
+				$success = false;
+			}
+			for($j=0; $j< $dereference_levels; $j++) {
+				if(isset($args[$parent_value])) {
+					$loop_parent = $args[$parent_value];
+					$result = '$this->{' . $result . '}';
+				} else {
+					return null;
+				}
+			}
+		}
+
+		if(!$success) {
+			$end = end($parents)[self::AST_VALUE];
+			$dereference_levels = 0;
+			for($j=0;$j<strlen($end);$j++){
+				if($end[$j] == "*") {
+					$dereference_levels++;
+				} else {
+					break;
+				}
+			}
+			$end = substr($end, $dereference_levels + 1);
+			for($j=0; $j< $dereference_levels; $j++) {
+				if(isset($args[$end])) {
+					$end = $args[$end];
+					$result = '$this->{' . $result . '}';
+				} else {
+					return null;
+				}
+			}
+
+
+			if(isset($args[$end])) {
+				$result = '$this->' . $end;
+			} else {
+				$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+				$this->exceptions[] = $e;
+				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+				                          MESSAGE_TEXT => $e->getMessage());
+
+				return null;
+			}
+		}
+
+		return $result;
+	}
+
+	public function resolveValue($args, $value, $parents = array()) {
+		if(!is_string($value) || empty($value)) {
+
+			return null;
+		}
+
+		$dereference = false;
+
+		if($value[0] == "*") {
+			$value = substr($value, 1);
+			$dereference = true;
+		}
+		$splitted = explode(".", "$value");
+
+
+
+		$base = $args;
+		$resolved_value = "";
+		if(!empty($parents)) {
+			$looping_var = $parents[0][self::AST_VALUE];
+
+			for($i = 1; $i , count($parents) - 1; $i++) {
+
+
+				if(isset($looping_var[$parents[$i][self::AST_VALUE]])) {
+
+					$looping_var = $looping_var[$parents[$i][self::AST_VALUE]];
+
+				}
+
+
+
+
+			}
+
+
+		}
+
+		if($dereference) {
+
+		}
+		return '$this->';
+	}
+
 	public function writeCode($AST,
 		$args,
 		$loop_parents = null,
@@ -325,43 +461,22 @@ class TemplateEngine {
 			$functions_code = array();
 		}
 		if(!empty($loop_parents)) {
-			$array_var_name = '$this->' . $loop_parents[0][self::AST_VALUE];
-			$array_var_value = $args[$loop_parents[0][self::AST_VALUE]];
-			for($i = 1; $i < count($loop_parents) - 1; $i++) {
-				$array_var_name .= '["' .
-				                   $loop_parents[$i][self::AST_VALUE] .
-				                   '"]';
-				$array_var_value
-					= $array_var_value[$loop_parents[$i][self::AST_VALUE]];
-			}
+			$resolved_parent = $this->resolveParent($args, $loop_parents);
 			$end_parent = end($loop_parents);
-
-			if(isset($array_var_value[$end_parent[self::AST_VALUE]])) {
-				$parent_value = $array_var_name .
-				                '["' .
-				                $end_parent[self::AST_VALUE] .
-				                '"]';
-			} elseif(isset($args[$end_parent[self::AST_VALUE]])) {
-				$parent_value = '$this->' . $end_parent[self::AST_VALUE];
-			} else {
-				$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-				$this->exceptions[] = $e;
-				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-				                          MESSAGE_TEXT => $e->getMessage());
-
-				return null;
-			}
-
 			$code .= "function " .
 			         $end_parent[self::AST_VALUE] .
 			         $iteration_number .
 			         '() {$buffer="";';
-			if($end_parent[self::AST_TYPE] == self::TOKEN_TYPE_LOOP_START) {
-				$code .= 'for($i=0; $i < count(' . $parent_value . '); $i++) {';
-			} elseif($end_parent[self::AST_TYPE] ==
-			         self::TOKEN_TYPE_INVERTED_LOOP_START) {
-				$code .= 'if(empty(' . $parent_value . ') {';
+			switch($end_parent[self::AST_TYPE]) {
+				default:
+				case self::TOKEN_TYPE_LOOP_START:
+					$code .= 'for($i=0; $i < count(' .
+					         $resolved_parent .
+					         '); $i++) {';
+					break;
+				case self::TOKEN_TYPE_INVERTED_LOOP_START:
+					$code .= 'if(empty(' . $resolved_parent . ') {';
+					break;
 			}
 		}
 
