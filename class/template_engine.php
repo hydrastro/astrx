@@ -315,42 +315,49 @@ class TemplateEngine {
 		return $AST;
 	}
 
-	private function resolveParent($args, $parents) {
-		if(!array($parents)) {
+	private function resolveValueHelper($args,
+		$exploded_parents,
+		$get_value
+		= false) {
+		if($exploded_parents === null) {
 			return null;
 		}
-		if(empty($parents)) {
-			return null;
+		$result = '$this->';
+
+
+		$dereference_levels = 0;
+		for($i = 0; $i < strlen($exploded_parents[0][self::AST_VALUE]); $i++) {
+			if($exploded_parents[0][self::AST_VALUE][$i] == "*") {
+				$dereference_levels++;
+			} else {
+				break;
+			}
+		}
+		$loop_parent = substr($exploded_parents[0][self::AST_VALUE],
+			$dereference_levels);
+		$result .= $loop_parent;
+		$loop_parent = $args[$loop_parent];
+		for($i = 0; $i < $dereference_levels; $i++) {
+			$loop_parent = $args[$loop_parent];
+			$result = '$this->{'.$result.'}';
 		}
 
-		if(!isset($parents[0][self::AST_VALUE])) {
-			return null;
-		}
-		$result = '$this->' . $parents[0][self::AST_VALUE];
-		$loop_parent = $parents[0][self::AST_VALUE];
 
-		$success = true;
+		for($i = 1; $i < count($exploded_parents); $i++) {
+			$parent_raw_value = $exploded_parents[$i][self::AST_VALUE];
 
-		/*
-		 *
-		 * TODO: Split dotted names before calling this function \
-		 * so in the write code func.
-		 *
-		 *
-		 */
-
-		for($i = 1; $i < count($parents); $i++) {
-			$parent_raw_value = $parents[$i][self::AST_VALUE];
 			$dereference_levels = 0;
-			for($j=0;$j<strlen($parent_raw_value);$j++){
+			for($j = 0; $j < strlen($parent_raw_value); $j++) {
 				if($parent_raw_value[$j] == "*") {
 					$dereference_levels++;
 				} else {
 					break;
 				}
 			}
-			$parent_value = substr($parent_raw_value, $dereference_levels + 1);
-			if(isset($loop_parent[$parent_value])) {
+			$parent_value = substr($parent_raw_value, $dereference_levels);
+			if($parent_raw_value == ".") {
+				$result .= '[$i]';
+			} elseif(isset($loop_parent[$parent_value])) {
 				$loop_parent = $loop_parent[$parent_value];
 				$result .= '["' . $parent_value . '"]';
 			} elseif(method_exists($loop_parent,
@@ -358,97 +365,70 @@ class TemplateEngine {
 				$loop_parent = $loop_parent->{$parent_value};
 				$result .= '->' . $parent_value . '()';
 			} else {
-				$success = false;
+				return null;
 			}
-			for($j=0; $j< $dereference_levels; $j++) {
+			for($j = 0; $j < $dereference_levels; $j++) {
 				if(isset($args[$parent_value])) {
 					$loop_parent = $args[$parent_value];
 					$result = '$this->{' . $result . '}';
 				} else {
+					$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+					$this->exceptions[] = $e;
+					$this->messages[]
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
+
 					return null;
 				}
 			}
 		}
 
-		if(!$success) {
-			$end = end($parents)[self::AST_VALUE];
-			$dereference_levels = 0;
-			for($j=0;$j<strlen($end);$j++){
-				if($end[$j] == "*") {
-					$dereference_levels++;
-				} else {
-					break;
-				}
-			}
-			$end = substr($end, $dereference_levels + 1);
-			for($j=0; $j< $dereference_levels; $j++) {
-				if(isset($args[$end])) {
-					$end = $args[$end];
-					$result = '$this->{' . $result . '}';
-				} else {
-					return null;
-				}
-			}
+		return ($get_value) ? $loop_parent : $result;
+	}
 
+	private function explodeParents($parents) {
+		$exploded_parents = array();
+		for($i = 0; $i < count($parents); $i++) {
+			if($parents[$i][self::AST_VALUE] == ".") {
+				$exploded_parents[] = $parents[$i];
 
-			if(isset($args[$end])) {
-				$result = '$this->' . $end;
-			} else {
-				$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-				$this->exceptions[] = $e;
-				$this->messages[] = array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-				                          MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-				                          MESSAGE_TEXT => $e->getMessage());
-
-				return null;
+				continue;
 			}
+			foreach(explode(".", $parents[$i][self::AST_VALUE]) as $value) {
+				$exploded_parents[]
+					= array(self::AST_TYPE => $parents[$i][self::AST_TYPE],
+					        self::AST_VALUE => $value);
+			}
+		}
+
+		return $exploded_parents;
+	}
+
+	private function resolveValue($args,
+		$parents,
+		$token = null,
+		$get_value
+		= false) {
+		if($token === null) {
+			$token = end($parents);
+		} else {
+			if($parents === null) {
+				$parents = array();
+			}
+			$parents[] = $token;
+		}
+
+		$result = $this->resolveValueHelper($args,
+			$this->explodeParents($parents),
+			$get_value);
+		if($result === null) {
+			$result = $this->resolveValueHelper($args,
+				$this->explodeParents(array($token)),
+				$get_value);
 		}
 
 		return $result;
-	}
-
-	public function resolveValue($args, $value, $parents = array()) {
-		if(!is_string($value) || empty($value)) {
-
-			return null;
-		}
-
-		$dereference = false;
-
-		if($value[0] == "*") {
-			$value = substr($value, 1);
-			$dereference = true;
-		}
-		$splitted = explode(".", "$value");
-
-
-
-		$base = $args;
-		$resolved_value = "";
-		if(!empty($parents)) {
-			$looping_var = $parents[0][self::AST_VALUE];
-
-			for($i = 1; $i , count($parents) - 1; $i++) {
-
-
-				if(isset($looping_var[$parents[$i][self::AST_VALUE]])) {
-
-					$looping_var = $looping_var[$parents[$i][self::AST_VALUE]];
-
-				}
-
-
-
-
-			}
-
-
-		}
-
-		if($dereference) {
-
-		}
-		return '$this->';
 	}
 
 	public function writeCode($AST,
@@ -461,10 +441,10 @@ class TemplateEngine {
 			$functions_code = array();
 		}
 		if(!empty($loop_parents)) {
-			$resolved_parent = $this->resolveParent($args, $loop_parents);
+			$resolved_parent = $this->resolveValue($args, $loop_parents);
 			$end_parent = end($loop_parents);
 			$code .= "function " .
-			         $end_parent[self::AST_VALUE] .
+			         ltrim($end_parent[self::AST_VALUE], "*") .
 			         $iteration_number .
 			         '() {$buffer="";';
 			switch($end_parent[self::AST_TYPE]) {
@@ -492,57 +472,12 @@ class TemplateEngine {
 
 				return null;
 			}
-			$value = $AST[$i][self::AST_VALUE];
-			if($value[0] == "*") {
-				$tmp = substr($value, 1);
-				if(!isset($args[$tmp])) {
-					$e = new Exception(ERROR_UNDEFINED_REFERENCE . "$value");
-					$this->exceptions[] = $e;
-					$this->messages
-						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-						        MESSAGE_TEXT => $e->getMessage());
 
-					return null;
-				}
-				$value = '{$this->' . $tmp . '}';
-				//$value = $args[$tmp];
-			}
-			if(in_array($AST[$i][self::AST_TYPE],
-				self::TOKENS_POINTING_TO_ARGS)) {
-				if(empty($loop_parents)) {
-					if(!isset($args[$value])) {
-						$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-						$this->exceptions[] = $e;
-						$this->messages
-							= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-							        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-							        MESSAGE_TEXT => $e->getMessage());
+			$value = (in_array($AST[$i][self::AST_TYPE],
+				self::TOKENS_POINTING_TO_ARGS)) ?
+				$this->resolveValue($args, $loop_parents, $AST[$i]) :
+				$AST[$i][self::AST_VALUE];
 
-						return null;
-					}
-					$value = '$this->' . $value;
-				} else {
-					if($value == ".") {
-						$value = $parent_value . '[$i]';
-					} else {
-						if(isset($array_var_value[0][$value])) {
-							$value = $array_var_name . '[$i]["' . $value . '"]';
-						} elseif(isset($args[$value])) {
-							$value = '$this->' . $value . '';
-						} else {
-							$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-							$this->exceptions[] = $e;
-							$this->messages
-								= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-								        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-								        MESSAGE_TEXT => $e->getMessage());
-
-							return null;
-						}
-					}
-				}
-			}
 			switch($AST[$i][self::AST_TYPE]) {
 				default:
 				case self::TOKEN_TYPE_TEXT:
@@ -558,6 +493,7 @@ class TemplateEngine {
 				case self::TOKEN_TYPE_INVERTED_LOOP_START:
 					$function_name = $value . $iteration_number;
 					$code .= '$buffer .= ' . $function_name . "();";
+
 					$loop_parents[] = $AST[$i];
 					$this->writeCode($AST[$i - 1],
 						$args,
@@ -568,11 +504,16 @@ class TemplateEngine {
 					$i--;
 					break;
 				case self::TOKEN_TYPE_PARTIAL:
-					$this->loadTemplate($value);
-					$partials_code[] = $this->compileTemplate($value,
+					$class_name = $this->resolveValue($args,
+						$loop_parents,
+						$AST[$i],
+						true);
+					$this->loadTemplate($class_name);
+					$partials_code[] = $this->compileTemplate($class_name,
 						$args,
 						true);
-					$class_name = $this->getTemplateClassName($value, $args);
+					$class_name = $this->getTemplateClassName($class_name,
+						$args);
 					$code .= '$' .
 					         $class_name .
 					         ' = new ' .
@@ -596,6 +537,7 @@ class TemplateEngine {
 		}
 
 		$arguments = array();
+		// todo: objects support
 		foreach($args as $key => $arg) {
 			$arguments[] = 'private $' .
 			               $key .
@@ -610,7 +552,7 @@ class TemplateEngine {
 	}
 
 	public function getTemplateClassName($template, $args) {
-		return $template . md5(json_encode($args));
+		return ltrim($template, "*") . md5(json_encode($args));
 	}
 
 	public function assembleCode($class_name, $AST, $args) {
@@ -648,9 +590,7 @@ class TemplateEngine {
 			return null;
 		}
 		$class_name = $this->getTemplateClassName($template, $args);
-
 		$code = $this->assembleCode($class_name, $AST, $args);
-
 		if($eval) {
 			$this->evalTemplate($code);
 		}
@@ -665,6 +605,7 @@ class TemplateEngine {
 	 * @param $code
 	 */
 	public function evalTemplate($code) {
+		echo "<pre>$code";
 		eval("?>" . $code);
 	}
 
