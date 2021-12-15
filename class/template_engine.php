@@ -343,9 +343,12 @@ class TemplateEngine {
 		}
 
 
+		print_r($exploded_parents);
+		print_r($loop_parent);
 		for($i = 1; $i < count($exploded_parents); $i++) {
 			$parent_raw_value = $exploded_parents[$i][self::AST_VALUE];
 
+			echo "OK 1\n";
 			$dereference_levels = 0;
 			for($j = 0; $j < strlen($parent_raw_value); $j++) {
 				if($parent_raw_value[$j] == "*") {
@@ -355,6 +358,7 @@ class TemplateEngine {
 				}
 			}
 			$parent_value = substr($parent_raw_value, $dereference_levels);
+			echo $parent_value;
 			if($parent_raw_value == ".") {
 				$result .= '[$i]';
 			} elseif(isset($loop_parent[$parent_value])) {
@@ -364,9 +368,18 @@ class TemplateEngine {
 				$parent_value)) {
 				$loop_parent = $loop_parent->{$parent_value};
 				$result .= '->' . $parent_value . '()';
+			} elseif(true) {
+
+				// resolve single value against the stack ($args)
+				// (with eventual dereferencing
+				// successful ?
+				// plug its value into $result
+
+
 			} else {
 				return null;
 			}
+			echo "OK 2";
 			for($j = 0; $j < $dereference_levels; $j++) {
 				if(isset($args[$parent_value])) {
 					$loop_parent = $args[$parent_value];
@@ -382,7 +395,9 @@ class TemplateEngine {
 					return null;
 				}
 			}
+			echo "OK 3";
 		}
+		print_r($exploded_parents);
 
 		return ($get_value) ? $loop_parent : $result;
 	}
