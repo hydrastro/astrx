@@ -12,10 +12,6 @@ class TemplateEngine {
 	const TOKEN_TYPE_PARTIAL = ">";
 	const TOKEN_TYPE_COMMENT = "!";
 	const TOKEN_TYPE_CHANGE_TAGS = "=";
-	/*
-	 * Token external types are used as internal for practical purposes.
-	 * TOKEN_TYPES contains types with prefixes.
-	 */
 	const TOKEN_TYPES
 		= array(self::TOKEN_TYPE_CHANGE_TAGS,
 		        self::TOKEN_TYPE_COMMENT,
@@ -34,6 +30,9 @@ class TemplateEngine {
 	const TEMPLATE_CLOSE_TAG = "}}";
 	const AST_TYPE = 0;
 	const AST_VALUE = 1;
+	const INDEX_CLASS_VARS = 0;
+	const INDEX_RENDER_BODY = 1;
+	const INDEX_FUNCTIONS_CODE = 2;
 	/**
 	 * @var array $templates Templates array.
 	 */
@@ -323,7 +322,6 @@ class TemplateEngine {
 			return null;
 		}
 		$result = '$this->';
-
 		$first_index = explode(".", ltrim($parents[0][self::AST_VALUE], "*"))
 		[0];
 		$loop_parent = array($first_index => $args[$first_index]);
@@ -359,7 +357,7 @@ class TemplateEngine {
 						$result .= $value;
 						$first = false;
 					} else {
-						$result .= '->' . $value . '()';
+						$result .= "->" . $value . "()";
 					}
 				} else {
 					$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
@@ -374,13 +372,15 @@ class TemplateEngine {
 			}
 			for($j = 0; $j < $dereference_levels; $j++) {
 				if($j === 0) {
-					$result = '$this->{' . $result . '}';
+					$result = '$this->{' . $result . "}";
 					continue;
 				}
 				if(isset($args[$loop_parent])) {
 					$loop_parent = $args[$loop_parent];
-					$result = '$this->{' . $result . '}';
+					$result = '$this->{' . $result . "}";
 				} else {
+					// todo: change error message here + check for failure
+					// one dereference level earlier.
 					$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
 					$this->exceptions[] = $e;
 					$this->messages[]
@@ -392,6 +392,8 @@ class TemplateEngine {
 				}
 			}
 		}
+
+		return ($get_value) ? $loop_parent : $result;
 	}
 
 	private function resolveValue($args,
@@ -425,7 +427,7 @@ class TemplateEngine {
 		$loop_parents = null,
 		&$functions_code = null,
 		$iteration_number = 0) {
-		$code = '';
+		$code = "";
 		if($functions_code === null) {
 			$functions_code = array();
 		}
@@ -444,7 +446,7 @@ class TemplateEngine {
 					         '); $i++) {';
 					break;
 				case self::TOKEN_TYPE_INVERTED_LOOP_START:
-					$code .= 'if(empty(' . $resolved_parent . ') {';
+					$code .= "if(empty(" . $resolved_parent . ") {";
 					break;
 			}
 		}
@@ -505,11 +507,11 @@ class TemplateEngine {
 						$args);
 					$code .= '$' .
 					         $class_name .
-					         ' = new ' .
+					         " = new " .
 					         $class_name .
 					         '();$buffer.=$' .
 					         $class_name .
-					         '->renderTemplate();';
+					         "->renderTemplate();";
 					break;
 				case self::TOKEN_TYPE_LOOP_END:
 				case self::TOKEN_TYPE_COMMENT:
@@ -530,14 +532,14 @@ class TemplateEngine {
 		foreach($args as $key => $arg) {
 			$arguments[] = 'private $' .
 			               $key .
-			               '=' .
+			               "=" .
 			               var_export($arg, true) .
-			               ';';
+			               ";";
 		}
 
-		return array("class_vars" => $arguments,
-		             "render_body" => $code,
-		             "functions_code" => $functions_code);
+		return array(self::INDEX_CLASS_VARS => $arguments,
+		             self::INDEX_RENDER_BODY => $code,
+		             self::INDEX_FUNCTIONS_CODE => $functions_code);
 	}
 
 	public function getTemplateClassName($template, $args) {
@@ -550,15 +552,15 @@ class TemplateEngine {
 			return null;
 		}
 
-		return '<?php class ' .
+		return "<?php class " .
 		       $class_name .
-		       '{' .
-		       implode("\n", $code["class_vars"]) .
+		       "{" .
+		       implode("\n", $code[self::INDEX_CLASS_VARS]) .
 		       'function renderTemplate(){$buffer="";' .
-		       $code["render_body"] .
-		       '}' .
-		       implode("\n", $code["functions_code"]) .
-		       '}';
+		       $code[self::INDEX_RENDER_BODY] .
+		       "}" .
+		       implode("\n", $code[self::INDEX_FUNCTIONS_CODE]) .
+		       "}";
 	}
 
 	public function compileTemplate($template, $args = null, $eval = false) {
@@ -594,7 +596,6 @@ class TemplateEngine {
 	 * @param $code
 	 */
 	public function evalTemplate($code) {
-		echo "<pre>$code";
 		eval("?>" . $code);
 	}
 
