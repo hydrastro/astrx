@@ -316,39 +316,20 @@ class TemplateEngine {
 	}
 
 	private function resolveValueHelper($args,
-		$exploded_parents,
+		$parents,
 		$get_value
 		= false) {
-		if($exploded_parents === null) {
+		if($parents === null) {
 			return null;
 		}
 		$result = '$this->';
 
-
-		$dereference_levels = 0;
-		for($i = 0; $i < strlen($exploded_parents[0][self::AST_VALUE]); $i++) {
-			if($exploded_parents[0][self::AST_VALUE][$i] == "*") {
-				$dereference_levels++;
-			} else {
-				break;
-			}
-		}
-		$loop_parent = substr($exploded_parents[0][self::AST_VALUE],
-			$dereference_levels);
-		$result .= $loop_parent;
-		$loop_parent = $args[$loop_parent];
-		for($i = 0; $i < $dereference_levels; $i++) {
-			$loop_parent = $args[$loop_parent];
-			$result = '$this->{'.$result.'}';
-		}
-
-
-		print_r($exploded_parents);
-		print_r($loop_parent);
-		for($i = 1; $i < count($exploded_parents); $i++) {
-			$parent_raw_value = $exploded_parents[$i][self::AST_VALUE];
-
-			echo "OK 1\n";
+		$first_index = explode(".", ltrim($parents[0][self::AST_VALUE], "*"))
+		[0];
+		$loop_parent = array($first_index => $args[$first_index]);
+		$first = true;
+		for($i = 0; $i < count($parents); $i++) {
+			$parent_raw_value = $parents[$i][self::AST_VALUE];
 			$dereference_levels = 0;
 			for($j = 0; $j < strlen($parent_raw_value); $j++) {
 				if($parent_raw_value[$j] == "*") {
@@ -358,31 +339,46 @@ class TemplateEngine {
 				}
 			}
 			$parent_value = substr($parent_raw_value, $dereference_levels);
-			echo $parent_value;
-			if($parent_raw_value == ".") {
+			if($parent_value === ".") {
 				$result .= '[$i]';
-			} elseif(isset($loop_parent[$parent_value])) {
-				$loop_parent = $loop_parent[$parent_value];
-				$result .= '["' . $parent_value . '"]';
-			} elseif(method_exists($loop_parent,
-				$parent_value)) {
-				$loop_parent = $loop_parent->{$parent_value};
-				$result .= '->' . $parent_value . '()';
-			} elseif(true) {
-
-				// resolve single value against the stack ($args)
-				// (with eventual dereferencing
-				// successful ?
-				// plug its value into $result
-
-
-			} else {
-				return null;
+				continue;
 			}
-			echo "OK 2";
+			foreach(explode(".", $parent_value) as $value) {
+				if(isset($loop_parent[$value])) {
+					$loop_parent = $loop_parent[$value];
+					if($first) {
+						$result .= $value;
+						$first = false;
+					} else {
+						$result .= '["' . $value . '"]';
+					}
+				} elseif(method_exists($loop_parent,
+					$value)) {
+					$loop_parent = $loop_parent->{$value};
+					if($first) {
+						$result .= $value;
+						$first = false;
+					} else {
+						$result .= '->' . $value . '()';
+					}
+				} else {
+					$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+					$this->exceptions[] = $e;
+					$this->messages[]
+						= array(MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+						        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+						        MESSAGE_TEXT => $e->getMessage());
+
+					return null;
+				}
+			}
 			for($j = 0; $j < $dereference_levels; $j++) {
-				if(isset($args[$parent_value])) {
-					$loop_parent = $args[$parent_value];
+				if($j === 0) {
+					$result = '$this->{' . $result . '}';
+					continue;
+				}
+				if(isset($args[$loop_parent])) {
+					$loop_parent = $args[$loop_parent];
 					$result = '$this->{' . $result . '}';
 				} else {
 					$e = new Exception(ERROR_UNDEFINED_ARGUMENT);
@@ -395,29 +391,7 @@ class TemplateEngine {
 					return null;
 				}
 			}
-			echo "OK 3";
 		}
-		print_r($exploded_parents);
-
-		return ($get_value) ? $loop_parent : $result;
-	}
-
-	private function explodeParents($parents) {
-		$exploded_parents = array();
-		for($i = 0; $i < count($parents); $i++) {
-			if($parents[$i][self::AST_VALUE] == ".") {
-				$exploded_parents[] = $parents[$i];
-
-				continue;
-			}
-			foreach(explode(".", $parents[$i][self::AST_VALUE]) as $value) {
-				$exploded_parents[]
-					= array(self::AST_TYPE => $parents[$i][self::AST_TYPE],
-					        self::AST_VALUE => $value);
-			}
-		}
-
-		return $exploded_parents;
 	}
 
 	private function resolveValue($args,
@@ -435,11 +409,11 @@ class TemplateEngine {
 		}
 
 		$result = $this->resolveValueHelper($args,
-			$this->explodeParents($parents),
+			$parents,
 			$get_value);
 		if($result === null) {
 			$result = $this->resolveValueHelper($args,
-				$this->explodeParents(array($token)),
+				array($token),
 				$get_value);
 		}
 
