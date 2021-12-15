@@ -526,7 +526,7 @@ class TemplateEngine {
 		}
 
 		$arguments = array();
-		// todo: objects support
+		// todo: objects support (note: they will be injected as dependecies)
 		foreach($args as $key => $arg) {
 			$arguments[] = 'private $' .
 			               $key .
