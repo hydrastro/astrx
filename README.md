@@ -8,6 +8,9 @@
 
 ## Documentation & Dev notes
 
+### Injector (and Config)
+`getConfigurationMethods` and configs structure (todo). 
+
 ### Getters and  Setters
 
 Setters return a boolean: true if set was successful, false otherwise.  
@@ -179,8 +182,16 @@ In no case they should use any other module's definitions.
 - [ ] Objects support in the template
 - [ ] ZKP login method. ( challenge-text, challenge-input)
 - [ ] Generate a password for me
+  
+# Hiatus resume README
+
 - [ ] Check for parameter validations redundancy e.g.: parent validates
-  paramenters and calls child who revalidates the same paramenters
+  parameters and calls child who revalidates the same parameters
 - [ ] Define how to handle validation redundancy
 - [ ] Check functions scope
-- [ ] Never use arrays, type everything (FUCK)
+- [ ] Never use arrays, type everything (FUCK): first off all variables then the
+  arrays. More class files, less type cheks (issets).
+- [ ] ResultMessage class: instead of arrays. Not sure about constructor checks
+  here. Check if class has properly been loaded.
+- [ ] Fix PHPDoc.
+- [ ] No composer? Ok. But at least let's have a proper dev. environment!
