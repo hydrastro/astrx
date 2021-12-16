@@ -183,3 +183,4 @@ In no case they should use any other module's definitions.
   paramenters and calls child who revalidates the same paramenters
 - [ ] Define how to handle validation redundancy
 - [ ] Check functions scope
+- [ ] Never use arrays, type everything (FUCK)
