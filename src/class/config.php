@@ -42,7 +42,7 @@ class Config
      * Add Config Array.
      * Merges a given configuration array with the existing configuration array.
      *
-     * @param array<string, array<string, mixed>> $array
+     * @param array<string, array<string, mixed>> $array Configuration array.
      *
      * @return void
      */
@@ -55,8 +55,8 @@ class Config
      * Add Specific Config.
      * Add a value to a specific index in the config array.
      *
-     * @param string               $index
-     * @param array<string, mixed> $value
+     * @param string               $index Array index (class name).
+     * @param array<string, mixed> $value Configuration array.
      *
      * @return void
      */
@@ -69,7 +69,7 @@ class Config
      * Load Config.
      * Loads a module configuration if there is any set.
      *
-     * @param string $class
+     * @param string $class Class name.
      *
      * @return bool
      */
@@ -82,8 +82,8 @@ class Config
     }
 
     /**
-     * @param string $config_file
-     * @param bool   $handle_not_found_exception
+     * @param string $config_file                Configuration file name.
+     * @param bool   $handle_not_found_exception Error trigger on failure.
      *
      * @return bool
      */
@@ -119,8 +119,8 @@ class Config
      * It directly maps to $configuration[$class_name][$config_name]
      * or $configuration[$config_name] if no class is provided.
      *
-     * @param string $config_name
-     * @param string $class_name
+     * @param string $config_name Configuration name.
+     * @param string $class_name  Configuration class name.
      *
      * @return mixed
      */

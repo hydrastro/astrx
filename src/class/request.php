@@ -13,7 +13,7 @@ class Request
      * Get.
      * Returns a $_GET value.
      *
-     * @param string $key
+     * @param string $key Key.
      *
      * @return mixed
      */
@@ -30,7 +30,7 @@ class Request
      * Post.
      * Returns a $_POST value.
      *
-     * @param string $key
+     * @param string $key Key.
      *
      * @return mixed
      */
@@ -47,7 +47,7 @@ class Request
      * Files.
      * Returns a $_FILES value.
      *
-     * @param string $key
+     * @param string $key Key.
      *
      * @return mixed
      */
@@ -64,7 +64,7 @@ class Request
      * Request.
      * Returns a $_REQUEST value.
      *
-     * @param string $key
+     * @param string $key Key.
      *
      * @return mixed
      */

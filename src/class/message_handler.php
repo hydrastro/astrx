@@ -27,7 +27,7 @@ class MessageHandler
      * Add Class.
      * Adds a class to the class array.
      *
-     * @param object $class
+     * @param object $class Class.
      *
      * @return void
      */
@@ -40,7 +40,7 @@ class MessageHandler
      * Remove Class.
      * Removes a class from the class array.
      *
-     * @param string $class_name
+     * @param string $class_name Class name.
      *
      * @return bool
      */

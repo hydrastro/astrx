@@ -15,7 +15,7 @@ class Autoloader
      * This function auto-loads the project's classes among their configs
      * (language files, constants, configuration variables).
      *
-     * @param string $class
+     * @param string $class Class name to autoload.
      *
      * @return void
      */

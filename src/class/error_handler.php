@@ -31,7 +31,7 @@ class ErrorHandler
     }
 
     /**
-     * @param Throwable $e
+     * @param Throwable $e Throwable.
      *
      * @return void
      */
@@ -49,10 +49,10 @@ class ErrorHandler
      * Error Handler.
      * Throws errors as exceptions.
      *
-     * @param int    $errno
-     * @param string $errstr
-     * @param string $errfile
-     * @param int    $errline
+     * @param int    $errno   Error number.
+     * @param string $errstr  Error string.
+     * @param string $errfile Error file.
+     * @param int    $errline Error line.
      *
      * @return bool
      */
@@ -83,7 +83,8 @@ class ErrorHandler
     /**
      * Shutdown handler.
      * Called when a script dies, either naturally or due to a fatal error,
-     * this function handles and displays possible occurred errors and exceptions.
+     * this function handles and displays possible occurred errors and
+     * exceptions.
      * It's registered with register_shutdown_function.
      * @return void
      */
@@ -107,7 +108,7 @@ class ErrorHandler
      * Add Class.
      * Adds a class to the class array.
      *
-     * @param object $class
+     * @param object $class Class.
      *
      * @return void
      */
@@ -120,7 +121,7 @@ class ErrorHandler
      * Remove Class.
      * Removes a class from the class array.
      *
-     * @param string $class_name
+     * @param string $class_name Class name.
      *
      * @return bool
      */

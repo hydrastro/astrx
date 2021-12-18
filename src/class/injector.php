@@ -57,8 +57,8 @@ class Injector
      * Set Class Arguments.
      * Sets the arguments for a specific class.
      *
-     * @param string               $class_name
-     * @param array<string, mixed> $args
+     * @param string               $class_name Class name.
+     * @param array<string, mixed> $args       Class functions arguments.
      *
      * @return bool
      */
@@ -86,7 +86,7 @@ class Injector
      * Stores an already initialized class instance in the class container
      * array.
      *
-     * @param object $class
+     * @param object $class Class.
      *
      * @return void
      */
@@ -101,8 +101,8 @@ class Injector
      * Stores an already initialized class instance in the class container
      * array.
      *
-     * @param string $class_name
-     * @param bool   $create
+     * @param string $class_name Class name.
+     * @param bool   $create     Create if class instance doesn't exist.
      *
      * @return mixed
      */
@@ -125,7 +125,7 @@ class Injector
      * Returns a string that will be used as an index when referencing to this
      * class. In this case it's just the class name.
      *
-     * @param string $class
+     * @param string $class Class name.
      *
      * @return string
      */
@@ -138,7 +138,7 @@ class Injector
      * Has Class.
      * Checks if the injector has a class.
      *
-     * @param string $class_name
+     * @param string $class_name Class name.
      *
      * @return bool
      */
@@ -156,8 +156,8 @@ class Injector
      * Get Class Argument.
      * Returns a class arguments if there are any set.
      *
-     * @param string $class_name
-     * @param string $arg_name
+     * @param string $class_name Class name.
+     * @param string $arg_name   Argument name.
      *
      * @return mixed
      */
@@ -178,9 +178,11 @@ class Injector
      * Create Class.
      * Creates a class.
      *
-     * @param string $class_name
-     * @param bool   $share
-     * @param bool   $initialize_config_functions
+     * @param string $class_name                  Class name.
+     * @param bool   $share                       Share class: store among
+     *                                            container known instances.
+     * @param bool   $initialize_config_functions Initialize configuration
+     *                                            functions.
      *
      * @return mixed
      */
@@ -216,29 +218,27 @@ class Injector
                     $arg = $this->getClassArg($class_name, $arg_name);
                     if ($arg) {
                         $dependencies[] = $arg;
-                    } else {
-                        if (!$parameter->isOptional()) {
-                            if ($parameter->getType() === null) {
-                                $e = new Exception(
-                                    ERROR_CLASS_OR_PARAMETER_NOT_FOUND
-                                );
-                                $this->exceptions[] = $e;
-                                $this->messages[] = array(
-                                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                                    MESSAGE_TEXT => $e->getMessage()
-                                );
+                    } elseif (!$parameter->isOptional()) {
+                        if ($parameter->getType() === null) {
+                            $e = new Exception(
+                                ERROR_CLASS_OR_PARAMETER_NOT_FOUND
+                            );
+                            $this->exceptions[] = $e;
+                            $this->messages[] = array(
+                                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                                MESSAGE_TEXT => $e->getMessage()
+                            );
 
-                                return null;
-                            }
-                            $dependency_class_name = $parameter->getType();
-                            $index
-                                = $this->getIndexName($dependency_class_name);
-                            if (!$this->hasClass($dependency_class_name)) {
-                                $this->createClass($dependency_class_name);
-                            }
-                            $dependencies[] = $this->classes[$index];
+                            return null;
                         }
+                        $dependency_class_name = $parameter->getType();
+                        $index
+                            = $this->getIndexName($dependency_class_name);
+                        if (!$this->hasClass($dependency_class_name)) {
+                            $this->createClass($dependency_class_name);
+                        }
+                        $dependencies[] = $this->classes[$index];
                     }
                 }
             }
@@ -251,39 +251,38 @@ class Injector
             if ($share) {
                 $this->classes[$name] = $class;
             }
-            if ($initialize_config_functions) {
-                if (method_exists($class, "getConfigurationMethods")) {
-                    foreach ($class->getConfigurationMethods() as $method) {
-                        if (method_exists($class, $method)) {
-                            $args = array();
-                            $reflectedMethod = new ReflectionMethod(
-                                $class, $method
-                            );
-                            foreach (
-                                $reflectedMethod->getParameters() as $parameter
-                            ) {
-                                if (isset($this->config)) {
-                                    $args[]
-                                        = $this->config->getConfig(
-                                        $parameter->getName(),
-                                        $name
-                                    );
-                                } else {
-                                    $e = new Exception(
-                                        ERROR_NO_ARGUMENTS_FOR_METHOD
-                                    );
-                                    $this->exceptions[] = $e;
-                                    $this->messages[] = array(
-                                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                                        MESSAGE_TEXT => $e->getMessage()
-                                    );
+            if (($initialize_config_functions) &&
+                (method_exists($class, "getConfigurationMethods"))) {
+                foreach ($class->getConfigurationMethods() as $method) {
+                    if (method_exists($class, $method)) {
+                        $args = array();
+                        $reflectedMethod = new ReflectionMethod(
+                            $class, $method
+                        );
+                        foreach (
+                            $reflectedMethod->getParameters() as $parameter
+                        ) {
+                            if (isset($this->config)) {
+                                $args[]
+                                    = $this->config->getConfig(
+                                    $parameter->getName(),
+                                    $name
+                                );
+                            } else {
+                                $e = new Exception(
+                                    ERROR_NO_ARGUMENTS_FOR_METHOD
+                                );
+                                $this->exceptions[] = $e;
+                                $this->messages[] = array(
+                                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                                    MESSAGE_TEXT => $e->getMessage()
+                                );
 
-                                    return null;
-                                }
+                                return null;
                             }
-                            $class->$method(...$args);
                         }
+                        $class->$method(...$args);
                     }
                 }
             }
@@ -311,9 +310,9 @@ class Injector
      * Call Class Method.
      * Calls a class method.
      *
-     * @param string               $class_name
-     * @param string               $method
-     * @param array<string, mixed> $arguments
+     * @param string               $class_name Class name.
+     * @param string               $method     Method name.
+     * @param array<string, mixed> $arguments  Arguments.
      *
      * @return mixed
      */
@@ -347,7 +346,7 @@ class Injector
      * Load Language.
      * Loads a module language if there is any set.
      *
-     * @param string $class
+     * @param string $class Class name.
      *
      * @return void
      */

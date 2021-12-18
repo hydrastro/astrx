@@ -18,8 +18,8 @@ class ContentManager
     /**
      * ContentManager constructor.
      *
-     * @param Config   $config
-     * @param Injector $injector
+     * @param Config   $config   Config.
+     * @param Injector $injector Injector.
      */
     public function __construct(Config $config, Injector $injector)
     {
@@ -49,7 +49,7 @@ class ContentManager
             )
         );
         /**
-         * @var PDO $pdo
+         * @var PDO $pdo PDO.
          */
         $pdo = $injector->createClass("PDO");
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
