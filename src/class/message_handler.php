@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class MessageHandler
+ */
 class MessageHandler
 {
     /**

@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class Config
+ */
 class Config
 {
     /**
@@ -127,7 +130,7 @@ class Config
     public function getConfig(string $config_name, string $class_name = "")
     : mixed {
         if (is_string($config_name)) {
-            if ($class_name === "" &&
+            if ($class_name !== "" &&
                 array_key_exists($class_name, $this->configuration) &&
                 array_key_exists(
                     $config_name,

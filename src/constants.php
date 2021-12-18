@@ -1,5 +1,6 @@
 <?php
 
+define("INDEX_DIR", dirname(__FILE__) . DIRECTORY_SEPARATOR);
 define("INCLUDE_GUARD", true);
 define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
 

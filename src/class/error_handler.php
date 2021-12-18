@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class ErrorHandler
+ */
 class ErrorHandler
 {
     /**

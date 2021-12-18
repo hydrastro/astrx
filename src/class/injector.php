@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class Injector
+ */
 class Injector
 {
     /**
@@ -209,12 +212,7 @@ class Injector
             if ($reflectedClass->hasMethod("__construct")) {
                 $constructor = $reflectedClass->getMethod("__construct");
                 foreach ($constructor->getParameters() as $parameter) {
-                    $parameter_class = $parameter->getType();
-                    if ($parameter_class) {
-                        $arg_name = $parameter_class;
-                    } else {
-                        $arg_name = $parameter->getName();
-                    }
+                    $arg_name = $parameter->getName();
                     $arg = $this->getClassArg($class_name, $arg_name);
                     if ($arg) {
                         $dependencies[] = $arg;

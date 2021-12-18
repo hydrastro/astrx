@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class TemplateEngine
+ */
 class TemplateEngine
 {
     public const PARSE_MODE_PHP = 0;

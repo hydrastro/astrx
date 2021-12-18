@@ -1,7 +1,18 @@
 <?php
 
+/**
+ * Class ContentManager
+ */
 class ContentManager
 {
+    /**
+     * @var array<int, array<mixed>> $messages Messages array.
+     */
+    public array $messages = array();
+    /**
+     * @var array<int, Throwable> $exceptions Exceptions objects array.
+     */
+    public array $exceptions = array();
     /**
      * @var Config $config
      */
@@ -48,10 +59,21 @@ class ContentManager
                 "passwd" => $passwd
             )
         );
-        /**
-         * @var PDO $pdo PDO.
-         */
-        $pdo = $injector->createClass("PDO");
+        try {
+            /**
+             * @var PDO $pdo PDO.
+             */
+            $pdo = $injector->createClass("PDO");
+        } catch (PDOException $e) {
+            $this->exceptions[] = $e;
+            $this->messages[] = array(
+                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                MESSAGE_TEXT => ERROR_CLASS_PDO . $e->getMessage()
+            );
+
+            return;
+        }
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         $pdo->setAttribute(
             PDO::ATTR_ERRMODE,
