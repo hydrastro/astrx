@@ -54,17 +54,18 @@ class ErrorHandler
      * @param string $errfile
      * @param int    $errline
      *
-     * @return void
+     * @return bool
      */
     public function errorHandler(
         int $errno,
         string $errstr,
         string $errfile,
         int $errline
-    ) {
+    )
+    : bool {
         $level = error_reporting();
         if (($level & $errno) === 0) {
-            return;
+            return false;
         }
         $e = new ErrorException($errstr, 0, $errno, $errfile, $errline);
         $this->exceptions[] = $e;
@@ -75,6 +76,8 @@ class ErrorHandler
             MESSAGE_HTTP_STATUS => $error_code,
             MESSAGE_TEXT => $e->getMessage()
         );
+
+        return true;
     }
 
     /**

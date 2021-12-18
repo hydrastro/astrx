@@ -3,7 +3,7 @@
 class Config
 {
     /**
-     * @var array<string, mixed> $configuration Config array.
+     * @var array<string, array<string, mixed>> $configuration Config array.
      */
     private array $configuration;
     /**
@@ -22,6 +22,17 @@ class Config
     {
         $this->configuration = require(CONFIG_DIR . "config.php");
         $lang = $this->getConfig("language");
+        if (!is_string($lang)) {
+            $e = new Exception("asd");
+            $this->exceptions[] = $e;
+            $this->messages[] = array(
+                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                MESSAGE_TEXT => $e->getMessage()
+            );
+
+            return;
+        }
         require(LANG_DIR . "$lang.php");
     }
 
@@ -29,7 +40,7 @@ class Config
      * Add Config Array.
      * Merges a given configuration array with the existing configuration array.
      *
-     * @param array<string, mixed> $array
+     * @param array<string, array<string, mixed>> $array
      *
      * @return void
      */
@@ -42,8 +53,8 @@ class Config
      * Add Specific Config.
      * Add a value to a specific index in the config array.
      *
-     * @param string $index
-     * @param mixed  $value
+     * @param string               $index
+     * @param array<string, mixed> $value
      *
      * @return void
      */

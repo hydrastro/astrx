@@ -19,7 +19,7 @@ class Injector
      */
     private array $classes = array();
     /**
-     * @var array<string, mixed> $classesArgs Classes arguments.
+     * @var array<string, array<string,mixed>> $classesArgs Classes arguments.
      */
     private array $classesArgs;
     /**
@@ -164,11 +164,14 @@ class Injector
     public function getClassArg(string $class_name, string $arg_name)
     : mixed {
         $name = $this->getIndexName($class_name);
-        if (isset($this->classesArgs[$name][$arg_name])) {
-            return $this->classesArgs[$name][$arg_name];
+        if (!isset($this->classesArgs[$name])) {
+            return null;
+        }
+        if (!isset($this->classesArgs[$name][$arg_name])) {
+            return null;
         }
 
-        return null;
+        return $this->classesArgs[$name][$arg_name];
     }
 
     /**
@@ -318,7 +321,8 @@ class Injector
         string $class_name,
         string $method,
         array $arguments = array()
-    ) {
+    )
+    : mixed {
         if ($this->hasClass($class_name)) {
             if (method_exists($class_name, $method)) {
                 $class = $this->getClass($class_name);
@@ -350,6 +354,9 @@ class Injector
     public function loadLang(string $class)
     {
         $lang = $this->config->getConfig("language");
+        if (!is_string($lang)) {
+            return;
+        }
         $class_filename = toSnakeCase($class);
         $lang_file = LANG_DIR . "$class_filename.$lang.php";
         if (file_exists($lang_file)) {

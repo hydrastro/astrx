@@ -158,7 +158,7 @@ class TemplateEngine
      *
      * @param string $template_body
      *
-     * @return array<int, array<int, mixed>>|null
+     * @return array<int, array<int, string>>|null
      */
     private function tokenizeTemplate(string $template_body)
     : ?array {
@@ -274,7 +274,7 @@ class TemplateEngine
      * Parse Template.
      * Generates an abstract syntax tree from a tokenized template.
      *
-     * @param array<int, array<int, mixed>> $tokenized
+     * @param array<int, array<int, string>> $tokenized
      *
      * @return array<int, mixed>|null
      */
@@ -339,9 +339,9 @@ class TemplateEngine
      * Resolve Value Helper.
      * Helps to resolve a value in the template class context.
      *
-     * @param array<string, mixed>          $args
-     * @param array<int, array<int, mixed>> $parents
-     * @param bool                          $get_value
+     * @param array<string, mixed>           $args
+     * @param array<int, array<int, string>> $parents
+     * @param bool                           $get_value
      *
      * @return mixed
      */
@@ -356,15 +356,17 @@ class TemplateEngine
             return null;
         }
         $result = '$this->';
-        $first_index = explode(".", ltrim($parents[0][self::AST_VALUE], "*"))
-        [0];
+        $first_index = explode(
+                           ".",
+                           ltrim($parents[0][self::AST_VALUE], "*")
+                       )[0];
         $loop_parent = array($first_index => $args[$first_index]);
         $first = true;
         for ($i = 0; $i < count($parents); $i++) {
             $parent_raw_value = $parents[$i][self::AST_VALUE];
             $dereference_levels = 0;
             for ($j = 0; $j < strlen($parent_raw_value); $j++) {
-                if ($parent_raw_value[$j] == "*") {
+                if ($parent_raw_value[$j] === "*") {
                     $dereference_levels++;
                 } else {
                     break;
@@ -438,10 +440,10 @@ class TemplateEngine
      * Resolve Value.
      * Resolves a value in the template class context.
      *
-     * @param array<string, mixed>          $args
-     * @param array<int, array<int, mixed>> $parents
-     * @param array<int, mixed>        $token
-     * @param bool                          $get_value
+     * @param array<string, mixed>           $args
+     * @param array<int, array<int, string>> $parents
+     * @param array<int, string>             $token
+     * @param bool                           $get_value
      *
      * @return mixed
      */
@@ -479,11 +481,11 @@ class TemplateEngine
      * Write Code.
      * Writes the code for a given template.
      *
-     * @param array<int, mixed>             $AST
-     * @param array<string, mixed>          $args
-     * @param array<int, array<int, mixed>> $loop_parents
-     * @param array<int, string>            $functions_code
-     * @param int                           $iteration_number
+     * @param array<int, array<int, mixed>>  $AST
+     * @param array<string, mixed>           $args
+     * @param array<int, array<int, string>> $loop_parents
+     * @param array<int, string>             $functions_code
+     * @param int                            $iteration_number
      *
      * @return array<int, mixed>|null
      */
@@ -561,8 +563,8 @@ class TemplateEngine
                     $this->loadTemplate($class_name);
                     $partial_code = $this->compileTemplate($class_name, $args);
                     $partials_code[] = $partial_code;
-                    if ($partial_code === null || !$this->evalTemplate
-                    ($partial_code)) {
+                    if ($partial_code === null ||
+                        !$this->evalTemplate($partial_code)) {
                         $e = new Exception(ERROR_TEMPLATE_CLASS_CREATION);
                         $this->exceptions[] = $e;
                         $this->messages[] = array(
@@ -628,7 +630,8 @@ class TemplateEngine
     public function getTemplateClassName(string $template, array $args)
     : string {
         $json = json_encode($args);
-        $json = ($json) ? : "";
+        $json = ($json) ?: "";
+
         return ltrim($template, "*") . md5($json);
     }
 
@@ -759,6 +762,9 @@ class TemplateEngine
         }
         $temp = new $template_name();
 
+        /**
+         * @phpstan-ignore-next-line
+         */
         return $temp->renderTemplate();
     }
 
