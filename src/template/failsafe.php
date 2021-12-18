@@ -1,8 +1,3 @@
-<?php
-/**
- * @var $exceptions
- */
-?>
 <html lang="en">
 <head>
 <title>Error</title>
@@ -11,7 +6,12 @@
 <body>
 <h1>Error</h1>
 <pre>
-<?php print_r($exceptions); ?>
+<?php
+/**
+ * @var array<int, Throwable> $exceptions
+ */
+print_r($exceptions);
+?>
 </pre>
 </body>
 </html>

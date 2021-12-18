@@ -1,5 +1,9 @@
 <?php
-define("INDEX_DIR", __DIR__ . DIRECTORY_SEPARATOR);
+declare(strict_types=1);
+define("INDEX_DIR", dirname(__FILE__) . DIRECTORY_SEPARATOR);
+ini_set("display_errors", "1");
+ini_set("display_startup_errors", "1");
+error_reporting(E_ALL);
 require(INDEX_DIR . "constants.php");
 require(INDEX_DIR . "functions.php");
 require(CLASS_DIR . "autoloader.php");

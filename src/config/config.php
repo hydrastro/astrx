@@ -1,4 +1,5 @@
 <?php
+
 return array("language" => "en",
              "stats_logging" => false,
              "website_name" => "My Website",

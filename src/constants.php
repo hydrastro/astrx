@@ -1,5 +1,4 @@
 <?php
-define("DEBUG_MODE", true);
 define("INCLUDE_GUARD", true);
 define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
 

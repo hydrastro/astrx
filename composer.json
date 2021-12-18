@@ -1,0 +1,10 @@
+{
+    "require-dev": {
+        "phpstan/phpstan": "^1.2",
+        "vimeo/psalm": "^0.3.14"
+    },
+  "require": {
+    "ext-pdo": "*",
+    "ext-json": "*"
+  }
+}
