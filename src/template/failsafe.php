@@ -1,7 +1,10 @@
 <html lang="en">
 <head>
-<title>Error</title>
-<style>body {background-color: black;color: white;}</style>
+    <title>Error</title>
+    <style>body {
+            background-color: black;
+            color: white;
+        }</style>
 </head>
 <body>
 <h1>Error</h1>

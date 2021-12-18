@@ -20,7 +20,7 @@ class ErrorHandler
      */
     public function __construct()
     {
-        //todo: wrap
+        //todo: wrap these lines into debug
         ini_set("display_errors", "1");
         ini_set("display_startup_errors", "1");
         error_reporting(E_ALL);

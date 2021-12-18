@@ -23,7 +23,9 @@ class Config
         $this->configuration = require(CONFIG_DIR . "config.php");
         $lang = $this->getConfig("language");
         if (!is_string($lang)) {
-            $e = new Exception("asd");
+            $e = new Exception(
+                "An error occurred while loading the config file."
+            );
             $this->exceptions[] = $e;
             $this->messages[] = array(
                 MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,

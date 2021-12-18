@@ -2,6 +2,9 @@
 
 class Autoloader
 {
+    /**
+     * Autoloader constructor.
+     */
     public function __construct()
     {
         spl_autoload_register(array($this, "classAutoload"));
@@ -13,6 +16,7 @@ class Autoloader
      * (language files, constants, configuration variables).
      *
      * @param string $class
+     *
      * @return void
      */
     public function classAutoload(string $class)
@@ -22,7 +26,7 @@ class Autoloader
         $class = toSnakeCase($class);
         $class_file = "$class_dir$class.php";
         if (file_exists($class_file)) {
-            require_once($class_file);
+            include_once $class_file;
         }
     }
 }

@@ -1,7 +1,9 @@
 {
     "require-dev": {
         "phpstan/phpstan": "^1.2",
-        "vimeo/psalm": "^0.3.14"
+        "vimeo/psalm": "^0.3.14",
+        "phpbench/phpbench": "^1.2",
+        "squizlabs/php_codesniffer": "^3.6"
     },
   "require": {
     "ext-pdo": "*",

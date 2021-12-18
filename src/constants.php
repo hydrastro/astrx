@@ -1,7 +1,9 @@
 <?php
+
 define("INCLUDE_GUARD", true);
 define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
 
+// (debug, info, notice, warning, error, critical, alert, emergency).
 define("MESSAGE_LEVEL_ERROR", 0);
 define("MESSAGE_LEVEL_WARNING", 1);
 define("MESSAGE_LEVEL_INFO", 2);
