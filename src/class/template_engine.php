@@ -221,7 +221,13 @@ class TemplateEngine
 
             return null;
         }
-        $temp = new $template_name();
+        $objects = array();
+        foreach ($args as $arg) {
+            if (is_object($arg)) {
+                $objects[] = $arg;
+            }
+        }
+        $temp = new $template_name(...$objects);
 
         /**
          * @phpstan-ignore-next-line
@@ -268,10 +274,9 @@ class TemplateEngine
      * Assemble Code.
      * Assembles the template class code.
      *
-     * @param string               $class_name              Class name.
-     * @param array<int, mixed>    $AST                     Abstract syntax
-     *                                                      tree.
-     * @param array<string, mixed> $args                    Arguments.
+     * @param string               $class_name Class name.
+     * @param array<int, mixed>    $AST        Abstract syntax tree.
+     * @param array<string, mixed> $args       Arguments.
      *
      * @return string|null
      */
@@ -313,7 +318,23 @@ class TemplateEngine
         array &$functions_code = array(),
         int $iteration_number = 0
     )
-    : ?array {
+    : ?array
+    {
+        $constructor_args = "";
+        $constructor_body = "";
+        foreach ($args as $key => $arg) {
+            if (is_object($arg)) {
+                $constructor_args .= '$' . $key . ",";
+                $constructor_body .= '$this->' . $key . '=$' . $key . ';';
+            }
+        }
+        $constructor_args = rtrim($constructor_args, ",");
+        $functions_code[] = "public function __construct(" .
+                            rtrim($constructor_args, ",") .
+                            "){" .
+                            $constructor_body .
+                            "}";
+
         $code = "";
         if (!empty($loop_parents)) {
             $resolved_parent = $this->resolveValue($args, $loop_parents);
@@ -369,18 +390,20 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $function_name = $value . $iteration_number;
-                    $code .= '$buffer .= ' . $function_name . "();";
+                $function_name = $value . $iteration_number;
+                $code .= '$buffer .= ' .
+                         $function_name .
+                         "($constructor_args);";
 
-                    $loop_parents[] = $AST[$i];
-                    if (!is_array($AST[$i - 1])) {
-                        $e = new Exception(
-                            ERROR_TEMPLATE_CLASS_CREATION
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[] = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                $loop_parents[] = $AST[$i];
+                if (!is_array($AST[$i - 1])) {
+                    $e = new Exception(
+                        ERROR_TEMPLATE_CLASS_CREATION
+                    );
+                    $this->exceptions[] = $e;
+                    $this->messages[] = array(
+                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
                             MESSAGE_TEXT => $e->getMessage()
                         );
 
@@ -437,7 +460,7 @@ class TemplateEngine
                         $class_name,
                         $args
                     );
-                    $code .= '$' .
+                    $code .= "$" .
                              $class_name .
                              " = new " .
                              $class_name .
@@ -460,9 +483,12 @@ class TemplateEngine
         }
 
         $arguments = array();
-        // todo: objects support (note: they will be injected as dependencies)
         foreach ($args as $key => $arg) {
-            $arguments[] = 'private $' .
+            if (is_object($arg)) {
+                $arguments[] = "private $" . $key . ";";
+                continue;
+            }
+            $arguments[] = "private $" .
                            $key .
                            "=" .
                            var_export($arg, true) .
@@ -560,7 +586,7 @@ class TemplateEngine
                 continue;
             }
             foreach (explode(".", $parent_value) as $value) {
-                if (isset($loop_parent[$value])) {
+                if (is_array($loop_parent) && isset($loop_parent[$value])) {
                     $loop_parent = $loop_parent[$value];
                     if ($first) {
                         $result .= $value;
@@ -572,12 +598,23 @@ class TemplateEngine
                     $loop_parent,
                     $value
                 )) {
-                    $loop_parent = $loop_parent->{$value};
+                    $loop_parent = $loop_parent->{$value}();
                     if ($first) {
                         $result .= $value;
                         $first = false;
                     } else {
                         $result .= "->" . $value . "()";
+                    }
+                } elseif (property_exists(
+                    $loop_parent,
+                    $value
+                )) {
+                    $loop_parent = $loop_parent->{$value};
+                    if ($first) {
+                        $result .= $value;
+                        $first = false;
+                    } else {
+                        $result .= "->" . $value;
                     }
                 } else {
                     $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
