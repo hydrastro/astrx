@@ -268,9 +268,10 @@ class TemplateEngine
      * Assemble Code.
      * Assembles the template class code.
      *
-     * @param string               $class_name Class name.
-     * @param array<int, mixed>    $AST        Abstract syntax tree.
-     * @param array<string, mixed> $args       Arguments.
+     * @param string               $class_name              Class name.
+     * @param array<int, mixed>    $AST                     Abstract syntax
+     *                                                      tree.
+     * @param array<string, mixed> $args                    Arguments.
      *
      * @return string|null
      */
@@ -286,7 +287,7 @@ class TemplateEngine
                "{" .
                implode("\n", $code[self::INDEX_CLASS_VARS]) .
                'function renderTemplate(){$buffer="";' .
-               $code[self::INDEX_RENDER_BODY] .
+               $code[self::INDEX_RENDER_BODY][0] .
                "}" .
                implode("\n", $code[self::INDEX_FUNCTIONS_CODE]) .
                "}";
@@ -296,14 +297,14 @@ class TemplateEngine
      * Write Code.
      * Writes the code for a given template.
      *
-     * @param array<int, array<int, mixed>>  $AST              Abstract syntax
+     * @param array<int, mixed>              $AST              Abstract syntax
      *                                                         tree.
      * @param array<string, mixed>           $args             Arguments.
      * @param array<int, array<int, string>> $loop_parents     Token parents.
      * @param array<int, string>             $functions_code   Functions code.
      * @param int                            $iteration_number Iteration number.
      *
-     * @return array<int, mixed>|null
+     * @return array<int, array<int, string>>|null
      */
     private function writeCode(
         array $AST,
@@ -336,6 +337,19 @@ class TemplateEngine
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
             $iteration_number++;
+            if (!is_array($AST[$i])) {
+                $e = new Exception(
+                    ERROR_TEMPLATE_CLASS_CREATION
+                );
+                $this->exceptions[] = $e;
+                $this->messages[] = array(
+                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                    MESSAGE_TEXT => $e->getMessage()
+                );
+
+                return null;
+            }
             $value = (in_array(
                 $AST[$i][self::AST_TYPE],
                 self::TOKENS_POINTING_TO_ARGS
@@ -359,6 +373,19 @@ class TemplateEngine
                     $code .= '$buffer .= ' . $function_name . "();";
 
                     $loop_parents[] = $AST[$i];
+                    if (!is_array($AST[$i - 1])) {
+                        $e = new Exception(
+                            ERROR_TEMPLATE_CLASS_CREATION
+                        );
+                        $this->exceptions[] = $e;
+                        $this->messages[] = array(
+                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                            MESSAGE_TEXT => $e->getMessage()
+                        );
+
+                        return null;
+                    }
                     $this->writeCode(
                         $AST[$i - 1],
                         $args,
@@ -376,6 +403,19 @@ class TemplateEngine
                         $AST[$i],
                         true
                     );
+                    if (!is_string($class_name)) {
+                        $e = new Exception(
+                            ERROR_TEMPLATE_CLASS_CREATION
+                        );
+                        $this->exceptions[] = $e;
+                        $this->messages[] = array(
+                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                            MESSAGE_TEXT => $e->getMessage()
+                        );
+
+                        return null;
+                    }
                     $this->loadTemplate($class_name);
                     $partial_code = $this->compileTemplate($class_name, $args);
                     $partials_code[] = $partial_code;
@@ -431,7 +471,7 @@ class TemplateEngine
 
         return array(
             self::INDEX_CLASS_VARS => $arguments,
-            self::INDEX_RENDER_BODY => $code,
+            self::INDEX_RENDER_BODY => array($code),
             self::INDEX_FUNCTIONS_CODE => $functions_code
         );
     }
