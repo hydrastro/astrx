@@ -1,4 +1,4 @@
-FROM php:8.1-fpm-alpine3.15
+FROM php:latest
 
 RUN apk add nano
 RUN apk add composer

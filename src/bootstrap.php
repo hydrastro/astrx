@@ -12,4 +12,5 @@ require CLASS_DIR . "autoloader.php";
 new Autoloader();
 $injector = new Injector();
 $injector->createClass("ContentManager");
-$injector->createClass("TemplateEngine");
+$injector->callClassMethod("ContentManager", "init");
+echo "yay";

@@ -56,7 +56,7 @@ class ContentManager
             array(
                 "dsn" => $dsn . ":host=" . $host . ";dbname=" . $dbname . ";",
                 "username" => $username,
-                "passwd" => $passwd
+                "password" => $passwd
             )
         );
         try {
