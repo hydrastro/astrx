@@ -34,7 +34,6 @@ class TemplateEngine
         );
     public const TOKENS_POINTING_TO_ARGS
         = array(
-            self::TOKEN_TYPE_LOOP_START,
             self::TOKEN_TYPE_INVERTED_LOOP_START,
             self::TOKEN_TYPE_VAR,
             self::TOKEN_TYPE_UNESCAPED_VAR
@@ -43,7 +42,6 @@ class TemplateEngine
     public const TEMPLATE_CLOSE_TAG = "}}";
     public const AST_TYPE = 0;
     public const AST_VALUE = 1;
-    public const INDEX_CLASS_VARS = 0;
     public const INDEX_RENDER_BODY = 1;
     public const INDEX_FUNCTIONS_CODE = 2;
     /**
@@ -221,18 +219,12 @@ class TemplateEngine
 
             return null;
         }
-        $objects = array();
-        foreach ($args as $arg) {
-            if (is_object($arg)) {
-                $objects[] = $arg;
-            }
-        }
-        $temp = new $template_name(...$objects);
+        $temp = new $template_name();
 
         /**
          * @phpstan-ignore-next-line
          */
-        return $temp->renderTemplate();
+        return $temp->renderTemplate($args);
     }
 
     /**
@@ -290,8 +282,7 @@ class TemplateEngine
         return "<?php class " .
                $class_name .
                "{" .
-               implode("\n", $code[self::INDEX_CLASS_VARS]) .
-               'function renderTemplate(){$buffer="";' .
+               'function renderTemplate($args){$buffer="";' .
                $code[self::INDEX_RENDER_BODY][0] .
                "}" .
                implode("\n", $code[self::INDEX_FUNCTIONS_CODE]) .
@@ -320,23 +311,6 @@ class TemplateEngine
     )
     : ?array
     {
-        if (empty($functions_code)) {
-            $constructor_args = "";
-            $constructor_body = "";
-            foreach ($args as $key => $arg) {
-                if (is_object($arg)) {
-                    $constructor_args .= '$' . $key . ",";
-                    $constructor_body .= '$this->' . $key . '=$' . $key . ';';
-                }
-            }
-            $constructor_args = rtrim($constructor_args, ",");
-            $functions_code[] = "public function __construct(" .
-                                rtrim($constructor_args, ",") .
-                                "){" .
-                                $constructor_body .
-                                "}";
-        }
-
         $code = "";
         if (!empty($loop_parents)) {
             $resolved_parent = $this->resolveValue($args, $loop_parents);
@@ -344,16 +318,16 @@ class TemplateEngine
             $code .= "function " .
                      ltrim($end_parent[self::AST_VALUE], "*") .
                      $iteration_number .
-                     '() {$buffer="";';
+                     '($args){$buffer="";';
             switch ($end_parent[self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_LOOP_START:
-                    $code .= 'for($i=0; $i < count(' .
+                    $code .= 'for($i=0;$i<count(' .
                              $resolved_parent .
-                             '); $i++) {';
+                             ');$i++){';
                     break;
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $code .= "if(empty(" . $resolved_parent . ") {";
+                    $code .= "if(empty(" . $resolved_parent . "){";
                     break;
             }
         }
@@ -382,20 +356,18 @@ class TemplateEngine
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_TEXT:
-                    $code .= '$buffer .= "' . $value . '";';
+                $code .= '$buffer.="' . $value . '";';
                     break;
                 case self::TOKEN_TYPE_VAR:
-                    $code .= '$buffer .= htmlspecialchars(' . $value . ");";
+                    $code .= '$buffer.=htmlspecialchars(' . $value . ");";
                     break;
                 case self::TOKEN_TYPE_UNESCAPED_VAR:
-                    $code .= '$buffer .= ' . $value . ";";
+                    $code .= '$buffer.=' . $value . ";";
                     break;
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
                 $function_name = $value . $iteration_number;
-                $code .= '$buffer .= ' .
-                         $function_name .
-                         "($constructor_args);";
+                $code .= '$buffer.=' . $function_name . '($args);';
 
                 $loop_parents[] = $AST[$i];
                 if (!is_array($AST[$i - 1])) {
@@ -464,11 +436,11 @@ class TemplateEngine
                     );
                     $code .= "$" .
                              $class_name .
-                             " = new " .
+                             "=new " .
                              $class_name .
                              '();$buffer.=$' .
                              $class_name .
-                             "->renderTemplate();";
+                             '->renderTemplate($args);';
                     break;
                 case self::TOKEN_TYPE_LOOP_END:
                 case self::TOKEN_TYPE_COMMENT:
@@ -477,28 +449,14 @@ class TemplateEngine
             }
         }
         if (!empty($loop_parents)) {
-            $code .= '} return $buffer; }';
+            $code .= '} return $buffer;}';
             $functions_code[] = $code;
             array_pop($loop_parents);
         } else {
             $code .= 'return $buffer;';
         }
 
-        $arguments = array();
-        foreach ($args as $key => $arg) {
-            if (is_object($arg)) {
-                $arguments[] = "private $" . $key . ";";
-                continue;
-            }
-            $arguments[] = "private $" .
-                           $key .
-                           "=" .
-                           var_export($arg, true) .
-                           ";";
-        }
-
         return array(
-            self::INDEX_CLASS_VARS => $arguments,
             self::INDEX_RENDER_BODY => array($code),
             self::INDEX_FUNCTIONS_CODE => $functions_code
         );
@@ -565,13 +523,12 @@ class TemplateEngine
         if (empty($parents)) {
             return null;
         }
-        $result = '$this->';
+        $result = '$args';
         $first_index = explode(
                            ".",
                            ltrim($parents[0][self::AST_VALUE], "*")
                        )[0];
         $loop_parent = array($first_index => $args[$first_index]);
-        $first = true;
         for ($i = 0; $i < count($parents); $i++) {
             $parent_raw_value = $parents[$i][self::AST_VALUE];
             $dereference_levels = 0;
@@ -590,34 +547,19 @@ class TemplateEngine
             foreach (explode(".", $parent_value) as $value) {
                 if (is_array($loop_parent) && isset($loop_parent[$value])) {
                     $loop_parent = $loop_parent[$value];
-                    if ($first) {
-                        $result .= $value;
-                        $first = false;
-                    } else {
                         $result .= '["' . $value . '"]';
-                    }
                 } elseif (method_exists(
                     $loop_parent,
                     $value
                 )) {
                     $loop_parent = $loop_parent->{$value}();
-                    if ($first) {
-                        $result .= $value;
-                        $first = false;
-                    } else {
-                        $result .= "->" . $value . "()";
-                    }
+                    $result .= "->" . $value . "()";
                 } elseif (property_exists(
                     $loop_parent,
                     $value
                 )) {
                     $loop_parent = $loop_parent->{$value};
-                    if ($first) {
-                        $result .= $value;
-                        $first = false;
-                    } else {
                         $result .= "->" . $value;
-                    }
                 } else {
                     $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
                     $this->exceptions[] = $e;
@@ -633,12 +575,12 @@ class TemplateEngine
             }
             for ($j = 0; $j < $dereference_levels; $j++) {
                 if ($j === 0) {
-                    $result = '$this->{' . $result . "}";
+                    $result = '$args[' . $result . "]";
                     continue;
                 }
                 if (isset($args[$loop_parent])) {
                     $loop_parent = $args[$loop_parent];
-                    $result = '$this->{' . $result . "}";
+                    $result = '$args[' . $result . "]";
                 } else {
                     $e = new Exception(ERROR_INVALID_DEREFERENCE);
                     $this->exceptions[] = $e;
