@@ -320,20 +320,22 @@ class TemplateEngine
     )
     : ?array
     {
-        $constructor_args = "";
-        $constructor_body = "";
-        foreach ($args as $key => $arg) {
-            if (is_object($arg)) {
-                $constructor_args .= '$' . $key . ",";
-                $constructor_body .= '$this->' . $key . '=$' . $key . ';';
+        if (empty($functions_code)) {
+            $constructor_args = "";
+            $constructor_body = "";
+            foreach ($args as $key => $arg) {
+                if (is_object($arg)) {
+                    $constructor_args .= '$' . $key . ",";
+                    $constructor_body .= '$this->' . $key . '=$' . $key . ';';
+                }
             }
+            $constructor_args = rtrim($constructor_args, ",");
+            $functions_code[] = "public function __construct(" .
+                                rtrim($constructor_args, ",") .
+                                "){" .
+                                $constructor_body .
+                                "}";
         }
-        $constructor_args = rtrim($constructor_args, ",");
-        $functions_code[] = "public function __construct(" .
-                            rtrim($constructor_args, ",") .
-                            "){" .
-                            $constructor_body .
-                            "}";
 
         $code = "";
         if (!empty($loop_parents)) {
