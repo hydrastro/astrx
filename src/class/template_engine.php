@@ -367,7 +367,7 @@ class TemplateEngine
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
                 $function_name = $value . $iteration_number;
-                $code .= '$buffer.=' . $function_name . '($args);';
+                $code .= '$buffer.=$this->' . $function_name . '($args);';
 
                 $loop_parents[] = $AST[$i];
                 if (!is_array($AST[$i - 1])) {
@@ -642,7 +642,6 @@ class TemplateEngine
         array $args = array(),
     )
     : ?string {
-        $args = (empty($args)) ? array() : $args;
         if (!isset($this->templates[$template])) {
             if (!$this->loadTemplate($template)) {
                 return null;
