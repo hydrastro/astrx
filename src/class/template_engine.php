@@ -764,7 +764,6 @@ class TemplateEngine
     private function evalTemplate(string $code)
     : bool {
         try {
-            echo $code;
             eval("?>" . $code);
 
             return true;
