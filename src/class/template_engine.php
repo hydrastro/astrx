@@ -202,7 +202,7 @@ class TemplateEngine
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_TEXT:
-                    $code .= '$buffer.="' . $value . '";';
+                    $code .= '$buffer.=' . var_export($value, true) . ';';
                     break;
                 case self::TOKEN_TYPE_VAR:
                     $code .= '$buffer.=htmlspecialchars(' . $value . ");";
@@ -213,14 +213,9 @@ class TemplateEngine
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
                     $function_name = $value . $iteration_number;
-                    //$code .= '$this->TemplateEngine->pushContextValue
-                    //($class_name,"' .
-                    //        $value .
-                    //        '");';
                     $code .= '$buffer.=$this->' .
                              $function_name .
                              '($args,$parent);';
-                    //$code .= '$this->TemplateEngine->popContextValue($class_name);';
                     $loop_parents[] = $AST[$i];
                     if (!is_array($AST[$i - 1])) {
                         $e = new Exception(
