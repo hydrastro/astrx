@@ -19,3 +19,7 @@ define(
     "An error occurred while dereferencing a variable."
 );
 define("ERROR_TEMPLATE_NOT_LOADED", "The requested template isn't loaded.");
+define(
+    "ERROR_TEMPLATE_AST_INCONSISTENCY",
+    "A consistency error occurred while processing the template abstract syntax tree."
+);

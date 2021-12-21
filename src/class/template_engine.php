@@ -21,6 +21,7 @@ class TemplateEngine
     public const TOKEN_TYPE_PARTIAL = ">";
     public const TOKEN_TYPE_COMMENT = "!";
     public const TOKEN_TYPE_CHANGE_TAGS = "=";
+    public const TOKEN_TYPE_DEREFERENCE_OPERATOR = "*";
     public const TOKEN_TYPES
         = array(
             self::TOKEN_TYPE_CHANGE_TAGS,
@@ -40,6 +41,7 @@ class TemplateEngine
         );
     public const TEMPLATE_OPEN_TAG = "{{";
     public const TEMPLATE_CLOSE_TAG = "}}";
+    public const TEMPLATE_CLASS_PREFIX = "Template";
     public const AST_TYPE = 0;
     public const AST_VALUE = 1;
     public const INDEX_RENDER_BODY = 1;
@@ -53,10 +55,6 @@ class TemplateEngine
      */
     public array $exceptions = array();
     /**
-     * @var array<string, string> $templates Templates array.
-     */
-    private array $templates = array();
-    /**
      * @var array<string, mixed> $args Arguments array.
      */
     private array $args = array();
@@ -64,6 +62,20 @@ class TemplateEngine
      * @var int $parse_mode Template parse mode.
      */
     private int $parse_mode = self::PARSE_MODE_PHP;
+    /**
+     * @var array<string, array<int, string>> $templates_context Template
+     *                                                           context.
+     */
+    private array $templates_context = array();
+    /**
+     * @var array<string, string> $known_templates Already built templates list;
+     *                                             template name => class name
+     */
+    private array $known_templates = array();
+    /**
+     * @var int $loop_counter Loop counter, used for dot-only vars in loops.
+     */
+    private int $loop_counter = 0;
 
     /**
      * Get Configuration Methods.
@@ -77,6 +89,33 @@ class TemplateEngine
     }
 
     /**
+     * Push Context Value.
+     * Pushes a value into a template's context stack.
+     *
+     * @param string $class_name
+     * @param string $value
+     *
+     * @return void
+     */
+    public function pushContextValue(string $class_name, string $value)
+    {
+        $this->templates_context[$class_name][] = $value;
+    }
+
+    /**
+     * Pop Context Value.
+     * Pops a value from a template's context stack.
+     *
+     * @param string $class_name
+     *
+     * @return void
+     */
+    public function popContextValue(string $class_name)
+    {
+        array_pop($this->templates_context[$class_name]);
+    }
+
+    /**
      * Add Global Args.
      * Adds global args that will overwrite the template arguments.
      *
@@ -87,46 +126,6 @@ class TemplateEngine
     public function addGlobalArgs(array $args)
     {
         $this->args = array_merge($this->args, $args);
-    }
-
-    /**
-     * Render.
-     * Renders a template: either a PHP template or a template that needs to be
-     * compiled.
-     *
-     * @param string              $template   Template name.
-     * @param array<string,mixed> $args       Arguments.
-     * @param int                 $parse_mode Parse mode.
-     *
-     * @return string|null
-     */
-    public function render(
-        string $template,
-        array $args = array(),
-        int $parse_mode
-        = self::PARSE_MODE_PHP
-    )
-    : ?string {
-        if (!empty($parse_mode)) {
-            if (!in_array($parse_mode, self::PARSE_MODES)) {
-                $e = new Exception(ERROR_INVALID_PARSE_MODE);
-                $this->exceptions[] = $e;
-                $this->messages[] = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
-                );
-            }
-        } else {
-            $parse_mode = $this->getParseMode();
-        }
-        switch ($parse_mode) {
-            default:
-            case self::PARSE_MODE_PHP:
-                return $this->renderPHP($template, $args);
-            case self::PARSE_MODE_TEMPLATE:
-                return $this->renderTemplate($template, $args);
-        }
     }
 
     /**
@@ -165,137 +164,11 @@ class TemplateEngine
     }
 
     /**
-     * Render PHP.
-     * Renders a PHP template with output buffering functions.
-     *
-     * @param string              $template
-     * @param array<string,mixed> $args
-     *
-     * @return string|null
-     */
-    private function renderPHP(string $template, array $args = array())
-    : ?string {
-        extract($args);
-        ob_start();
-        require(TEMPLATE_DIR . "$template.php");
-        $content = ob_get_clean();
-
-        return !empty($content) ? $content : null;
-    }
-
-    /**
-     * Render Template.
-     * Compiles and gets a processed template.
-     *
-     * @param string               $template Template name.
-     * @param array<string, mixed> $args     Arguments.
-     *
-     * @return string|null
-     */
-    private function renderTemplate(string $template, array $args = array())
-    : ?string {
-        $template_class = $this->compileTemplate($template, $args);
-        if ($template_class === null || !$this->evalTemplate($template_class)) {
-            $e = new Exception(ERROR_TEMPLATE_CLASS_CREATION);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
-            );
-
-            return null;
-        }
-
-        $template_name = $this->getTemplateClassName($template, $args);
-        if (!class_exists("$template_name")) {
-            $e = new Exception(ERROR_TEMPLATE_CLASS_CREATION);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
-            );
-
-            return null;
-        }
-        $temp = new $template_name();
-
-        /**
-         * @phpstan-ignore-next-line
-         */
-        return $temp->renderTemplate($args);
-    }
-
-    /**
-     * Remove Template.
-     * Removes a loaded template.
-     *
-     * @param string $template Template name.
-     *
-     * @return bool
-     */
-    public function removeTemplate(string $template)
-    : bool {
-        if (isset($this->templates[$template])) {
-            unset($this->templates[$template]);
-
-            return true;
-        }
-        $e = new Exception(ERROR_TEMPLATE_NOT_LOADED);
-        $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
-        );
-
-        return false;
-    }
-
-    /**
-     * Removes all loaded templates.
-     * @return void
-     */
-    public function removeAll()
-    {
-        $this->templates = array();
-    }
-
-    /**
-     * Assemble Code.
-     * Assembles the template class code.
-     *
-     * @param string               $class_name Class name.
-     * @param array<int, mixed>    $AST        Abstract syntax tree.
-     * @param array<string, mixed> $args       Arguments.
-     *
-     * @return string|null
-     */
-    private function assembleCode(string $class_name, array $AST, array $args)
-    : ?string {
-        $code = $this->writeCode($AST, $args);
-        if ($code === null) {
-            return null;
-        }
-
-        return "<?php class " .
-               $class_name .
-               "{" .
-               'function renderTemplate($args){$buffer="";' .
-               $code[self::INDEX_RENDER_BODY][0] .
-               "}" .
-               implode("\n", $code[self::INDEX_FUNCTIONS_CODE]) .
-               "}";
-    }
-
-    /**
      * Write Code.
      * Writes the code for a given template.
      *
      * @param array<int, mixed>              $AST              Abstract syntax
      *                                                         tree.
-     * @param array<string, mixed>           $args             Arguments.
      * @param array<int, array<int, string>> $loop_parents     Token parents.
      * @param array<int, string>             $functions_code   Functions code.
      * @param int                            $iteration_number Iteration number.
@@ -304,32 +177,35 @@ class TemplateEngine
      */
     private function writeCode(
         array $AST,
-        array $args,
         array $loop_parents = array(),
         array &$functions_code = array(),
         int $iteration_number = 0
     )
-    : ?array
-    {
-        $code = "";
+    : ?array {
+        $code = '';
         if (!empty($loop_parents)) {
-            $resolved_parent = $this->resolveValue($args, $loop_parents);
             $end_parent = end($loop_parents);
             $code .= "function " .
                      ltrim($end_parent[self::AST_VALUE], "*") .
                      $iteration_number .
-                     '($args){$buffer="";';
+                     '($args){$buffer="";$class_name=get_class($this);';
             switch ($end_parent[self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_LOOP_START:
-                    $code .= 'for($i=0;$i<count(' .
-                             $resolved_parent .
-                             ');$i++){';
+                    $code .= '$count=count($this->TemplateEngine->resolveValue($class_name,"' .
+                             $end_parent[self::AST_VALUE] .
+                             '",$args));for($i=0;$i<$count;$i++){';
                     break;
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $code .= "if(empty(" . $resolved_parent . "){";
+                    $code .= 'if(!is_array($this->TemplateEngine->resolveValue($class_name,"' .
+                             $end_parent[self::AST_VALUE] .
+                             '",$args))||empty($this->TemplateEngine->resolveValue($class_name,"' .
+                             $end_parent[self::AST_VALUE] .
+                             '",$args)){';
                     break;
             }
+        } else {
+            $code .= '$class_name=get_class($this);';
         }
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
@@ -350,13 +226,15 @@ class TemplateEngine
             $value = (in_array(
                 $AST[$i][self::AST_TYPE],
                 self::TOKENS_POINTING_TO_ARGS
-            )) ? $this->resolveValue($args, $loop_parents, $AST[$i]) :
-                $AST[$i][self::AST_VALUE];
+            )) ?
+                '$this->TemplateEngine->resolveValue($class_name,"' .
+                $AST[$i][self::AST_VALUE] .
+                '",$args)' : $AST[$i][self::AST_VALUE];
 
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_TEXT:
-                $code .= '$buffer.="' . $value . '";';
+                    $code .= '$buffer.="' . $value . '";';
                     break;
                 case self::TOKEN_TYPE_VAR:
                     $code .= '$buffer.=htmlspecialchars(' . $value . ");";
@@ -366,18 +244,21 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                $function_name = $value . $iteration_number;
-                $code .= '$buffer.=$this->' . $function_name . '($args);';
-
-                $loop_parents[] = $AST[$i];
-                if (!is_array($AST[$i - 1])) {
-                    $e = new Exception(
-                        ERROR_TEMPLATE_CLASS_CREATION
-                    );
-                    $this->exceptions[] = $e;
-                    $this->messages[] = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                    $function_name = $value . $iteration_number;
+                    $code .= '$this->TemplateEngine->pushContextValue(get_class($this),"' .
+                             $value .
+                             '");';
+                    $code .= '$buffer.=$this->' . $function_name . '($args);';
+                    $code .= '$this->TemplateEngine->popContextValue(get_class($this));';
+                    $loop_parents[] = $AST[$i];
+                    if (!is_array($AST[$i - 1])) {
+                        $e = new Exception(
+                            ERROR_TEMPLATE_AST_INCONSISTENCY
+                        );
+                        $this->exceptions[] = $e;
+                        $this->messages[] = array(
+                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
                             MESSAGE_TEXT => $e->getMessage()
                         );
 
@@ -385,7 +266,6 @@ class TemplateEngine
                     }
                     $this->writeCode(
                         $AST[$i - 1],
-                        $args,
                         $loop_parents,
                         $functions_code,
                         $iteration_number
@@ -394,53 +274,17 @@ class TemplateEngine
                     $i--;
                     break;
                 case self::TOKEN_TYPE_PARTIAL:
-                    $class_name = $this->resolveValue(
-                        $args,
-                        $loop_parents,
-                        $AST[$i],
-                        true
-                    );
-                    if (!is_string($class_name)) {
-                        $e = new Exception(
-                            ERROR_TEMPLATE_CLASS_CREATION
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[] = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
-                        );
-
-                        return null;
-                    }
-                    $this->loadTemplate($class_name);
-                    $partial_code = $this->compileTemplate($class_name, $args);
-                    $partials_code[] = $partial_code;
-                    if ($partial_code === null ||
-                        !$this->evalTemplate($partial_code)) {
-                        $e = new Exception(
-                            ERROR_TEMPLATE_CLASS_CREATION
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[] = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
-                        );
-
-                        return null;
-                    }
-                    $class_name = $this->getTemplateClassName(
-                        $class_name,
-                        $args
-                    );
-                    $code .= "$" .
+                    $class_name = ltrim($value, "*") . $iteration_number;
+                    $iteration_number++;
+                    $code .= '$' .
                              $class_name .
-                             "=new " .
+                             '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue($class_name,"' .
+                             $value .
+                             '"));if($' .
                              $class_name .
-                             '();$buffer.=$' .
+                             '!==null){$buffer.=$' .
                              $class_name .
-                             '->renderTemplate($args);';
+                             '->render($args);}';
                     break;
                 case self::TOKEN_TYPE_LOOP_END:
                 case self::TOKEN_TYPE_COMMENT:
@@ -466,37 +310,41 @@ class TemplateEngine
      * Resolve Value.
      * Resolves a value in the template class context.
      *
-     * @param array<string, mixed>           $args      Arguments.
-     * @param array<int, array<int, string>> $parents   Token parents.
-     * @param array<int, string>             $token     Current token.
-     * @param bool                           $get_value Return actual value.
+     * @param string               $class_name Class name.
+     * @param string               $value      Value to resolve.
+     * @param array<string, mixed> $args       Arguments.
      *
      * @return mixed
      */
-    private function resolveValue(
+    public function resolveValue(
+        string $class_name,
+        string $value,
         array $args,
-        array $parents,
-        array $token = array(),
-        bool $get_value
-        = false
     )
     : mixed {
-        if (empty($token) && !empty($parents)) {
-            $token = end($parents);
-        } else {
-            $parents[] = $token;
+        if ($value !== ".") {
+            $this->loop_counter = 0;
         }
-
+        $parents = $this->templates_context[$class_name];
+        $parents[] = $value;
         $result = $this->resolveValueHelper(
             $args,
-            $parents,
-            $get_value
+            $parents
         );
         if ($result === null) {
             $result = $this->resolveValueHelper(
                 $args,
-                array($token),
-                $get_value
+                array($value)
+            );
+        }
+        if ($result === null) {
+            $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+            $this->exceptions[] = $e;
+            $this->messages[]
+                = array(
+                MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
+                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                MESSAGE_TEXT => $e->getMessage()
             );
         }
 
@@ -507,30 +355,27 @@ class TemplateEngine
      * Resolve Value Helper.
      * Helps to resolve a value in the template class context.
      *
-     * @param array<string, mixed>           $args      Arguments.
-     * @param array<int, array<int, string>> $parents   Token parents.
-     * @param bool                           $get_value Return actual value.
+     * @param array<string, mixed> $args    Arguments.
+     * @param array<int, string>   $parents Parents.
      *
      * @return mixed
      */
     private function resolveValueHelper(
         array $args,
-        array $parents,
-        bool $get_value
-        = false
+        array $parents
     )
     : mixed {
-        if (empty($parents)) {
-            return null;
-        }
-        $result = '$args';
         $first_index = explode(
                            ".",
-                           ltrim($parents[0][self::AST_VALUE], "*")
+                           ltrim(
+                               $parents[0],
+                               self::TOKEN_TYPE_DEREFERENCE_OPERATOR
+                           )
                        )[0];
         $loop_parent = array($first_index => $args[$first_index]);
         for ($i = 0; $i < count($parents); $i++) {
-            $parent_raw_value = $parents[$i][self::AST_VALUE];
+            $parent_raw_value = $parents[$i];
+
             $dereference_levels = 0;
             for ($j = 0; $j < strlen($parent_raw_value); $j++) {
                 if ($parent_raw_value[$j] === "*") {
@@ -541,62 +386,44 @@ class TemplateEngine
             }
             $parent_value = substr($parent_raw_value, $dereference_levels);
             if ($parent_value === ".") {
-                $result .= '[$i]';
-                continue;
+                $loop_parent = $loop_parent[$this->loop_counter];
+                $this->loop_counter++;
             }
             foreach (explode(".", $parent_value) as $value) {
                 if (is_array($loop_parent) && isset($loop_parent[$value])) {
                     $loop_parent = $loop_parent[$value];
-                        $result .= '["' . $value . '"]';
-                } elseif (method_exists(
-                    $loop_parent,
-                    $value
-                )) {
+                } elseif (is_object($loop_parent) && method_exists(
+                        $loop_parent,
+                        $value
+                    )) {
                     $loop_parent = $loop_parent->{$value}();
-                    $result .= "->" . $value . "()";
-                } elseif (property_exists(
-                    $loop_parent,
-                    $value
-                )) {
+                } elseif (is_object($loop_parent) && property_exists(
+                        $loop_parent,
+                        $value
+                    )) {
                     $loop_parent = $loop_parent->{$value};
-                        $result .= "->" . $value;
                 } else {
-                    $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-                    $this->exceptions[] = $e;
-                    $this->messages[]
-                        = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                        MESSAGE_TEXT => $e->getMessage()
-                    );
-
-                    return null;
+                    continue;
                 }
             }
             for ($j = 0; $j < $dereference_levels; $j++) {
-                if ($j === 0) {
-                    $result = '$args[' . $result . "]";
-                    continue;
-                }
                 if (isset($args[$loop_parent])) {
                     $loop_parent = $args[$loop_parent];
-                    $result = '$args[' . $result . "]";
                 } else {
                     $e = new Exception(ERROR_INVALID_DEREFERENCE);
                     $this->exceptions[] = $e;
                     $this->messages[]
                         = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                        MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
                         MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
                         MESSAGE_TEXT => $e->getMessage()
                     );
-
-                    return null;
+                    continue;
                 }
             }
         }
 
-        return ($get_value) ? $loop_parent : $result;
+        return $loop_parent;
     }
 
     /**
@@ -605,10 +432,13 @@ class TemplateEngine
      *
      * @param string $template Template name.
      *
-     * @return bool
+     * @return object|null
      */
     public function loadTemplate(string $template)
-    : bool {
+    : ?object {
+        if (array_key_exists($template, $this->known_templates)) {
+            return $this->getTemplateClass($this->known_templates[$template]);
+        }
         $template_file = TEMPLATE_DIR . $template . ".php";
         if (!file_exists($template_file) ||
             ($content = file_get_contents($template_file)) === false) {
@@ -620,36 +450,12 @@ class TemplateEngine
                 MESSAGE_TEXT => $e->getMessage()
             );
 
-            return false;
+            return null;
         }
-        $this->templates[$template]
-            = $content;
 
-        return true;
-    }
+        $class_name = $this->getTemplateClassName($template, $content);
 
-    /**
-     * Compile Template.
-     * Compiles and evaluates a template.
-     *
-     * @param string              $template Template name.
-     * @param array<string,mixed> $args     Arguments.
-     *
-     * @return string|null
-     */
-    private function compileTemplate(
-        string $template,
-        array $args = array(),
-    )
-    : ?string {
-        if (!isset($this->templates[$template])) {
-            if (!$this->loadTemplate($template)) {
-                return null;
-            }
-        }
-        $template_body = $this->templates[$template];
-        $args = array_merge($args, $this->args);
-        $tokenized = $this->tokenizeTemplate($template_body);
+        $tokenized = $this->tokenizeTemplate($content);
         if ($tokenized === null) {
             return null;
         }
@@ -657,9 +463,60 @@ class TemplateEngine
         if ($AST === null) {
             return null;
         }
-        $class_name = $this->getTemplateClassName($template, $args);
+        $code = $this->compileTemplate($class_name, $AST);
+        if ($code === null) {
+            return null;
+        }
+        $this->evalTemplate($code);
+        if (!class_exists($class_name)) {
+            return null;
+        }
+        $this->known_templates[$template] = $class_name;
+        $this->templates_context[$class_name] = array();
 
-        return $this->assembleCode($class_name, $AST, $args);
+        return $this->getTemplateClass($class_name);
+    }
+
+    /**
+     * Get Template Class.
+     * Initializes a template class instance and returns it.
+     *
+     * @param string $class_name
+     *
+     * @return object
+     */
+    public function getTemplateClass(string $class_name)
+    : object {
+        return new $class_name($this);
+    }
+
+    /**
+     * Compile Template.
+     * Compiles and evaluates a template.
+     *
+     * @param string            $class_name Template class name.
+     * @param array<int, mixed> $AST        Abstract syntax tree.
+     *
+     * @return string|null
+     */
+    private function compileTemplate(
+        string $class_name,
+        array $AST
+    )
+    : ?string {
+        $code = $this->writeCode($AST);
+        if ($code === null) {
+            return null;
+        }
+
+        return "<?php class " .
+               $class_name .
+               '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}' .
+               'function render($args){$buffer="";' .
+               $code[self::INDEX_RENDER_BODY][0] .
+               "}" .
+               implode("", $code[self::INDEX_FUNCTIONS_CODE]) .
+               "}";
     }
 
     /**
@@ -859,17 +716,19 @@ class TemplateEngine
      * Get Template Class Name.
      * Returns the template class name.
      *
-     * @param string               $template Template class name.
-     * @param array<string, mixed> $args     Arguments.
+     * @param string $template_name    Template class name.
+     * @param string $template_content Template file raw content.
      *
      * @return string
      */
-    public function getTemplateClassName(string $template, array $args)
+    public function getTemplateClassName(
+        string $template_name,
+        string $template_content
+    )
     : string {
-        $json = json_encode($args);
-        $json = ($json) ?: "";
-
-        return ltrim($template, "*") . md5($json);
+        return self::TEMPLATE_CLASS_PREFIX .
+               ltrim($template_name, "*") .
+               md5($template_content);
     }
 
     /**
@@ -883,6 +742,7 @@ class TemplateEngine
     private function evalTemplate(string $code)
     : bool {
         try {
+            echo $code;
             eval("?>" . $code);
 
             return true;
