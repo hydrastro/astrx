@@ -63,11 +63,6 @@ class TemplateEngine
      */
     private int $parse_mode = self::PARSE_MODE_PHP;
     /**
-     * @var array<string, array<int, string>> $templates_context Template
-     *                                                           context.
-     */
-    private array $templates_context = array();
-    /**
      * @var array<string, string> $known_templates Already built templates list;
      *                                             template name => class name
      */
@@ -86,33 +81,6 @@ class TemplateEngine
     : array
     {
         return array("getParseMode");
-    }
-
-    /**
-     * Push Context Value.
-     * Pushes a value into a template's context stack.
-     *
-     * @param string $class_name
-     * @param string $value
-     *
-     * @return void
-     */
-    public function pushContextValue(string $class_name, string $value)
-    {
-        $this->templates_context[$class_name][] = $value;
-    }
-
-    /**
-     * Pop Context Value.
-     * Pops a value from a template's context stack.
-     *
-     * @param string $class_name
-     *
-     * @return void
-     */
-    public function popContextValue(string $class_name)
-    {
-        array_pop($this->templates_context[$class_name]);
     }
 
     /**
@@ -188,24 +156,24 @@ class TemplateEngine
             $code .= "function " .
                      ltrim($end_parent[self::AST_VALUE], "*") .
                      $iteration_number .
-                     '($args){$buffer="";$class_name=get_class($this);';
+                     '($args,$parent){$buffer="";';
             switch ($end_parent[self::AST_TYPE]) {
                 default:
                 case self::TOKEN_TYPE_LOOP_START:
-                    $code .= '$count=count($this->TemplateEngine->resolveValue($class_name,"' .
+                    $code .= '$resolved=$this->TemplateEngine->resolveValue("' .
                              $end_parent[self::AST_VALUE] .
-                             '",$args));for($i=0;$i<$count;$i++){';
+                             '",$args,$parent);$count=count($resolved);$parent=$resolved;for($i=0;$i<$count;$i++){';
                     break;
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $code .= 'if(!is_array($this->TemplateEngine->resolveValue($class_name,"' .
+                    $code .= 'if(!is_array($this->TemplateEngine->resolveValue("' .
                              $end_parent[self::AST_VALUE] .
-                             '",$args))||empty($this->TemplateEngine->resolveValue($class_name,"' .
+                             '",$args))||empty($this->TemplateEngine->resolveValue("' .
                              $end_parent[self::AST_VALUE] .
                              '",$args)){';
                     break;
             }
         } else {
-            $code .= '$class_name=get_class($this);';
+            $code .= '$parent=array();';
         }
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
@@ -227,9 +195,9 @@ class TemplateEngine
                 $AST[$i][self::AST_TYPE],
                 self::TOKENS_POINTING_TO_ARGS
             )) ?
-                '$this->TemplateEngine->resolveValue($class_name,"' .
+                '$this->TemplateEngine->resolveValue("' .
                 $AST[$i][self::AST_VALUE] .
-                '",$args)' : $AST[$i][self::AST_VALUE];
+                '",$args,$parent)' : $AST[$i][self::AST_VALUE];
 
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
@@ -244,22 +212,25 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $function_name = $value . $iteration_number;
-                    $code .= '$this->TemplateEngine->pushContextValue(get_class($this),"' .
-                             $value .
-                             '");';
-                    $code .= '$buffer.=$this->' . $function_name . '($args);';
-                    $code .= '$this->TemplateEngine->popContextValue(get_class($this));';
-                    $loop_parents[] = $AST[$i];
-                    if (!is_array($AST[$i - 1])) {
-                        $e = new Exception(
-                            ERROR_TEMPLATE_AST_INCONSISTENCY
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[] = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
+                $function_name = $value . $iteration_number;
+                //$code .= '$this->TemplateEngine->pushContextValue
+                //($class_name,"' .
+                //        $value .
+                //        '");';
+                $code .= '$buffer.=$this->' .
+                         $function_name .
+                         '($args,$parent);';
+                //$code .= '$this->TemplateEngine->popContextValue($class_name);';
+                $loop_parents[] = $AST[$i];
+                if (!is_array($AST[$i - 1])) {
+                    $e = new Exception(
+                        ERROR_TEMPLATE_AST_INCONSISTENCY
+                    );
+                    $this->exceptions[] = $e;
+                    $this->messages[] = array(
+                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                        MESSAGE_TEXT => $e->getMessage()
                         );
 
                         return null;
@@ -278,7 +249,7 @@ class TemplateEngine
                     $iteration_number++;
                     $code .= '$' .
                              $class_name .
-                             '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue($class_name,"' .
+                             '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue("' .
                              $value .
                              '"));if($' .
                              $class_name .
@@ -310,31 +281,48 @@ class TemplateEngine
      * Resolve Value.
      * Resolves a value in the template class context.
      *
-     * @param string               $class_name Class name.
-     * @param string               $value      Value to resolve.
-     * @param array<string, mixed> $args       Arguments.
+     * @param string               $value  Value to resolve.
+     * @param array<string, mixed> $args   Arguments.
+     * @param mixed                $parent Parent value.
      *
      * @return mixed
      */
     public function resolveValue(
-        string $class_name,
         string $value,
         array $args,
+        mixed $parent = null
     )
     : mixed {
         if ($value !== ".") {
             $this->loop_counter = 0;
+        } elseif (is_array($parent) && isset($parent[$this->loop_counter])) {
+            $result = $parent[$this->loop_counter];
+            $this->loop_counter++;
+
+            return $result;
+        } else {
+            $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+            $this->exceptions[] = $e;
+            $this->messages[]
+                = array(
+                MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
+                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                MESSAGE_TEXT => $e->getMessage()
+            );
+
+            return "";
         }
-        $parents = $this->templates_context[$class_name];
-        $parents[] = $value;
-        $result = $this->resolveValueHelper(
-            $args,
-            $parents
-        );
+        $result = null;
+        if (!empty($parent)) {
+            $result = $this->resolveValueHelper(
+                $parent,
+                $value
+            );
+        }
         if ($result === null) {
             $result = $this->resolveValueHelper(
                 $args,
-                array($value)
+                $value
             );
         }
         if ($result === null) {
@@ -355,75 +343,52 @@ class TemplateEngine
      * Resolve Value Helper.
      * Helps to resolve a value in the template class context.
      *
-     * @param array<string, mixed> $args    Arguments.
-     * @param array<int, string>   $parents Parents.
+     * @param array<string, mixed> $args  Arguments.
+     * @param mixed                $value Value to resolve.
      *
      * @return mixed
      */
     private function resolveValueHelper(
         array $args,
-        array $parents
+        mixed $value
     )
     : mixed {
-        $first_index = explode(
-                           ".",
-                           ltrim(
-                               $parents[0],
-                               self::TOKEN_TYPE_DEREFERENCE_OPERATOR
-                           )
-                       )[0];
-        $loop_parent = array($first_index => $args[$first_index]);
-        for ($i = 0; $i < count($parents); $i++) {
-            $parent_raw_value = $parents[$i];
-
-            $dereference_levels = 0;
-            for ($j = 0; $j < strlen($parent_raw_value); $j++) {
-                if ($parent_raw_value[$j] === "*") {
-                    $dereference_levels++;
-                } else {
-                    break;
-                }
+        $exploded = explode(".", $value);
+        $current_value = $args;
+        $dereference_levels = 0;
+        for ($i = 0; $i < strlen($exploded[0]); $i++) {
+            if ($exploded[0][$i] === "*") {
+                $dereference_levels++;
+            } else {
+                break;
             }
-            $parent_value = substr($parent_raw_value, $dereference_levels);
-            if ($parent_value === ".") {
-                $loop_parent = $loop_parent[$this->loop_counter];
-                $this->loop_counter++;
+        }
+        $clean_exploded = $exploded;
+        $clean_exploded[0] = substr($exploded[0], $dereference_levels);
+        for ($i = 0; $i < count($clean_exploded); $i++) {
+            if (!isset($current_value[$clean_exploded[$i]])) {
+                return null;
+            } else {
+                $current_value = $current_value[$clean_exploded[$i]];
             }
-            foreach (explode(".", $parent_value) as $value) {
-                if (is_array($loop_parent) && isset($loop_parent[$value])) {
-                    $loop_parent = $loop_parent[$value];
-                } elseif (is_object($loop_parent) && method_exists(
-                        $loop_parent,
-                        $value
-                    )) {
-                    $loop_parent = $loop_parent->{$value}();
-                } elseif (is_object($loop_parent) && property_exists(
-                        $loop_parent,
-                        $value
-                    )) {
-                    $loop_parent = $loop_parent->{$value};
-                } else {
-                    continue;
-                }
-            }
-            for ($j = 0; $j < $dereference_levels; $j++) {
-                if (isset($args[$loop_parent])) {
-                    $loop_parent = $args[$loop_parent];
-                } else {
-                    $e = new Exception(ERROR_INVALID_DEREFERENCE);
-                    $this->exceptions[] = $e;
-                    $this->messages[]
-                        = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                        MESSAGE_TEXT => $e->getMessage()
-                    );
-                    continue;
-                }
+        }
+        for ($j = 0; $j < $dereference_levels; $j++) {
+            if (is_string($current_value) && isset($args[$current_value])) {
+                $current_value = $args[$current_value];
+            } else {
+                $e = new Exception(ERROR_INVALID_DEREFERENCE);
+                $this->exceptions[] = $e;
+                $this->messages[]
+                    = array(
+                    MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
+                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                    MESSAGE_TEXT => $e->getMessage()
+                );
+                continue;
             }
         }
 
-        return $loop_parent;
+        return $current_value;
     }
 
     /**
@@ -452,6 +417,7 @@ class TemplateEngine
 
             return null;
         }
+        // TODO: PHP templates
 
         $class_name = $this->getTemplateClassName($template, $content);
 
@@ -472,7 +438,6 @@ class TemplateEngine
             return null;
         }
         $this->known_templates[$template] = $class_name;
-        $this->templates_context[$class_name] = array();
 
         return $this->getTemplateClass($class_name);
     }
