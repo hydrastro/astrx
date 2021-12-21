@@ -212,25 +212,25 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                $function_name = $value . $iteration_number;
-                //$code .= '$this->TemplateEngine->pushContextValue
-                //($class_name,"' .
-                //        $value .
-                //        '");';
-                $code .= '$buffer.=$this->' .
-                         $function_name .
-                         '($args,$parent);';
-                //$code .= '$this->TemplateEngine->popContextValue($class_name);';
-                $loop_parents[] = $AST[$i];
-                if (!is_array($AST[$i - 1])) {
-                    $e = new Exception(
-                        ERROR_TEMPLATE_AST_INCONSISTENCY
-                    );
-                    $this->exceptions[] = $e;
-                    $this->messages[] = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                        MESSAGE_TEXT => $e->getMessage()
+                    $function_name = $value . $iteration_number;
+                    //$code .= '$this->TemplateEngine->pushContextValue
+                    //($class_name,"' .
+                    //        $value .
+                    //        '");';
+                    $code .= '$buffer.=$this->' .
+                             $function_name .
+                             '($args,$parent);';
+                    //$code .= '$this->TemplateEngine->popContextValue($class_name);';
+                    $loop_parents[] = $AST[$i];
+                    if (!is_array($AST[$i - 1])) {
+                        $e = new Exception(
+                            ERROR_TEMPLATE_AST_INCONSISTENCY
+                        );
+                        $this->exceptions[] = $e;
+                        $this->messages[] = array(
+                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                            MESSAGE_TEXT => $e->getMessage()
                         );
 
                         return null;
@@ -313,7 +313,7 @@ class TemplateEngine
             return "";
         }
         $result = null;
-        if (!empty($parent)) {
+        if (!empty($parent) && is_array($parent)) {
             $result = $this->resolveValueHelper(
                 $parent,
                 $value
@@ -344,13 +344,13 @@ class TemplateEngine
      * Helps to resolve a value in the template class context.
      *
      * @param array<string, mixed> $args  Arguments.
-     * @param mixed                $value Value to resolve.
+     * @param string               $value Value to resolve.
      *
      * @return mixed
      */
     private function resolveValueHelper(
         array $args,
-        mixed $value
+        string $value
     )
     : mixed {
         $exploded = explode(".", $value);
@@ -366,6 +366,9 @@ class TemplateEngine
         $clean_exploded = $exploded;
         $clean_exploded[0] = substr($exploded[0], $dereference_levels);
         for ($i = 0; $i < count($clean_exploded); $i++) {
+            if (!is_array($current_value)) {
+                return null;
+            }
             if (!isset($current_value[$clean_exploded[$i]])) {
                 return null;
             } else {
@@ -404,42 +407,96 @@ class TemplateEngine
         if (array_key_exists($template, $this->known_templates)) {
             return $this->getTemplateClass($this->known_templates[$template]);
         }
-        $template_file = TEMPLATE_DIR . $template . ".php";
-        if (!file_exists($template_file) ||
-            ($content = file_get_contents($template_file)) === false) {
-            $e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+
+        if ($this->getParseMode() === self::PARSE_MODE_TEMPLATE) {
+            $template_file = TEMPLATE_DIR . $template . ".php";
+            if (!file_exists($template_file) ||
+                ($content = file_get_contents($template_file)) === false) {
+                $e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
+                $this->exceptions[] = $e;
+                $this->messages[] = array(
+                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                    MESSAGE_TEXT => $e->getMessage()
+                );
+
+                return null;
+            }
+            $class_name = $this->getTemplateClassName($template, $content);
+            if (!$this->buildTokenTemplate($class_name, $content)) {
+                return null;
+            }
+        } else {
+            $class_name = $this->getTemplateClassName(
+                $template,
+                $template . rand()
             );
-
-            return null;
-        }
-        // TODO: PHP templates
-
-        $class_name = $this->getTemplateClassName($template, $content);
-
-        $tokenized = $this->tokenizeTemplate($content);
-        if ($tokenized === null) {
-            return null;
-        }
-        $AST = $this->parseTemplate($tokenized);
-        if ($AST === null) {
-            return null;
-        }
-        $code = $this->compileTemplate($class_name, $AST);
-        if ($code === null) {
-            return null;
-        }
-        $this->evalTemplate($code);
-        if (!class_exists($class_name)) {
-            return null;
+            if (!$this->buildPHPTemplate($template, $class_name)) {
+                return null;
+            }
         }
         $this->known_templates[$template] = $class_name;
 
         return $this->getTemplateClass($class_name);
+    }
+
+    /**
+     * Build Token Template.
+     * Builds a token template.
+     *
+     * @param string $class_name
+     * @param string $content
+     *
+     * @return bool
+     */
+    public function buildTokenTemplate(string $class_name, string $content)
+    : bool {
+        $tokenized = $this->tokenizeTemplate($content);
+        if ($tokenized === null) {
+            return false;
+        }
+        $AST = $this->parseTemplate($tokenized);
+        if ($AST === null) {
+            return false;
+        }
+        $code = $this->compileTemplate($class_name, $AST);
+        if ($code === null) {
+            return false;
+        }
+        $this->evalTemplate($code);
+        if (!class_exists($class_name)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Build PHP Template.
+     * Builds a PHP template.
+     *
+     * @param string $template_name
+     * @param string $class_name
+     *
+     * @return bool
+     */
+    public function buildPHPTemplate(
+        string $template_name,
+        string $class_name,
+    )
+    : bool {
+        $code = '<?php class ' .
+                $class_name .
+                '{function render($args){extract($args);ob_start();require("' .
+                TEMPLATE_DIR .
+                $template_name .
+                '.php");$buffer = ob_get_clean();return ($buffer) ? $buffer : "";}}';
+        $this->evalTemplate($code);
+        if (!class_exists($class_name)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
