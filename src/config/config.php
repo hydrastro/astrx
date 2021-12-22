@@ -10,5 +10,12 @@ return array(
     "smtp_password" => "ｘ",
     "smtp_ssl" => false, // or "tls"
     "smtp_port" => 25,
-    "switch_page_display_number" => 5
+    "switch_page_display_number" => 5,
+    "PDO" => array(
+        "db_type" => "mysql",
+        "db_host" => "localhost",
+        "db_name" => "content_manager",
+        "db_username" => "user",
+        "db_password" => "password"
+    )
 );

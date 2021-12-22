@@ -9,3 +9,7 @@ define(
     "ERROR_INVALID_OBJECT_PROPERTY_NAME",
     "The given object property name is not valid."
 );
+define(
+    "ERROR_CLASS_PDO",
+    "An error occurred while connecting to the database."
+);

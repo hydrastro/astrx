@@ -17,7 +17,7 @@ class Prelude
     /**
      * Prelude Constructor.
      */
-    public function __construct(Injector $injector)
+    public function __construct()
     {
         $ErrorHandler = new ErrorHandler();
         $config = new Config();
@@ -29,6 +29,7 @@ class Prelude
         $ErrorHandler->addClass($this);
         $MessageHandler->addClass($this);
         require(LANG_DIR . "injector.en.php");
+        $injector = new Injector();
         $config->loadConfig("injector");
         $injector->setClass($config);
         $injector->setClass($ErrorHandler);
