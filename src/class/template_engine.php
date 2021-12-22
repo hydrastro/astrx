@@ -21,7 +21,8 @@ class TemplateEngine
     public const TOKEN_TYPE_PARTIAL = ">";
     public const TOKEN_TYPE_COMMENT = "!";
     public const TOKEN_TYPE_CHANGE_TAGS = "=";
-    public const TOKEN_TYPE_DEREFERENCE_OPERATOR = "*";
+    public const TOKEN_OPERATOR_DEREFERENCE = "*";
+    public const TOKEN_OPERATOR_DOT = ".";
     public const TOKEN_TYPES
         = array(
             self::TOKEN_TYPE_CHANGE_TAGS,
@@ -154,7 +155,10 @@ class TemplateEngine
         if (!empty($loop_parents)) {
             $end_parent = end($loop_parents);
             $code .= "function " .
-                     ltrim($end_parent[self::AST_VALUE], "*") .
+                     ltrim(
+                         $end_parent[self::AST_VALUE],
+                         self::TOKEN_OPERATOR_DEREFERENCE
+                     ) .
                      $iteration_number .
                      '($args,$parent){$buffer="";';
             switch ($end_parent[self::AST_TYPE]) {
@@ -240,7 +244,10 @@ class TemplateEngine
                     $i--;
                     break;
                 case self::TOKEN_TYPE_PARTIAL:
-                    $class_name = ltrim($value, "*") . $iteration_number;
+                    $class_name = ltrim(
+                                      $value,
+                                      self::TOKEN_OPERATOR_DEREFERENCE
+                                  ) . $iteration_number;
                     $iteration_number++;
                     $code .= '$' .
                              $class_name .
@@ -288,7 +295,7 @@ class TemplateEngine
         mixed $parent = null
     )
     : mixed {
-        if ($value !== ".") {
+        if ($value !== self::TOKEN_OPERATOR_DOT) {
             $this->loop_counter = 0;
         } elseif (is_array($parent) && isset($parent[$this->loop_counter])) {
             $result = $parent[$this->loop_counter];
@@ -348,11 +355,11 @@ class TemplateEngine
         string $value
     )
     : mixed {
-        $exploded = explode(".", $value);
+        $exploded = explode(self::TOKEN_OPERATOR_DOT, $value);
         $current_value = $args;
         $dereference_levels = 0;
         for ($i = 0; $i < strlen($exploded[0]); $i++) {
-            if ($exploded[0][$i] === "*") {
+            if ($exploded[0][$i] === self::TOKEN_OPERATOR_DEREFERENCE) {
                 $dereference_levels++;
             } else {
                 break;
@@ -744,7 +751,7 @@ class TemplateEngine
     )
     : string {
         return self::TEMPLATE_CLASS_PREFIX .
-               ltrim($template_name, "*") .
+               ltrim($template_name, self::TOKEN_OPERATOR_DEREFERENCE) .
                md5($template_content);
     }
 
