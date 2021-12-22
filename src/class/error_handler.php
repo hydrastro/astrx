@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Class ErrorHandler
+ * Class ErrorHandler.
  */
 class ErrorHandler
 {
@@ -19,7 +19,7 @@ class ErrorHandler
     protected array $exceptions = array();
 
     /**
-     * ErrorHandler constructor.
+     * ErrorHandler Constructor.
      */
     public function __construct()
     {

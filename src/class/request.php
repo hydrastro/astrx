@@ -1,12 +1,12 @@
 <?php
 
 /**
- * Class Request
+ * Class Request.
  */
 class Request
 {
     /**
-     * Request constructor.
+     * Request Constructor.
      */
     public function __construct()
     {

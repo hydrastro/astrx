@@ -1,12 +1,12 @@
 <?php
 
 /**
- * Class Autoloader
+ * Class Autoloader.
  */
 class Autoloader
 {
     /**
-     * Autoloader constructor.
+     * Autoloader Constructor.
      */
     public function __construct()
     {

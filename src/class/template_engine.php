@@ -1,7 +1,6 @@
 <?php
-
 /**
- * Class TemplateEngine
+ * Class TemplateEngine.
  */
 class TemplateEngine
 {

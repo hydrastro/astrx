@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Class Response
+ * Class Response.
  */
 class Response
 {

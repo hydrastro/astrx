@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Class ContentManager
+ * Class ContentManager.
  */
 class ContentManager
 {
@@ -27,58 +27,13 @@ class ContentManager
     private PDO $pdo;
 
     /**
-     * ContentManager constructor.
+     * ContentManager Constructor.
      *
      * @param Config   $config   Config.
      * @param Injector $injector Injector.
      */
-    public function __construct(Config $config, Injector $injector)
+    public function __construct(PDO $pdo, Config $config, Injector $injector)
     {
-        $dsn = $config->getConfig("db_type", "PDO");
-        $host = $config->getConfig("db_host", "PDO");
-        $dbname = $config->getConfig("db_name", "PDO");
-        $passwd = $config->getConfig(
-            "db_password",
-            "PDO"
-        );
-        if (!is_string($dsn) ||
-            !is_string($host) ||
-            !is_string($dbname) ||
-            !is_string($passwd)) {
-            return;
-        }
-        $username = $config->getConfig(
-            "db_username",
-            "PDO"
-        );
-        $injector->setClassArgs(
-            "PDO",
-            array(
-                "dsn" => $dsn . ":host=" . $host . ";dbname=" . $dbname . ";",
-                "username" => $username,
-                "password" => $passwd
-            )
-        );
-        try {
-            /**
-             * @var PDO $pdo PDO.
-             */
-            $pdo = $injector->createClass("PDO");
-        } catch (PDOException $e) {
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => ERROR_CLASS_PDO . $e->getMessage()
-            );
-
-            return;
-        }
-        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
-        $pdo->setAttribute(
-            PDO::ATTR_ERRMODE,
-            PDO::ERRMODE_EXCEPTION
-        );
         $this->pdo = $pdo;
         $this->config = $config;
         $this->injector = $injector;

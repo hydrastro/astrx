@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Class MessageHandler
+ * Class MessageHandler.
  */
 class MessageHandler
 {
@@ -19,7 +19,7 @@ class MessageHandler
     public array $exceptions = array();
 
     /**
-     * MessageHandler constructor.
+     * MessageHandler Constructor.
      */
     public function __construct()
     {

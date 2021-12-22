@@ -35,25 +35,36 @@ class Injector
     public array $exceptions = array();
 
     /**
-     * Injector constructor.
+     * Set Error Handler.
+     * Sets the error handler.
+     *
+     * @param ErrorHandler $ErrorHandler
      */
-    public function __construct()
-    {
-        $ErrorHandler = new ErrorHandler();
-        $config = new Config();
-        $MessageHandler = new MessageHandler();
-        $ErrorHandler->addClass($config);
-        $MessageHandler->addClass($config);
-        $ErrorHandler->addClass($MessageHandler);
-        $MessageHandler->addClass($ErrorHandler);
-        require(LANG_DIR . "injector.en.php");
-        $this->setClass($config);
-        $this->setClass($ErrorHandler);
-        $this->setClass($MessageHandler);
-        $this->setClass($this);
-        $this->config = $config;
+    public function setErrorHandler(ErrorHandler $ErrorHandler)
+    : void {
         $this->ErrorHandler = $ErrorHandler;
+    }
+
+    /**
+     * Set Message Handler.
+     * Sets the message handler.
+     *
+     * @param MessageHandler $MessageHandler
+     */
+    public function setMessageHandler(MessageHandler $MessageHandler)
+    : void {
         $this->MessageHandler = $MessageHandler;
+    }
+
+    /**
+     * Set config.
+     * Sets the config class.
+     *
+     * @param Config $config
+     */
+    public function setConfig(Config $config)
+    : void {
+        $this->config = $config;
     }
 
     /**

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Class Config
+ * Class Config.
  */
 class Config
 {
