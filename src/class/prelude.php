@@ -45,8 +45,7 @@ class Prelude
             "db_password",
             "PDO"
         );
-        if (!is_string($dsn) ||
-            !is_string($host) ||
+        if (!is_string($dsn) || !is_string($host) ||
             !is_string($dbname) ||
             !is_string($passwd)) {
             return;

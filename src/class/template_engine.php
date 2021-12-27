@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Class TemplateEngine.
  */
@@ -61,16 +62,17 @@ class TemplateEngine
     /**
      * @var int $parse_mode Template parse mode.
      */
-    private int $parse_mode = self::PARSE_MODE_PHP;
+    private int $parse_mode = self::PARSE_MODE_TEMPLATE;
     /**
      * @var array<string, string> $known_templates Already built templates list;
      *                                             template name => class name
      */
     private array $known_templates = array();
     /**
-     * @var int $loop_counter Loop counter, used for dot-only vars in loops.
+     * @var string $template_dir Template directory.
      */
-    private int $loop_counter = 0;
+    private string $template_dir
+        = "/data/new/src/template" . DIRECTORY_SEPARATOR;
 
     /**
      * Get Configuration Methods.
@@ -80,7 +82,30 @@ class TemplateEngine
     public function getConfigurationMethods()
     : array
     {
-        return array("getParseMode");
+        return array();
+        //1 return array("setParseMode", "setTemplateDir");
+    }
+
+    /**
+     * Get Templates Dir.
+     * Returns the template directory.
+     * @return string
+     */
+    public function getTemplateDir()
+    : string
+    {
+        return $this->template_dir;
+    }
+
+    /**
+     * Set Templates Dir.
+     * Sets the template directory.
+     *
+     * @param string $template_dir Template directory.
+     */
+    public function setTemplatesDir(string $template_dir)
+    : void {
+        $this->template_dir = $template_dir;
     }
 
     /**
@@ -153,30 +178,22 @@ class TemplateEngine
         $code = '';
         if (!empty($loop_parents)) {
             $end_parent = end($loop_parents);
-            $code .= "function " .
-                     ltrim(
-                         $end_parent[self::AST_VALUE],
-                         self::TOKEN_OPERATOR_DEREFERENCE
-                     ) .
-                     $iteration_number .
-                     '($args,$parent){$buffer="";';
-            switch ($end_parent[self::AST_TYPE]) {
-                default:
-                case self::TOKEN_TYPE_LOOP_START:
-                    $code .= '$resolved=$this->TemplateEngine->resolveValue("' .
-                             $end_parent[self::AST_VALUE] .
-                             '",$args,$parent);$count=count($resolved);$parent=$resolved;for($i=0;$i<$count;$i++){';
-                    break;
-                case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $code .= 'if(!is_array($this->TemplateEngine->resolveValue("' .
-                             $end_parent[self::AST_VALUE] .
-                             '",$args))||empty($this->TemplateEngine->resolveValue("' .
-                             $end_parent[self::AST_VALUE] .
-                             '",$args)){';
-                    break;
-            }
+            $code .= "function " . ltrim(
+                    $end_parent[self::AST_VALUE],
+                    self::TOKEN_OPERATOR_DEREFERENCE
+                ) . $iteration_number . '($args,$parent){$buffer="";$i=0;';
+            $code .= match ($end_parent[self::AST_TYPE]) {
+                default => '$resolved=$this->TemplateEngine->resolveValue("' .
+                           $end_parent[self::AST_VALUE] .
+                           '",$args,$parent,$i);$count=(is_countable($resolved))?count($resolved):0;$parent=$resolved;for($i=0;$i<$count;$i++){',
+                self::TOKEN_TYPE_INVERTED_LOOP_START => 'if(!is_array($this->TemplateEngine->resolveValue("' .
+                                                        $end_parent[self::AST_VALUE] .
+                                                        '",$args,$i))||empty($this->TemplateEngine->resolveValue("' .
+                                                        $end_parent[self::AST_VALUE] .
+                                                        '",$args,$i)){',
+            };
         } else {
-            $code .= '$parent=array();';
+            $code .= '$parent=array();$i=0;';
         }
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
@@ -200,7 +217,7 @@ class TemplateEngine
             )) ?
                 '$this->TemplateEngine->resolveValue("' .
                 $AST[$i][self::AST_VALUE] .
-                '",$args,$parent)' : $AST[$i][self::AST_VALUE];
+                '",$args,$parent,$i)' : $AST[$i][self::AST_VALUE];
 
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
@@ -208,7 +225,9 @@ class TemplateEngine
                     $code .= '$buffer.=' . var_export($value, true) . ';';
                     break;
                 case self::TOKEN_TYPE_VAR:
-                    $code .= '$buffer.=htmlspecialchars(' . $value . ");";
+                    $code .= '$buffer.=htmlspecialchars((string)' .
+                             $value .
+                             ");";
                     break;
                 case self::TOKEN_TYPE_UNESCAPED_VAR:
                     $code .= '$buffer.=' . $value . ";";
@@ -252,7 +271,7 @@ class TemplateEngine
                              $class_name .
                              '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue("' .
                              $value .
-                             '"));if($' .
+                             '",$args,$parents,$i));if($' .
                              $class_name .
                              '!==null){$buffer.=$' .
                              $class_name .
@@ -282,48 +301,50 @@ class TemplateEngine
      * Resolve Value.
      * Resolves a value in the template class context.
      *
-     * @param string               $value  Value to resolve.
-     * @param array<string, mixed> $args   Arguments.
-     * @param mixed                $parent Parent value.
+     * @param string               $value      Value to resolve.
+     * @param array<string, mixed> $args       Arguments.
+     * @param mixed                $parent     Parent value.
+     * @param int                  $loop_index Loop index.
      *
      * @return mixed
      */
     public function resolveValue(
         string $value,
         array $args,
-        mixed $parent = null
+        mixed $parent = null,
+        int $loop_index = 0
     )
     : mixed {
-        if ($value !== self::TOKEN_OPERATOR_DOT) {
-            $this->loop_counter = 0;
-        } elseif (is_array($parent) && isset($parent[$this->loop_counter])) {
-            $result = $parent[$this->loop_counter];
-            $this->loop_counter++;
+        if ($value === self::TOKEN_OPERATOR_DOT) {
+            if (is_array($parent) && isset($parent[$loop_index])) {
+                return $parent[$loop_index];
+            } else {
+                $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
+                $this->exceptions[] = $e;
+                $this->messages[]
+                    = array(
+                    MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
+                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                    MESSAGE_TEXT => $e->getMessage()
+                );
 
-            return $result;
-        } else {
-            $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-            $this->exceptions[] = $e;
-            $this->messages[]
-                = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
-            );
-
-            return "";
+                return "";
+            }
         }
         $result = null;
         if (!empty($parent) && is_array($parent)) {
+            if (isset($parent[0]) && is_array($parent[0])) {
+                $parent = $parent[$loop_index];
+            }
             $result = $this->resolveValueHelper(
                 $parent,
-                $value
+                $value,
             );
         }
         if ($result === null) {
             $result = $this->resolveValueHelper(
                 $args,
-                $value
+                $value,
             );
         }
         if ($result === null) {
@@ -344,14 +365,14 @@ class TemplateEngine
      * Resolve Value Helper.
      * Helps to resolve a value in the template class context.
      *
-     * @param array<string, mixed> $args  Arguments.
-     * @param string               $value Value to resolve.
+     * @param array<mixed, mixed> $args  Arguments.
+     * @param string              $value Value to resolve.
      *
      * @return mixed
      */
     private function resolveValueHelper(
         array $args,
-        string $value
+        string $value,
     )
     : mixed {
         $exploded = explode(self::TOKEN_OPERATOR_DOT, $value);
@@ -410,7 +431,7 @@ class TemplateEngine
         }
 
         if ($this->getParseMode() === self::PARSE_MODE_TEMPLATE) {
-            $template_file = TEMPLATE_DIR . $template . ".php";
+            $template_file = $this->getTemplateDir() . $template . ".php";
             if (!file_exists($template_file) ||
                 ($content = file_get_contents($template_file)) === false) {
                 $e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
@@ -489,7 +510,7 @@ class TemplateEngine
         $code = '<?php class ' .
                 $class_name .
                 '{function render($args){extract($args);ob_start();require("' .
-                TEMPLATE_DIR .
+                $this->getTemplateDir() .
                 $template_name .
                 '.php");$buffer = ob_get_clean();return ($buffer) ? $buffer : "";}}';
         $this->evalTemplate($code);
