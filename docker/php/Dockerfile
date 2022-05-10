@@ -1,10 +1,10 @@
-FROM php:latest
-
-RUN apk add nano
-RUN apk add composer
+FROM php:8.1-fpm-alpine
 
 WORKDIR /app
-#CMD sh -c "composer install"
 
 COPY /docker/php/php.ini /usr/local/etc/php/php.ini
 #COPY /docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/php-fpm.conf
+
+RUN docker-php-ext-install pdo pdo_mysql
+
+CMD [ "php-fpm"]

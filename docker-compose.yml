@@ -2,6 +2,9 @@ version: '3'
 
 services:
     nginx:
+        tty: true
+        restart: always
+        container_name: container.nginx
         build:
             context: .
             dockerfile: docker/nginx/Dockerfile
@@ -15,6 +18,9 @@ services:
         depends_on:
             -   phpfpm
     phpfpm:
+        tty: true
+        restart: always
+        container_name: container.phpfpm
         build:
             context: .
             dockerfile: docker/php/Dockerfile

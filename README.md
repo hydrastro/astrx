@@ -150,7 +150,15 @@ $TemplateEngine->render($template_name, $arguments);
 
 Render can be reimplemented to suit your needs.  
 The project supports both plain PHP rendering and a custom template engine
-rendering.
+rendering.  
+(NOTE) Be careful when enabling PHP rendering: the template evaulation eats up
+the first line if it's empty. Take a look at the following example:
+```php
+echo eval('?>
+stuff');
+echo eval('?>not empty
+stuff');
+```
 
 ### Template engine syntax
 

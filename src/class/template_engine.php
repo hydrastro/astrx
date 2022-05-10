@@ -5,11 +5,11 @@
  */
 class TemplateEngine
 {
-    public const PARSE_MODE_PHP = 0;
+    public const PARSE_MODE_PLAIN = 0;
     public const PARSE_MODE_TEMPLATE = 1;
     public const PARSE_MODES
         = array(
-            self::PARSE_MODE_PHP,
+            self::PARSE_MODE_PLAIN,
             self::PARSE_MODE_TEMPLATE
         );
     public const TOKEN_TYPE_TEXT = "text";
@@ -72,7 +72,12 @@ class TemplateEngine
      * @var string $template_dir Template directory.
      */
     private string $template_dir
-        = "/data/new/src/template" . DIRECTORY_SEPARATOR;
+        = ".." .
+          DIRECTORY_SEPARATOR .
+          "src" .
+          DIRECTORY_SEPARATOR .
+          "template" .
+          DIRECTORY_SEPARATOR;
 
     /**
      * Get Configuration Methods.
@@ -83,7 +88,7 @@ class TemplateEngine
     : array
     {
         return array();
-        //1 return array("setParseMode", "setTemplateDir");
+        //return array("setParseMode", "setTemplateDir");
     }
 
     /**
@@ -287,8 +292,6 @@ class TemplateEngine
             $code .= '} return $buffer;}';
             $functions_code[] = $code;
             array_pop($loop_parents);
-        } else {
-            $code .= 'return $buffer;';
         }
 
         return array(
@@ -420,105 +423,79 @@ class TemplateEngine
      * Load Template.
      * Loads a template file into the $templates array.
      *
-     * @param string $template Template name.
+     * @param string $template       Template name.
+     * @param int    $parse_mode     Parse mode.
+     * @param bool   $php_processing PHP processing flag.
      *
      * @return object|null
      */
-    public function loadTemplate(string $template)
+    public function loadTemplate(
+        string $template,
+        int $parse_mode
+        = self::PARSE_MODE_TEMPLATE,
+        bool $php_processing = false
+    )
     : ?object {
         if (array_key_exists($template, $this->known_templates)) {
             return $this->getTemplateClass($this->known_templates[$template]);
         }
 
-        if ($this->getParseMode() === self::PARSE_MODE_TEMPLATE) {
-            $template_file = $this->getTemplateDir() . $template . ".php";
-            if (!file_exists($template_file) ||
-                ($content = file_get_contents($template_file)) === false) {
-                $e = new Exception(ERROR_TEMPLATE_FILE_NOT_FOUND);
-                $this->exceptions[] = $e;
-                $this->messages[] = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
-                );
+        $template_file = $this->getTemplateDir() . $template . ".php";
+        if (!file_exists($template_file) ||
+            ($content = file_get_contents($template_file)) === false) {
+            $e = new Exception(
+                ERROR_TEMPLATE_FILE_NOT_FOUND . " 
+            " . $template_file
+            );
+            $this->exceptions[] = $e;
+            $this->messages[] = array(
+                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
+                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
+                MESSAGE_TEXT => $e->getMessage()
+            );
 
+            return null;
+        }
+        $class_name = $this->getTemplateClassName($template, $content);
+
+        if ($parse_mode == self::PARSE_MODE_TEMPLATE) {
+            $tokenized = $this->tokenizeTemplate($content);
+            if ($tokenized === null) {
                 return null;
             }
-            $class_name = $this->getTemplateClassName($template, $content);
-            if (!$this->buildTokenTemplate($class_name, $content)) {
+            $AST = $this->parseTemplate($tokenized);
+            if ($AST === null) {
+                return null;
+            }
+            $code = $this->compileTemplate($class_name, $AST, $php_processing);
+            if ($code === null) {
                 return null;
             }
         } else {
-            $class_name = $this->getTemplateClassName(
-                $template,
-                $template . rand()
-            );
-            if (!$this->buildPHPTemplate($template, $class_name)) {
-                return null;
+            $code = '<?php class ' . $class_name . '{function render($args){';
+            if ($php_processing) {
+                $code .= 'extract($args);ob_start();
+                    require("' .
+                         $this->getTemplateDir() .
+                         $template .
+                         '.php");$buffer = ob_get_clean();';
+            } else {
+                $code .= '$buffer=file_get_contents("' .
+                         $this->getTemplateDir() .
+                         $template .
+                         '.php");';
             }
+            $code .= 'return ($buffer) ? $buffer : "";}}';
         }
+
+        $this->evalTemplate($code);
+        if (!class_exists($class_name)) {
+            return null;
+        }
+
         $this->known_templates[$template] = $class_name;
 
         return $this->getTemplateClass($class_name);
-    }
-
-    /**
-     * Build Token Template.
-     * Builds a token template.
-     *
-     * @param string $class_name
-     * @param string $content
-     *
-     * @return bool
-     */
-    public function buildTokenTemplate(string $class_name, string $content)
-    : bool {
-        $tokenized = $this->tokenizeTemplate($content);
-        if ($tokenized === null) {
-            return false;
-        }
-        $AST = $this->parseTemplate($tokenized);
-        if ($AST === null) {
-            return false;
-        }
-        $code = $this->compileTemplate($class_name, $AST);
-        if ($code === null) {
-            return false;
-        }
-        $this->evalTemplate($code);
-        if (!class_exists($class_name)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Build PHP Template.
-     * Builds a PHP template.
-     *
-     * @param string $template_name
-     * @param string $class_name
-     *
-     * @return bool
-     */
-    public function buildPHPTemplate(
-        string $template_name,
-        string $class_name,
-    )
-    : bool {
-        $code = '<?php class ' .
-                $class_name .
-                '{function render($args){extract($args);ob_start();require("' .
-                $this->getTemplateDir() .
-                $template_name .
-                '.php");$buffer = ob_get_clean();return ($buffer) ? $buffer : "";}}';
-        $this->evalTemplate($code);
-        if (!class_exists($class_name)) {
-            return false;
-        }
-
-        return true;
     }
 
     /**
@@ -538,14 +515,16 @@ class TemplateEngine
      * Compile Template.
      * Compiles and evaluates a template.
      *
-     * @param string            $class_name Template class name.
-     * @param array<int, mixed> $AST        Abstract syntax tree.
+     * @param string $class_name     Template class name.
+     * @param array  $AST            Abstract syntax tree.
+     * @param bool   $php_processing PHP processing flag.
      *
      * @return string|null
      */
     private function compileTemplate(
         string $class_name,
-        array $AST
+        array $AST,
+        bool $php_processing
     )
     : ?string {
         $code = $this->writeCode($AST);
@@ -553,14 +532,20 @@ class TemplateEngine
             return null;
         }
 
-        return "<?php class " .
-               $class_name .
-               '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}' .
-               'function render($args){$buffer="";' .
-               $code[self::INDEX_RENDER_BODY][0] .
-               "}" .
-               implode("", $code[self::INDEX_FUNCTIONS_CODE]) .
-               "}";
+        $class = "<?php class " .
+                 $class_name .
+                 '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}' .
+                 'function render($args){$buffer="";' .
+                 $code[self::INDEX_RENDER_BODY][0];
+        if ($php_processing) {
+            $class .= 'extract($args);ob_start();eval("?>" . $buffer);$buffer = 
+                ob_get_clean();';
+        }
+        $class .= 'return ($buffer) ? $buffer : "";}' .
+                  implode("", $code[self::INDEX_FUNCTIONS_CODE]) .
+                  "}";
+
+        return $class;
     }
 
     /**
