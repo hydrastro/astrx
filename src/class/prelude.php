@@ -19,25 +19,39 @@ class Prelude
      */
     public function __construct()
     {
+        // Loading core classes.
         $ErrorHandler = new ErrorHandler();
         $config = new Config();
-        $MessageHandler = new MessageHandler();
-        $ErrorHandler->addClass($config);
-        $MessageHandler->addClass($config);
-        $ErrorHandler->addClass($MessageHandler);
-        $MessageHandler->addClass($ErrorHandler);
+
+        // Now we can relax. We have a custom error handler in english.
+
+        // Wiring together the Error Handler.
         $ErrorHandler->addClass($this);
-        $MessageHandler->addClass($this);
-        require(LANG_DIR . "injector.en.php");
-        $injector = new Injector();
+        $ErrorHandler->addClass($config);
+
+        // Setting up environment.
+        // $environment = $config->getConfig("environment");
+        // $ErrorHandler->setEnvironment($environment);
+
+        $config->loadLang("injector");
         $config->loadConfig("injector");
+        $injector = new Injector();
+
+        // Configuring the injector to load config and auto-wire stuff.
+        $injector->addHelper($ErrorHandler, "addClass");
+        $injector->addHelper($config, "loadLang");
+        $injector->addHelper($config, "loadConfig");
+        $injector->addHelper($config, "configurationMethodsHelper");
+
+        // TODO: change ALL the errors/exceptions. fif new Exception
+
+        // Adding existing classes to the injector container.
         $injector->setClass($config);
         $injector->setClass($ErrorHandler);
-        $injector->setClass($MessageHandler);
         $injector->setClass($this);
-        $injector->setConfig($config);
-        $injector->setErrorHandler($ErrorHandler);
-        $injector->setMessageHandler($MessageHandler);
+        $ErrorHandler->addClass($injector);
+
+        // Creating database connection.
         $dsn = $config->getConfig("db_type", "PDO");
         $host = $config->getConfig("db_host", "PDO");
         $dbname = $config->getConfig("db_name", "PDO");
@@ -45,9 +59,11 @@ class Prelude
             "db_password",
             "PDO"
         );
-        if (!is_string($dsn) || !is_string($host) ||
+        if (!is_string($dsn) ||
+            !is_string($host) ||
             !is_string($dbname) ||
             !is_string($passwd)) {
+            // TODO set error
             return;
         }
         $username = $config->getConfig(
@@ -82,5 +98,12 @@ class Prelude
             PDO::ATTR_ERRMODE,
             PDO::ERRMODE_EXCEPTION
         );
+
+        // Finally creating the Content Manager class.
+        /**
+         * @var ContentManager $cms Content Manager.
+         */
+        $cms = $injector->getClass("ContentManager");
+        $cms->init();
     }
 }

@@ -13,7 +13,7 @@ return array(
     "switch_page_display_number" => 5,
     "PDO" => array(
         "db_type" => "mysql",
-        "db_host" => "localhost",
+        "db_host" => "172.19.0.1",
         "db_name" => "content_manager",
         "db_username" => "user",
         "db_password" => "password"

@@ -85,6 +85,9 @@ class Config
     }
 
     /**
+     * Load Config File.
+     * Loads the configuration file of a class.
+     *
      * @param string $config_file                Configuration file name.
      * @param bool   $handle_not_found_exception Error trigger on failure.
      *
@@ -153,5 +156,71 @@ class Config
         );
 
         return null;
+    }
+
+    /**
+     * Load Language.
+     * Loads a module language if there is any set.
+     *
+     * @param string $class_name Class name.
+     *
+     * @return void
+     */
+    public function loadLang(string $class_name)
+    {
+        $lang = $this->getConfig("language");
+        if (!is_string($lang)) {
+            return;
+        }
+        $class_filename = toSnakeCase($class_name);
+        $lang_file = LANG_DIR . "$class_filename.$lang.php";
+        if (file_exists($lang_file)) {
+            require_once($lang_file);
+        }
+    }
+
+    /**
+     * Configuration Methods Helper.
+     * Function that retrieves a class configuration methods and calls them,
+     * injecting the proper configurations.
+     *
+     * @param string $class_name
+     * @param object $class_instance
+     *
+     * @return bool
+     */
+    public function configurationMethodsHelper(
+        string $class_name,
+        object $class_instance
+    )
+    : bool {
+        if (!method_exists($class_instance, "getConfigurationMethods")) {
+            return false;
+        }
+        try {
+            foreach ($class_instance->getConfigurationMethods() as $method) {
+                if (!method_exists($class_instance, $method)) {
+                    continue;
+                }
+                $args = array();
+                $reflectedMethod = new ReflectionMethod(
+                    $class_instance, $method
+                );
+                foreach (
+                    $reflectedMethod->getParameters() as $parameter
+                ) {
+                    $args[]
+                        = $this->getConfig(
+                        $parameter->getName(),
+                        $class_name
+                    );
+                }
+                $class_instance->$method(...$args);
+            }
+
+            return true;
+        } catch (ReflectionException) {
+            return false;
+        }
     }
 }

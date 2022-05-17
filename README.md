@@ -8,8 +8,47 @@
 
 ## Documentation & Dev notes
 
+### Code quality
+
+Phpstan checks only. Level 9.  
+No psalm. No phpcs.  
+Code formatting is done by the IDE.
+
+Separation of concerns is more important than possible code duplication?
+
+### Docker, Nginx, PHP, MySQL
+
+This project does NOT aim to come along with deployment configurations.  
+Dockerfiles and other configuration files are here ONLY for development
+purposes.  
+Therefore, DO NOT rely on those since they are NOT SAFE and will be deleted when
+I get more confident with my development environments.  
+There will be another repository though in which I will provide safe
+configurations for every software needed to deploy this project.
+
+### Docker
+
+```shell
+docker ps
+docker exec -it **container id** /bin/sh
+
+docker-compose up
+docker-compose up -d
+docker-compose build
+```
+
+### Database
+
+```sql
+CREATE USER 'user'@'localhost' IDENTIFIED BY 'password';
+CREATE DATABASE 'content_manager';
+GRANT ALL PRIVILEGES ON content_manager.* TO 'user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
 ### Injector (and Config)
-`getConfigurationMethods` and configs structure (todo). 
+
+`getConfigurationMethods` and configs structure (todo).
 
 ### Getters and  Setters
 
@@ -18,8 +57,11 @@ Getters return the requested property or null.
 
 ### Classes error handling
 
-Rather than throwing exceptions we store them into the array `$this->exceptions`
-.  
+~~Rather than throwing exceptions we store them into the
+array `$this->exceptions`
+.~~  
+Exceptions are not thrown when possible.
+
 Errors and messages are stored in another array along with an HTTP status code
 and a level:
 
@@ -180,6 +222,8 @@ stuff');
 Modules can either use their own language definitions, or the core class ones.  
 In no case they should use any other module's definitions.
 
+## Contributing
+
 ## TODO List
 
 - [ ] Modularization
@@ -190,7 +234,7 @@ In no case they should use any other module's definitions.
 - [ ] Objects support in the template
 - [ ] ZKP login method. ( challenge-text, challenge-input)
 - [ ] Generate a password for me
-  
+
 # Hiatus resume README
 
 - [ ] Check for parameter validations redundancy e.g.: parent validates

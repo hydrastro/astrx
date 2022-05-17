@@ -34,6 +34,9 @@ class ErrorHandler
     }
 
     /**
+     * Exceptions Handler.
+     * Handles exceptions.
+     *
      * @param Throwable $e Throwable.
      *
      * @return void
@@ -111,13 +114,13 @@ class ErrorHandler
      * Add Class.
      * Adds a class to the class array.
      *
-     * @param object $class Class.
+     * @param object $class_instance Class.
      *
      * @return void
      */
-    public function addClass(object $class)
+    public function addClass(object $class_instance)
     {
-        $this->classes[] = $class;
+        $this->classes[] = $class_instance;
     }
 
     /**

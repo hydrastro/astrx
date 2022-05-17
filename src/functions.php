@@ -19,3 +19,13 @@ function toSnakeCase(string $string)
         '_'
     );
 }
+
+/*
+isNonEmptyString
+getIp
+convertTime
+array_keys_kesists
+isValidRegexArray
+checkRegexFilter
+isRegularExpression
+*/

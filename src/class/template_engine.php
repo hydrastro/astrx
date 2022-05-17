@@ -87,8 +87,7 @@ class TemplateEngine
     public function getConfigurationMethods()
     : array
     {
-        return array();
-        //return array("setParseMode", "setTemplateDir");
+        return array("setTemplateDir");
     }
 
     /**
@@ -108,7 +107,7 @@ class TemplateEngine
      *
      * @param string $template_dir Template directory.
      */
-    public function setTemplatesDir(string $template_dir)
+    public function setTemplateDir(string $template_dir)
     : void {
         $this->template_dir = $template_dir;
     }

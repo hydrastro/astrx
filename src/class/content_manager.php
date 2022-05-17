@@ -29,6 +29,7 @@ class ContentManager
     /**
      * ContentManager Constructor.
      *
+     * @param PDO      $pdo      PDO.
      * @param Config   $config   Config.
      * @param Injector $injector Injector.
      */
@@ -40,14 +41,11 @@ class ContentManager
     }
 
     /**
-     * Foo
+     * Init
      * @return void
      */
-    public function foo()
+    public function init()
     {
-        $x = array();
-        $x[] = $this->config->exceptions;
-        $x[] = $this->pdo->errorCode();
-        $x[] = $this->injector->exceptions;
+        echo "<h1>AstrX</h1>";
     }
 }

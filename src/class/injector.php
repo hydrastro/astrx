@@ -5,18 +5,9 @@
  */
 class Injector
 {
-    /**
-     * @var Config $config Config class.
-     */
-    private Config $config;
-    /**
-     * @var ErrorHandler $ErrorHandler Error Handler class.
-     */
-    private ErrorHandler $ErrorHandler;
-    /**
-     * @var MessageHandler $MessageHandler Message Handler class.
-     */
-    private MessageHandler $MessageHandler;
+    private const HELPER_NAME = 0;
+    private const HELPER_INSTANCE = 1;
+    private const HELPER_METHOD_NAME = 2;
     /**
      * @var array<string, object> $classes Injector container classes.
      */
@@ -26,45 +17,44 @@ class Injector
      */
     private array $classesArgs;
     /**
-     * @var array<int, array<mixed>> $messages Messages array.
+     * @var array<int, array<mixed>> $results Results array.
      */
-    public array $messages = array();
+    public array $results = array();
     /**
-     * @var array<int, Throwable> $exceptions Exceptions objects array.
+     * @var array<int, array<mixed>> $helpers Helpers array.
      */
-    public array $exceptions = array();
+    private array $helpers = array();
 
     /**
-     * Set Error Handler.
-     * Sets the error handler.
+     * Add Helper.
+     * Adds new helpers which will be called on classes creation.
      *
-     * @param ErrorHandler $ErrorHandler
+     * @param object $helper_instance
+     * @param string $helper_method
+     *
+     * @return bool
      */
-    public function setErrorHandler(ErrorHandler $ErrorHandler)
-    : void {
-        $this->ErrorHandler = $ErrorHandler;
-    }
+    public function addHelper(object $helper_instance, string $helper_method)
+    : bool {
+        $helper_class_name = get_class($helper_instance);
+        if (!method_exists($helper_instance, $helper_method)) {
+            $this->results[] = array(
+                "ERROR_CLASS_METHOD_NOT_FOUND",
+                array(
+                    "class_name" => $helper_class_name,
+                    "method_name" => $helper_method
+                )
+            );
 
-    /**
-     * Set Message Handler.
-     * Sets the message handler.
-     *
-     * @param MessageHandler $MessageHandler
-     */
-    public function setMessageHandler(MessageHandler $MessageHandler)
-    : void {
-        $this->MessageHandler = $MessageHandler;
-    }
+            return false;
+        }
+        $this->helpers[] = array(
+            self::HELPER_NAME => $helper_class_name,
+            self::HELPER_INSTANCE => $helper_instance,
+            self::HELPER_METHOD_NAME => $helper_method
+        );
 
-    /**
-     * Set config.
-     * Sets the config class.
-     *
-     * @param Config $config
-     */
-    public function setConfig(Config $config)
-    : void {
-        $this->config = $config;
+        return true;
     }
 
     /**
@@ -84,12 +74,9 @@ class Injector
 
             return true;
         }
-        $e = new Exception(ERROR_CLASS_NOT_FOUND);
-        $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
+        $this->results[] = array(
+            "ERROR_CLASS_NOT_FOUND",
+            array("class" => $class_name)
         );
 
         return false;
@@ -192,27 +179,21 @@ class Injector
      * Create Class.
      * Creates a class.
      *
-     * @param string $class_name                  Class name.
-     * @param bool   $share                       Share class: store among
-     *                                            container known instances.
-     * @param bool   $initialize_config_functions Initialize configuration
-     *                                            functions.
+     * @param string $class_name Class name.
+     * @param bool   $share      Share class: store among container known
+     *                           instances.
      *
      * @return mixed
      */
     public function createClass(
         string $class_name,
-        bool $share = true,
-        bool $initialize_config_functions = true
+        bool $share = true
     )
     : mixed {
         if (!class_exists($class_name)) {
-            $e = new Exception(ERROR_CLASS_NOT_FOUND);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                "ERROR_CLASS_NOT_FOUND",
+                array("class_name" => $class_name)
             );
 
             return null;
@@ -229,14 +210,12 @@ class Injector
                         $dependencies[] = $arg;
                     } elseif (!$parameter->isOptional()) {
                         if ($parameter->getType() === null) {
-                            $e = new Exception(
-                                ERROR_CLASS_OR_PARAMETER_NOT_FOUND
-                            );
-                            $this->exceptions[] = $e;
-                            $this->messages[] = array(
-                                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                                MESSAGE_TEXT => $e->getMessage()
+                            $this->results[] = array(
+                                "ERROR_CLASS_OR_PARAMETER_NOT_FOUND",
+                                array(
+                                    "class_name" => $class_name,
+                                    "parameter_name" => $arg_name
+                                )
                             );
 
                             return null;
@@ -251,64 +230,39 @@ class Injector
                     }
                 }
             }
-            if (isset($this->config)) {
-                $this->loadLang($class_name);
-                $this->config->loadConfig($class_name);
-            }
             $name = $this->getIndexName($class_name);
             $class = new $class_name(...$dependencies);
             if ($share) {
                 $this->classes[$name] = $class;
             }
-            if (($initialize_config_functions) &&
-                (method_exists($class, "getConfigurationMethods"))) {
-                foreach ($class->getConfigurationMethods() as $method) {
-                    if (method_exists($class, $method)) {
-                        $args = array();
-                        $reflectedMethod = new ReflectionMethod(
-                            $class, $method
-                        );
-                        foreach (
-                            $reflectedMethod->getParameters() as $parameter
-                        ) {
-                            if (isset($this->config)) {
-                                $args[]
-                                    = $this->config->getConfig(
-                                    $parameter->getName(),
-                                    $name
-                                );
-                            } else {
-                                $e = new Exception(
-                                    ERROR_NO_ARGUMENTS_FOR_METHOD
-                                );
-                                $this->exceptions[] = $e;
-                                $this->messages[] = array(
-                                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                                    MESSAGE_TEXT => $e->getMessage()
-                                );
-
-                                return null;
-                            }
-                        }
-                        $class->$method(...$args);
+            foreach ($this->helpers as $helper) {
+                $reflectedMethod = new ReflectionMethod(
+                    $helper[self::HELPER_NAME],
+                    $helper[self::HELPER_METHOD_NAME]
+                );
+                $args = array();
+                foreach ($reflectedMethod->getParameters() as $parameter) {
+                    $parameter_type = $parameter->getType();
+                    if ($parameter_type === null) {
+                        continue;
+                    }
+                    $parameter_type_name = $parameter_type->getName();
+                    if ($parameter_type_name == "string") {
+                        $args[] = $class_name;
+                    } elseif ($parameter_type_name == "object") {
+                        $args[] = $class;
                     }
                 }
-            }
-            if (isset($this->ErrorHandler)) {
-                $this->ErrorHandler->addClass($class);
-            }
-            if (isset($this->MessageHandler)) {
-                $this->MessageHandler->addClass($class);
+                $helper[self::HELPER_INSTANCE]->{$helper[self::HELPER_METHOD_NAME]}(
+                    ...$args
+                );
             }
 
             return $class;
         } catch (ReflectionException $e) {
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => ERROR_CLASS_REFLECTION . $e->getMessage()
+            $this->results[] = array(
+                "ERROR_REFLECTION_EXCEPTION",
+                array("message" => $e->getMessage())
             );
 
             return null;
@@ -337,38 +291,17 @@ class Injector
 
                 return $class->$method(...$arguments);
             }
-            $e = new Exception(ERROR_CLASS_METHOD_NOT_FOUND);
+            $this->results[] = array(
+                "ERROR_CLASS_METHOD_NOT_FOUND",
+                array("class_name" => $class_name, "method_name" => $method)
+            );
         } else {
-            $e = new Exception(ERROR_CLASS_NOT_FOUND);
+            $this->results[] = array(
+                "ERROR_CLASS_NOT_FOUND",
+                array("class_name" => $class_name)
+            );
         }
-        $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
-        );
 
         return null;
-    }
-
-    /**
-     * Load Language.
-     * Loads a module language if there is any set.
-     *
-     * @param string $class Class name.
-     *
-     * @return void
-     */
-    public function loadLang(string $class)
-    {
-        $lang = $this->config->getConfig("language");
-        if (!is_string($lang)) {
-            return;
-        }
-        $class_filename = toSnakeCase($class);
-        $lang_file = LANG_DIR . "$class_filename.$lang.php";
-        if (file_exists($lang_file)) {
-            require_once($lang_file);
-        }
     }
 }

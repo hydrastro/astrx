@@ -1,8 +1,16 @@
 <?php
 
 define("INDEX_DIR", dirname(__FILE__) . DIRECTORY_SEPARATOR);
-define("INCLUDE_GUARD", true);
-define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
+define("CLASS_DIR", INDEX_DIR . "class" . DIRECTORY_SEPARATOR);
+define("CONTROLLER_DIR", INDEX_DIR . "controller" . DIRECTORY_SEPARATOR);
+define("PAGE_DIR", INDEX_DIR . "page" . DIRECTORY_SEPARATOR);
+define("LANG_DIR", INDEX_DIR . "lang" . DIRECTORY_SEPARATOR);
+define("CONFIG_DIR", INDEX_DIR . "config" . DIRECTORY_SEPARATOR);
+
+define("ENVIRONMENT_DEVELOPMENT", 0);
+define("ENVIRONMENT_PRODUCTION", 1);
+//TESTING
+//STAGING
 
 // (debug, info, notice, warning, error, critical, alert, emergency).
 define("MESSAGE_LEVEL_ERROR", 0);
@@ -12,17 +20,14 @@ define("MESSAGE_HTTP_STATUS", 0);
 define("MESSAGE_LEVEL", 1);
 define("MESSAGE_TEXT", 2);
 
-define("CONFIG_DIR", INDEX_DIR . "config" . DIRECTORY_SEPARATOR);
-define("PAGE_DIR", INDEX_DIR . "page" . DIRECTORY_SEPARATOR);
-define("CLASS_DIR", INDEX_DIR . "class" . DIRECTORY_SEPARATOR);
-define("CONTROLLER_DIR", INDEX_DIR . "controller" . DIRECTORY_SEPARATOR);
-define("LANG_DIR", INDEX_DIR . "lang" . DIRECTORY_SEPARATOR);
 define("DATA_DIR", INDEX_DIR . "data" . DIRECTORY_SEPARATOR);
 define("AVATAR_DIR", DATA_DIR . "avatar" . DIRECTORY_SEPARATOR);
 define("TEMPLATE_DIR", INDEX_DIR . "template" . DIRECTORY_SEPARATOR);
 define("FONT_DIR", INDEX_DIR . "font" . DIRECTORY_SEPARATOR);
 define("DEFAULT_AVATAR_DIR", AVATAR_DIR . "default" . DIRECTORY_SEPARATOR);
 
+define("INCLUDE_GUARD", true);
+define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
 
 define("HTTP_CONTINUE", 100);
 define("HTTP_SWITCHING_PROTOCOLS", 101);

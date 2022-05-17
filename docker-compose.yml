@@ -16,20 +16,35 @@ services:
         networks:
             - php-network
         depends_on:
-            -   phpfpm
+          - phpfpm
     phpfpm:
-        tty: true
-        restart: always
-        container_name: container.phpfpm
-        build:
-            context: .
-            dockerfile: docker/php/Dockerfile
-        volumes:
-            - ./public:/app/public
-            - ./src:/app/src
-        networks:
-            - php-network
-
+      tty: true
+      restart: always
+      container_name: container.phpfpm
+      build:
+        context: .
+        dockerfile: docker/php/Dockerfile
+      volumes:
+        - ./public:/app/public
+        - ./src:/app/src
+      networks:
+        - php-network
+#    mariadb:
+#        tty: true
+#        restart: always
+#        container_name: container.mariadb
+#        image: mariadb
+#        ports:
+#            - '3306:3306'
+#        volumes:
+#            - './docker/mysql/config/mariadb.cnf:/etc/mysql/conf.d/custom.cnf:ro'
+#            #- './docker/mysql/dbdata:/var/lib/mysql'
+#        networks:
+#            - php-network
+#        environment:
+#            - MYSQL_PASSWORD=password
+#            - MYSQL_ROOT_PASSWORD=root_password
+#            - MYSQL_DATABASE=astrx
 networks:
-    php-network:
-        driver: bridge
+  php-network:
+    driver: bridge
