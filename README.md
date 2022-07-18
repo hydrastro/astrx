@@ -12,7 +12,8 @@
 
 Phpstan checks only. Level 9.  
 No psalm. No phpcs.  
-Code formatting is done by the IDE.
+Code formatting is done by the IDE.  
+Use strict types in every file.
 
 Separation of concerns is more important than possible code duplication?
 
@@ -40,15 +41,46 @@ docker-compose build
 ### Database
 
 ```sql
-CREATE USER 'user'@'localhost' IDENTIFIED BY 'password';
-CREATE DATABASE 'content_manager';
-GRANT ALL PRIVILEGES ON content_manager.* TO 'user'@'localhost';
-FLUSH PRIVILEGES;
+CREATE
+USER 'user'@'localhost' IDENTIFIED BY 'password';
+CREATE
+DATABASE 'content_manager';
+GRANT ALL PRIVILEGES ON content_manager.* TO
+'user'@'localhost';
+FLUSH
+PRIVILEGES;
 ```
 
 ### Injector (and Config)
 
-`getConfigurationMethods` and configs structure (todo).
+`getConfigurationMethods` and configs structure (todo).  
+Helper functions for the injector must take two parameters:
+
+```php
+function injectorHelper(object $class_instance, string $class_name) : bool
+```
+
+getConfig returns null on failure.
+type checking is left to be done to the invoker.
+example:
+
+```php
+$lang = $config->getConfig("Prelude", "language", "");
+//if(!is_string($lang)) {
+    // error handling?
+//}
+
+$some_stuff = $config->getConfig("Bar", "foo");
+if(some_stuff === null) {
+    // error handling?
+}
+```
+
+~~If we are pretty confident that the config files are correct, we can skip
+these checks.~~
+Or can we??
+Zero checks may be bad.. one check is fine. Even if it feels useless... yeah.
+Also make sure you don't do checks twice.
 
 ### Getters and  Setters
 
@@ -146,20 +178,54 @@ It's essential for the project to be able to load `constants.php`, therefore
 there will be *zero* tolerance for its loading failure (which may happen only in
 case someone changes the project core).  
 Once the prelude is complete, meaning that the main language file is loaded,
-error handling will be controlled and errors and exceptions will falls back to a
-template: to the default one or, if things go extremely bad, to the
-`failsafe.php` template.  
-The project prelude:
+error handling will be controlled and errors and exceptions will falls back to
+the default template.  
+If things go __extremely__ bad, meaning that the prelude failed, `failsafe.php`
+will be loaded as a template.  
+If things go __insanely__ bad, a pretty error page, hardcoded into the error
+handler
+will still be printed.  
+(Side note: these are just notes for myself, therefore I don't give a shit
+wether
+the terminology I'm using here is correct; I will correct myself before the
+release).  
+The project prelude core lines (`./src/classes/prelude.php:24`):
 
 ```php
 $ErrorHandler = new ErrorHandler();
 $config = new Config();
+// Now we can relax. We have a custom error handler in english
 ```
 
 Side note, from the PHP manual: "The following error types cannot be handled
 with a user defined function: E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING,
 E_COMPILE_ERROR, E_COMPILE_WARNING independent of where they were raised, and
 most of E_STRICT raised in the file where set_error_handler() is called."
+
+### Bootstrap
+
+index.php: -> require bootstrap.php
+bootstrap.php: require constants.php
+require functions.php
+require autoloader.php
+Autoloader() -> spl_autoloader_register
+Prelude(): -> prelude.php
+prelude.php:   error_handler() -> ini_set, error_reporting, set_error_handler
+etc.
+config():
+this.config = require config
+
+*                      getConfig language ?? fail->return; getConfig:
+*                               return config or null on fail. on fail sets this.messages.
+*                       require lang
+
+| error_handler -> addclass()
+| // END OF CRITICAL SECTION
+V .
+DEFER THIS DECISION TO LATER, AFTER THE CMS LOADS AND WE GET THE USER-REQUESTED
+LANGUAGE!
+
+### Injector Helper Functions
 
 ### Void return
 

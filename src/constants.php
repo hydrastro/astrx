@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 define("INDEX_DIR", dirname(__FILE__) . DIRECTORY_SEPARATOR);
 define("CLASS_DIR", INDEX_DIR . "class" . DIRECTORY_SEPARATOR);
 define("CONTROLLER_DIR", INDEX_DIR . "controller" . DIRECTORY_SEPARATOR);
@@ -7,10 +9,7 @@ define("PAGE_DIR", INDEX_DIR . "page" . DIRECTORY_SEPARATOR);
 define("LANG_DIR", INDEX_DIR . "lang" . DIRECTORY_SEPARATOR);
 define("CONFIG_DIR", INDEX_DIR . "config" . DIRECTORY_SEPARATOR);
 
-define("ENVIRONMENT_DEVELOPMENT", 0);
-define("ENVIRONMENT_PRODUCTION", 1);
-//TESTING
-//STAGING
+
 
 // (debug, info, notice, warning, error, critical, alert, emergency).
 define("MESSAGE_LEVEL_ERROR", 0);

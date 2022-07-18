@@ -1,5 +1,7 @@
 <?php
+/** @noinspection PhpUnused */
 
+declare(strict_types = 1);
 /**
  * Class Config.
  */
@@ -10,13 +12,13 @@ class Config
      */
     private array $configuration;
     /**
-     * @var array<int, array<int, mixed>> $messages Errors array.
+     * @var array<int, array> $results Results array.
      */
-    public array $messages = array();
+    public array $results = array();
     /**
-     * @var array<int, Throwable> $exceptions Exceptions objects array.
+     * @var string $lang Language.
      */
-    public array $exceptions = array();
+    public string $lang;
 
     /**
      * Config Constructor.
@@ -24,20 +26,12 @@ class Config
     public function __construct()
     {
         $this->configuration = require(CONFIG_DIR . "config.php");
-        $lang = $this->getConfig("language");
+        $lang = $this->getConfig("Prelude", "language", "en");
+        /* I don't know
         if (!is_string($lang)) {
-            $e = new Exception(
-                "An error occurred while loading the config file."
-            );
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
-            );
-
             return;
-        }
+        }*/
+        $this->lang = $lang;
         require(LANG_DIR . "$lang.php");
     }
 
@@ -50,7 +44,7 @@ class Config
      * @return void
      */
     public function addConfigArray(array $array)
-    {
+    : void {
         $this->configuration = array_merge($this->configuration, $array);
     }
 
@@ -64,7 +58,7 @@ class Config
      * @return void
      */
     public function addSpecificConfig(string $index, mixed $value)
-    {
+    : void {
         $this->configuration[$index] = $value;
     }
 
@@ -84,6 +78,8 @@ class Config
         return $this->loadConfigFile($class_path);
     }
 
+    public const ERROR_CONFIG_FILE_NOT_FOUND = 0;
+
     /**
      * Load Config File.
      * Loads the configuration file of a class.
@@ -92,6 +88,7 @@ class Config
      * @param bool   $handle_not_found_exception Error trigger on failure.
      *
      * @return bool
+     * @noinspection PhpSameParameterValueInspection
      */
     private function loadConfigFile(
         string $config_file,
@@ -100,12 +97,9 @@ class Config
     : bool {
         if (!file_exists($config_file)) {
             if ($handle_not_found_exception) {
-                $e = new Exception(ERROR_NONEXISTENT_FILE);
-                $this->exceptions[] = $e;
-                $this->messages[] = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
+                $this->results[] = array(
+                    self::ERROR_CONFIG_FILE_NOT_FOUND,
+                    array("config_file" => $config_file)
                 );
             }
 
@@ -119,40 +113,39 @@ class Config
         return true;
     }
 
+    public const ERROR_CONFIG_NOT_FOUND = 1;
+
     /**
      * Get Config.
      * Returns a config which may be specific for a class.
      * It directly maps to $configuration[$class_name][$config_name]
      * or $configuration[$config_name] if no class is provided.
      *
-     * @param string $config_name Configuration name.
      * @param string $class_name  Configuration class name.
+     * @param string $config_name Configuration name.
+     * @param mixed  $fallback    Fallback configuration.
      *
      * @return mixed
      */
-    public function getConfig(string $config_name, string $class_name = "")
+    public function getConfig(
+        string $class_name,
+        string $config_name,
+        mixed $fallback = null
+    )
     : mixed {
-        if (is_string($config_name)) {
-            if ($class_name !== "" &&
-                array_key_exists($class_name, $this->configuration) &&
-                array_key_exists(
-                    $config_name,
-                    $this->configuration[$class_name]
-                )) {
-                return $this->configuration[$class_name][$config_name];
-            }
-            if (array_key_exists($config_name, $this->configuration)) {
-                return $this->configuration[$config_name];
-            }
+        if (array_key_exists($class_name, $this->configuration) &&
+            array_key_exists(
+                $config_name,
+                $this->configuration[$class_name]
+            )) {
+            return $this->configuration[$class_name][$config_name];
         }
-        $error_message = (defined("ERROR_INVALID_ARRAY_INDEX")) ?
-            ERROR_INVALID_ARRAY_INDEX : "Invalid array index.";
-        $e = new Exception($error_message);
-        $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
+        if ($fallback !== null) {
+            return $fallback;
+        }
+        $this->results[] = array(
+            self::ERROR_CONFIG_NOT_FOUND,
+            array("class_name" => $class_name, "config_name" => $config_name)
         );
 
         return null;
@@ -167,11 +160,8 @@ class Config
      * @return void
      */
     public function loadLang(string $class_name)
-    {
-        $lang = $this->getConfig("language");
-        if (!is_string($lang)) {
-            return;
-        }
+    : void {
+        $lang = $this->lang;
         $class_filename = toSnakeCase($class_name);
         $lang_file = LANG_DIR . "$class_filename.$lang.php";
         if (file_exists($lang_file)) {
@@ -184,14 +174,14 @@ class Config
      * Function that retrieves a class configuration methods and calls them,
      * injecting the proper configurations.
      *
-     * @param string $class_name
-     * @param object $class_instance
+     * @param object $class_instance Class instance.
+     * @param string $class_name     Class name.
      *
      * @return bool
      */
     public function configurationMethodsHelper(
-        string $class_name,
-        object $class_instance
+        object $class_instance,
+        string $class_name
     )
     : bool {
         if (!method_exists($class_instance, "getConfigurationMethods")) {
@@ -211,8 +201,8 @@ class Config
                 ) {
                     $args[]
                         = $this->getConfig(
-                        $parameter->getName(),
-                        $class_name
+                        $class_name,
+                        $parameter->getName()
                     );
                 }
                 $class_instance->$method(...$args);
@@ -222,5 +212,24 @@ class Config
         } catch (ReflectionException) {
             return false;
         }
+    }
+
+    /**
+     * Load Class Language and Configurations.
+     * This is a helper function which loads a given class language and
+     * config files.
+     *
+     * @param object $_class_instance Class instance.
+     * @param string $class_name      Class name.
+     *
+     * @return bool
+     * @noinspection PhpUnusedParameterInspection
+     */
+    public function loadClassLangAndConfig(
+        object $_class_instance,
+        string $class_name
+    )
+    : bool {
+        return $this->loadLang($class_name) && $this->loadConfig($class_name);
     }
 }

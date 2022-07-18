@@ -1,5 +1,7 @@
 <?php
+/** @noinspection PhpUnused */
 
+declare(strict_types = 1);
 /**
  * Class ErrorHandler.
  */
@@ -10,28 +12,72 @@ class ErrorHandler
      */
     private array $classes = array();
     /**
-     * @var array<int, array<int, mixed>> $messages Messages array.
+     * @var array<int, array> $results Results array.
      */
-    public array $messages = array();
+    public array $results = array();
     /**
-     * @var array<int, Throwable> $exceptions Exceptions (objects).
+     * @var array<int, Throwable> $exceptions Uncaught exceptions (objects).
      */
     protected array $exceptions = array();
+    public const ENVIRONMENT_DEVELOPMENT = 0;
+    public const ENVIRONMENT_PRODUCTION = 1;
+    public const ENVIRONMENT_TESTING = 2;
+    public const ENVIRONMENT_STAGING = 3;
+    public const LOG_LEVEL_EMERGENCY = 7;
+    public const LOG_LEVEL_ALERT = 6;
+    public const LOG_LEVEL_CRITICAL = 5;
+    public const LOG_LEVEL_ERROR = 4;
+    public const LOG_LEVEL_WARNING = 3;
+    public const LOG_LEVEL_NOTICE = 2;
+    public const LOG_LEVEL_INFO = 1;
+    public const LOG_LEVEL_DEBUG = 0;
+    /**
+     * @var int $log_level Log level.
+     */
+    public int $log_level = self::LOG_LEVEL_DEBUG;
 
     /**
      * ErrorHandler Constructor.
      */
     public function __construct()
     {
-        //todo: wrap these lines into debug
-        ini_set("display_errors", "1");
-        ini_set("display_startup_errors", "1");
-        error_reporting(E_ALL);
         set_error_handler(array($this, "errorHandler"));
         set_exception_handler(array($this, "exceptionsHandler"));
         register_shutdown_function(array($this, "shutdownHandler"));
         $this->classes[] = $this;
     }
+
+    /**
+     * Set Environment.
+     * Sets the environment.
+     *
+     * @param int $environment Environment.
+     *
+     * @return void
+     */
+    public function setEnvironment(int $environment)
+    : void {
+        switch ($environment) {
+            default:
+                $this->results[] = array(
+                    self::ERROR_UNDEFINED_ENVIRONMENT
+                );
+            case self::ENVIRONMENT_TESTING:
+            case self::ENVIRONMENT_DEVELOPMENT:
+                ini_set("display_errors", "1");
+                ini_set("display_startup_errors", "1");
+                error_reporting(E_ALL);
+                $this->log_level = self::LOG_LEVEL_DEBUG;
+                break;
+            case self::ENVIRONMENT_STAGING:
+            case self::ENVIRONMENT_PRODUCTION:
+                error_reporting(E_ALL & ~E_NOTICE);
+                $this->log_level = self::LOG_LEVEL_ERROR;
+                break;
+        }
+    }
+
+    public const ERROR_UNDEFINED_ENVIRONMENT = 1;
 
     /**
      * Exceptions Handler.
@@ -42,13 +88,8 @@ class ErrorHandler
      * @return void
      */
     public function exceptionsHandler(Throwable $e)
-    {
+    : void {
         $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
-        );
     }
 
     /**
@@ -75,13 +116,6 @@ class ErrorHandler
         }
         $e = new ErrorException($errstr, 0, $errno, $errfile, $errline);
         $this->exceptions[] = $e;
-        $error_code = HTTP_INTERNAL_SERVER_ERROR;
-        $message_level = MESSAGE_LEVEL_ERROR;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => $message_level,
-            MESSAGE_HTTP_STATUS => $error_code,
-            MESSAGE_TEXT => $e->getMessage()
-        );
 
         return true;
     }
@@ -95,6 +129,7 @@ class ErrorHandler
      * @return void
      */
     public function shutdownHandler()
+    : void
     {
         $exceptions = $this->getExceptions();
         if (!empty($exceptions)) {
@@ -115,13 +150,17 @@ class ErrorHandler
      * Adds a class to the class array.
      *
      * @param object $class_instance Class.
+     * @param string $_class_name    Class name.
      *
      * @return void
+     * @noinspection PhpUnusedParameterInspection
      */
-    public function addClass(object $class_instance)
-    {
+    public function addClass(object $class_instance, string $_class_name = "")
+    : void {
         $this->classes[] = $class_instance;
     }
+
+    public const ERROR_CLASS_TO_REMOVE_NOT_FOUND = 0;
 
     /**
      * Remove Class.
@@ -140,12 +179,9 @@ class ErrorHandler
                 return true;
             }
         }
-        $e = new Exception(ERROR_INVALID_ARRAY_INDEX);
-        $this->exceptions[] = $e;
-        $this->messages[] = array(
-            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-            MESSAGE_TEXT => $e->getMessage()
+        $this->results[] = array(
+            self::ERROR_CLASS_TO_REMOVE_NOT_FOUND,
+            array("class_name" => $class_name)
         );
 
         return false;
@@ -153,7 +189,7 @@ class ErrorHandler
 
     /**
      * Get Exceptions.
-     * Retrieves and returns the exceptions of all the classes handled.
+     * Retrieves and returns the exceptions of all the handled classes.
      * @return array<int, Throwable>
      */
     public function getExceptions()

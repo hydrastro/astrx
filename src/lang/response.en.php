@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 define("HTTP_STATUS_MESSAGE_100", "Continue");
 define("HTTP_STATUS_MESSAGE_101", "Switching Protocols");
 define("HTTP_STATUS_MESSAGE_102", "Processing");

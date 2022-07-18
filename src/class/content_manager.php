@@ -1,18 +1,15 @@
 <?php
 
+declare(strict_types = 1);
 /**
  * Class ContentManager.
  */
 class ContentManager
 {
     /**
-     * @var array<int, array<mixed>> $messages Messages array.
+     * @var array<int, array> $results Results array.
      */
-    public array $messages = array();
-    /**
-     * @var array<int, Throwable> $exceptions Exceptions objects array.
-     */
-    public array $exceptions = array();
+    public array $results = array();
     /**
      * @var Config $config
      */

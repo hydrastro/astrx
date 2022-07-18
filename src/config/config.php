@@ -1,16 +1,12 @@
 <?php
 
+declare(strict_types = 1);
+
 return array(
-    "language" => "en",
-    "stats_logging" => false,
-    "website_name" => "My Website",
-    "stylesheets" => array(INDEX_DIR . "style.css"),
-    "smtp_server" => "localhost",
-    "smtp_address" => "x@localhost",
-    "smtp_password" => "ｘ",
-    "smtp_ssl" => false, // or "tls"
-    "smtp_port" => 25,
-    "switch_page_display_number" => 5,
+    "Prelude" => array(
+        "language" => "en",
+        "environment" => ErrorHandler::ENVIRONMENT_DEVELOPMENT,
+    ),
     "PDO" => array(
         "db_type" => "mysql",
         "db_host" => "172.19.0.1",

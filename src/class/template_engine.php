@@ -1,5 +1,7 @@
 <?php
+/** @noinspection PhpUnused */
 
+declare(strict_types = 1);
 /**
  * Class TemplateEngine.
  */
@@ -48,13 +50,9 @@ class TemplateEngine
     public const INDEX_RENDER_BODY = 1;
     public const INDEX_FUNCTIONS_CODE = 2;
     /**
-     * @var array<int, array<int, mixed>> $messages Messages array.
+     * @var array<int, array> $results Results array.
      */
-    public array $messages = array();
-    /**
-     * @var array<int, object> $exceptions Exceptions objects array.
-     */
-    public array $exceptions = array();
+    public array $results = array();
     /**
      * @var array<string, mixed> $args Arguments array.
      */
@@ -121,7 +119,7 @@ class TemplateEngine
      * @return void
      */
     public function addGlobalArgs(array $args)
-    {
+    : void {
         $this->args = array_merge($this->args, $args);
     }
 
@@ -136,29 +134,32 @@ class TemplateEngine
         return $this->parse_mode;
     }
 
+    public const ERROR_INVALID_PARSE_MODE = 0;
+
     /**
      * Set Parse Mode.
      * Sets the parse mode.
      *
      * @param int $parse_mode Parse mode.
      *
-     * @return void
+     * @return bool
      */
     public function setParseMode(int $parse_mode)
-    {
+    : bool {
         if (!in_array($parse_mode, self::PARSE_MODES)) {
-            $e = new Exception(ERROR_INVALID_PARSE_MODE);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_INVALID_PARSE_MODE
             );
 
-            return;
+            return false;
         }
         $this->parse_mode = $parse_mode;
+
+        return true;
     }
+
+    public const ERROR_TEMPLATE_CLASS_CREATION = 1;
+    public const ERROR_TEMPLATE_AST_INCONSISTENCY = 2;
 
     /**
      * Write Code.
@@ -203,14 +204,8 @@ class TemplateEngine
         for ($i = count($AST) - 1; $i >= 0; $i--) {
             $iteration_number++;
             if (!is_array($AST[$i])) {
-                $e = new Exception(
-                    ERROR_TEMPLATE_CLASS_CREATION
-                );
-                $this->exceptions[] = $e;
-                $this->messages[] = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
+                $this->results[] = array(
+                    self::ERROR_TEMPLATE_CLASS_CREATION
                 );
 
                 return null;
@@ -244,14 +239,8 @@ class TemplateEngine
                              '($args,$parent);';
                     $loop_parents[] = $AST[$i];
                     if (!is_array($AST[$i - 1])) {
-                        $e = new Exception(
-                            ERROR_TEMPLATE_AST_INCONSISTENCY
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[] = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
+                        $this->results[] = array(
+                            self::ERROR_TEMPLATE_AST_INCONSISTENCY
                         );
 
                         return null;
@@ -299,6 +288,9 @@ class TemplateEngine
         );
     }
 
+    public const ERROR_UNDEFINED_TOKEN_ARGUMENT = 3;
+    public const ERROR_UNDEFINED_TOKEN_ARGUMENT_2 = 4;
+
     /**
      * Resolve Value.
      * Resolves a value in the template class context.
@@ -321,13 +313,12 @@ class TemplateEngine
             if (is_array($parent) && isset($parent[$loop_index])) {
                 return $parent[$loop_index];
             } else {
-                $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-                $this->exceptions[] = $e;
-                $this->messages[]
-                    = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
+                $this->results[] = array(
+                    self::ERROR_UNDEFINED_TOKEN_ARGUMENT,
+                    array(
+                        "parent" => print_r($parent, true),
+                        "args" => print_r($args, true)
+                    )
                 );
 
                 return "";
@@ -350,25 +341,26 @@ class TemplateEngine
             );
         }
         if ($result === null) {
-            $e = new Exception(ERROR_UNDEFINED_ARGUMENT);
-            $this->exceptions[] = $e;
-            $this->messages[]
-                = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_UNDEFINED_TOKEN_ARGUMENT_2,
+                array(
+                    "parent" => print_r($parent, true),
+                    "args" => print_r($args, true)
+                )
             );
         }
 
         return $result;
     }
 
+    public const ERROR_INVALID_DEREFERENCE = 5;
+
     /**
      * Resolve Value Helper.
      * Helps to resolve a value in the template class context.
      *
-     * @param array<mixed, mixed> $args  Arguments.
-     * @param string              $value Value to resolve.
+     * @param array  $args  Arguments.
+     * @param string $value Value to resolve.
      *
      * @return mixed
      */
@@ -403,20 +395,18 @@ class TemplateEngine
             if (is_string($current_value) && isset($args[$current_value])) {
                 $current_value = $args[$current_value];
             } else {
-                $e = new Exception(ERROR_INVALID_DEREFERENCE);
-                $this->exceptions[] = $e;
-                $this->messages[]
-                    = array(
-                    MESSAGE_LEVEL => MESSAGE_LEVEL_WARNING,
-                    MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                    MESSAGE_TEXT => $e->getMessage()
+                $this->results[] = array(
+                    self::ERROR_INVALID_DEREFERENCE,
+                    array("value" => $value, "args" => print_r($args, true))
                 );
-                continue;
+                // continue;
             }
         }
 
         return $current_value;
     }
+
+    public const ERROR_TEMPLATE_FILE_NOT_FOUND = 6;
 
     /**
      * Load Template.
@@ -442,15 +432,12 @@ class TemplateEngine
         $template_file = $this->getTemplateDir() . $template . ".php";
         if (!file_exists($template_file) ||
             ($content = file_get_contents($template_file)) === false) {
-            $e = new Exception(
-                ERROR_TEMPLATE_FILE_NOT_FOUND . " 
-            " . $template_file
-            );
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_TEMPLATE_FILE_NOT_FOUND,
+                array(
+                    "template" => $template,
+                    "template_file" => $template_file
+                )
             );
 
             return null;
@@ -487,8 +474,7 @@ class TemplateEngine
             $code .= 'return ($buffer) ? $buffer : "";}}';
         }
 
-        $this->evalTemplate($code);
-        if (!class_exists($class_name)) {
+        if (!$this->evalTemplate($code) || !class_exists($class_name)) {
             return null;
         }
 
@@ -547,6 +533,10 @@ class TemplateEngine
         return $class;
     }
 
+    public const ERROR_MALFORMED_TAG_CHANGE = 7;
+    public const ERROR_UNCLOSED_TOKEN = 8;
+    public const ERROR_MALFORMED_TAG_CHANGE_2 = 9;
+
     /**
      * Tokenize Template.
      * Tokenizes a template.
@@ -571,15 +561,8 @@ class TemplateEngine
                 if ($type == self::TOKEN_TYPE_CHANGE_TAGS) {
                     $tags = explode(" ", $buffer);
                     if (count($tags) != 2) {
-                        $e = new Exception(
-                            ERROR_MALFORMED_TAG_CHANGE
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[]
-                            = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
+                        $this->results[] = array(
+                            self::ERROR_MALFORMED_TAG_CHANGE
                         );
 
                         return null;
@@ -595,13 +578,8 @@ class TemplateEngine
             $close_tag_length = strlen($close_tag);
             if (substr($template_body, $i, $open_tag_length) == $open_tag) {
                 if ($unclosed_token) {
-                    $e = new Exception(ERROR_UNCLOSED_TOKEN);
-                    $this->exceptions[] = $e;
-                    $this->messages[]
-                        = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                        MESSAGE_TEXT => $e->getMessage()
+                    $this->results[] = array(
+                        self::ERROR_UNCLOSED_TOKEN
                     );
                 }
                 $unclosed_token = true;
@@ -635,15 +613,8 @@ class TemplateEngine
                             $buffer,
                             -1
                         ) != self::TOKEN_TYPE_CHANGE_TAGS) {
-                        $e = new Exception(
-                            ERROR_MALFORMED_TAG_CHANGE
-                        );
-                        $this->exceptions[] = $e;
-                        $this->messages[]
-                            = array(
-                            MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                            MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                            MESSAGE_TEXT => $e->getMessage()
+                        $this->results[] = array(
+                            self::ERROR_MALFORMED_TAG_CHANGE_2
                         );
 
                         return null;
@@ -663,17 +634,15 @@ class TemplateEngine
             );
         }
         if ($unclosed_token) {
-            $e = new Exception(ERROR_UNCLOSED_TOKEN);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_UNCLOSED_TOKEN_2
             );
         }
 
         return $tokenized;
     }
+
+    public const ERROR_UNCLOSED_TOKEN_2 = 10;
 
     /**
      * Parse Template.
@@ -702,13 +671,12 @@ class TemplateEngine
             if ($type == self::TOKEN_TYPE_LOOP_START ||
                 $type == self::TOKEN_TYPE_INVERTED_LOOP_START) {
                 if ($value != end($branch_names)) {
-                    $e = new Exception(ERROR_LOOP_TOKEN_MISMATCH);
-                    $this->exceptions[] = $e;
-                    $this->messages[]
-                        = array(
-                        MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                        MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                        MESSAGE_TEXT => $e->getMessage()
+                    $this->results[] = array(
+                        self::ERROR_LOOP_TOKEN_MISMATCH,
+                        array(
+                            "opening_tag" => $value,
+                            "closing_tag" => end($branch_names)
+                        )
                     );
 
                     return null;
@@ -726,12 +694,9 @@ class TemplateEngine
             $AST[] = $tokenized[$i];
         }
         if (!empty($branch_names)) {
-            $e = new Exception(ERROR_UNCLOSED_LOOP_TOKEN);
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_UNCLOSED_LOOP_TOKEN,
+                array("unclosed_tokens" => print_r($branch_names, true))
             );
 
             return null;
@@ -739,6 +704,9 @@ class TemplateEngine
 
         return $AST;
     }
+
+    public const ERROR_LOOP_TOKEN_MISMATCH = 11;
+    public const ERROR_UNCLOSED_LOOP_TOKEN = 12;
 
     /**
      * Get Template Class Name.
@@ -759,6 +727,8 @@ class TemplateEngine
                md5($template_content);
     }
 
+    public const ERROR_TEMPLATE_EVALUATION = 13;
+
     /**
      * Evaluate Template.
      * Evaluates a template code: loads its class into the memory.
@@ -774,11 +744,9 @@ class TemplateEngine
 
             return true;
         } catch (Throwable $e) {
-            $this->exceptions[] = $e;
-            $this->messages[] = array(
-                MESSAGE_LEVEL => MESSAGE_LEVEL_ERROR,
-                MESSAGE_HTTP_STATUS => HTTP_INTERNAL_SERVER_ERROR,
-                MESSAGE_TEXT => $e->getMessage()
+            $this->results[] = array(
+                self::ERROR_TEMPLATE_EVALUATION,
+                array("message" => $e->getMessage())
             );
 
             return false;
