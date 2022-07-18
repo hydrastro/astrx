@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 return array(
     "Prelude" => array(
-        "language" => "en",
         "environment" => ErrorHandler::ENVIRONMENT_DEVELOPMENT,
     ),
     "PDO" => array(

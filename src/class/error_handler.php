@@ -7,18 +7,6 @@ declare(strict_types = 1);
  */
 class ErrorHandler
 {
-    /**
-     * @var array<int, object> classes Classes.
-     */
-    private array $classes = array();
-    /**
-     * @var array<int, array> $results Results array.
-     */
-    public array $results = array();
-    /**
-     * @var array<int, Throwable> $exceptions Uncaught exceptions (objects).
-     */
-    protected array $exceptions = array();
     public const ENVIRONMENT_DEVELOPMENT = 0;
     public const ENVIRONMENT_PRODUCTION = 1;
     public const ENVIRONMENT_TESTING = 2;
@@ -31,10 +19,24 @@ class ErrorHandler
     public const LOG_LEVEL_NOTICE = 2;
     public const LOG_LEVEL_INFO = 1;
     public const LOG_LEVEL_DEBUG = 0;
+    public const ERROR_UNDEFINED_ENVIRONMENT = 1;
+    public const ERROR_CLASS_TO_REMOVE_NOT_FOUND = 0;
+    /**
+     * @var array<int, array<int, mixed>> $results Results array.
+     */
+    public array $results = array();
     /**
      * @var int $log_level Log level.
      */
     public int $log_level = self::LOG_LEVEL_DEBUG;
+    /**
+     * @var array<int, Throwable> $exceptions Uncaught exceptions (objects).
+     */
+    protected array $exceptions = array();
+    /**
+     * @var array<int, object> classes Classes.
+     */
+    private array $classes = array();
 
     /**
      * ErrorHandler Constructor.
@@ -76,8 +78,6 @@ class ErrorHandler
                 break;
         }
     }
-
-    public const ERROR_UNDEFINED_ENVIRONMENT = 1;
 
     /**
      * Exceptions Handler.
@@ -146,6 +146,30 @@ class ErrorHandler
     }
 
     /**
+     * Get Exceptions.
+     * Retrieves and returns the exceptions of all the handled classes.
+     * @return array<int, Throwable>
+     */
+    public function getExceptions()
+    : array
+    {
+        $exceptions = array();
+        if (empty($this->classes)) {
+            return array();
+        }
+        foreach ($this->classes as $class) {
+            if (property_exists($class, 'exceptions') &&
+                is_array($class->exceptions)) {
+                foreach ($class->exceptions as $exception) {
+                    $exceptions[] = $exception;
+                }
+            }
+        }
+
+        return $exceptions;
+    }
+
+    /**
      * Add Class.
      * Adds a class to the class array.
      *
@@ -159,8 +183,6 @@ class ErrorHandler
     : void {
         $this->classes[] = $class_instance;
     }
-
-    public const ERROR_CLASS_TO_REMOVE_NOT_FOUND = 0;
 
     /**
      * Remove Class.
@@ -185,29 +207,5 @@ class ErrorHandler
         );
 
         return false;
-    }
-
-    /**
-     * Get Exceptions.
-     * Retrieves and returns the exceptions of all the handled classes.
-     * @return array<int, Throwable>
-     */
-    public function getExceptions()
-    : array
-    {
-        $exceptions = array();
-        if (empty($this->classes)) {
-            return array();
-        }
-        foreach ($this->classes as $class) {
-            if (property_exists($class, 'exceptions') &&
-                is_array($class->exceptions)) {
-                foreach ($class->exceptions as $exception) {
-                    $exceptions[] = $exception;
-                }
-            }
-        }
-
-        return $exceptions;
     }
 }

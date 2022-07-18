@@ -7,7 +7,7 @@ declare(strict_types = 1);
 class ContentManager
 {
     /**
-     * @var array<int, array> $results Results array.
+     * @var array<int, array<int, mixed>> $results Results array.
      */
     public array $results = array();
     /**

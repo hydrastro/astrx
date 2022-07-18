@@ -80,7 +80,8 @@ if(some_stuff === null) {
 these checks.~~
 Or can we??
 Zero checks may be bad.. one check is fine. Even if it feels useless... yeah.
-Also make sure you don't do checks twice.
+Also make sure you don't do checks twice.  
+So **do at least one check**
 
 ### Getters and  Setters
 

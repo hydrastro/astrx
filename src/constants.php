@@ -9,8 +9,6 @@ define("PAGE_DIR", INDEX_DIR . "page" . DIRECTORY_SEPARATOR);
 define("LANG_DIR", INDEX_DIR . "lang" . DIRECTORY_SEPARATOR);
 define("CONFIG_DIR", INDEX_DIR . "config" . DIRECTORY_SEPARATOR);
 
-
-
 // (debug, info, notice, warning, error, critical, alert, emergency).
 define("MESSAGE_LEVEL_ERROR", 0);
 define("MESSAGE_LEVEL_WARNING", 1);
@@ -26,7 +24,7 @@ define("FONT_DIR", INDEX_DIR . "font" . DIRECTORY_SEPARATOR);
 define("DEFAULT_AVATAR_DIR", AVATAR_DIR . "default" . DIRECTORY_SEPARATOR);
 
 define("INCLUDE_GUARD", true);
-define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
+//define("BASE_URL", strtok($_SERVER["REQUEST_URI"], '?'));
 
 define("HTTP_CONTINUE", 100);
 define("HTTP_SWITCHING_PROTOCOLS", 101);

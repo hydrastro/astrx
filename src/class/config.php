@@ -7,18 +7,21 @@ declare(strict_types = 1);
  */
 class Config
 {
+    public const ERROR_CONFIG_FILE_NOT_FOUND = 0;
+    public const ERROR_CONFIG_NOT_FOUND = 1;
+    public const ERROR_INVALID_LANGUAGE = 2;
     /**
-     * @var array<string, array<string, mixed>> $configuration Config array.
-     */
-    private array $configuration;
-    /**
-     * @var array<int, array> $results Results array.
+     * @var array<int, array<int, mixed>> $results Results array.
      */
     public array $results = array();
     /**
      * @var string $lang Language.
      */
     public string $lang;
+    /**
+     * @var array<string, array<string, mixed>> $configuration Config array.
+     */
+    private array $configuration;
 
     /**
      * Config Constructor.
@@ -26,94 +29,7 @@ class Config
     public function __construct()
     {
         $this->configuration = require(CONFIG_DIR . "config.php");
-        $lang = $this->getConfig("Prelude", "language", "en");
-        /* I don't know
-        if (!is_string($lang)) {
-            return;
-        }*/
-        $this->lang = $lang;
-        require(LANG_DIR . "$lang.php");
     }
-
-    /**
-     * Add Config Array.
-     * Merges a given configuration array with the existing configuration array.
-     *
-     * @param array<string, array<string, mixed>> $array Configuration array.
-     *
-     * @return void
-     */
-    public function addConfigArray(array $array)
-    : void {
-        $this->configuration = array_merge($this->configuration, $array);
-    }
-
-    /**
-     * Add Specific Config.
-     * Add a value to a specific index in the config array.
-     *
-     * @param string               $index Array index (class name).
-     * @param array<string, mixed> $value Configuration array.
-     *
-     * @return void
-     */
-    public function addSpecificConfig(string $index, mixed $value)
-    : void {
-        $this->configuration[$index] = $value;
-    }
-
-    /**
-     * Load Config.
-     * Loads a module configuration if there is any set.
-     *
-     * @param string $class Class name.
-     *
-     * @return bool
-     */
-    public function loadConfig(string $class)
-    : bool {
-        $class = toSnakeCase($class);
-        $class_path = CONFIG_DIR . "$class.config.php";
-
-        return $this->loadConfigFile($class_path);
-    }
-
-    public const ERROR_CONFIG_FILE_NOT_FOUND = 0;
-
-    /**
-     * Load Config File.
-     * Loads the configuration file of a class.
-     *
-     * @param string $config_file                Configuration file name.
-     * @param bool   $handle_not_found_exception Error trigger on failure.
-     *
-     * @return bool
-     * @noinspection PhpSameParameterValueInspection
-     */
-    private function loadConfigFile(
-        string $config_file,
-        bool $handle_not_found_exception = false
-    )
-    : bool {
-        if (!file_exists($config_file)) {
-            if ($handle_not_found_exception) {
-                $this->results[] = array(
-                    self::ERROR_CONFIG_FILE_NOT_FOUND,
-                    array("config_file" => $config_file)
-                );
-            }
-
-            return false;
-        }
-        $this->configuration = array_merge(
-            $this->configuration,
-            require($config_file)
-        );
-
-        return true;
-    }
-
-    public const ERROR_CONFIG_NOT_FOUND = 1;
 
     /**
      * Get Config.
@@ -152,21 +68,30 @@ class Config
     }
 
     /**
-     * Load Language.
-     * Loads a module language if there is any set.
+     * Add Config Array.
+     * Merges a given configuration array with the existing configuration array.
      *
-     * @param string $class_name Class name.
+     * @param array<string, array<string, mixed>> $array Configuration array.
      *
      * @return void
      */
-    public function loadLang(string $class_name)
+    public function addConfigArray(array $array)
     : void {
-        $lang = $this->lang;
-        $class_filename = toSnakeCase($class_name);
-        $lang_file = LANG_DIR . "$class_filename.$lang.php";
-        if (file_exists($lang_file)) {
-            require_once($lang_file);
-        }
+        $this->configuration = array_merge($this->configuration, $array);
+    }
+
+    /**
+     * Add Specific Config.
+     * Add a value to a specific index in the config array.
+     *
+     * @param string               $index Array index (class name).
+     * @param array<string, mixed> $value Configuration array.
+     *
+     * @return void
+     */
+    public function addSpecificConfig(string $index, mixed $value)
+    : void {
+        $this->configuration[$index] = $value;
     }
 
     /**
@@ -222,14 +147,82 @@ class Config
      * @param object $_class_instance Class instance.
      * @param string $class_name      Class name.
      *
-     * @return bool
+     * @return void
      * @noinspection PhpUnusedParameterInspection
      */
     public function loadClassLangAndConfig(
         object $_class_instance,
         string $class_name
     )
+    : void {
+        $this->loadLang($class_name);
+        $this->loadConfig($class_name);
+    }
+
+    /**
+     * Load Language.
+     * Loads a module language if there is any set.
+     *
+     * @param string $class_name Class name.
+     *
+     * @return void
+     */
+    public function loadLang(string $class_name)
+    : void {
+        $lang = $this->lang;
+        $class_filename = toSnakeCase($class_name);
+        $lang_file = LANG_DIR . "$class_filename.$lang.php";
+        if (file_exists($lang_file)) {
+            require_once($lang_file);
+        }
+    }
+
+    /**
+     * Load Config.
+     * Loads a module configuration if there is any set.
+     *
+     * @param string $class Class name.
+     *
+     * @return bool
+     */
+    public function loadConfig(string $class)
     : bool {
-        return $this->loadLang($class_name) && $this->loadConfig($class_name);
+        $class = toSnakeCase($class);
+        $class_path = CONFIG_DIR . "$class.config.php";
+
+        return $this->loadConfigFile($class_path);
+    }
+
+    /**
+     * Load Config File.
+     * Loads the configuration file of a class.
+     *
+     * @param string $config_file                Configuration file name.
+     * @param bool   $handle_not_found_exception Error trigger on failure.
+     *
+     * @return bool
+     * @noinspection PhpSameParameterValueInspection
+     */
+    private function loadConfigFile(
+        string $config_file,
+        bool $handle_not_found_exception = false
+    )
+    : bool {
+        if (!file_exists($config_file)) {
+            if ($handle_not_found_exception) {
+                $this->results[] = array(
+                    self::ERROR_CONFIG_FILE_NOT_FOUND,
+                    array("config_file" => $config_file)
+                );
+            }
+
+            return false;
+        }
+        $this->configuration = array_merge(
+            $this->configuration,
+            require($config_file)
+        );
+
+        return true;
     }
 }

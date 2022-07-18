@@ -19,8 +19,9 @@ class Injector
     public const ERROR_CLASS_NOT_FOUND_3 = 6;
     public const ERROR_CLASS_OR_PARAMETER_NOT_FOUND = 7;
     public const ERROR_CLASS_REFLECTION = 8;
+    public const ERROR_REFLECTION_PARAMETER = 9;
     /**
-     * @var array<int, array> $results Results array.
+     * @var array<int, array<int, mixed>> $results Results array.
      */
     public array $results = array();
     /**
@@ -32,7 +33,7 @@ class Injector
      */
     private array $classesArgs;
     /**
-     * @var array<int, array> $helpers Helpers array.
+     * @var array<int, array<int, mixed>> $helpers Helpers array.
      */
     private array $helpers = array();
 
@@ -65,8 +66,12 @@ class Injector
                 $helper_class_name, $helper_method
             );
             $parameters = $reflectedMethod->getParameters();
-            if ($parameters[0]->getType()->getName() !== "object" ||
-                $parameters[1]->getType()->getName() !== "string") {
+            $parameter0type = $parameters[0]->getType();
+            $parameter1type = $parameters[1]->getType();
+            if (!($parameter0type instanceof ReflectionNamedType) ||
+                $parameter0type->getName() !== "object" ||
+                !($parameter1type instanceof ReflectionNamedType) ||
+                $parameter1type->getName() !== "string") {
                 $this->results[] = array(
                     self::ERROR_INVALID_HELPER_METHOD,
                     array(
@@ -264,7 +269,8 @@ class Injector
                     if ($arg) {
                         $dependencies[] = $arg;
                     } elseif (!$parameter->isOptional()) {
-                        if ($parameter->getType() === null) {
+                        $parameter_type = $parameter->getType();
+                        if ($parameter_type === null) {
                             $this->results[] = array(
                                 self::ERROR_CLASS_OR_PARAMETER_NOT_FOUND,
                                 array(
@@ -275,8 +281,19 @@ class Injector
 
                             return null;
                         }
-                        $dependency_class_name = $parameter->getType()->getName(
-                        );
+                        if (!($parameter_type instanceof ReflectionNamedType)) {
+                            $this->results[] = array(
+                                self::ERROR_REFLECTION_PARAMETER,
+                                array(
+                                    "class_name" => $class_name,
+                                    "parameter_name" => $arg_name
+                                )
+                            );
+
+                            return null;
+                        }
+                        $dependency_class_name
+                            = $parameter_type->getName();
                         $index
                             = $this->getIndexName($dependency_class_name);
                         if (!$this->hasClass($dependency_class_name)) {

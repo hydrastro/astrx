@@ -6,8 +6,9 @@ declare(strict_types = 1);
  */
 class Prelude
 {
+    public const ERROR_PDO_EXCEPTION = 0;
     /**
-     * @var array<int, array> $results Results array.
+     * @var array<int, array<int, mixed>> $results Results array.
      */
     public array $results = array();
 
@@ -32,6 +33,7 @@ class Prelude
             "environment",
             $ErrorHandler::ENVIRONMENT_DEVELOPMENT
         );
+        // @phpstan-ignore-next-line
         $ErrorHandler->setEnvironment($environment);
 
         $config->loadLang("injector");
@@ -76,9 +78,6 @@ class Prelude
                  )
         );
         try {
-            /**
-             * @var PDO $pdo PDO.
-             */
             $pdo = $injector->createClass("PDO");
             if ($pdo === null) {
                 // call error handler to peacefully die
@@ -92,6 +91,9 @@ class Prelude
 
             return;
         }
+        /**
+         * @var PDO $pdo PDO.
+         */
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         $pdo->setAttribute(
             PDO::ATTR_ERRMODE,
@@ -99,18 +101,16 @@ class Prelude
         );
 
         // Finally creating the Content Manager class.
-        /**
-         * @var ContentManager $cms Content Manager.
-         */
         $cms = $injector->getClass("ContentManager");
         if ($cms === null) {
             // call error handler to peacefully die
             return;
         }
+        /**
+         * @var ContentManager $cms Content Manager.
+         */
         $cms->init();
     }
-
-    public const ERROR_PDO_EXCEPTION = 0;
 
     private function getFatalErrorsMap()
     : array
@@ -128,7 +128,7 @@ class Prelude
 
         // but lets build the array first
         return array(
-            "Injector" => array(
+            -"Injector" => array(
                 Injector::ERROR_HELPER_METHOD_NOT_FOUND => array(
                     500,
                     ERROR_HELPER_METHOD_NOT_FOUND,  // class_name, method_name
@@ -173,6 +173,11 @@ class Prelude
                 Injector::ERROR_CLASS_REFLECTION => array(
                     500,
                     ERROR_CLASS_REFLECTION, // message
+                    ErrorHandler::LOG_LEVEL_ERROR
+                ),
+                Injector::ERROR_REFLECTION_PARAMETER => array(
+                    500,
+                    ERROR_REFLECTION_PARAMETER, // class_name, parameter_name
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             ),
@@ -258,6 +263,11 @@ class Prelude
                 Config::ERROR_CONFIG_NOT_FOUND => array(
                     500,
                     ERROR_CONFIG_NOT_FOUND, // class_name, config_name
+                    ErrorHandler::LOG_LEVEL_ERROR
+                ),
+                Config::ERROR_INVALID_LANGUAGE => array(
+                    500,
+                    ERROR_INVALID_LANGUAGE,
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             ),

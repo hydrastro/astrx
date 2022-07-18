@@ -7,10 +7,6 @@ declare(strict_types = 1);
 class MessageHandler
 {
     /**
-     * @var array<int, object> classes Classes.
-     */
-    private array $classes = array();
-    /**
      * @var array<int, array<mixed>> $messages Messages array.
      */
     public array $messages = array();
@@ -18,6 +14,10 @@ class MessageHandler
      * @var array<int, Throwable> $exceptions Exceptions array.
      */
     public array $exceptions = array();
+    /**
+     * @var array<int, object> classes Classes.
+     */
+    private array $classes = array();
 
     /**
      * MessageHandler Constructor.
