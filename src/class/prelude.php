@@ -23,6 +23,9 @@ class Prelude
 
         // Now we can relax. We have a custom error handler.
 
+        // Language loading is deferred for the core classes
+        $config->addDeferredLangClass($this);
+
         // Wiring together the Error Handler.
         $ErrorHandler->addClass($this);
         $ErrorHandler->addClass($config);
@@ -36,8 +39,8 @@ class Prelude
         // @phpstan-ignore-next-line
         $ErrorHandler->setEnvironment($environment);
 
-        $config->loadLang("injector");
         $injector = new Injector();
+        $config->addDeferredLangClass($injector);
 
         // Configuring the injector to load config and auto-wire stuff.
         $injector->addHelper($ErrorHandler, "addClass");
@@ -46,9 +49,6 @@ class Prelude
 
         // TODO: INTERPOLATION
         // TODO: TEST.
-        // TODO: clean everything and commit.
-        // TODO: change injector ->getType()->getName(); / split and check
-        // TODO:  CHECK THAT getType returns ReflectionNamedType
         // TODO: errorHandler->peacefullyDie();
 
         // Adding existing classes to the injector container.
@@ -103,7 +103,7 @@ class Prelude
         // Finally creating the Content Manager class.
         $cms = $injector->getClass("ContentManager");
         if ($cms === null) {
-            // call error handler to peacefully die
+            // call error handler to peacefully die (big OOF)
             return;
         }
         /**
@@ -255,11 +255,6 @@ class Prelude
                 )
             ),
             "Config" => array(
-                Config::ERROR_CONFIG_FILE_NOT_FOUND => array(
-                    500,
-                    ERROR_CONFIG_FILE_NOT_FOUND, // config_file
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
                 Config::ERROR_CONFIG_NOT_FOUND => array(
                     500,
                     ERROR_CONFIG_NOT_FOUND, // class_name, config_name

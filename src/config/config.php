@@ -5,6 +5,7 @@ declare(strict_types = 1);
 return array(
     "Prelude" => array(
         "environment" => ErrorHandler::ENVIRONMENT_DEVELOPMENT,
+        "available_langauges" => array("en")
     ),
     "PDO" => array(
         "db_type" => "mysql",

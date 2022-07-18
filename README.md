@@ -10,7 +10,7 @@
 
 ### Code quality
 
-Phpstan checks only. Level 9.  
+Phpstan checks only. Level 9: `./vendor/bin/phpstan analyse src --level=9`.  
 No psalm. No phpcs.  
 Code formatting is done by the IDE.  
 Use strict types in every file.

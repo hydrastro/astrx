@@ -22,6 +22,11 @@ class Config
      * @var array<string, array<string, mixed>> $configuration Config array.
      */
     private array $configuration;
+    /**
+     * @var array<int, string> $deferred_lang_classes Classes whose language
+     * file is yet to be loaded.
+     */
+    private array $deferred_lang_classes = array();
 
     /**
      * Config Constructor.
@@ -29,42 +34,6 @@ class Config
     public function __construct()
     {
         $this->configuration = require(CONFIG_DIR . "config.php");
-    }
-
-    /**
-     * Get Config.
-     * Returns a config which may be specific for a class.
-     * It directly maps to $configuration[$class_name][$config_name]
-     * or $configuration[$config_name] if no class is provided.
-     *
-     * @param string $class_name  Configuration class name.
-     * @param string $config_name Configuration name.
-     * @param mixed  $fallback    Fallback configuration.
-     *
-     * @return mixed
-     */
-    public function getConfig(
-        string $class_name,
-        string $config_name,
-        mixed $fallback = null
-    )
-    : mixed {
-        if (array_key_exists($class_name, $this->configuration) &&
-            array_key_exists(
-                $config_name,
-                $this->configuration[$class_name]
-            )) {
-            return $this->configuration[$class_name][$config_name];
-        }
-        if ($fallback !== null) {
-            return $fallback;
-        }
-        $this->results[] = array(
-            self::ERROR_CONFIG_NOT_FOUND,
-            array("class_name" => $class_name, "config_name" => $config_name)
-        );
-
-        return null;
     }
 
     /**
@@ -140,6 +109,42 @@ class Config
     }
 
     /**
+     * Get Config.
+     * Returns a config which may be specific for a class.
+     * It directly maps to $configuration[$class_name][$config_name]
+     * or $configuration[$config_name] if no class is provided.
+     *
+     * @param string $class_name  Configuration class name.
+     * @param string $config_name Configuration name.
+     * @param mixed  $fallback    Fallback configuration.
+     *
+     * @return mixed
+     */
+    public function getConfig(
+        string $class_name,
+        string $config_name,
+        mixed $fallback = null
+    )
+    : mixed {
+        if (array_key_exists($class_name, $this->configuration) &&
+            array_key_exists(
+                $config_name,
+                $this->configuration[$class_name]
+            )) {
+            return $this->configuration[$class_name][$config_name];
+        }
+        if ($fallback !== null) {
+            return $fallback;
+        }
+        $this->results[] = array(
+            self::ERROR_CONFIG_NOT_FOUND,
+            array("class_name" => $class_name, "config_name" => $config_name)
+        );
+
+        return null;
+    }
+
+    /**
      * Load Class Language and Configurations.
      * This is a helper function which loads a given class language and
      * config files.
@@ -155,7 +160,11 @@ class Config
         string $class_name
     )
     : void {
-        $this->loadLang($class_name);
+        if (isset($this->lang)) {
+            $this->loadLang($class_name);
+        } else {
+            $this->deferred_lang_classes[] = $class_name;
+        }
         $this->loadConfig($class_name);
     }
 
@@ -190,38 +199,50 @@ class Config
         $class = toSnakeCase($class);
         $class_path = CONFIG_DIR . "$class.config.php";
 
-        return $this->loadConfigFile($class_path);
-    }
-
-    /**
-     * Load Config File.
-     * Loads the configuration file of a class.
-     *
-     * @param string $config_file                Configuration file name.
-     * @param bool   $handle_not_found_exception Error trigger on failure.
-     *
-     * @return bool
-     * @noinspection PhpSameParameterValueInspection
-     */
-    private function loadConfigFile(
-        string $config_file,
-        bool $handle_not_found_exception = false
-    )
-    : bool {
-        if (!file_exists($config_file)) {
-            if ($handle_not_found_exception) {
-                $this->results[] = array(
-                    self::ERROR_CONFIG_FILE_NOT_FOUND,
-                    array("config_file" => $config_file)
-                );
-            }
-
+        $handle_not_found_exception = false;
+        if (!file_exists($class_path)) {
             return false;
         }
         $this->configuration = array_merge(
             $this->configuration,
-            require($config_file)
+            require($class_path)
         );
+
+        return true;
+    }
+
+    /**
+     * Add Deferred Lang Class.
+     * Adds a class to a list, so it's language file will be loaded later,
+     * after a language has finally been set.
+     *
+     * @param object $class
+     *
+     * @return void
+     */
+    public function addDeferredLangClass(object $class)
+    : void {
+        $this->deferred_lang_classes[] = get_class($class);
+    }
+
+    /**
+     * Set Lang and Load Deferred.
+     * Sets the language and loads the deferred classes' language files.
+     *
+     * @param string $lang
+     *
+     * @return bool
+     */
+    public function setLangAndLoadDeferred(string $lang)
+    : bool {
+        $this->lang = $lang;
+        $languages = $this->getConfig("Prelude", "available_languages");
+        if (!is_array($languages) || !in_array($lang, $languages)) {
+            return false;
+        }
+        foreach ($this->deferred_lang_classes as $class) {
+            $this->loadLang($class);
+        }
 
         return true;
     }
