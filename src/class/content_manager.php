@@ -26,23 +26,31 @@ class ContentManager
     /**
      * ContentManager Constructor.
      *
-     * @param PDO      $pdo      PDO.
      * @param Config   $config   Config.
      * @param Injector $injector Injector.
+     * @param PDO      $pdo      PDO.
      */
-    public function __construct(PDO $pdo, Config $config, Injector $injector)
+    public function __construct(Config $config, Injector $injector, PDO $pdo)
     {
-        $this->pdo = $pdo;
         $this->config = $config;
         $this->injector = $injector;
+        $this->pdo = $pdo;
     }
 
     /**
-     * Init
+     * Init.
+     * Init function.
      * @return void
      */
     public function init()
+    : void
     {
         echo "<h1>AstrX</h1>";
+
+        $lang = "en";
+        if (!$this->config->setLangAndLoadDeferred($lang)) {
+            // peacefully die
+            return;
+        }
     }
 }

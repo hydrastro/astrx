@@ -42,14 +42,10 @@ class Prelude
         $injector = new Injector();
         $config->addDeferredLangClass($injector);
 
-        // Configuring the injector to load config and auto-wire stuff.
+        // Configuring the injector to load config and auto-wire components.
         $injector->addHelper($ErrorHandler, "addClass");
         $injector->addHelper($config, "loadClassLangAndConfig");
         $injector->addHelper($config, "configurationMethodsHelper");
-
-        // TODO: INTERPOLATION
-        // TODO: TEST.
-        // TODO: errorHandler->peacefullyDie();
 
         // Adding existing classes to the injector container.
         $injector->setClass($config);
@@ -79,10 +75,6 @@ class Prelude
         );
         try {
             $pdo = $injector->createClass("PDO");
-            if ($pdo === null) {
-                // call error handler to peacefully die
-                return;
-            }
         } catch (PDOException $e) {
             $this->results[] = array(
                 self::ERROR_PDO_EXCEPTION,
@@ -102,10 +94,6 @@ class Prelude
 
         // Finally creating the Content Manager class.
         $cms = $injector->getClass("ContentManager");
-        if ($cms === null) {
-            // call error handler to peacefully die (big OOF)
-            return;
-        }
         /**
          * @var ContentManager $cms Content Manager.
          */
@@ -128,7 +116,7 @@ class Prelude
 
         // but lets build the array first
         return array(
-            -"Injector" => array(
+            "Injector" => array(
                 Injector::ERROR_HELPER_METHOD_NOT_FOUND => array(
                     500,
                     ERROR_HELPER_METHOD_NOT_FOUND,  // class_name, method_name

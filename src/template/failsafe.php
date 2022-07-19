@@ -11,6 +11,10 @@
 <pre>
 <?php
 /**
+ * @var array<int, string> $messages
+ */
+print_r($messages);
+/**
  * @var array<int, Throwable> $exceptions
  */
 print_r($exceptions);

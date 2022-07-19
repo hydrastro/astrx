@@ -37,6 +37,11 @@ class ErrorHandler
      * @var array<int, object> classes Classes.
      */
     private array $classes = array();
+    /**
+     * @var array<string, array<int, array<int, mixed>>> $results_maps Class
+     * results maps, used for interpolation and better display.
+     */
+    private array $results_maps = array();
 
     /**
      * ErrorHandler Constructor.
@@ -131,42 +136,129 @@ class ErrorHandler
     public function shutdownHandler()
     : void
     {
-        $exceptions = $this->getExceptions();
-        if (!empty($exceptions)) {
-            http_response_code(HTTP_INTERNAL_SERVER_ERROR);
-            $failsafe = TEMPLATE_DIR . "failsafe.php";
-            if (file_exists($failsafe)) {
-                require($failsafe);
-            } else {
-                // TODO: better html here.
-                echo "<h1>Error</h1><pre>";
-                print_r($exceptions);
-            }
+        $exceptions = $this->exceptions;
+        if (empty($exceptions)) {
+            return;
+        }
+
+        http_response_code(HTTP_INTERNAL_SERVER_ERROR);
+        $failsafe = TEMPLATE_DIR . "failsafe.php";
+        $messages = $this->getResultsMessages();
+        if (file_exists($failsafe)) {
+            require($failsafe);
+        } else {
+            // TODO: better html here.
+            echo "<h1>Error</h1><pre>";
+            print_r($messages);
+            print_r($exceptions);
         }
     }
 
     /**
-     * Get Exceptions.
-     * Retrieves and returns the exceptions of all the handled classes.
-     * @return array<int, Throwable>
+     * Get Results Messages.
+     * Returns interpolated and fixed to the current log level classes'
+     * result messages.
+     * @return array<int, string>
      */
-    public function getExceptions()
+    public function getResultsMessages()
     : array
     {
-        $exceptions = array();
-        if (empty($this->classes)) {
-            return array();
-        }
-        foreach ($this->classes as $class) {
-            if (property_exists($class, 'exceptions') &&
-                is_array($class->exceptions)) {
-                foreach ($class->exceptions as $exception) {
-                    $exceptions[] = $exception;
+        /*
+         * results:
+         * [
+         *   class_name =>
+         *   [
+         *     [
+         *       error code,
+         *       [ interpolation args ]
+         *     ],
+         *     [
+         *       error code,
+         *       [ interpolation args ]
+         *     ]
+         *   ]
+         * ]
+         *
+         * results_map:
+         * [
+         *   class_name =>
+         *   [
+         *     error code =>
+         *     [
+         *       http status code,
+         *       text,
+         *       log level
+         *     ],
+         *     error code =>
+         *     [
+         *       http status code,
+         *       text,
+         *       log level
+         *     ]
+         *   ]
+         * ]
+         */
+        $results = $this->getResults();
+        $results_map = $this->results_maps;
+        $messages = array();
+        if (empty($results_map)) {
+            foreach ($results as $class_name => $class_results) {
+                foreach ($class_results as $class_result) {
+                    $message
+                        = "An error occurred on class '$class_name'. ";
+                    $message .= "Error code: '" . $class_result[0] . "', ";
+                    $message .= "interpolation arguments: '" .
+                                print_r($class_result[1], true) .
+                                "'.";
+                    $messages[] = $message;
+                }
+            }
+        } else {
+            foreach ($results as $class_name => $class_results) {
+                foreach ($class_results as $class_result) {
+                    $result_map = $results_map[$class_name][$class_result[0]];
+                    if ($this->log_level > $result_map[3]) {
+                        continue;
+                    }
+                    if (is_string($result_map[1]) &&
+                        is_array($class_result[1])) {
+                        $messages[] = $this->interpolate(
+                            $result_map[1],
+                            $class_result[1]
+                        );
+                    } else {
+                        $messages[]
+                            = "An error occurred and another error occurred while trying to display the previous error";
+                    }
                 }
             }
         }
 
-        return $exceptions;
+        return $messages;
+    }
+
+    /**
+     * Get Results.
+     * Retrieves and returns the results of all the handled classes.
+     * @return array<string, array<int, array<int, mixed>>>
+     */
+    public function getResults()
+    : array
+    {
+        $results = array();
+        if (empty($this->classes)) {
+            return array();
+        }
+        foreach ($this->classes as $class) {
+            if (property_exists($class, 'results') &&
+                is_array($class->results) &&
+                !empty($class->results)) {
+                $results[get_class($class)] = $class->results;
+            }
+        }
+
+        // @phpstan-ignore-next-line
+        return $results;
     }
 
     /**
@@ -207,5 +299,44 @@ class ErrorHandler
         );
 
         return false;
+    }
+
+    /**
+     * Add Results Map.
+     * Add results map used for interpolating class result messages.
+     *
+     * @param string                        $class_name Class name.
+     * @param array<int, array<int, mixed>> $map        Results map.
+     *
+     * @return void
+     */
+    public function addResultsMap(string $class_name, array $map)
+    : void {
+        $this->results_maps[$class_name] = $map;
+    }
+
+    /**
+     * Interpolate.
+     * Interpolates context values into the message placeholders.
+     *
+     * @param string               $message Message.
+     * @param array<string, mixed> $context Context.
+     *
+     * @return string
+     */
+    public function interpolate(string $message, array $context = array())
+    : string {
+        // build a replacement array with braces around the context keys
+        $replace = array();
+        foreach ($context as $key => $val) {
+            // check that the value can be cast to string
+            if (!is_array($val) &&
+                (!is_object($val) || method_exists($val, '__toString'))) {
+                $replace['{' . $key . '}'] = $val;
+            }
+        }
+
+        // interpolate replacement values into the message and return
+        return strtr($message, $replace);
     }
 }
