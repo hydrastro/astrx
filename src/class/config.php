@@ -238,6 +238,11 @@ class Config
         $this->lang = $lang;
         $languages = $this->getConfig("Prelude", "available_languages");
         if (!is_array($languages) || !in_array($lang, $languages)) {
+            $this->results[] = array(
+                self::ERROR_INVALID_LANGUAGE,
+                array("lang" => $lang)
+            );
+
             return false;
         }
         foreach ($this->deferred_lang_classes as $class) {

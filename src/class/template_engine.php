@@ -311,7 +311,9 @@ class TemplateEngine
                 return null;
             }
         } else {
-            $code = '<?php class ' . $class_name . '{function render($args){';
+            $code = '<?php class ' .
+                    $class_name .
+                    '{function render($args=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
                     require("' .
@@ -580,7 +582,7 @@ class TemplateEngine
         $class = "<?php class " .
                  $class_name .
                  '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}' .
-                 'function render($args){$buffer="";' .
+                 'function render($args=array()){$buffer="";' .
                  $code[self::INDEX_RENDER_BODY][0];
         if ($php_processing) {
             $class .= 'extract($args);ob_start();eval("?>" . $buffer);$buffer = 

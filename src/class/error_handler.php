@@ -11,13 +11,22 @@ class ErrorHandler
     public const ENVIRONMENT_PRODUCTION = 1;
     public const ENVIRONMENT_TESTING = 2;
     public const ENVIRONMENT_STAGING = 3;
+    // System is unusable.
     public const LOG_LEVEL_EMERGENCY = 7;
+    // Action must be taken immediately.
     public const LOG_LEVEL_ALERT = 6;
+    // Critical conditions.
     public const LOG_LEVEL_CRITICAL = 5;
+    // Runtime errors that do not require immediate action but should
+    // typically be logged and monitored.
     public const LOG_LEVEL_ERROR = 4;
+    // Exceptional occurrences that are not errors.
     public const LOG_LEVEL_WARNING = 3;
+    // Normal but significant events.
     public const LOG_LEVEL_NOTICE = 2;
+    // Interesting events.
     public const LOG_LEVEL_INFO = 1;
+    // Detailed debug information.
     public const LOG_LEVEL_DEBUG = 0;
     public const ERROR_UNDEFINED_ENVIRONMENT = 1;
     public const ERROR_CLASS_TO_REMOVE_NOT_FOUND = 0;
@@ -141,7 +150,7 @@ class ErrorHandler
             return;
         }
 
-        http_response_code(HTTP_INTERNAL_SERVER_ERROR);
+        http_response_code(500);
         $failsafe = TEMPLATE_DIR . "failsafe.php";
         $messages = $this->getResultsMessages();
         if (file_exists($failsafe)) {

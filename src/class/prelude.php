@@ -93,11 +93,14 @@ class Prelude
         );
 
         // Finally creating the Content Manager class.
-        $cms = $injector->getClass("ContentManager");
+        $cms = $injector->createClass("ContentManager");
         /**
          * @var ContentManager $cms Content Manager.
          */
         $cms->init();
+
+        // If the creation of PDO or ContentManager fails there will be an
+        // exception thrown and the script will fall back to the ErrorManager.
     }
 
     private function getFatalErrorsMap()
@@ -270,6 +273,13 @@ class Prelude
                 ErrorHandler::ERROR_UNDEFINED_ENVIRONMENT => array(
                     500,
                     ERROR_UNDEFINED_ENVIRONMENT,
+                    ErrorHandler::LOG_LEVEL_ERROR
+                )
+            ),
+            "Response" => array(
+                Response::ERROR_INVALID_HTTP_STATUS_CODE => array(
+                    500,
+                    ERROR_INVALID_HTTP_STATUS_CODE, // status_code
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             )
