@@ -313,7 +313,7 @@ class TemplateEngine
         } else {
             $code = '<?php class ' .
                     $class_name .
-                    '{function render($args=array()){';
+                    '{function render($args=array(),$parent=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
                     require("' .
@@ -582,7 +582,7 @@ class TemplateEngine
         $class = "<?php class " .
                  $class_name .
                  '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}' .
-                 'function render($args=array()){$buffer="";' .
+                 'function render($args=array(),$parent=array()){$buffer="";' .
                  $code[self::INDEX_RENDER_BODY][0];
         if ($php_processing) {
             $class .= 'extract($args);ob_start();eval("?>" . $buffer);$buffer = 
@@ -632,7 +632,7 @@ class TemplateEngine
                                                         '",$args,$i)){',
             };
         } else {
-            $code .= '$parent=array();$i=0;';
+            $code .= '$i=0;';
         }
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
@@ -679,30 +679,34 @@ class TemplateEngine
 
                         return null;
                     }
-                    $this->writeCode(
-                        $AST[$i - 1],
-                        $loop_parents,
-                        $functions_code,
-                        $iteration_number
-                    );
-                    array_pop($loop_parents);
-                    $i--;
-                    break;
+                $this->writeCode(
+                    $AST[$i - 1],
+                    $loop_parents,
+                    $functions_code,
+                    $iteration_number
+                );
+                array_pop($loop_parents);
+                $i--;
+                break;
                 case self::TOKEN_TYPE_PARTIAL:
-                    $class_name = ltrim(
-                                      $value,
-                                      self::TOKEN_OPERATOR_DEREFERENCE
-                                  ) . $iteration_number;
+                    $class_name = str_replace(
+                        '.',
+                        '_',
+                        ltrim(
+                            $value,
+                            self::TOKEN_OPERATOR_DEREFERENCE
+                        ) . $iteration_number
+                    );
                     $iteration_number++;
                     $code .= '$' .
                              $class_name .
                              '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue("' .
                              $value .
-                             '",$args,$parents,$i));if($' .
+                             '",$args,$parent,$i));if($' .
                              $class_name .
                              '!==null){$buffer.=$' .
                              $class_name .
-                             '->render($args);}';
+                             '->render($args,$parent);}';
                     break;
                 case self::TOKEN_TYPE_LOOP_END:
                 case self::TOKEN_TYPE_COMMENT:
