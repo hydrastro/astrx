@@ -63,6 +63,7 @@ class ContentManager
          */
         $template = $TemplateEngine->loadTemplate("template");
 
+        // @phpstan-ignore-next-line
         $this->response->setContent($template->render($this->template_args));
         $this->response->send();
     }

@@ -24,6 +24,8 @@ class Prelude
         // Now we can relax. We have a custom error handler.
 
         // Language loading is deferred for the core classes
+        $config->addDeferredLangClass($config);
+        $config->addDeferredLangClass($ErrorHandler);
         $config->addDeferredLangClass($this);
 
         // Wiring together the Error Handler.

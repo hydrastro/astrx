@@ -33,6 +33,7 @@ class Config
      */
     public function __construct()
     {
+        // Configs can be eventually squashed into a single file.
         $this->configuration = require(CONFIG_DIR . "config.php");
     }
 
@@ -180,7 +181,7 @@ class Config
     : void {
         $lang = $this->lang;
         $class_filename = toSnakeCase($class_name);
-        $lang_file = LANG_DIR . "$class_filename.$lang.php";
+        $lang_file = LANG_DIR . "$lang/$class_filename.$lang.php";
         if (file_exists($lang_file)) {
             require_once($lang_file);
         }
@@ -244,6 +245,11 @@ class Config
             );
 
             return false;
+        }
+        // Lang files can be eventually be squashed into a single file.
+        $general_lang_file = LANG_DIR . "$lang.php";
+        if (file_exists($general_lang_file)) {
+            require $general_lang_file;
         }
         foreach ($this->deferred_lang_classes as $class) {
             $this->loadLang($class);

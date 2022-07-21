@@ -2,6 +2,11 @@
 
 declare(strict_types = 1);
 
+// Directory definitions
+// These constants are meant to be used into the core classes (Autoloader,
+// Config and ErrorHandler).
+// Other classes needing to access directories should set those through their
+// configuration.
 const INDEX_DIR
 = __DIR__ .
   DIRECTORY_SEPARATOR .
