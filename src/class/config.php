@@ -161,6 +161,8 @@ class Config
         string $class_name
     )
     : void {
+        // Loading lang before the config is a good choice so we can put the
+        // eventual class results map into the config.
         if (isset($this->lang)) {
             $this->loadLang($class_name);
         } else {

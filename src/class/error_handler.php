@@ -325,6 +325,21 @@ class ErrorHandler
     }
 
     /**
+     * Add Multiple Results Maps.
+     * Adds multiple results maps of different classes.
+     *
+     * @param array<string, array<int, array<int, mixed>>> $maps Result maps.
+     *
+     * @return void
+     */
+    public function addMultipleResultsMaps(array $maps)
+    : void {
+        foreach ($maps as $class_name => $class_map) {
+            $this->addResultsMap($class_name, $class_map);
+        }
+    }
+
+    /**
      * Interpolate.
      * Interpolates context values into the message placeholders.
      *
