@@ -84,9 +84,9 @@ class TemplateEngine
      * @var string $template_dir Template directory.
      */
     private string $template_dir
-        = ".." .
+        = __DIR__ .
           DIRECTORY_SEPARATOR .
-          "src" .
+          ".." .
           DIRECTORY_SEPARATOR .
           "template" .
           DIRECTORY_SEPARATOR;
@@ -99,7 +99,7 @@ class TemplateEngine
     public function getConfigurationMethods()
     : array
     {
-        return array("setTemplateDir");
+        return array();
     }
 
     /**
@@ -671,14 +671,14 @@ class TemplateEngine
                     $code .= '$buffer.=$this->' .
                              $function_name .
                              '($args,$parent);';
-                    $loop_parents[] = $AST[$i];
-                    if (!is_array($AST[$i - 1])) {
-                        $this->results[] = array(
-                            self::ERROR_TEMPLATE_AST_INCONSISTENCY
-                        );
+                $loop_parents[] = $AST[$i];
+                if (!is_array($AST[$i - 1])) {
+                    $this->results[] = array(
+                        self::ERROR_TEMPLATE_AST_INCONSISTENCY
+                    );
 
-                        return null;
-                    }
+                    return null;
+                }
                 $this->writeCode(
                     $AST[$i - 1],
                     $loop_parents,

@@ -23,6 +23,7 @@ class ContentManager
      */
     private PDO $pdo;
     private Response $response;
+    public $template_args = array();
 
     /**
      * ContentManager Constructor.
@@ -56,8 +57,13 @@ class ContentManager
             // peacefully die
             return;
         }
+        $TemplateEngine = $this->injector->createClass("TemplateEngine");
+        /**
+         * @var TemplateEngine $TemplateEngine Template Engine.
+         */
+        $template = $TemplateEngine->loadTemplate("template");
 
-        $this->response->setContent("<h1>AstrX</h1>");
+        $this->response->setContent($template->render($this->template_args));
         $this->response->send();
     }
 }

@@ -3,5 +3,7 @@
 declare(strict_types = 1);
 
 return array(
-    "template_dir" => "../src/template/"
+    "TemplateEngine" => array(
+        "template_dir" => TEMPLATE_DIR
+    )
 );

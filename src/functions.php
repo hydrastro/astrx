@@ -3,6 +3,9 @@
 declare(strict_types = 1);
 
 /**
+ * To Snake Case.
+ * Converts a string from camelCase/PascalCase to snake_case.
+ *
  * @param string $string
  *
  * @return string
@@ -26,7 +29,7 @@ function toSnakeCase(string $string)
 isNonEmptyString
 getIp
 convertTime
-array_keys_kesists
+array_keys_exists
 isValidRegexArray
 checkRegexFilter
 isRegularExpression

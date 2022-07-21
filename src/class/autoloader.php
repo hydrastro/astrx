@@ -16,7 +16,7 @@ class Autoloader
 
     /**
      * Class autoloader function.
-     * This function auto-loads the project's classes among their configs
+     * This function autoloads the project's classes among their configs
      * (language files, constants, configuration variables).
      *
      * @param string $class Class name to autoload.
@@ -24,7 +24,7 @@ class Autoloader
      * @return void
      */
     public function classAutoload(string $class)
-    {
+    : void {
         $class_dir = (strpos(strtolower($class), "controller")) ?
             CONTROLLER_DIR : CLASS_DIR;
         $class = toSnakeCase($class);

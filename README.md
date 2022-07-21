@@ -234,14 +234,14 @@ LANGUAGE!
 
 ### Folders structure
 
-```angular2html
-├───class
-├───config
-├───controller
-├───data
-├───lang
-├───page
-└───template
+```shell
+$ tree -d
+.
+├── class
+├── config
+├── controller
+├── lang
+├── template
 ```
 
 ### Module structure

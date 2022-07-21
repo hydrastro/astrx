@@ -93,11 +93,11 @@ class Prelude
         );
 
         // Finally creating the Content Manager class.
-        $cms = $injector->createClass("ContentManager");
+        $ContentManager = $injector->createClass("ContentManager");
         /**
-         * @var ContentManager $cms Content Manager.
+         * @var ContentManager $ContentManager Content Manager.
          */
-        $cms->init();
+        $ContentManager->init();
 
         // If the creation of PDO or ContentManager fails there will be an
         // exception thrown and the script will fall back to the ErrorManager.

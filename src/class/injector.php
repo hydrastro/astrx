@@ -38,6 +38,14 @@ class Injector
     private array $helpers = array();
 
     /**
+     * Injector Constructor.
+     */
+    public function __construct()
+    {
+        $this->classes["Injector"] = $this;
+    }
+
+    /**
      * Add Helper.
      * Adds new helpers which will be called on classes creation.
      *
