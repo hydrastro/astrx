@@ -27,14 +27,19 @@ class Config
      * file is yet to be loaded.
      */
     private array $deferred_lang_classes = array();
+    /**
+     * @var ErrorHandler $ErrorHandler Error Handler.
+     */
+    private ErrorHandler $ErrorHandler;
 
     /**
      * Config Constructor.
      */
-    public function __construct()
+    public function __construct(ErrorHandler $ErrorHandler)
     {
         // Configs can be eventually squashed into a single file.
         $this->configuration = require(CONFIG_DIR . "config.php");
+        $this->ErrorHandler = $ErrorHandler;
     }
 
     /**
@@ -102,6 +107,14 @@ class Config
                 }
                 $class_instance->$method(...$args);
             }
+
+            $class_name = get_class($class_instance);
+            $this->ErrorHandler->addResultsMap(
+                $class_name,
+                $this->getConfig( // @phpstan-ignore-line
+                    $class_name, "results_map", array()
+                )
+            );
 
             return true;
         } catch (ReflectionException) {
@@ -238,7 +251,6 @@ class Config
      */
     public function setLangAndLoadDeferred(string $lang)
     : bool {
-        $this->lang = $lang;
         $languages = $this->getConfig("Prelude", "available_languages");
         if (!is_array($languages) || !in_array($lang, $languages)) {
             $this->results[] = array(
@@ -248,6 +260,7 @@ class Config
 
             return false;
         }
+        $this->lang = $lang;
         // Lang files can be eventually be squashed into a single file.
         $general_lang_file = LANG_DIR . "$lang.php";
         if (file_exists($general_lang_file)) {

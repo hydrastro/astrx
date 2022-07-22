@@ -23,10 +23,6 @@ class ContentManager
      */
     private PDO $pdo;
     /**
-     * @var Response $response Response.
-     */
-    private Response $response;
-    /**
      * @var ErrorHandler $ErrorHandler Error Handler.
      */
     private ErrorHandler $ErrorHandler;
@@ -35,6 +31,15 @@ class ContentManager
      * arguments.
      */
     public array $template_args = array();
+    /**
+     * @var array<int, string> $current_page_parameters Current page
+     * parameters.
+     */
+    private array $current_page_parameters = array();
+    /**
+     * @var int $current_route Current route number.
+     */
+    private int $current_route = 0;
 
     /**
      * ContentManager Constructor.
@@ -42,57 +47,211 @@ class ContentManager
      * @param ErrorHandler $ErrorHandler Error Handler.
      * @param Config       $config       Config.
      * @param Injector     $injector     Injector.
-     * @param PDO          $pdo          PDO.
-     * @param Response     $response     Response.
      */
     public function __construct(
         ErrorHandler $ErrorHandler,
         Config $config,
-        Injector $injector,
-        PDO $pdo,
-        Response $response
+        Injector $injector
     ) {
-        $this->ErrorHandler
-            = $ErrorHandler;
-        $this->config
-            = $config;
-        $this->injector
-            = $injector;
-        $this->pdo
-            = $pdo;
-        $this->response
-            = $response;
+        $this->ErrorHandler = $ErrorHandler;
+        $this->config = $config;
+        $this->injector = $injector;
     }
 
     /**
      * Init.
      * Init function.
      * @return void
+     * @throws Exception
      */
     public function init()
     : void
     {
-        $lang = "en";
+        // Setting the current page parameters if url rewrite is enabled.
+        $url_rewrite = $this->config->getConfig(
+            "ContentManager",
+            "url_rewrite",
+            false
+        );
+        if ($url_rewrite) {
+            $parameters_config = $this->config->getConfig(
+                "ContentManager", "current_page_parameters_config", array()
+            );
+            // @phpstan-ignore-next-line
+            foreach ($parameters_config as $parameter_config) {
+                $parameter_name = $this->config->getConfig(
+                    "ContentManager",
+                    // @phpstan-ignore-next-line
+                    $parameter_config,
+                    ""
+                );
+                // @phpstan-ignore-next-line
+                $this->setCurrentPageParameters(array($parameter_name));
+            }
+        }
+
+        // Setting the current language.
+        $request = $this->injector->createClass("Request");
+        /**
+         * @var Request $request Request.
+         */
+        $language_parameter_name = $this->config->getConfig(
+            "ContentManager",
+            "language_parameter_name"
+        );
+        $lang = "";
+        if ($language_parameter_name !== null) {
+            // @phpstan-ignore-next-line
+            $lang = $request->get($language_parameter_name, "");
+        }
+        // @phpstan-ignore-next-line
         if (!$this->config->setLangAndLoadDeferred($lang)) {
-            // peacefully die
-            return;
+            if (!$this->config->setLangAndLoadDeferred(
+            // @phpstan-ignore-next-line
+                $this->config->getConfig(
+                    "ContentManager",
+                    "default_language"
+                )
+            )) {
+                throw new Exception(
+                // @phpstan-ignore-next-line
+                    $this->config->getConfig(
+                        "ContentManager",
+                        "language_catastrophe_message"
+                    )
+                );
+            }
         }
 
         // Now that the language files and all the bootstrap components have
-        // been loaded we can inject the results maps into the error handler
+        // been loaded we can inject the results maps into the error handler,
         // so we have a way nicer error/results display.
         $this->ErrorHandler->addMultipleResultsMaps($this->getInitResultsMap());
 
+        // We can now start building our response.
         $TemplateEngine = $this->injector->createClass("TemplateEngine");
+        $response = $this->injector->createClass("response");
+
+        // Setting the current page id.
+        //
+
+        // Calls to controllers.
+        // Controllers can either build a response themselves and send it
+        // or alternatively they can fall back here to default template.
+        // Controllers can edit the default template arguments;
+        // $this->template_args is public.
+        //
+        // CODE HERE
+        //
+
         /**
          * @var TemplateEngine $TemplateEngine Template Engine.
          */
         $template = $TemplateEngine->loadTemplate("template");
 
+        /**
+         * @var Response $response Response.
+         */
+        $this->template_args["time"] = round(
+            (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
+            4
+        );
         // @phpstan-ignore-next-line
-        $this->response->setContent($template->render($this->template_args));
-        $this->response->send();
+        $response->setContent($template->render($this->template_args));
+        $response->send();
     }
+
+    /**
+     * Set Current Page Parameters.
+     * Sets the parameters for the current page.
+     *
+     * @param array<int, string> $parameters Page parameters.
+     * @param bool               $append     Append flag.
+     *
+     * @return void
+     */
+    public function setCurrentPageParameters(
+        array $parameters,
+        bool $append
+        = true
+    )
+    : void {
+        if ($append) {
+            $this->current_page_parameters = array_merge(
+                $this->current_page_parameters,
+                $parameters
+            );
+            $this->current_route += count($parameters);
+        } else {
+            $this->current_page_parameters = $parameters;
+            $this->current_route = count($parameters);
+        }
+
+        $request_uri = $_SERVER['REQUEST_URI']??"";
+        $url_path = explode('/', $request_uri);
+        $base_path = explode(
+            '/',
+            // @phpstan-ignore-next-line
+            $this->config->getConfig(
+                "ContentManager",
+                "base_path",
+                ""
+            )
+        );
+        // Removing base path
+        for ($i = 0; $i < count($base_path); $i++) {
+            if ($url_path[$i] == $base_path[$i]) {
+                unset($url_path[$i]);
+            }
+        }
+        // Decoding url (%20 -> ' ').
+        foreach ($url_path as &$url) {
+            $url = urldecode($url);
+        }
+        // array_filter() removes, if there are any, empty values caused by
+        // multiple slashes: example.com/id///page//foo//
+        // array_values() reindexes the array.
+        $route = array_values(array_filter($url_path));
+
+        foreach ($this->current_page_parameters as $key => $parameter) {
+            $_GET[$parameter] = (isset($route[$key])) ? $route[$key] : null;
+        }
+    }
+
+    /*
+    public function asd()
+    {
+        // Creating database connection.
+        // $config->loadConfig("PDO"); It's a built in class so its config
+        // will just be loaded along with the main configs.
+        $dsn = $this->config->getConfig("PDO", "db_type", "");
+        $host = $this->config->getConfig("PDO", "db_host", "");
+        $dbname = $this->config->getConfig("PDO", "db_name", "");
+        $passwd = $this->config->getConfig("PDO", "db_password", "");
+        $username = $this->config->getConfig("PDO", "db_username", "");
+        $this->injector->setClassArgs(
+            "PDO", array(
+                     "dsn" => $dsn .
+                              ":host=" .
+                              $host .
+                              ";dbname=" .
+                              $dbname .
+                              ";",
+                     "username" => $username,
+                     "password" => $passwd
+                 )
+        );
+        $pdo = $this->injector->createClass("PDO");
+        /**
+         * @var PDO $pdo PDO.
+         *
+        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+        $pdo->setAttribute(
+            PDO::ATTR_ERRMODE,
+            PDO::ERRMODE_EXCEPTION
+        );
+        $this->pdo = $pdo;
+    }*/
 
     /**
      * Get Init Results Map.
@@ -188,13 +347,6 @@ class ContentManager
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             ),
-            "Response" => array(
-                Response::ERROR_INVALID_HTTP_STATUS_CODE => array(
-                    500,
-                    ERROR_INVALID_HTTP_STATUS_CODE, // status_code
-                    ErrorHandler::LOG_LEVEL_ERROR
-                )
-            )
         );
     }
 }

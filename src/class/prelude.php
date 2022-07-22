@@ -19,7 +19,7 @@ class Prelude
     {
         // Loading core classes.
         $ErrorHandler = new ErrorHandler();
-        $config = new Config();
+        $config = new Config($ErrorHandler);
 
         // Now we can relax. We have a custom error handler.
 
@@ -55,50 +55,12 @@ class Prelude
         $injector->setClass($this);
         $ErrorHandler->addClass($injector);
 
-        // Creating database connection.
-        // $config->loadConfig("PDO"); It's a built in class so its config
-        // will just be loaded along with the main configs.
-        $dsn = $config->getConfig("PDO", "db_type", "");
-        $host = $config->getConfig("PDO", "db_host", "");
-        $dbname = $config->getConfig("PDO", "db_name", "");
-        $passwd = $config->getConfig("PDO", "db_password", "");
-        $username = $config->getConfig("PDO", "db_username", "");
-        $injector->setClassArgs(
-            "PDO", array(
-                     "dsn" => $dsn .
-                              ":host=" .
-                              $host .
-                              ";dbname=" .
-                              $dbname .
-                              ";",
-                     "username" => $username,
-                     "password" => $passwd
-                 )
-        );
-        try {
-            $pdo = $injector->createClass("PDO");
-        } catch (PDOException $e) {
-            $this->results[] = array(
-                self::ERROR_PDO_EXCEPTION,
-                array("message" => $e->getMessage())
-            );
-
-            return;
-        }
-        /**
-         * @var PDO $pdo PDO.
-         */
-        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
-        $pdo->setAttribute(
-            PDO::ATTR_ERRMODE,
-            PDO::ERRMODE_EXCEPTION
-        );
-
         // Finally creating the Content Manager class.
         $ContentManager = $injector->createClass("ContentManager");
         /**
          * @var ContentManager $ContentManager Content Manager.
          */
+        /** @noinspection PhpUnhandledExceptionInspection */
         $ContentManager->init();
 
         // If the creation of PDO or ContentManager fails there will be an

@@ -21,13 +21,13 @@ class Request
      *
      * @return mixed
      */
-    public function get(string $key)
+    public function get(string $key, mixed $fallback = null)
     : mixed {
         if (isset($_GET[$key])) {
             return $_GET[$key];
         }
 
-        return null;
+        return $fallback;
     }
 
     /**
@@ -38,13 +38,13 @@ class Request
      *
      * @return mixed
      */
-    public function post(string $key)
+    public function post(string $key, mixed $fallback = null)
     : mixed {
         if (isset($_POST[$key])) {
             return $_POST[$key];
         }
 
-        return null;
+        return $fallback;
     }
 
     /**
@@ -55,13 +55,13 @@ class Request
      *
      * @return mixed
      */
-    public function files(string $key)
+    public function files(string $key, mixed $fallback = null)
     : mixed {
         if (isset($_FILES[$key])) {
             return $_FILES[$key];
         }
 
-        return null;
+        return $fallback;
     }
 
     /**
@@ -72,12 +72,12 @@ class Request
      *
      * @return mixed
      */
-    public function request(string $key)
+    public function request(string $key, mixed $fallback = null)
     : mixed {
         if (isset($_REQUEST[$key])) {
             return $_REQUEST[$key];
         }
 
-        return null;
+        return $fallback;
     }
 }

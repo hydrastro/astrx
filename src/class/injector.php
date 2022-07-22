@@ -29,9 +29,9 @@ class Injector
      */
     private array $classes = array();
     /**
-     * @var array<string, array<string,mixed>> $classesArgs Classes arguments.
+     * @var array<string, array<string,mixed>> $classes_args Classes arguments.
      */
-    private array $classesArgs;
+    private array $classes_args;
     /**
      * @var array<int, array<int, mixed>> $helpers Helpers array.
      */
@@ -124,7 +124,7 @@ class Injector
     : bool {
         if (class_exists($class_name)) {
             $name = $this->getIndexName($class_name);
-            $this->classesArgs[$name] = $args;
+            $this->classes_args[$name] = $args;
 
             return true;
         }
@@ -346,13 +346,13 @@ class Injector
     public function getClassArg(string $class_name, string $arg_name)
     : mixed {
         $name = $this->getIndexName($class_name);
-        if (!isset($this->classesArgs[$name])) {
+        if (!isset($this->classes_args[$name])) {
             return null;
         }
-        if (!isset($this->classesArgs[$name][$arg_name])) {
+        if (!isset($this->classes_args[$name][$arg_name])) {
             return null;
         }
 
-        return $this->classesArgs[$name][$arg_name];
+        return $this->classes_args[$name][$arg_name];
     }
 }
