@@ -18,6 +18,7 @@ class Request
      * Returns a $_GET value.
      *
      * @param string $key Key.
+     * @param mixed  $fallback
      *
      * @return mixed
      */
@@ -35,6 +36,7 @@ class Request
      * Returns a $_POST value.
      *
      * @param string $key Key.
+     * @param mixed  $fallback
      *
      * @return mixed
      */
@@ -52,6 +54,7 @@ class Request
      * Returns a $_FILES value.
      *
      * @param string $key Key.
+     * @param mixed  $fallback
      *
      * @return mixed
      */
@@ -69,6 +72,7 @@ class Request
      * Returns a $_REQUEST value.
      *
      * @param string $key Key.
+     * @param mixed  $fallback
      *
      * @return mixed
      */
