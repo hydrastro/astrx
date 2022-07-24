@@ -21,6 +21,7 @@ return array(
         "url_rewrite" => true,
         "default_language" => "en",
         "base_path" => "",
-        "language_catastrophe_message" => "Error: no language file could be loaded."
+        "language_catastrophe_message" => "Error: no language file could be loaded.",
+        "main_page_id" => "main"
     )
 );

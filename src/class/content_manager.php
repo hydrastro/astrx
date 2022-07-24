@@ -19,10 +19,6 @@ class ContentManager
      */
     private Injector $injector;
     /**
-     * @var PDO $pdo PDO.
-     */
-    private PDO $pdo;
-    /**
      * @var ErrorHandler $ErrorHandler Error Handler.
      */
     private ErrorHandler $ErrorHandler;
@@ -105,23 +101,7 @@ class ContentManager
             $lang = $request->get($language_parameter_name, "");
         }
         // @phpstan-ignore-next-line
-        if (!$this->config->setLangAndLoadDeferred($lang)) {
-            if (!$this->config->setLangAndLoadDeferred(
-            // @phpstan-ignore-next-line
-                $this->config->getConfig(
-                    "ContentManager",
-                    "default_language"
-                )
-            )) {
-                throw new Exception(
-                // @phpstan-ignore-next-line
-                    $this->config->getConfig(
-                        "ContentManager",
-                        "language_catastrophe_message"
-                    )
-                );
-            }
-        }
+        $this->config->setLang($lang);
 
         // Now that the language files and all the bootstrap components have
         // been loaded we can inject the results maps into the error handler,
@@ -133,7 +113,59 @@ class ContentManager
         $response = $this->injector->createClass("response");
 
         // Setting the current page id.
-        //
+        $current_page_id = $request->get(
+        // @phpstan-ignore-next-line
+            $this->config->getConfig(
+                "ContentManger",
+                "page_id_parameter_name",
+                ""
+            ),
+            $this->config->getConfig("ContentManager", "main_page_id", "")
+        );
+
+        // Creating database connection.
+        // $config->loadConfig("PDO"); It's a built in class so its config
+        // will just be loaded along with the main configs.
+        $dsn = $this->config->getConfig("PDO", "db_type", "");
+        $host = $this->config->getConfig("PDO", "db_host", "");
+        $dbname = $this->config->getConfig("PDO", "db_name", "");
+        $passwd = $this->config->getConfig("PDO", "db_password", "");
+        $username = $this->config->getConfig("PDO", "db_username", "");
+        $this->injector->setClassArgs(
+            "PDO", array(
+                     "dsn" => $dsn .
+                              ":host=" .
+                              $host .
+                              ";dbname=" .
+                              $dbname .
+                              ";",
+                     "username" => $username,
+                     "password" => $passwd
+                 )
+        );
+        $pdo = $this->injector->createClass("PDO");
+        /**
+         * @var PDO $pdo PDO.
+         */
+        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+        $pdo->setAttribute(
+            PDO::ATTR_ERRMODE,
+            PDO::ERRMODE_EXCEPTION
+        );
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $PageHandler = $this->injector->createClass("PageHandler");
+        /**
+         * @var PageHandler $PageHandler Page handler.
+         */
+        /**
+         * @var string $current_page_id Current page id.
+         */
+        $current_page = $PageHandler->getPage($current_page_id);
+        if ($current_page === null || $current_page->hidden) {
+            http_response_code(404);
+            $current_page = $PageHandler->getErrorPage(404);
+        }
+        print_r($current_page);
 
         // Calls to controllers.
         // Controllers can either build a response themselves and send it
@@ -148,14 +180,22 @@ class ContentManager
          * @var TemplateEngine $TemplateEngine Template Engine.
          */
         $template = $TemplateEngine->loadTemplate("template");
-
-        /**
-         * @var Response $response Response.
-         */
+        $this->template_args["title"] = $current_page->title;
+        $this->template_args["description"] = $current_page->description;
+        $this->template_args["keywords"] = implode(
+            ", ",
+            $current_page->keywords
+        );
+        $this->template_args["index"] = $current_page->index;
+        $this->template_args["follow"] = $current_page->follow;
+        $this->template_args["content"] = $current_page->file_name;
         $this->template_args["time"] = round(
             (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
             4
         );
+        /**
+         * @var Response $response Response.
+         */
         // @phpstan-ignore-next-line
         $response->setContent($template->render($this->template_args));
         $response->send();
@@ -217,41 +257,6 @@ class ContentManager
             $_GET[$parameter] = (isset($route[$key])) ? $route[$key] : null;
         }
     }
-
-    /*
-    public function asd()
-    {
-        // Creating database connection.
-        // $config->loadConfig("PDO"); It's a built in class so its config
-        // will just be loaded along with the main configs.
-        $dsn = $this->config->getConfig("PDO", "db_type", "");
-        $host = $this->config->getConfig("PDO", "db_host", "");
-        $dbname = $this->config->getConfig("PDO", "db_name", "");
-        $passwd = $this->config->getConfig("PDO", "db_password", "");
-        $username = $this->config->getConfig("PDO", "db_username", "");
-        $this->injector->setClassArgs(
-            "PDO", array(
-                     "dsn" => $dsn .
-                              ":host=" .
-                              $host .
-                              ";dbname=" .
-                              $dbname .
-                              ";",
-                     "username" => $username,
-                     "password" => $passwd
-                 )
-        );
-        $pdo = $this->injector->createClass("PDO");
-        /**
-         * @var PDO $pdo PDO.
-         *
-        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
-        $pdo->setAttribute(
-            PDO::ATTR_ERRMODE,
-            PDO::ERRMODE_EXCEPTION
-        );
-        $this->pdo = $pdo;
-    }*/
 
     /**
      * Get Init Results Map.

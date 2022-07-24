@@ -1,0 +1,152 @@
+<?php
+
+declare(strict_types = 1);
+/**
+ * Class PageHandler.
+ */
+class PageHandler
+{
+    /**
+     * @param PDO $pdo PDO.
+     */
+    private PDO $pdo;
+
+    public function __construct(PDO $pdo)
+    {
+        $this->pdo = $pdo;
+    }
+
+    /**
+     * @param string $id
+     *
+     * @return Page|null
+     */
+    public function getPage(string $id)
+    : Page|null {
+        foreach ($this->getInternationalizedPageIds() as $i18n_id) {
+            if (defined($i18n_id["id"]) && $id === constant($i18n_id["id"])) {
+                $id = $i18n_id["id"];
+                break;
+            }
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT
+                `id`,
+                `file_name`,
+                `title`,
+                `description`,
+                `index`,
+                `follow`,
+                `controller`,
+                `hidden`                
+            FROM
+                `page`                
+            WHERE
+                `id` = :id"
+        );
+        $stmt->execute(array("id" => $id));
+        $result = $stmt->fetch();
+        if (empty($result)) {
+            return null;
+        }
+        $keywords = $this->getPageKeywords($id);
+
+        return new Page(
+            $result["id"],
+            $result["file_name"],
+            $result["title"],
+            $result["description"],
+            $keywords,
+            filter_var($result["index"], FILTER_VALIDATE_BOOL),
+            filter_var($result["follow"], FILTER_VALIDATE_BOOL),
+            filter_var($result["controller"], FILTER_VALIDATE_BOOL),
+            filter_var(
+                $result["hidden"],
+                FILTER_VALIDATE_BOOL
+            )
+        );
+    }
+
+    /**
+     * Get Internationalized Page Ids.
+     * Returns the list of i18n page ids.
+     * @return array<int, array<string, string>>
+     */
+    public function getInternationalizedPageIds()
+    : array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT
+                `id`
+            FROM
+                `page_i18n_id`"
+        );
+        if (!$stmt) {
+            return array();
+        }
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Get Page Keywords.
+     * Returns an array of keywords of a given page.
+     *
+     * @param string $page_id Page id.
+     *
+     * @return array<int, string>
+     */
+    public function getPageKeywords(string $page_id)
+    : array {
+        $stmt = $this->pdo->prepare(
+            "SELECT
+                `keyword`.`keyword` AS `keyword`,
+                `keyword`.`i18n` AS `i18n`
+            FROM
+                `page_keyword`
+            LEFT JOIN
+                `keyword`
+                    ON `page_keyword`.`keyword_id` = `keyword`.`id`
+            WHERE
+                `page_id` = :page_id"
+        );
+        $stmt->execute(array("page_id" => $page_id));
+        $keywords = $stmt->fetchAll();
+        $keywords_array = array();
+        foreach ($keywords as $keyword) {
+            if (filter_var($keyword["i18n"], FILTER_VALIDATE_BOOL) &&
+                defined($keyword["keyword"])) {
+                $keywords_array[] = constant($keyword["keyword"]);
+            } else {
+                $keywords_array[] = $keyword["keyword"];
+            }
+        }
+
+        return $keywords_array;
+    }
+
+    /**
+     * Get Error Page.
+     * Given an error code, returns an error page.
+     *
+     * @param int $error_code
+     *
+     * @return Page
+     */
+    public function getErrorPage(int $error_code)
+    : Page {
+        // TODO;
+        return new Page(
+            WORDING_ERROR,
+            "error",
+            ucfirst(WORDING_ERROR),
+            WORDING_ERROR_PAGE_DESCRIPTION,
+            WORDING_ERROR_PAGE_KEYWORDS,
+            false,
+            false,
+            false,
+            false
+        );
+    }
+}

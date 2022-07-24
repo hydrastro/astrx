@@ -11,6 +11,8 @@ class Request
      */
     public function __construct()
     {
+        // Empty constructor because php may use $this->request() as
+        // constructor.
     }
 
     /**

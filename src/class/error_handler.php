@@ -87,6 +87,8 @@ class ErrorHandler
                 break;
             case self::ENVIRONMENT_STAGING:
             case self::ENVIRONMENT_PRODUCTION:
+                ini_set("display_errors", "0");
+                ini_set("display_startup_errors", "1");
                 error_reporting(E_ALL & ~E_NOTICE);
                 $this->log_level = self::LOG_LEVEL_ERROR;
                 break;

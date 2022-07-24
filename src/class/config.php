@@ -253,10 +253,6 @@ class Config
     : bool {
         $languages = $this->getConfig("Prelude", "available_languages");
         if (!is_array($languages) || !in_array($lang, $languages)) {
-            $this->results[] = array(
-                self::ERROR_INVALID_LANGUAGE,
-                array("lang" => $lang)
-            );
 
             return false;
         }
@@ -271,5 +267,40 @@ class Config
         }
 
         return true;
+    }
+
+    /**
+     * Set Lang.
+     * Sets the current language or the default language and loads all the
+     * deferred language files.
+     *
+     * @param string $lang
+     *
+     * @return void
+     * @throws Exception
+     */
+    public function setLang(string $lang)
+    {
+        if (!$this->setLangAndLoadDeferred($lang)) {
+            if (!$this->setLangAndLoadDeferred(
+            // @phpstan-ignore-next-line
+                $this->getConfig(
+                    "ContentManager",
+                    "default_language"
+                )
+            )) {
+                $this->results[] = array(
+                    self::ERROR_INVALID_LANGUAGE,
+                    array("lang" => $lang)
+                );
+                throw new Exception(
+                // @phpstan-ignore-next-line
+                    $this->getConfig(
+                        "ContentManager",
+                        "language_catastrophe_message"
+                    )
+                );
+            }
+        }
     }
 }
