@@ -2,8 +2,7 @@
 
 declare(strict_types = 1);
 
-require INDEX_DIR . "functions.php";
-require CLASS_DIR . "autoloader.php";
+require CLASS_DIR . "Autoloader.php";
 
 new Autoloader();
 new Prelude();

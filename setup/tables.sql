@@ -14,8 +14,8 @@ CREATE TABLE `page_closure`
 (
     `ancestor`   VARCHAR(20) NOT NULL,
     `descendant` VARCHAR(20) NOT NULL,
-    FOREIGN KEY (ancestor) REFERENCES page (id),
-    FOREIGN KEY (descendant) REFERENCES page (id)
+    FOREIGN KEY (ancestor) REFERENCES page (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (descendant) REFERENCES page (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE `keyword`

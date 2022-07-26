@@ -27,7 +27,6 @@ class Autoloader
     : void {
         $class_dir = (strpos(strtolower($class), "controller")) ?
             CONTROLLER_DIR : CLASS_DIR;
-        $class = toSnakeCase($class);
         $class_file = "$class_dir$class.php";
         if (file_exists($class_file)) {
             include_once $class_file;

@@ -111,7 +111,8 @@ class Config
             $class_name = get_class($class_instance);
             $this->ErrorHandler->addResultsMap(
                 $class_name,
-                $this->getConfig( // @phpstan-ignore-line
+                // @phpstan-ignore-next-line
+                $this->getConfig(
                     $class_name, "results_map", array()
                 )
             );
@@ -174,7 +175,7 @@ class Config
         string $class_name
     )
     : void {
-        // Loading lang before the config is a good choice so we can put the
+        // Loading lang before the config is a good choice, so we can put the
         // eventual class results map into the config.
         if (isset($this->lang)) {
             $this->loadLang($class_name);
@@ -195,8 +196,7 @@ class Config
     public function loadLang(string $class_name)
     : void {
         $lang = $this->lang;
-        $class_filename = toSnakeCase($class_name);
-        $lang_file = LANG_DIR . "$lang/$class_filename.$lang.php";
+        $lang_file = LANG_DIR . "$lang/$class_name.$lang.php";
         if (file_exists($lang_file)) {
             require_once($lang_file);
         }
@@ -212,9 +212,7 @@ class Config
      */
     public function loadConfig(string $class)
     : bool {
-        $class = toSnakeCase($class);
         $class_path = CONFIG_DIR . "$class.config.php";
-
         $handle_not_found_exception = false;
         if (!file_exists($class_path)) {
             return false;
@@ -253,7 +251,6 @@ class Config
     : bool {
         $languages = $this->getConfig("Prelude", "available_languages");
         if (!is_array($languages) || !in_array($lang, $languages)) {
-
             return false;
         }
         $this->lang = $lang;
@@ -280,7 +277,7 @@ class Config
      * @throws Exception
      */
     public function setLang(string $lang)
-    {
+    : void {
         if (!$this->setLangAndLoadDeferred($lang)) {
             if (!$this->setLangAndLoadDeferred(
             // @phpstan-ignore-next-line

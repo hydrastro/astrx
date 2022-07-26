@@ -110,13 +110,13 @@ class ContentManager
 
         // We can now start building our response.
         $TemplateEngine = $this->injector->createClass("TemplateEngine");
-        $response = $this->injector->createClass("response");
+        $response = $this->injector->createClass("Response");
 
         // Setting the current page id.
         $current_page_id = $request->get(
         // @phpstan-ignore-next-line
             $this->config->getConfig(
-                "ContentManger",
+                "ContentManager",
                 "page_id_parameter_name",
                 ""
             ),
@@ -157,24 +157,25 @@ class ContentManager
         /**
          * @var PageHandler $PageHandler Page handler.
          */
-        /**
-         * @var string $current_page_id Current page id.
-         */
+        // @phpstan-ignore-next-line
         $current_page = $PageHandler->getPage($current_page_id);
         if ($current_page === null || $current_page->hidden) {
             http_response_code(404);
-            $current_page = $PageHandler->getErrorPage(404);
+            $current_page = $PageHandler->getErrorPage();
         }
-        print_r($current_page);
 
         // Calls to controllers.
         // Controllers can either build a response themselves and send it
         // or alternatively they can fall back here to default template.
         // Controllers can edit the default template arguments;
         // $this->template_args is public.
-        //
-        // CODE HERE
-        //
+        if ($current_page->controller) {
+            $controller_name = $this->getControllerName(
+                $current_page->file_name
+            );
+            $controller = $this->injector->getClass($controller_name);
+            $controller->init();
+        }
 
         /**
          * @var TemplateEngine $TemplateEngine Template Engine.
@@ -199,6 +200,26 @@ class ContentManager
         // @phpstan-ignore-next-line
         $response->setContent($template->render($this->template_args));
         $response->send();
+    }
+
+    /**
+     * Get Controller Name.
+     * Returns the class name of a page controller.
+     *
+     * @param string $file_name
+     *
+     * @return string
+     */
+    public function getControllerName(string $file_name)
+    : string {
+        return str_replace(
+                   '_',
+                   '',
+                   ucwords(
+                       $file_name,
+                       '_'
+                   )
+               ) . "Controller";
     }
 
     /**

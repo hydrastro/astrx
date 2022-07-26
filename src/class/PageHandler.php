@@ -47,7 +47,7 @@ class PageHandler
         );
         $stmt->execute(array("id" => $id));
         $result = $stmt->fetch();
-        if (empty($result)) {
+        if ($result === false) {
             return null;
         }
         $keywords = $this->getPageKeywords($id);
@@ -58,7 +58,7 @@ class PageHandler
             $result["title"],
             $result["description"],
             $keywords,
-            filter_var($result["index"], FILTER_VALIDATE_BOOL),
+            filter_var($result["index"], FILTER_VALIDATE_BOOLEAN),
             filter_var($result["follow"], FILTER_VALIDATE_BOOL),
             filter_var($result["controller"], FILTER_VALIDATE_BOOL),
             filter_var(
@@ -82,7 +82,7 @@ class PageHandler
             FROM
                 `page_i18n_id`"
         );
-        if (!$stmt) {
+        if ($stmt === false) {
             return array();
         }
 
@@ -129,24 +129,54 @@ class PageHandler
     /**
      * Get Error Page.
      * Given an error code, returns an error page.
-     *
-     * @param int $error_code
-     *
      * @return Page
      */
-    public function getErrorPage(int $error_code)
-    : Page {
-        // TODO;
+    public function getErrorPage()
+    : Page
+    {
         return new Page(
             WORDING_ERROR,
             "error",
             ucfirst(WORDING_ERROR),
-            WORDING_ERROR_PAGE_DESCRIPTION,
-            WORDING_ERROR_PAGE_KEYWORDS,
+            "",
+            array(),
             false,
             false,
-            false,
+            true,
             false
         );
+    }
+
+    public function addPage(Page $page)
+    {
+        $stmt = $this->pdo->prepare(
+            "
+        INSERT INTO `page`(`id`, `file_name`, `title`, `description`, `index`, `follow`, `controller`, `hidden`)
+        VALUES (:id, :file_name, :title, :description, :index, :follow, :controller, :hidden)"
+        );
+        $stmt->execute(array(
+                           "id" => $page->id,
+                           "file_name" => $page->file_name,
+                           "title" => $page->title,
+                           "description" => $page->description,
+                           "index" => $page->index,
+                           "follow" => $page->follow,
+                           "hidden" => $page->hidden
+                       ));
+        foreach ($page->keywords as $keyword) {
+            /*
+             *
+             *
+             *
+             */
+        }
+    }
+
+    public function editPage(string $id, Page $page)
+    {
+    }
+
+    public function deletePage(string $id)
+    {
     }
 }
