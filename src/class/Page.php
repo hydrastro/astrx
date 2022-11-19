@@ -15,6 +15,10 @@ class Page
      */
     public string $file_name;
     /**
+     * @var array $ancestors Page ancestors.
+     */
+    public array $ancestors;
+    /**
      * @var string $title Page title.
      */
     public string $title;

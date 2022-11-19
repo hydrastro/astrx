@@ -164,12 +164,16 @@ class PageHandler
                            "hidden" => $page->hidden
                        ));
         foreach ($page->keywords as $keyword) {
-            /*
-             *
-             *
-             *
-             */
+            $this->addKeyword($page->id, $keyword);
         }
+    }
+
+    public function addKeyword(string $page_id, string $keyword)
+    : void {
+        $stmt = $this->pdo->prepare(
+            "
+        INSERT INTO "
+        );
     }
 
     public function editPage(string $id, Page $page)
