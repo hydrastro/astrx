@@ -113,7 +113,7 @@ class ContentManager
         $response = $this->injector->createClass("Response");
 
         // Setting the current page id.
-        $current_page_id = $request->get(
+        $current_page_parameter = $request->get(
         // @phpstan-ignore-next-line
             $this->config->getConfig(
                 "ContentManager",
@@ -156,13 +156,44 @@ class ContentManager
         $PageHandler = $this->injector->createClass("PageHandler");
         /**
          * @var PageHandler $PageHandler Page handler.
-         */
+         */ /////////////////////////////////////////////////////
         // @phpstan-ignore-next-line
-        $current_page = $PageHandler->getPage($current_page_id);
+        /*$current_page = $PageHandler->getPage($current_page_id);
         if ($current_page === null || $current_page->hidden) {
             http_response_code(404);
             $current_page = $PageHandler->getErrorPage();
+        }*/
+        //////////////////// <<< >>> ////////////////////////
+
+        $resolved_i18n_ids = array();
+        foreach ($PageHandler->getInternationalizedPageIds() as $i18n_pages) {
+            if (defined($i18n_id)) {
+                $resolved_i18n_ids[constant($i18n_id)] = $i18n_id;
+            } else {
+                $this->results[] = array(); // notify admin that there's a
+                // wrong db entry
+            }
         }
+
+        if (isset($resolved_i18n_ids[$current_page_parameter])) {
+            $current_page = $PageHandler->getPage(
+                $resolved_i18n_ids[$current_page_parameter]
+            );
+        } else {
+            $current_page = $PageHandler->getPage($current_page_parameter);
+        }
+        if ($current_page === null || $current_page->hidden) {
+            http_response_code(404);
+            $current_page = $PageHandler->getPage(
+                $resolved_i18n_ids[WORDING_ERROR]
+            );
+            if ($current_page === null) {
+                // hardcoded error page
+                $current_page = $PageHandler->getErrorPage();
+            }
+        }
+
+        /////////////////////////////////////////////////////
 
         // Calls to controllers.
         // Controllers can either build a response themselves and send it

@@ -51,6 +51,15 @@ FLUSH
 PRIVILEGES;
 ```
 
+Here are the golden rules for this project's database design:
+
+1. Avoid having NULL attributes in tables as much as possible.
+2. Avoid using weak entities / composed primary keys: add a new identifier
+   attribute.
+3. Tables should be normalized when possible. We do not fear joins.
+4. Remember that ten fast queries are better than a slow query.
+5. Verbosity is apprecciated. This rule applies also to the code.
+
 ### Injector (and Config)
 
 `getConfigurationMethods` and configs structure (todo).  

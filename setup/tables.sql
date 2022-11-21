@@ -1,4 +1,4 @@
-# TABLE DEFINITIONS
+-- TABLE DEFINITIONS
 
 CREATE TABLE `page`
 (
@@ -58,7 +58,7 @@ CREATE TABLE `page_keyword`
 );
 
 
-# TABLE INSERTIONS
+-- TABLE INSERTIONS
 
 INSERT INTO `page` (id, url_id, i18n, file_name, controller, hidden)
 VALUES (1, 'WORDING_MAIN', 1, 'main', 1, 0);
@@ -68,5 +68,3 @@ VALUES (1, 1, 1);
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (1, 1);
-
-

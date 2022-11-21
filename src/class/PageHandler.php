@@ -17,31 +17,38 @@ class PageHandler
     }
 
     /**
-     * @param string $id
+     * Get Page.
+     * Given the page id, returns the page.
+     *
+     * @param int $id Page id.
      *
      * @return Page|null
      */
-    public function getPage(string $id)
+    public function getPage(int $id)
     : Page|null {
-        foreach ($this->getInternationalizedPageIds() as $i18n_id) {
-            if (defined($i18n_id["id"]) && $id === constant($i18n_id["id"])) {
-                $id = $i18n_id["id"];
-                break;
-            }
-        }
-
         $stmt = $this->pdo->prepare(
-            "SELECT
+            "
+            SELECT
                 `id`,
+                `url_id`,
+                `i18n`,
                 `file_name`,
-                `title`,
-                `description`,
+                `controller`,
+                `hidden`,
                 `index`,
                 `follow`,
-                `controller`,
-                `hidden`                
+                `title`,
+                `description`
             FROM
-                `page`                
+                `page`
+            LEFT JOIN 
+                `page_robots`
+            ON
+                `page_robots`.`page_id` = `id`
+            LEFT JOIN 
+                `page_meta`    
+            ON
+                `page_meta`.`page_id` = `id`
             WHERE
                 `id` = :id"
         );
@@ -50,137 +57,146 @@ class PageHandler
         if ($result === false) {
             return null;
         }
-        $keywords = $this->getPageKeywords($id);
 
+        $ancestors = $this->getPageAncestors($result["id"]);
+        $keywords = $this->getPageKeywords($result["id"]);
+
+        // filter var ???
         return new Page(
             $result["id"],
+            $result["url_id"],
+            $result["i18n"],
             $result["file_name"],
+            $result["controller"],
+            $result["hidden"],
+            $ancestors,
+            $result["index"],
+            $result["follow"],
             $result["title"],
             $result["description"],
-            $keywords,
-            filter_var($result["index"], FILTER_VALIDATE_BOOLEAN),
-            filter_var($result["follow"], FILTER_VALIDATE_BOOL),
-            filter_var($result["controller"], FILTER_VALIDATE_BOOL),
-            filter_var(
-                $result["hidden"],
-                FILTER_VALIDATE_BOOL
-            )
+            $keywords
         );
+    }
+
+    /**
+     * Load Page Keywords
+     * Loads a given page's keywords.
+     * Returns: array(array(string keyword, bool i18n))
+     *
+     * @param int $id
+     *
+     * @return array<int, array<int, mixed>>
+     */
+    public function getPageKeywords(int $id)
+    : array {
+        $stmt = $this->pdo->prepare(
+            "
+        SELECT
+            `keyword`,
+            `i18n`
+        FROM
+            `page_keyword`
+        LEFT JOIN
+            `keyword`
+        ON
+            `keyword`.`id` = `keyword_id`
+        WHERE
+            `page_id` = :id"
+        );
+        $stmt->execute(array("id" => $id));
+        $result = $stmt->fetchAll();
+        if ($result === false) {
+            // Note: this method could also return null since keywords are an
+            // optional attribute of the Page class.
+            return array();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get Page Ancestors.
+     * Given a page id, returns the page ancestors.
+     * Returns: array(array(int id, string url_id, bool i18n))
+     *
+     * @param int $id
+     *
+     * @return array<int, array<int, mixed>>
+     */
+    public function getPageAncestors(int $id)
+    : array {
+        $stmt = $this->pdo->prepare(
+            "
+        SELECT
+            `ancestor` as `id`,
+            `url_id`,
+            `i18n`
+        FROM
+            `page_closure`
+        LEFT JOIN
+                `page`
+        ON
+            `page`.`id` = `ancestor`
+        WHERE
+            `descendant` = :id
+        "
+        );
+        $stmt->execute(array("id" => $id));
+        $result = $stmt->fetchAll();
+        if ($result === false) {
+            $fallback = $this->getPage($id);
+
+            return array(
+                array(
+                    "id" => $id,
+                    "url_id" => $fallback->url_id,
+                    "i18n" => $fallback->i18n
+                )
+            );
+        }
+
+        return $result;
     }
 
     /**
      * Get Internationalized Page Ids.
-     * Returns the list of i18n page ids.
-     * @return array<int, array<string, string>>
+     * Returns the id and the url id of the page with internationalization
+     * enabled.
+     * @return array<int, array<int, mixed>>
      */
     public function getInternationalizedPageIds()
     : array
     {
-        $stmt = $this->pdo->query(
-            "SELECT
-                `id`
-            FROM
-                `page_i18n_id`"
+        $stmt = $this->pdo->prepare(
+            "
+        SELECT
+            `id`
+        FROM
+            `page`
+        WHERE
+            `i18n` = 1"
         );
-        if ($stmt === false) {
+        $stmt->execute();
+        $result = $stmt->fetchAll();
+        if ($result === false) {
             return array();
         }
 
-        return $stmt->fetchAll();
+        return $result;
     }
 
-    /**
-     * Get Page Keywords.
-     * Returns an array of keywords of a given page.
-     *
-     * @param string $page_id Page id.
-     *
-     * @return array<int, string>
-     */
-    public function getPageKeywords(string $page_id)
-    : array {
-        $stmt = $this->pdo->prepare(
-            "SELECT
-                `keyword`.`keyword` AS `keyword`,
-                `keyword`.`i18n` AS `i18n`
-            FROM
-                `page_keyword`
-            LEFT JOIN
-                `keyword`
-                    ON `page_keyword`.`keyword_id` = `keyword`.`id`
-            WHERE
-                `page_id` = :page_id"
-        );
-        $stmt->execute(array("page_id" => $page_id));
-        $keywords = $stmt->fetchAll();
-        $keywords_array = array();
-        foreach ($keywords as $keyword) {
-            if (filter_var($keyword["i18n"], FILTER_VALIDATE_BOOL) &&
-                defined($keyword["keyword"])) {
-                $keywords_array[] = constant($keyword["keyword"]);
-            } else {
-                $keywords_array[] = $keyword["keyword"];
-            }
-        }
-
-        return $keywords_array;
-    }
-
-    /**
-     * Get Error Page.
-     * Given an error code, returns an error page.
-     * @return Page
-     */
-    public function getErrorPage()
-    : Page
-    {
-        return new Page(
-            WORDING_ERROR,
-            "error",
-            ucfirst(WORDING_ERROR),
-            "",
-            array(),
-            false,
-            false,
-            true,
-            false
-        );
-    }
-
-    public function addPage(Page $page)
-    {
-        $stmt = $this->pdo->prepare(
-            "
-        INSERT INTO `page`(`id`, `file_name`, `title`, `description`, `index`, `follow`, `controller`, `hidden`)
-        VALUES (:id, :file_name, :title, :description, :index, :follow, :controller, :hidden)"
-        );
-        $stmt->execute(array(
-                           "id" => $page->id,
-                           "file_name" => $page->file_name,
-                           "title" => $page->title,
-                           "description" => $page->description,
-                           "index" => $page->index,
-                           "follow" => $page->follow,
-                           "hidden" => $page->hidden
-                       ));
-        foreach ($page->keywords as $keyword) {
-            $this->addKeyword($page->id, $keyword);
-        }
-    }
-
-    public function addKeyword(string $page_id, string $keyword)
-    : void {
-        $stmt = $this->pdo->prepare(
-            "
-        INSERT INTO "
-        );
-    }
-
-    public function editPage(string $id, Page $page)
+    public function addPage()
+    : void
     {
     }
 
-    public function deletePage(string $id)
+    public function editPage()
+    : void
+    {
+    }
+
+    public function deletePage()
+    : void
     {
     }
 }

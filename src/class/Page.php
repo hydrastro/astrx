@@ -6,38 +6,23 @@ declare(strict_types = 1);
  */
 class Page
 {
+    // page
     /**
-     * @var string $id Page id.
+     * @var int $id Page id.
      */
-    public string $id;
+    public int $id;
+    /**
+     * @var string $url_id Page URL id.
+     */
+    public string $url_id;
+    /**
+     * @var bool $i18n Page i18n flag.
+     */
+    public bool $i18n;
     /**
      * @var string $file_name Page filename.
      */
     public string $file_name;
-    /**
-     * @var array $ancestors Page ancestors.
-     */
-    public array $ancestors;
-    /**
-     * @var string $title Page title.
-     */
-    public string $title;
-    /**
-     * @var string $description Page description.
-     */
-    public string $description;
-    /**
-     * @var array<int, string> $keywords Page keywords.
-     */
-    public array $keywords;
-    /**
-     * @var bool $index Page index flag.
-     */
-    public bool $index;
-    /**
-     * @var bool $follow Page follow flag.
-     */
-    public bool $follow;
     /**
      * @var bool $controller Page controller flag.
      */
@@ -46,39 +31,60 @@ class Page
      * @var bool $hidden Page hidden flag.
      */
     public bool $hidden;
-
+    // page closure
     /**
-     * Page constructor.
-     *
-     * @param string             $id          Page id.
-     * @param string             $file_name   Page filename.
-     * @param string             $title       Page title.
-     * @param string             $description Page description
-     * @param array<int, string> $keywords    Page keywords.
-     * @param bool               $index       Page index flag.
-     * @param bool               $follow      Page follow flag.
-     * @param bool               $controller  Page controller flag.
-     * @param bool               $hidden      Page hidden flag.
+     * @var array<int, int> $ancestors Page ancestors.
      */
+    public array $ancestors;
+    // page robots
+    /**
+     * @var bool|null $index Page index flag.
+     */
+    public bool|null $index;
+    /**
+     * @var bool|null $follow Page follow flag.
+     */
+    public bool|null $follow;
+    // page meta
+    /**
+     * @var string|null $title Page title.
+     */
+    public string|null $title;
+    /**
+     * @var string|null $description Page description.
+     */
+    public string|null $description;
+    // page keywords
+    /**
+     * @var array<int, string> $keywords Page keywords.
+     */
+    public array $keywords;
+
     public function __construct(
-        string $id,
+        int $id,
+        string $url_id,
+        bool $i18n,
         string $file_name,
-        string $title,
-        string $description,
-        array $keywords,
-        bool $index,
-        bool $follow,
         bool $controller,
         bool $hidden,
+        array $ancestors,
+        bool|null $index = null,
+        bool|null $follow = null,
+        string|null $title = null,
+        string|null $description = null,
+        array|null $keywords = null
     ) {
         $this->id = $id;
+        $this->url_id = $url_id;
+        $this->i18n = $i18n;
         $this->file_name = $file_name;
+        $this->controller = $controller;
+        $this->hidden = $hidden;
+        $this->ancestors = $ancestors;
+        $this->index = $index;
+        $this->follow = $follow;
         $this->title = $title;
         $this->description = $description;
         $this->keywords = $keywords;
-        $this->index = $index;
-        $this->follow = $follow;
-        $this->controller = $controller;
-        $this->hidden = $hidden;
     }
 }
