@@ -57,23 +57,23 @@ class PageHandler
         if ($result === false) {
             return null;
         }
+        assert(is_array($result));
 
         $ancestors = $this->getPageAncestors($result["id"]);
         $keywords = $this->getPageKeywords($result["id"]);
 
-        // filter var ???
         return new Page(
             $result["id"],
             $result["url_id"],
-            $result["i18n"],
+            (bool)$result["i18n"],
             $result["file_name"],
-            $result["controller"],
-            $result["hidden"],
+            (bool)$result["controller"],
+            (bool)$result["hidden"],
             $ancestors,
-            $result["index"],
-            $result["follow"],
-            $result["title"],
-            $result["description"],
+            (bool)$result["index"],
+            (bool)$result["follow"],
+            (string)$result["title"],
+            (string)$result["description"],
             $keywords
         );
     }
@@ -85,7 +85,7 @@ class PageHandler
      *
      * @param int $id
      *
-     * @return array<int, array<int, mixed>>
+     * @return array<int, array<string, mixed>>
      */
     public function getPageKeywords(int $id)
     : array {
@@ -121,7 +121,7 @@ class PageHandler
      *
      * @param int $id
      *
-     * @return array<int, array<int, mixed>>
+     * @return array<int, array<string, mixed>>
      */
     public function getPageAncestors(int $id)
     : array {
@@ -145,6 +145,7 @@ class PageHandler
         $result = $stmt->fetchAll();
         if ($result === false) {
             $fallback = $this->getPage($id);
+            assert($fallback instanceof Page);
 
             return array(
                 array(
@@ -162,7 +163,8 @@ class PageHandler
      * Get Internationalized Page Ids.
      * Returns the id and the url id of the page with internationalization
      * enabled.
-     * @return array<int, array<int, mixed>>
+     * Result: array(array(int id, string url_id))
+     * @return array<int, array<string, mixed>>
      */
     public function getInternationalizedPageIds()
     : array
@@ -170,7 +172,8 @@ class PageHandler
         $stmt = $this->pdo->prepare(
             "
         SELECT
-            `id`
+            `id`,
+            `url_id`
         FROM
             `page`
         WHERE
@@ -183,6 +186,35 @@ class PageHandler
         }
 
         return $result;
+    }
+
+    /**
+     * Get Page Id From URL Id.
+     * Returns a non-internationalized page id given its url id.
+     *
+     * @param string $url_id
+     *
+     * @return int|null
+     */
+    public function getPageIdFromUrlId(string $url_id)
+    : int|null {
+        $stmt = $this->pdo->prepare(
+            "
+        SELECT
+            `id`
+        FROM
+            `page`
+        WHERE
+            `url_id` = :url_id"
+        );
+        $stmt->execute(array("url_id" => $url_id));
+        $result = $stmt->fetch();
+        if ($result === false) {
+            return 1;
+        }
+        assert(is_array($result));
+
+        return $result["id"];
     }
 
     public function addPage()
@@ -198,5 +230,29 @@ class PageHandler
     public function deletePage()
     : void
     {
+    }
+
+    /**
+     * Get Error Page.
+     * Returns an hardcoded Page class for the error pages, when things go
+     * horribly wrong.
+     * @return Page
+     */
+    public function getErrorPage()
+    : Page
+    {
+        // The page id here shouldn't really matter, also because this
+        // function is supposed to be called when the database connection is
+        // messed up. The page meta, title, keywords and description are left
+        // to be handled by the page's controller.
+        return new Page(
+            1,
+            WORDING_ERROR,
+            true,
+            "error",
+            true,
+            false,
+            array(array("id" => 1, "url_id" => "WORDING_ERROR", "i18n" => true))
+        );
     }
 }

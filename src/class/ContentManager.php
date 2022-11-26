@@ -6,6 +6,7 @@ declare(strict_types = 1);
  */
 class ContentManager
 {
+    public const ERROR_INVALID_I18N_URL_ID = 0;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -73,64 +74,73 @@ class ContentManager
             $parameters_config = $this->config->getConfig(
                 "ContentManager", "current_page_parameters_config", array()
             );
-            // @phpstan-ignore-next-line
+            assert(is_array($parameters_config));
             foreach ($parameters_config as $parameter_config) {
+                assert(is_string($parameter_config));
                 $parameter_name = $this->config->getConfig(
                     "ContentManager",
-                    // @phpstan-ignore-next-line
                     $parameter_config,
                     ""
                 );
-                // @phpstan-ignore-next-line
+                assert(is_string($parameter_name));
+                // Puts the parameters on the url stack to $_GET
                 $this->setCurrentPageParameters(array($parameter_name));
             }
         }
 
         // Setting the current language.
         $request = $this->injector->createClass("Request");
-        /**
-         * @var Request $request Request.
-         */
+        assert($request instanceof Request);
         $language_parameter_name = $this->config->getConfig(
             "ContentManager",
             "language_parameter_name"
         );
-        $lang = "";
-        if ($language_parameter_name !== null) {
-            // @phpstan-ignore-next-line
-            $lang = $request->get($language_parameter_name, "");
-        }
-        // @phpstan-ignore-next-line
+        assert(is_string($language_parameter_name));
+        $lang = $request->get($language_parameter_name, "");
+        assert(is_string($lang));
         $this->config->setLang($lang);
 
         // Now that the language files and all the bootstrap components have
         // been loaded we can inject the results maps into the error handler,
         // so we have a way nicer error/results display.
+        // For instance, we're handling the errors of these classes:
+        // Injector, Config, Prelude, ErrorHandler
         $this->ErrorHandler->addMultipleResultsMaps($this->getInitResultsMap());
 
         // We can now start building our response.
         $TemplateEngine = $this->injector->createClass("TemplateEngine");
+        assert($TemplateEngine instanceof TemplateEngine);
         $response = $this->injector->createClass("Response");
+        assert($response instanceof Response);
 
+        // Getting the parameter name of the page id.
+        $page_id_parameter_name = $this->config->getConfig(
+            "ContentManager",
+            "page_id_parameter_name",
+            ""
+        );
+        assert(is_string($page_id_parameter_name));
         // Setting the current page id.
         $current_page_parameter = $request->get(
-        // @phpstan-ignore-next-line
-            $this->config->getConfig(
-                "ContentManager",
-                "page_id_parameter_name",
-                ""
-            ),
+            $page_id_parameter_name,
+            // fallback to the main page
             $this->config->getConfig("ContentManager", "main_page_id", "")
         );
+        assert(is_string($current_page_parameter));
 
         // Creating database connection.
         // $config->loadConfig("PDO"); It's a built in class so its config
         // will just be loaded along with the main configs.
         $dsn = $this->config->getConfig("PDO", "db_type", "");
+        assert(is_string($dsn));
         $host = $this->config->getConfig("PDO", "db_host", "");
+        assert(is_string($host));
         $dbname = $this->config->getConfig("PDO", "db_name", "");
+        assert(is_string($dbname));
         $passwd = $this->config->getConfig("PDO", "db_password", "");
+        assert(is_string($passwd));
         $username = $this->config->getConfig("PDO", "db_username", "");
+        assert(is_string($username));
         $this->injector->setClassArgs(
             "PDO", array(
                      "dsn" => $dsn .
@@ -144,56 +154,66 @@ class ContentManager
                  )
         );
         $pdo = $this->injector->createClass("PDO");
-        /**
-         * @var PDO $pdo PDO.
-         */
+        assert($pdo instanceof PDO);
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         $pdo->setAttribute(
             PDO::ATTR_ERRMODE,
             PDO::ERRMODE_EXCEPTION
         );
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        $PageHandler = $this->injector->createClass("PageHandler");
-        /**
-         * @var PageHandler $PageHandler Page handler.
-         */ /////////////////////////////////////////////////////
-        // @phpstan-ignore-next-line
-        /*$current_page = $PageHandler->getPage($current_page_id);
-        if ($current_page === null || $current_page->hidden) {
-            http_response_code(404);
-            $current_page = $PageHandler->getErrorPage();
-        }*/
-        //////////////////// <<< >>> ////////////////////////
 
+        // Retrieving the information of the current page.
+        $PageHandler = $this->injector->createClass("PageHandler");
+        assert($PageHandler instanceof PageHandler);
+
+        // Retrieving all the internationalized page ids and resolving them
+        // against the loaded language file.
         $resolved_i18n_ids = array();
         foreach ($PageHandler->getInternationalizedPageIds() as $i18n_pages) {
-            if (defined($i18n_id)) {
-                $resolved_i18n_ids[constant($i18n_id)] = $i18n_id;
+            $url_id = $i18n_pages["url_id"];
+            assert(is_string($url_id));
+            $page_id = $i18n_pages["id"];
+            assert(is_int($page_id));
+            if (defined($url_id)) {
+                $resolved_i18n_ids[constant($url_id)] = $page_id;
             } else {
-                $this->results[] = array(); // notify admin that there's a
-                // wrong db entry
+                $this->results[] = array(
+                    self::ERROR_INVALID_I18N_URL_ID,
+                    array("url_id" => $page_id)
+                );
             }
         }
 
+        // Loading the current page.
+        $current_page = null;
+        // Checking whether the current page is an internationalized page.
         if (isset($resolved_i18n_ids[$current_page_parameter])) {
             $current_page = $PageHandler->getPage(
                 $resolved_i18n_ids[$current_page_parameter]
             );
         } else {
-            $current_page = $PageHandler->getPage($current_page_parameter);
+            // Retrieving the non internationalized page id.
+            $current_page_id = $PageHandler->getPageIdFromUrlId(
+                $current_page_parameter
+            );
+            // Loading the page.
+            if ($current_page_id !== null) {
+                $current_page = $PageHandler->getPage($current_page_id);
+            }
         }
+        // Page loading failed, we're falling back to error 404.
         if ($current_page === null || $current_page->hidden) {
             http_response_code(404);
             $current_page = $PageHandler->getPage(
-                $resolved_i18n_ids[WORDING_ERROR]
+                $resolved_i18n_ids[WORDING_ERROR] // hehe
             );
             if ($current_page === null) {
-                // hardcoded error page
+                // Things have gone horribly wrong, we fall back to a
+                // hardcoded error page.
                 $current_page = $PageHandler->getErrorPage();
             }
         }
-
-        /////////////////////////////////////////////////////
+        assert($current_page instanceof Page);
 
         // Calls to controllers.
         // Controllers can either build a response themselves and send it
@@ -205,32 +225,59 @@ class ContentManager
                 $current_page->file_name
             );
             $controller = $this->injector->getClass($controller_name);
+            assert(is_object($controller));
+            assert(method_exists($controller, "init"));
             $controller->init();
         }
 
-        /**
-         * @var TemplateEngine $TemplateEngine Template Engine.
-         */
         $template = $TemplateEngine->loadTemplate("template");
-        $this->template_args["title"] = $current_page->title;
-        $this->template_args["description"] = $current_page->description;
-        $this->template_args["keywords"] = implode(
-            ", ",
-            $current_page->keywords
-        );
-        $this->template_args["index"] = $current_page->index;
-        $this->template_args["follow"] = $current_page->follow;
-        $this->template_args["content"] = $current_page->file_name;
+        assert(is_object($template));
+        assert(method_exists($template, "render"));
+        $this->setCurrentTemplateArgs($current_page);
+
         $this->template_args["time"] = round(
             (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
             4
         );
-        /**
-         * @var Response $response Response.
-         */
-        // @phpstan-ignore-next-line
+
         $response->setContent($template->render($this->template_args));
         $response->send();
+    }
+
+    private function setCurrentTemplateArgs(Page $current_page)
+    : void {
+        echo "<pre>";
+        print_r($current_page->keywords);
+        $this->template_args["index"] = $current_page->index;
+        $this->template_args["follow"] = $current_page->follow;
+        $this->template_args["content"] = $current_page->file_name;
+        if ($current_page->i18n) {
+            $this->config->loadPageLang($current_page->url_id);
+            $this->config->loadKeywordsLang();
+            $this->template_args["title"] = constant(
+                $current_page->url_id . "_PAGE_TITLE"
+            );
+            $this->template_args["description"] = constant(
+                $current_page->url_id . "_PAGE_DESCRIPTION"
+            );
+        } else {
+            $this->template_args["title"] = $current_page->title;
+            $this->template_args["description"] = $current_page->description;
+            $keywords = array_map(
+                function ($value) {
+                    assert(array_key_exists("i18n", $value));
+                    assert(array_key_exists("keyword", $value));
+                    if ($value["i18n"]) {
+                        return $value["keyword"];
+                    }
+                }, $current_page->keywords
+            );
+
+            $this->template_args["keywords"] = implode(
+                ", ",
+                $keywords
+            );
+        }
     }
 
     /**
@@ -404,6 +451,13 @@ class ContentManager
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             ),
+            "ContentManager" => array(
+                self::ERROR_INVALID_I18N_URL_ID => array(
+                    500,
+                    ERROR_INVALID_I18N_URL_ID, // url_id
+                    ErrorHandler::LOG_LEVEL_WARNING
+                )
+            )
         );
     }
 }

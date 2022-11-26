@@ -33,33 +33,52 @@ class Page
     public bool $hidden;
     // page closure
     /**
-     * @var array<int, int> $ancestors Page ancestors.
+     * @var array<int, array<string, mixed>> $ancestors Page ancestors.
      */
     public array $ancestors;
     // page robots
     /**
-     * @var bool|null $index Page index flag.
+     * @var bool $index Page index flag.
      */
-    public bool|null $index;
+    public bool $index;
     /**
-     * @var bool|null $follow Page follow flag.
+     * @var bool $follow Page follow flag.
      */
-    public bool|null $follow;
+    public bool $follow;
     // page meta
     /**
-     * @var string|null $title Page title.
+     * @var string $title Page title.
      */
-    public string|null $title;
+    public string $title;
     /**
-     * @var string|null $description Page description.
+     * @var string $description Page description.
      */
-    public string|null $description;
+    public string $description;
     // page keywords
     /**
-     * @var array<int, string> $keywords Page keywords.
+     * @var array<int, array<string, mixed>> $keywords Page keywords.
      */
     public array $keywords;
 
+    /**
+     * Page Constructor.
+     *
+     * @param int                              $id          Page id.
+     * @param string                           $url_id      Page url id.
+     * @param bool                             $i18n        Page
+     *                                                      internationalization
+     *                                                      flag.
+     * @param string                           $file_name   Page file name.
+     * @param bool                             $controller  Controller flag.
+     * @param bool                             $hidden      Hidden flag.
+     * @param array<int, array<string,mixed>>  $ancestors   Ancestors array.
+     * @param bool                             $index       Index flag.
+     * @param bool                             $follow      Follow flag.
+     * @param string                           $title       Title.
+     * @param string                           $description Description.
+     * @param array<int, array<string, mixed>> $keywords    Keywords
+     *                                                      array.
+     */
     public function __construct(
         int $id,
         string $url_id,
@@ -68,11 +87,11 @@ class Page
         bool $controller,
         bool $hidden,
         array $ancestors,
-        bool|null $index = null,
-        bool|null $follow = null,
-        string|null $title = null,
-        string|null $description = null,
-        array|null $keywords = null
+        bool $index = false,
+        bool $follow = false,
+        string $title = "",
+        string $description = "",
+        array $keywords = array()
     ) {
         $this->id = $id;
         $this->url_id = $url_id;

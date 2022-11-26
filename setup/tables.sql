@@ -60,6 +60,8 @@ CREATE TABLE `page_keyword`
 
 -- TABLE INSERTIONS
 
+-- ERROR PAGE IN POSITION 1
+
 INSERT INTO `page` (id, url_id, i18n, file_name, controller, hidden)
 VALUES (1, 'WORDING_MAIN', 1, 'main', 1, 0);
 
@@ -68,3 +70,11 @@ VALUES (1, 1, 1);
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (1, 1);
+
+INSERT INTO `keyword`(keyword, i18n)
+VALUES ('ciao', 0),
+       ('ASD', 1);
+INSERT INTO `page_keyword`(page_id, keyword_id)
+VALUES (1, 1),
+       (1, 2);
+

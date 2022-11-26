@@ -230,7 +230,7 @@ class Config
      * Adds a class to a list, so it's language file will be loaded later,
      * after a language has finally been set.
      *
-     * @param object $class
+     * @param object $class Deferred class.
      *
      * @return void
      */
@@ -271,7 +271,7 @@ class Config
      * Sets the current language or the default language and loads all the
      * deferred language files.
      *
-     * @param string $lang
+     * @param string $lang Language.
      *
      * @return void
      * @throws Exception
@@ -279,25 +279,54 @@ class Config
     public function setLang(string $lang)
     : void {
         if (!$this->setLangAndLoadDeferred($lang)) {
-            if (!$this->setLangAndLoadDeferred(
-            // @phpstan-ignore-next-line
-                $this->getConfig(
-                    "ContentManager",
-                    "default_language"
-                )
-            )) {
+            $lang = $this->getConfig("ContentManager", "default_language");
+            assert(is_string($lang));
+            if (!$this->setLangAndLoadDeferred($lang)) {
                 $this->results[] = array(
                     self::ERROR_INVALID_LANGUAGE,
                     array("lang" => $lang)
                 );
-                throw new Exception(
-                // @phpstan-ignore-next-line
-                    $this->getConfig(
-                        "ContentManager",
-                        "language_catastrophe_message"
-                    )
+                $error_message = $this->getConfig(
+                    "ContentManager",
+                    "language_catastrophe_message"
                 );
+                assert(is_string($error_message));
+
+                throw new Exception($error_message);
             }
+        }
+    }
+
+    /**
+     * Load Page Language.
+     * Loads the language constants needed for rendering an internationalized
+     * page.
+     *
+     * @param string $url_id I18N Page URL id.
+     *
+     * @return void
+     */
+    public function loadPageLang(string $url_id)
+    : void {
+        $lang = $this->lang;
+        $lang_file = LANG_DIR . "$lang/page/$url_id.php";
+        if (file_exists($lang_file)) {
+            require_once($lang_file);
+        }
+    }
+
+    /**
+     * Load Keywords Language.
+     * Loads the internationalized pages' keywords.
+     * @return void
+     */
+    public function loadKeywordsLang()
+    : void
+    {
+        $lang = $this->lang;
+        $lang_file = LANG_DIR . "$lang/page/keywords.php";
+        if (file_exists($lang_file)) {
+            require_once($lang_file);
         }
     }
 }
