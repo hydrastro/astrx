@@ -104,14 +104,8 @@ class PageHandler
             `page_id` = :id"
         );
         $stmt->execute(array("id" => $id));
-        $result = $stmt->fetchAll();
-        if ($result === false) {
-            // Note: this method could also return null since keywords are an
-            // optional attribute of the Page class.
-            return array();
-        }
 
-        return $result;
+        return $stmt->fetchAll();
     }
 
     /**
@@ -143,7 +137,7 @@ class PageHandler
         );
         $stmt->execute(array("id" => $id));
         $result = $stmt->fetchAll();
-        if ($result === false) {
+        if ($result === array()) {
             $fallback = $this->getPage($id);
             assert($fallback instanceof Page);
 
@@ -180,16 +174,12 @@ class PageHandler
             `i18n` = 1"
         );
         $stmt->execute();
-        $result = $stmt->fetchAll();
-        if ($result === false) {
-            return array();
-        }
 
-        return $result;
+        return $stmt->fetchAll();
     }
 
     /**
-     * Get Page Id From URL Id.
+     * Get Page ID From URL ID.
      * Returns a non-internationalized page id given its url id.
      *
      * @param string $url_id
@@ -210,7 +200,7 @@ class PageHandler
         $stmt->execute(array("url_id" => $url_id));
         $result = $stmt->fetch();
         if ($result === false) {
-            return 1;
+            return null;
         }
         assert(is_array($result));
 
@@ -234,7 +224,7 @@ class PageHandler
 
     /**
      * Get Error Page.
-     * Returns an hardcoded Page class for the error pages, when things go
+     * Returns a hardcoded Page class for the error pages, when things go
      * horribly wrong.
      * @return Page
      */

@@ -9,7 +9,6 @@ class Config
 {
     public const ERROR_CONFIG_FILE_NOT_FOUND = 0;
     public const ERROR_CONFIG_NOT_FOUND = 1;
-    public const ERROR_INVALID_LANGUAGE = 2;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -109,13 +108,11 @@ class Config
             }
 
             $class_name = get_class($class_instance);
-            $this->ErrorHandler->addResultsMap(
-                $class_name,
-                // @phpstan-ignore-next-line
-                $this->getConfig(
-                    $class_name, "results_map", array()
-                )
+            $results_map = $this->getConfig(
+                $class_name, "results_map", array()
             );
+            assert(is_array($results_map));
+            $this->ErrorHandler->addResultsMap($class_name, $results_map);
 
             return true;
         } catch (ReflectionException) {
@@ -273,28 +270,15 @@ class Config
      *
      * @param string $lang Language.
      *
-     * @return void
-     * @throws Exception
+     * @return bool
      */
     public function setLang(string $lang)
-    : void {
+    : bool {
         if (!$this->setLangAndLoadDeferred($lang)) {
-            $lang = $this->getConfig("ContentManager", "default_language");
-            assert(is_string($lang));
-            if (!$this->setLangAndLoadDeferred($lang)) {
-                $this->results[] = array(
-                    self::ERROR_INVALID_LANGUAGE,
-                    array("lang" => $lang)
-                );
-                $error_message = $this->getConfig(
-                    "ContentManager",
-                    "language_catastrophe_message"
-                );
-                assert(is_string($error_message));
-
-                throw new Exception($error_message);
-            }
+            return false;
         }
+
+        return true;
     }
 
     /**
@@ -309,7 +293,7 @@ class Config
     public function loadPageLang(string $url_id)
     : void {
         $lang = $this->lang;
-        $lang_file = LANG_DIR . "$lang/page/$url_id.php";
+        $lang_file = LANG_DIR . "$lang/page/$url_id.$lang.php";
         if (file_exists($lang_file)) {
             require_once($lang_file);
         }
@@ -324,7 +308,7 @@ class Config
     : void
     {
         $lang = $this->lang;
-        $lang_file = LANG_DIR . "$lang/page/keywords.php";
+        $lang_file = LANG_DIR . "$lang/page/keywords.$lang.php";
         if (file_exists($lang_file)) {
             require_once($lang_file);
         }

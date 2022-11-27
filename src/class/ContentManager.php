@@ -7,6 +7,8 @@ declare(strict_types = 1);
 class ContentManager
 {
     public const ERROR_INVALID_I18N_URL_ID = 0;
+    public const ERROR_INVALID_I18N_KEYWORD = 1;
+    public const ERROR_INVALID_LANGUAGE = 2;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -59,7 +61,6 @@ class ContentManager
      * Init.
      * Init function.
      * @return void
-     * @throws Exception
      */
     public function init()
     : void
@@ -98,7 +99,34 @@ class ContentManager
         assert(is_string($language_parameter_name));
         $lang = $request->get($language_parameter_name, "");
         assert(is_string($lang));
-        $this->config->setLang($lang);
+        // If even the fallback to default language fails a catastrophic
+        // error is triggered.
+        if (!($this->config->setLang($lang))) {
+            $fallback_lang = $this->config->getConfig(
+                "ContentManager",
+                "default_language"
+            );
+            assert(is_string($fallback_lang));
+            if (!$this->config->setLang($fallback_lang)) {
+                $this->results[] = array(
+                    self::ERROR_INVALID_LANGUAGE,
+                    array("lang" => $fallback_lang)
+                );
+
+                $catastrophe_message = $this->config->getConfig(
+                    "ContentManager",
+                    "language_catastrophe_message"
+                );
+                assert(is_string($catastrophe_message));
+                trigger_error($catastrophe_message);
+
+                return;
+            }
+
+            if ($url_rewrite) {
+                $this->shiftCurrentPageParameters(1);
+            }
+        }
 
         // Now that the language files and all the bootstrap components have
         // been loaded we can inject the results maps into the error handler,
@@ -201,6 +229,7 @@ class ContentManager
                 $current_page = $PageHandler->getPage($current_page_id);
             }
         }
+
         // Page loading failed, we're falling back to error 404.
         if ($current_page === null || $current_page->hidden) {
             http_response_code(404);
@@ -230,54 +259,113 @@ class ContentManager
             $controller->init();
         }
 
+        // If the controllers didn't send the response themselves, here we
+        // fall back to the default template.
         $template = $TemplateEngine->loadTemplate("template");
         assert(is_object($template));
         assert(method_exists($template, "render"));
+        // Setting up the template arguments.
         $this->setCurrentTemplateArgs($current_page);
 
+        // I like to know how much all of this took, so I set an additional
+        // parameter for the page rendering.
         $this->template_args["time"] = round(
             (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
             4
         );
 
+        // Errors handling:
+        //$this->template_args["results"] = $this->ErrorHandler->getResults();
+
+        // Setting and sending the rendered page.
         $response->setContent($template->render($this->template_args));
         $response->send();
     }
 
     private function setCurrentTemplateArgs(Page $current_page)
     : void {
-        echo "<pre>";
-        print_r($current_page->keywords);
+        // Setting the page meta tags.
         $this->template_args["index"] = $current_page->index;
         $this->template_args["follow"] = $current_page->follow;
         $this->template_args["content"] = $current_page->file_name;
+
+        // Setting the page title and description.
         if ($current_page->i18n) {
             $this->config->loadPageLang($current_page->url_id);
-            $this->config->loadKeywordsLang();
-            $this->template_args["title"] = constant(
-                $current_page->url_id . "_PAGE_TITLE"
-            );
-            $this->template_args["description"] = constant(
-                $current_page->url_id . "_PAGE_DESCRIPTION"
-            );
+            if (defined($current_page->url_id . "_PAGE_TITLE")) {
+                $this->template_args["title"] = constant(
+                    $current_page->url_id . "_PAGE_TITLE"
+                );
+            }
+            if (defined($current_page->url_id . "_PAGE_DESCRIPTION")) {
+                $this->template_args["description"] = constant(
+                    $current_page->url_id . "_PAGE_DESCRIPTION"
+                );
+            }
         } else {
             $this->template_args["title"] = $current_page->title;
             $this->template_args["description"] = $current_page->description;
-            $keywords = array_map(
-                function ($value) {
-                    assert(array_key_exists("i18n", $value));
-                    assert(array_key_exists("keyword", $value));
-                    if ($value["i18n"]) {
-                        return $value["keyword"];
-                    }
-                }, $current_page->keywords
-            );
-
-            $this->template_args["keywords"] = implode(
-                ", ",
-                $keywords
-            );
         }
+
+        // Loading the page keywords.
+        $this->config->loadKeywordsLang();
+        $keywords_filter = function (array $keywords, bool $i18n) {
+            return array_filter(
+                array_map(
+                    function ($item) use ($i18n) {
+                        return $this->keywordsFilter($item, $i18n);
+                    },
+                    $keywords
+                )
+            );
+        };
+        $i18n_keywords = $keywords_filter($current_page->keywords, true);
+        $normal_keywords = $keywords_filter($current_page->keywords, false);
+        $keywords = array();
+        foreach ($i18n_keywords as $keyword) {
+            if (defined($keyword)) {
+                $keywords[] = constant($keyword);
+            } else {
+                $this->results[] = array(
+                    self::ERROR_INVALID_I18N_KEYWORD,
+                    array("keyword" => $keyword)
+                );
+            }
+        }
+        $keywords = array_merge($keywords, $normal_keywords);
+
+        // Keywords are all capitalised by default because keywords (which
+        // can also use URL IDs constants) are (SHOULD) all be stored in
+        // lowercase.
+        $this->template_args["keywords"] = implode(
+            ", ",
+            array_map(function ($val) {
+                assert(is_string($val));
+
+                return ucwords($val);
+            }, $keywords)
+        );
+    }
+
+    /**
+     * Keywords Filter.
+     * This is a helper function used for filtering out I18N keywords from
+     * non-I18N ones.
+     *
+     * @param array<string, mixed> $keyword Keyword array.
+     * @param bool                 $i18n    I18N Flag.
+     *
+     * @return string|null
+     */
+    public function keywordsFilter(array $keyword, bool $i18n)
+    : string|null {
+        if (!($i18n ^ $keyword["i18n"])) {
+            assert(is_string($keyword["keyword"]));
+
+            return $keyword["keyword"];
+        }
+
+        return null;
     }
 
     /**
@@ -328,15 +416,13 @@ class ContentManager
 
         $request_uri = $_SERVER['REQUEST_URI']??"";
         $url_path = explode('/', $request_uri);
-        $base_path = explode(
-            '/',
-            // @phpstan-ignore-next-line
-            $this->config->getConfig(
-                "ContentManager",
-                "base_path",
-                ""
-            )
+        $config_base_path = $this->config->getConfig(
+            "ContentManager",
+            "base_path",
+            ""
         );
+        assert(is_string($config_base_path));
+        $base_path = explode('/', $config_base_path);
         // Removing base path
         for ($i = 0; $i < count($base_path); $i++) {
             if ($url_path[$i] == $base_path[$i]) {
@@ -426,11 +512,6 @@ class ContentManager
                     ERROR_CONFIG_NOT_FOUND, // class_name, config_name
                     ErrorHandler::LOG_LEVEL_ERROR
                 ),
-                Config::ERROR_INVALID_LANGUAGE => array(
-                    500,
-                    ERROR_INVALID_LANGUAGE,
-                    ErrorHandler::LOG_LEVEL_ERROR
-                )
             ),
             "Prelude" => array(
                 Prelude::ERROR_PDO_EXCEPTION => array(
@@ -456,8 +537,37 @@ class ContentManager
                     500,
                     ERROR_INVALID_I18N_URL_ID, // url_id
                     ErrorHandler::LOG_LEVEL_WARNING
+                ),
+                self::ERROR_INVALID_I18N_KEYWORD => array(
+                    500,
+                    ERROR_INVALID_I18N_KEYWORD, // keyword
+                    ErrorHandler::LOG_LEVEL_WARNING
+                ),
+                self::ERROR_INVALID_LANGUAGE => array(
+                    500,
+                    ERROR_INVALID_LANGUAGE,
+                    ErrorHandler::LOG_LEVEL_NOTICE
                 )
+
             )
         );
+    }
+
+    /**
+     * Shift Current Page Parameters.
+     * Shifts the currents page parameters array, it's useful when a
+     * parameter is weak, like the language parameter.
+     *
+     * @param int $shift_positions Numbers of positions to shift.
+     *
+     * @return void
+     */
+    private function shiftCurrentPageParameters(int $shift_positions)
+    : void {
+        while ($shift_positions > 0) {
+            array_shift($this->current_page_parameters);
+            $shift_positions--;
+        }
+        $this->setCurrentPageParameters($this->current_page_parameters, false);
     }
 }

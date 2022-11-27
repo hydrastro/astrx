@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class Error Controller.
+ */
 class ErrorController
 {
     private ContentManager $ContentManager;
@@ -10,6 +13,7 @@ class ErrorController
     }
 
     public function init()
+    : void
     {
         $status_code = http_response_code();
         $error_name = ucfirst(WORDING_ERROR) . " " . $status_code;

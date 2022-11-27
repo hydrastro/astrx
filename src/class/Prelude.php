@@ -38,7 +38,7 @@ class Prelude
             "environment",
             $ErrorHandler::ENVIRONMENT_DEVELOPMENT
         );
-        // @phpstan-ignore-next-line
+        assert(is_int($environment));
         $ErrorHandler->setEnvironment($environment);
 
         $injector = new Injector();
@@ -57,10 +57,7 @@ class Prelude
 
         // Finally creating the Content Manager class.
         $ContentManager = $injector->createClass("ContentManager");
-        /**
-         * @var ContentManager $ContentManager Content Manager.
-         */
-        /** @noinspection PhpUnhandledExceptionInspection */
+        assert($ContentManager instanceof ContentManager);
         $ContentManager->init();
 
         // If the creation of PDO or ContentManager fails there will be an

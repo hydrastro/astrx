@@ -73,6 +73,7 @@ class ErrorHandler
      */
     public function setEnvironment(int $environment)
     : void {
+        // TODO: check assertions.
         switch ($environment) {
             default:
                 $this->results[] = array(
@@ -212,7 +213,11 @@ class ErrorHandler
         $results = $this->getResults();
         $results_map = $this->results_maps;
         $messages = array();
+        // Checking if the map that links the results to their own
+        // language constants is loaded or not, and if not, we just
+        // display their information as best as we can in english.
         if (empty($results_map)) {
+            // This branch is
             foreach ($results as $class_name => $class_results) {
                 foreach ($class_results as $class_result) {
                     $message
@@ -264,11 +269,14 @@ class ErrorHandler
             if (property_exists($class, 'results') &&
                 is_array($class->results) &&
                 !empty($class->results)) {
+                assert(is_string(get_class($class)));
                 $results[get_class($class)] = $class->results;
             }
         }
 
-        // @phpstan-ignore-next-line
+        /**
+         * @var array<string, array<int, array<int, mixed>>> $results
+         */
         return $results;
     }
 

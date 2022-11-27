@@ -3,7 +3,7 @@
 
 declare(strict_types = 1);
 
-const ERROR_INVALID_HTTP_STATUS_CODE = "Error: invalid HTTP status code '{status_code}' provided.";
+const ERROR_INVALID_HTTP_STATUS_CODE = "Error: invalid HTTP status code '{{status_code}}' provided.";
 const WORDING_HTTP_STATUS_100 = "Continue";
 const WORDING_HTTP_STATUS_101 = "Switching Protocols";
 const WORDING_HTTP_STATUS_102 = "Processing";
