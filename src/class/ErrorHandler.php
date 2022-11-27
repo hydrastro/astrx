@@ -215,7 +215,7 @@ class ErrorHandler
         $messages = array();
         // Checking if the map that links the results to their own
         // language constants is loaded or not, and if not, we just
-        // display their information as best as we can in english.
+        // display their information as good as we can in english.
         if (empty($results_map)) {
             // This branch is
             foreach ($results as $class_name => $class_results) {

@@ -243,6 +243,7 @@ class ContentManager
             }
         }
         assert($current_page instanceof Page);
+        $this->injector->setClass($current_page);
 
         // Calls to controllers.
         // Controllers can either build a response themselves and send it

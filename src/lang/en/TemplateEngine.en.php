@@ -11,5 +11,5 @@ const ERROR_UNCLOSED_LOOP_TOKEN = "An error occurred, unclosed token(s) found: '
 const ERROR_TEMPLATE_CLASS_CREATION = "An error occurred while creating the class for the template.";
 const ERROR_INVALID_DEREFERENCE = "An error occurred while dereferencing a variable with value '{value}' and arguments '{{args}}'.";
 const ERROR_TEMPLATE_AST_INCONSISTENCY = "A consistency error occurred while processing the template abstract syntax tree.";
-const ERROR_UNDEFINED_TOKEN_ARGUMENT = "Error: undefined token argument. Parent: '{parent}', arguments: '{{args}}'";
+const ERROR_UNDEFINED_TOKEN_ARGUMENT = "Error: undefined token argument. Parent: '{{parent}}', arguments: '{{args}}'";
 const ERROR_TEMPLATE_EVALUATION = "An error occurred while evaluating the template. More details: '{{message}}'";
