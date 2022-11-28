@@ -22,6 +22,7 @@ return array(
         "default_language" => "en",
         "base_path" => "",
         "language_catastrophe_message" => "Error: no language file could be loaded.",
-        "main_page_id" => "main"
+        "main_page_id" => "main",
+        "default_template" => "default"
     )
 );

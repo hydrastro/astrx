@@ -19,6 +19,7 @@ class PageHandler
     /**
      * Get Page.
      * Given the page id, returns the page.
+     * Note: doing left joins is 1/3 faster than making 5 queries.
      *
      * @param int $id Page id.
      *
@@ -29,28 +30,38 @@ class PageHandler
         $stmt = $this->pdo->prepare(
             "
             SELECT
-                `id`,
+                `page`.`id`,
                 `url_id`,
                 `i18n`,
-                `file_name`,
+                `page`.`file_name`,
+                `template`,
                 `controller`,
                 `hidden`,
                 `index`,
                 `follow`,
                 `title`,
-                `description`
+                `description`,
+                `template`.`file_name` as `template_file_name`
             FROM
                 `page`
             LEFT JOIN 
                 `page_robots`
             ON
-                `page_robots`.`page_id` = `id`
+                `page_robots`.`page_id` = `page`.`id`
             LEFT JOIN 
                 `page_meta`    
             ON
-                `page_meta`.`page_id` = `id`
+                `page_meta`.`page_id` = `page`.`id`
+            LEFT JOIN
+                `page_template`
+            ON 
+                `page_template`.`page_id` = `page`.`id`
+            LEFT JOIN
+                `template`
+            ON
+                `page_template`.`template_id` = `template`.`id`
             WHERE
-                `id` = :id"
+                `page`.`id` = :id"
         );
         $stmt->execute(array("id" => $id));
         $result = $stmt->fetch();
@@ -67,6 +78,7 @@ class PageHandler
             $result["url_id"],
             (bool)$result["i18n"],
             $result["file_name"],
+            (bool)$result["template"],
             (bool)$result["controller"],
             (bool)$result["hidden"],
             $ancestors,
@@ -74,7 +86,8 @@ class PageHandler
             (bool)$result["follow"],
             (string)$result["title"],
             (string)$result["description"],
-            $keywords
+            $keywords,
+            (string)$result["template_file_name"]
         );
     }
 
@@ -240,6 +253,7 @@ class PageHandler
             WORDING_ERROR,
             true,
             "error",
+            true,
             true,
             false,
             array(array("id" => 1, "url_id" => "WORDING_ERROR", "i18n" => true))

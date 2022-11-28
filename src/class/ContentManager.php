@@ -7,8 +7,7 @@ declare(strict_types = 1);
 class ContentManager
 {
     public const ERROR_INVALID_I18N_URL_ID = 0;
-    public const ERROR_INVALID_I18N_KEYWORD = 1;
-    public const ERROR_INVALID_LANGUAGE = 2;
+    public const ERROR_INVALID_LANGUAGE = 1;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -245,11 +244,34 @@ class ContentManager
         assert($current_page instanceof Page);
         $this->injector->setClass($current_page);
 
+        // Setting the default template name.
+        $template_file_name = $this->config->getConfig(
+            "ContentManager",
+            "default_template",
+            "default"
+        );
+        assert(is_string($template_file_name));
+
+        // Setting up the template arguments if the page has a template.
+        if ($current_page->template) {
+            // Falling back to the default template if a custom template isn't set.
+            if ($current_page->template_file_name !== "") {
+                $template_file_name = $current_page->template_file_name;
+            }
+            $TemplateHandler = $this->injector->getClass(
+                $this->getTemplateHandlerName($template_file_name)
+            );
+            assert(is_object($TemplateHandler));
+            assert(method_exists($TemplateHandler, "getTemplateArgs"));
+            $this->template_args = $TemplateHandler->getTemplateArgs();
+        }
+
         // Calls to controllers.
         // Controllers can either build a response themselves and send it
         // or alternatively they can fall back here to default template.
         // Controllers can edit the default template arguments;
-        // $this->template_args is public.
+        // ContentManager can be injected and template_args is public.
+        // So $this->ContentManager->template_args["key"] = "value";
         if ($current_page->controller) {
             $controller_name = $this->getControllerName(
                 $current_page->file_name
@@ -260,113 +282,23 @@ class ContentManager
             $controller->init();
         }
 
-        // If the controllers didn't send the response themselves, here we
-        // fall back to the default template.
-        $template = $TemplateEngine->loadTemplate("template");
+        // Loading the template.
+        $template = $TemplateEngine->loadTemplate($template_file_name);
         assert(is_object($template));
         assert(method_exists($template, "render"));
-        // Setting up the template arguments.
-        $this->setCurrentTemplateArgs($current_page);
 
-        // I like to know how much all of this took, so I set an additional
-        // parameter for the page rendering.
-        $this->template_args["time"] = round(
-            (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
-            4
-        );
-
-        // Errors handling:
-        //$this->template_args["results"] = $this->ErrorHandler->getResults();
+        // Getting the very last template arguments for rendering.
+        assert(isset($TemplateHandler));
+        if (method_exists($TemplateHandler, "anyLastArgs")) {
+            $this->template_args = array_merge(
+                $this->template_args,
+                $TemplateHandler->anyLastArgs()
+            );
+        }
 
         // Setting and sending the rendered page.
         $response->setContent($template->render($this->template_args));
         $response->send();
-    }
-
-    private function setCurrentTemplateArgs(Page $current_page)
-    : void {
-        // Setting the page meta tags.
-        $this->template_args["index"] = $current_page->index;
-        $this->template_args["follow"] = $current_page->follow;
-        $this->template_args["content"] = $current_page->file_name;
-
-        // Setting the page title and description.
-        if ($current_page->i18n) {
-            $this->config->loadPageLang($current_page->url_id);
-            if (defined($current_page->url_id . "_PAGE_TITLE")) {
-                $this->template_args["title"] = constant(
-                    $current_page->url_id . "_PAGE_TITLE"
-                );
-            }
-            if (defined($current_page->url_id . "_PAGE_DESCRIPTION")) {
-                $this->template_args["description"] = constant(
-                    $current_page->url_id . "_PAGE_DESCRIPTION"
-                );
-            }
-        } else {
-            $this->template_args["title"] = $current_page->title;
-            $this->template_args["description"] = $current_page->description;
-        }
-
-        // Loading the page keywords.
-        $this->config->loadKeywordsLang();
-        $keywords_filter = function (array $keywords, bool $i18n) {
-            return array_filter(
-                array_map(
-                    function ($item) use ($i18n) {
-                        return $this->keywordsFilter($item, $i18n);
-                    },
-                    $keywords
-                )
-            );
-        };
-        $i18n_keywords = $keywords_filter($current_page->keywords, true);
-        $normal_keywords = $keywords_filter($current_page->keywords, false);
-        $keywords = array();
-        foreach ($i18n_keywords as $keyword) {
-            if (defined($keyword)) {
-                $keywords[] = constant($keyword);
-            } else {
-                $this->results[] = array(
-                    self::ERROR_INVALID_I18N_KEYWORD,
-                    array("keyword" => $keyword)
-                );
-            }
-        }
-        $keywords = array_merge($keywords, $normal_keywords);
-
-        // Keywords are all capitalised by default because keywords (which
-        // can also use URL IDs constants) are (SHOULD) all be stored in
-        // lowercase.
-        $this->template_args["keywords"] = implode(
-            ", ",
-            array_map(function ($val) {
-                assert(is_string($val));
-
-                return ucwords($val);
-            }, $keywords)
-        );
-    }
-
-    /**
-     * Keywords Filter.
-     * This is a helper function used for filtering out I18N keywords from
-     * non-I18N ones.
-     *
-     * @param array<string, mixed> $keyword Keyword array.
-     * @param bool                 $i18n    I18N Flag.
-     *
-     * @return string|null
-     */
-    public function keywordsFilter(array $keyword, bool $i18n)
-    : string|null {
-        if (!($i18n ^ $keyword["i18n"])) {
-            assert(is_string($keyword["keyword"]));
-
-            return $keyword["keyword"];
-        }
-
-        return null;
     }
 
     /**
@@ -387,6 +319,26 @@ class ContentManager
                        '_'
                    )
                ) . "Controller";
+    }
+
+    /**
+     * Get Template Handler Name.
+     * Returns the class name of a template handler.
+     *
+     * @param string $file_name
+     *
+     * @return string
+     */
+    public function getTemplateHandlerName(string $file_name)
+    : string {
+        return str_replace(
+                   '_',
+                   '',
+                   ucwords(
+                       $file_name,
+                       '_'
+                   )
+               ) . "TemplateHandler";
     }
 
     /**
@@ -539,14 +491,9 @@ class ContentManager
                     ERROR_INVALID_I18N_URL_ID, // url_id
                     ErrorHandler::LOG_LEVEL_WARNING
                 ),
-                self::ERROR_INVALID_I18N_KEYWORD => array(
-                    500,
-                    ERROR_INVALID_I18N_KEYWORD, // keyword
-                    ErrorHandler::LOG_LEVEL_WARNING
-                ),
                 self::ERROR_INVALID_LANGUAGE => array(
                     500,
-                    ERROR_INVALID_LANGUAGE,
+                    ERROR_INVALID_LANGUAGE, // lang
                     ErrorHandler::LOG_LEVEL_NOTICE
                 )
 
@@ -556,7 +503,7 @@ class ContentManager
 
     /**
      * Shift Current Page Parameters.
-     * Shifts the currents page parameters array, it's useful when a
+     * Shifts the current's page parameters array, it's useful when a
      * parameter is weak, like the language parameter.
      *
      * @param int $shift_positions Numbers of positions to shift.

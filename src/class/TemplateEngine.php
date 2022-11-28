@@ -38,7 +38,6 @@ class TemplateEngine
         );
     public const TOKENS_POINTING_TO_ARGS
         = array(
-            self::TOKEN_TYPE_INVERTED_LOOP_START,
             self::TOKEN_TYPE_VAR,
             self::TOKEN_TYPE_UNESCAPED_VAR
         );
@@ -591,6 +590,7 @@ class TemplateEngine
         $class .= 'return ($buffer) ? $buffer : "";}' .
                   implode("", $code[self::INDEX_FUNCTIONS_CODE]) .
                   "}";
+        echo "<pre>$class";
 
         return $class;
     }
@@ -624,12 +624,10 @@ class TemplateEngine
             $code .= match ($end_parent[self::AST_TYPE]) {
                 default => '$resolved=$this->TemplateEngine->resolveValue("' .
                            $end_parent[self::AST_VALUE] .
-                           '",$args,$parent,$i);$count=(is_countable($resolved))?count($resolved):0;$parent=$resolved;for($i=0;$i<$count;$i++){',
-                self::TOKEN_TYPE_INVERTED_LOOP_START => 'if(!is_array($this->TemplateEngine->resolveValue("' .
+                           '",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif(!empty($resolved)){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){',
+                self::TOKEN_TYPE_INVERTED_LOOP_START => '$resolved=$this->TemplateEngine->resolveValue("' .
                                                         $end_parent[self::AST_VALUE] .
-                                                        '",$args,$i))||empty($this->TemplateEngine->resolveValue("' .
-                                                        $end_parent[self::AST_VALUE] .
-                                                        '",$args,$i)){',
+                                                        '",$args,$parent,$i);echo"\n\n\n\n";if(!is_array($resolved)&&empty($resolved)){',
             };
         } else {
             $code .= '$i=0;';
@@ -665,29 +663,29 @@ class TemplateEngine
                 case self::TOKEN_TYPE_UNESCAPED_VAR:
                     $code .= '$buffer.=' . $value . ";";
                     break;
-                case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
+                case self::TOKEN_TYPE_LOOP_START:
                     $function_name = $value . $iteration_number;
                     $code .= '$buffer.=$this->' .
                              $function_name .
                              '($args,$parent);';
-                $loop_parents[] = $AST[$i];
-                if (!is_array($AST[$i - 1])) {
-                    $this->results[] = array(
-                        self::ERROR_TEMPLATE_AST_INCONSISTENCY
-                    );
+                    $loop_parents[] = $AST[$i];
+                    if (!is_array($AST[$i - 1])) {
+                        $this->results[] = array(
+                            self::ERROR_TEMPLATE_AST_INCONSISTENCY
+                        );
 
-                    return null;
-                }
-                $this->writeCode(
-                    $AST[$i - 1],
-                    $loop_parents,
-                    $functions_code,
-                    $iteration_number
-                );
-                array_pop($loop_parents);
-                $i--;
-                break;
+                        return null;
+                    }
+                    $this->writeCode(
+                        $AST[$i - 1],
+                        $loop_parents,
+                        $functions_code,
+                        $iteration_number
+                    );
+                    array_pop($loop_parents);
+                    $i--;
+                    break;
                 case self::TOKEN_TYPE_PARTIAL:
                     $class_name = str_replace(
                         '.',

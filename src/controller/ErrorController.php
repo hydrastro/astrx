@@ -38,7 +38,8 @@ class ErrorController
         );
         $template_args = array();
         $template_args["content"] = $this->current_page->file_name;
-        $template_args["title"] = $error_name;
+        $template_args["title"] = $error_name . " - " . $error_message;
+
         $template_args["description"] = $error_message;
         // TODO: i have no idea what to put in this page keywords.
         $template_args["keywords"] = ucwords($error_name);
