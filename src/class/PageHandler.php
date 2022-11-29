@@ -20,6 +20,7 @@ class PageHandler
      * Get Page.
      * Given the page id, returns the page.
      * Note: doing left joins is 1/3 faster than making 5 queries.
+     * Having a view is probably the best thing to do here.
      *
      * @param int $id Page id.
      *
@@ -30,10 +31,10 @@ class PageHandler
         $stmt = $this->pdo->prepare(
             "
             SELECT
-                `page`.`id`,
+                `id`,
                 `url_id`,
                 `i18n`,
-                `page`.`file_name`,
+                `file_name`,
                 `template`,
                 `controller`,
                 `hidden`,
@@ -41,27 +42,11 @@ class PageHandler
                 `follow`,
                 `title`,
                 `description`,
-                `template`.`file_name` as `template_file_name`
+                `template_file_name`
             FROM
-                `page`
-            LEFT JOIN 
-                `page_robots`
-            ON
-                `page_robots`.`page_id` = `page`.`id`
-            LEFT JOIN 
-                `page_meta`    
-            ON
-                `page_meta`.`page_id` = `page`.`id`
-            LEFT JOIN
-                `page_template`
-            ON 
-                `page_template`.`page_id` = `page`.`id`
-            LEFT JOIN
-                `template`
-            ON
-                `page_template`.`template_id` = `template`.`id`
+                `resolved_page`
             WHERE
-                `page`.`id` = :id"
+                `id` = :id"
         );
         $stmt->execute(array("id" => $id));
         $result = $stmt->fetch();
@@ -141,7 +126,7 @@ class PageHandler
         FROM
             `page_closure`
         LEFT JOIN
-                `page`
+            `page`
         ON
             `page`.`id` = `ancestor`
         WHERE
@@ -184,9 +169,9 @@ class PageHandler
         FROM
             `page`
         WHERE
-            `i18n` = 1"
+            `i18n` = :i18n"
         );
-        $stmt->execute();
+        $stmt->execute(array("i18n" => true));
 
         return $stmt->fetchAll();
     }

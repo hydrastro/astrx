@@ -211,7 +211,7 @@ class Injector
      */
     public function hasClass(string $class_name)
     : bool {
-        if (empty($this->classes)) {
+        if ($this->classes === array()) {
             return false;
         }
         $name = $this->getIndexName($class_name);

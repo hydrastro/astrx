@@ -26,21 +26,14 @@ class NavigationBar
         $stmt = $this->pdo->prepare(
             "
         SELECT
-            `navigation_bar_entry`.`id`,
+            `id`,
             `internal`,
             `name`,
             `i18n`,
             `page_id`,
             `url`
         FROM
-            `navigation_bar_entry`
-        LEFT JOIN
-                `navigation_bar_internal`
-        ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
-        LEFT JOIN
-                `navigation_bar_external`
-        ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
-        ORDER BY `navigation_bar_entry`.`id`
+            `resolved_navigation_bar`
         "
         );
         $stmt->execute();

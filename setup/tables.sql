@@ -118,6 +118,54 @@ CREATE TABLE `page_template`
         ON DELETE CASCADE
 );
 
+CREATE VIEW resolved_page AS
+SELECT `page`.`id`,
+       `url_id`,
+       `i18n`,
+       `page`.`file_name`,
+       `page`.`template`,
+       `controller`,
+       `hidden`,
+       `index`,
+       `follow`,
+       `title`,
+       `description`,
+       `template`.`file_name` as `template_file_name`
+FROM `page`
+         LEFT JOIN
+     `page_robots`
+     ON
+         `page_robots`.`page_id` = `page`.`id`
+         LEFT JOIN
+     `page_meta`
+     ON
+         `page_meta`.`page_id` = `page`.`id`
+         LEFT JOIN
+     `page_template`
+     ON
+         `page_template`.`page_id` = `page`.`id`
+         LEFT JOIN
+     `template`
+     ON
+         `page_template`.`template_id` = `template`.`id`;
+
+CREATE VIEW resolved_navigation_bar AS
+SELECT `navigation_bar_entry`.`id`,
+       `internal`,
+       `name`,
+       `i18n`,
+       `page_id`,
+       `url`
+FROM `navigation_bar_entry`
+         LEFT JOIN
+     `navigation_bar_internal`
+     ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
+         LEFT JOIN
+     `navigation_bar_external`
+     ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
+ORDER BY `navigation_bar_entry`.`id`;
+
+
 -- TABLE INSERTIONS
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden)

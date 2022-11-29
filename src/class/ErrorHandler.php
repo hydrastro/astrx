@@ -149,7 +149,7 @@ class ErrorHandler
     : void
     {
         $exceptions = $this->exceptions;
-        if (empty($exceptions)) {
+        if ($exceptions === array()) {
             return;
         }
 
@@ -216,7 +216,7 @@ class ErrorHandler
         // Checking if the map that links the results to their own
         // language constants is loaded or not, and if not, we just
         // display their information as good as we can in english.
-        if (empty($results_map)) {
+        if ($results_map === array()) {
             // This branch is
             foreach ($results as $class_name => $class_results) {
                 foreach ($class_results as $class_result) {
@@ -262,13 +262,13 @@ class ErrorHandler
     : array
     {
         $results = array();
-        if (empty($this->classes)) {
+        if ($this->classes === array()) {
             return array();
         }
         foreach ($this->classes as $class) {
             if (property_exists($class, 'results') &&
                 is_array($class->results) &&
-                !empty($class->results)) {
+                !($class->results === array())) {
                 assert(is_string(get_class($class)));
                 $results[get_class($class)] = $class->results;
             }
