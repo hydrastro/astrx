@@ -93,7 +93,7 @@ class TemplateEngine
     /**
      * Get Configuration Methods.
      * Returns the methods that will be called by the injector.
-     * @return string[]
+     * @return array<int, string>
      */
     public function getConfigurationMethods()
     : array
@@ -590,7 +590,6 @@ class TemplateEngine
         $class .= 'return ($buffer) ? $buffer : "";}' .
                   implode("", $code[self::INDEX_FUNCTIONS_CODE]) .
                   "}";
-        echo "<pre>$class";
 
         return $class;
     }

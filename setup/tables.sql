@@ -122,7 +122,7 @@ CREATE TABLE `page_template`
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden)
 VALUES ('WORDING_MAIN', 1, 'main', 1, 1, 0),
-       ('WORDING_ERROR', 1, 'error', 1, 1, 0);
+       ('WORDING_ERROR', 1, 'error', 1, 1, 1);
 
 INSERT INTO `page_robots`(page_id, `index`, follow)
 VALUES (1, 1, 1),

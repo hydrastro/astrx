@@ -15,23 +15,26 @@ class DefaultTemplateHandler
     private Injector $injector;
     private ErrorHandler $ErrorHandler;
     private Page $page;
+    private UrlHandler $UrlHandler;
 
     public function __construct(
         Config $config,
         Injector $injector,
         ErrorHandler $ErrorHandler,
-        Page $page
+        Page $page,
+        UrlHandler $UrlHandler
     ) {
         $this->config = $config;
         $this->injector = $injector;
         $this->ErrorHandler = $ErrorHandler;
         $this->page = $page;
+        $this->UrlHandler = $UrlHandler;
     }
 
     /**
      * Get Template Args.
      * Returns the template arguments needed for rendering.
-     * This funciton is called before the controller init.
+     * This function is called before the controller init.
      * @return array<string, mixed>
      */
     public function getTemplateArgs()
@@ -106,9 +109,16 @@ class DefaultTemplateHandler
         $navigation_bar = $NavigationBar->getNavigationBar();
         $cleaned_navigation_bar = array();
         foreach ($navigation_bar as $entry) {
+            assert(is_array($entry));
             if ($entry["internal"]) {
-                // todo
-                $url = "pageid" . $entry["page_id"];
+                $url = $this->UrlHandler->getUrl(
+                    array(
+                        "page_id_parameter_name" => $entry["page_id"]
+                    ),
+                    true,
+                    false,
+                    true
+                );
                 $highlight = ($this->page->id == $entry["page_id"]);
             } else {
                 $url = $entry["url"];

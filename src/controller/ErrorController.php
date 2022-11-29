@@ -1,31 +1,20 @@
 <?php
 
+declare(strict_types = 1);
 /**
  * Class Error Controller.
  */
 class ErrorController
 {
     /**
-     * @var TemplateEngine $TemplateEngine Template Engine.
+     * @var ContentManager $ContentManager Content Manager.
      */
-    private TemplateEngine $TemplateEngine;
-    /**
-     * @var Response $response Response.
-     */
-    private Response $response;
-    /**
-     * @var Page $current_page Current Page.
-     */
-    private Page $current_page;
+    private ContentManager $ContentManager;
 
     public function __construct(
-        TemplateEngine $TemplateEngine,
-        Response $response,
-        Page $current_page
+        ContentManager $ContentManager
     ) {
-        $this->TemplateEngine = $TemplateEngine;
-        $this->response = $response;
-        $this->current_page = $current_page;
+        $this->ContentManager = $ContentManager;
     }
 
     public function init()
@@ -36,27 +25,13 @@ class ErrorController
         $error_message = constant(
             "WORDING_HTTP_STATUS_" . $status_code
         );
-        $template_args = array();
-        $template_args["content"] = $this->current_page->file_name;
-        $template_args["title"] = $error_name . " - " . $error_message;
+        $this->ContentManager->template_args["title"] = $error_name .
+                                                        " - " .
+                                                        $error_message;
 
-        $template_args["description"] = $error_message;
-        // TODO: i have no idea what to put in this page keywords.
-        $template_args["keywords"] = ucwords($error_name);
-        $template_args["error_name"] = $error_name;
-        $template_args["error_message"] = $error_message;
-        $template_args["time"] = round(
-            (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
-            4
-        );
-
-        //template_args["results"] = $this->ErrorHandler->getResults();
-        $template = $this->TemplateEngine->loadTemplate("template");
-        assert(is_object($template));
-        assert(method_exists($template, "render"));
-        // Setting and sending the rendered page.
-        $this->response->setContent($template->render($template_args));
-        $this->response->send();
-        exit();
+        $this->ContentManager->template_args["description"] = $error_message;
+        $this->ContentManager->template_args["keywords"] = ucwords($error_name);
+        $this->ContentManager->template_args["error_name"] = $error_name;
+        $this->ContentManager->template_args["error_message"] = $error_message;
     }
 }

@@ -11,18 +11,22 @@ return array(
         "db_password" => "password"
     ),
     "ContentManager" => array(
-        "language_parameter_name" => "lang", // null for disabling the language
-        // parameter
-        "page_id_parameter_name" => "id",
+        "default_language" => "en",
+        "language_catastrophe_message" => "Error: no language file could be loaded.",
+        "main_page_id" => "main",
+        "default_template" => "default"
+    ),
+    "UrlHandler" => array(
+        "base_path" => "/",
+        "entry_point" => "index.php",
+        "url_rewrite" => true,
         "current_page_parameters_config" => array(
             "language_parameter_name",
             "page_id_parameter_name"
         ),
-        "url_rewrite" => true,
-        "default_language" => "en",
-        "base_path" => "",
-        "language_catastrophe_message" => "Error: no language file could be loaded.",
-        "main_page_id" => "main",
-        "default_template" => "default"
+        "parameters_map" => array(
+            "language_parameter_name" => "lang",
+            "page_id_parameter_name" => "id"
+        )
     )
 );

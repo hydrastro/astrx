@@ -29,15 +29,6 @@ class ContentManager
      * arguments.
      */
     public array $template_args = array();
-    /**
-     * @var array<int, string> $current_page_parameters Current page
-     * parameters.
-     */
-    private array $current_page_parameters = array();
-    /**
-     * @var int $current_route Current route number.
-     */
-    private int $current_route = 0;
 
     /**
      * ContentManager Constructor.
@@ -66,33 +57,21 @@ class ContentManager
     {
         // Setting the current page parameters if url rewrite is enabled.
         $url_rewrite = $this->config->getConfig(
-            "ContentManager",
+            "UrlHandler",
             "url_rewrite",
             false
         );
-        if ($url_rewrite) {
-            $parameters_config = $this->config->getConfig(
-                "ContentManager", "current_page_parameters_config", array()
-            );
-            assert(is_array($parameters_config));
-            foreach ($parameters_config as $parameter_config) {
-                assert(is_string($parameter_config));
-                $parameter_name = $this->config->getConfig(
-                    "ContentManager",
-                    $parameter_config,
-                    ""
-                );
-                assert(is_string($parameter_name));
-                // Puts the parameters on the url stack to $_GET
-                $this->setCurrentPageParameters(array($parameter_name));
-            }
-        }
+
+        // Instantiating the Url Handler.
+        // This class is necessary for handling the current url parameters,
+        // here specifically for getting the current language and the page id.
+        $UrlHandler = $this->injector->getClass("UrlHandler");
+        assert($UrlHandler instanceof UrlHandler);
 
         // Setting the current language.
         $request = $this->injector->createClass("Request");
         assert($request instanceof Request);
-        $language_parameter_name = $this->config->getConfig(
-            "ContentManager",
+        $language_parameter_name = $UrlHandler->getParameterName(
             "language_parameter_name"
         );
         assert(is_string($language_parameter_name));
@@ -123,7 +102,11 @@ class ContentManager
             }
 
             if ($url_rewrite) {
-                $this->shiftCurrentPageParameters(1);
+                $UrlHandler->setParameter(
+                    "language_parameter_name",
+                    $fallback_lang
+                );
+                $UrlHandler->shiftCurrentPageParameters(1);
             }
         }
 
@@ -141,10 +124,8 @@ class ContentManager
         assert($response instanceof Response);
 
         // Getting the parameter name of the page id.
-        $page_id_parameter_name = $this->config->getConfig(
-            "ContentManager",
+        $page_id_parameter_name = $UrlHandler->getParameterName(
             "page_id_parameter_name",
-            ""
         );
         assert(is_string($page_id_parameter_name));
         // Setting the current page id.
@@ -154,6 +135,10 @@ class ContentManager
             $this->config->getConfig("ContentManager", "main_page_id", "")
         );
         assert(is_string($current_page_parameter));
+        $UrlHandler->setParameter(
+            "page_id_parameter_name",
+            $current_page_parameter
+        );
 
         // Creating database connection.
         // $config->loadConfig("PDO"); It's a built in class so its config
@@ -284,19 +269,27 @@ class ContentManager
 
         // Loading the template.
         $template = $TemplateEngine->loadTemplate($template_file_name);
-        assert(is_object($template));
-        assert(method_exists($template, "render"));
 
         // Getting the very last template arguments for rendering.
-        assert(isset($TemplateHandler));
-        if (method_exists($TemplateHandler, "anyLastArgs")) {
-            $this->template_args = array_merge(
-                $this->template_args,
-                $TemplateHandler->anyLastArgs()
-            );
+        if ($current_page->template) {
+            if (!isset($TemplateHandler)) {
+                $TemplateHandler = $this->injector->getClass(
+                    $this->getTemplateHandlerName($template_file_name)
+                );
+                assert(is_object($TemplateHandler));
+                assert(method_exists($TemplateHandler, "getTemplateArgs"));
+            }
+            if (method_exists($TemplateHandler, "anyLastArgs")) {
+                $this->template_args = array_merge(
+                    $this->template_args,
+                    $TemplateHandler->anyLastArgs()
+                );
+            }
         }
 
         // Setting and sending the rendered page.
+        assert(is_object($template));
+        assert(method_exists($template, "render"));
         $response->setContent($template->render($this->template_args));
         $response->send();
     }
@@ -339,61 +332,6 @@ class ContentManager
                        '_'
                    )
                ) . "TemplateHandler";
-    }
-
-    /**
-     * Set Current Page Parameters.
-     * Sets the parameters for the current page.
-     *
-     * @param array<int, string> $parameters Page parameters.
-     * @param bool               $append     Append flag.
-     *
-     * @return void
-     */
-    public function setCurrentPageParameters(
-        array $parameters,
-        bool $append
-        = true
-    )
-    : void {
-        if ($append) {
-            $this->current_page_parameters = array_merge(
-                $this->current_page_parameters,
-                $parameters
-            );
-            $this->current_route += count($parameters);
-        } else {
-            $this->current_page_parameters = $parameters;
-            $this->current_route = count($parameters);
-        }
-
-        $request_uri = $_SERVER['REQUEST_URI']??"";
-        $url_path = explode('/', $request_uri);
-        $config_base_path = $this->config->getConfig(
-            "ContentManager",
-            "base_path",
-            ""
-        );
-        assert(is_string($config_base_path));
-        $base_path = explode('/', $config_base_path);
-        // Removing base path
-        for ($i = 0; $i < count($base_path); $i++) {
-            if ($url_path[$i] == $base_path[$i]) {
-                unset($url_path[$i]);
-            }
-        }
-        // Decoding url (%20 -> ' ').
-        foreach ($url_path as &$url) {
-            $url = urldecode($url);
-        }
-        // array_filter() removes, if there are any, empty values caused by
-        // multiple slashes: example.com/id///page//foo//
-        // array_values() reindexes the array.
-        $route = array_values(array_filter($url_path));
-
-        foreach ($this->current_page_parameters as $key => $parameter) {
-            $_GET[$parameter] = (isset($route[$key])) ? $route[$key] : null;
-        }
     }
 
     /**
@@ -485,6 +423,25 @@ class ContentManager
                     ErrorHandler::LOG_LEVEL_ERROR
                 )
             ),
+            "UrlHandler" => array(
+                "results_map" => array(
+                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME => array(
+                        500,
+                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                        ErrorHandler::LOG_LEVEL_ERROR
+                    ),
+                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_2 => array(
+                        500,
+                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                        ErrorHandler::LOG_LEVEL_ERROR
+                    ),
+                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_3 => array(
+                        500,
+                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                        ErrorHandler::LOG_LEVEL_ERROR
+                    ),
+                )
+            ),
             "ContentManager" => array(
                 self::ERROR_INVALID_I18N_URL_ID => array(
                     500,
@@ -499,23 +456,5 @@ class ContentManager
 
             )
         );
-    }
-
-    /**
-     * Shift Current Page Parameters.
-     * Shifts the current's page parameters array, it's useful when a
-     * parameter is weak, like the language parameter.
-     *
-     * @param int $shift_positions Numbers of positions to shift.
-     *
-     * @return void
-     */
-    private function shiftCurrentPageParameters(int $shift_positions)
-    : void {
-        while ($shift_positions > 0) {
-            array_shift($this->current_page_parameters);
-            $shift_positions--;
-        }
-        $this->setCurrentPageParameters($this->current_page_parameters, false);
     }
 }
