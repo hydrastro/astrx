@@ -1,4 +1,5 @@
 <?php
+/** @noinspection PhpUnused */
 
 declare(strict_types = 1);
 /**
@@ -234,14 +235,13 @@ class PageHandler
         // messed up. The page meta, title, keywords and description are left
         // to be handled by the page's controller.
         return new Page(
-            0,
-            WORDING_ERROR,
-            true,
-            "error",
-            true,
-            true,
-            true,
-            array(array("id" => 1, "url_id" => "WORDING_ERROR", "i18n" => true))
+            0, WORDING_ERROR, true, "error", true, true, true, array(
+                 array(
+                     "id" => 1,
+                     "url_id" => "WORDING_ERROR",
+                     "i18n" => true
+                 )
+             )
         );
     }
 }

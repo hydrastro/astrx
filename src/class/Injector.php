@@ -10,16 +10,10 @@ class Injector
     private const HELPER_NAME = 0;
     private const HELPER_INSTANCE = 1;
     private const HELPER_METHOD_NAME = 2;
-    public const ERROR_HELPER_METHOD_NOT_FOUND = 0;
-    public const ERROR_INVALID_HELPER_METHOD = 1;
-    public const ERROR_HELPER_REFLECTION = 2;
-    public const ERROR_CLASS_NOT_FOUND = 3;
-    public const ERROR_CLASS_METHOD_NOT_FOUND = 4;
-    public const ERROR_CLASS_NOT_FOUND_2 = 5;
-    public const ERROR_CLASS_NOT_FOUND_3 = 6;
-    public const ERROR_CLASS_OR_PARAMETER_NOT_FOUND = 7;
-    public const ERROR_CLASS_REFLECTION = 8;
-    public const ERROR_REFLECTION_PARAMETER = 9;
+    public const ERROR_HELPER_REFLECTION = 0;
+    public const ERROR_CLASS_NOT_FOUND = 1;
+    public const ERROR_CLASS_NOT_FOUND_2 = 2;
+    public const ERROR_CLASS_REFLECTION = 3;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -29,7 +23,7 @@ class Injector
      */
     private array $classes = array();
     /**
-     * @var array<string, array<string,mixed>> $classes_args Classes arguments.
+     * @var array<string, array<string, mixed>> $classes_args Classes arguments.
      */
     private array $classes_args;
     /**
@@ -57,39 +51,19 @@ class Injector
     public function addHelper(object $helper_instance, string $helper_method)
     : bool {
         $helper_class_name = get_class($helper_instance);
-        if (!method_exists($helper_instance, $helper_method)) {
-            $this->results[] = array(
-                self::ERROR_HELPER_METHOD_NOT_FOUND,
-                array(
-                    "class_name" => $helper_class_name,
-                    "method_name" => $helper_method
-                )
-            );
-
-            return false;
-        }
+        assert(method_exists($helper_instance, $helper_method));
 
         try {
             $reflectedMethod = new ReflectionMethod(
                 $helper_class_name, $helper_method
             );
             $parameters = $reflectedMethod->getParameters();
-            $parameter0type = $parameters[0]->getType();
-            $parameter1type = $parameters[1]->getType();
-            if (!($parameter0type instanceof ReflectionNamedType) ||
-                $parameter0type->getName() !== "object" ||
-                !($parameter1type instanceof ReflectionNamedType) ||
-                $parameter1type->getName() !== "string") {
-                $this->results[] = array(
-                    self::ERROR_INVALID_HELPER_METHOD,
-                    array(
-                        "class_name" => $helper_class_name,
-                        "method_name" => $helper_method
-                    )
-                );
-
-                return false;
-            }
+            $first_parameter = $parameters[0]->getType();
+            $second_parameter = $parameters[1]->getType();
+            assert($first_parameter instanceof ReflectionNamedType);
+            assert($first_parameter->getName() === "object");
+            assert($second_parameter instanceof ReflectionNamedType);
+            assert($second_parameter->getName() === "string");
         } catch (ReflectionException) {
             $this->results[] = array(
                 self::ERROR_HELPER_REFLECTION,
@@ -118,22 +92,12 @@ class Injector
      * @param string               $class_name Class name.
      * @param array<string, mixed> $args       Class functions arguments.
      *
-     * @return bool
+     * @return void
      */
     public function setClassArgs(string $class_name, array $args)
-    : bool {
-        if (class_exists($class_name)) {
-            $name = $this->getIndexName($class_name);
-            $this->classes_args[$name] = $args;
-
-            return true;
-        }
-        $this->results[] = array(
-            self::ERROR_CLASS_NOT_FOUND,
-            array("class" => $class_name)
-        );
-
-        return false;
+    : void {
+        $name = $this->getIndexName($class_name);
+        $this->classes_args[$name] = $args;
     }
 
     /**
@@ -172,32 +136,31 @@ class Injector
      * @param string               $class_name Class name.
      * @param string               $method     Method name.
      * @param array<string, mixed> $arguments  Arguments.
+     * @param bool                 $create     Create class flag.
      *
      * @return mixed
      */
     public function callClassMethod(
         string $class_name,
         string $method,
-        array $arguments = array()
+        array $arguments = array(),
+        bool $create = false
     )
     : mixed {
         if ($this->hasClass($class_name)) {
-            if (method_exists($class_name, $method)) {
-                $class = $this->getClass($class_name);
+            assert(method_exists($class_name, $method));
+            $class = $this->getClass($class_name);
 
-                return $class->$method(...$arguments);
-            }
-            $this->results[] = array(
-                self::ERROR_CLASS_METHOD_NOT_FOUND,
-                array("class_name" => $class_name, "method_name" => $method)
-            );
-        } else {
-            $this->results[] = array(
-                self::ERROR_CLASS_NOT_FOUND_2,
-                array("class_name" => $class_name)
-            );
+            return $class->$method(...$arguments);
+        }
+        if ($create) {
+            $this->createClass($class_name);
+
+            return $this->callClassMethod($class_name, $method, $arguments);
         }
 
+        // The class haven't been found and the caller doesn't even want to
+        // create it...
         return null;
     }
 
@@ -211,9 +174,6 @@ class Injector
      */
     public function hasClass(string $class_name)
     : bool {
-        if ($this->classes === array()) {
-            return false;
-        }
         $name = $this->getIndexName($class_name);
 
         return (array_key_exists($name, $this->classes));
@@ -227,7 +187,7 @@ class Injector
      * @param string $class_name Class name.
      * @param bool   $create     Create if class instance doesn't exist.
      *
-     * @return mixed
+     * @return Object|null
      */
     public function getClass(string $class_name, bool $create = true)
     : mixed {
@@ -251,7 +211,7 @@ class Injector
      * @param bool   $share      Share class: store among container known
      *                           instances.
      *
-     * @return mixed
+     * @return Object|null
      */
     public function createClass(
         string $class_name,
@@ -260,7 +220,7 @@ class Injector
     : mixed {
         if (!class_exists($class_name)) {
             $this->results[] = array(
-                self::ERROR_CLASS_NOT_FOUND_3,
+                self::ERROR_CLASS_NOT_FOUND_2,
                 array("class_name" => $class_name)
             );
 
@@ -274,40 +234,16 @@ class Injector
                 foreach ($constructor->getParameters() as $parameter) {
                     $arg_name = $parameter->getName();
                     $arg = $this->getClassArg($class_name, $arg_name);
-                    if ($arg) {
+                    if ($arg !== null) {
                         $dependencies[] = $arg;
                     } elseif (!$parameter->isOptional()) {
                         $parameter_type = $parameter->getType();
-                        if ($parameter_type === null) {
-                            $this->results[] = array(
-                                self::ERROR_CLASS_OR_PARAMETER_NOT_FOUND,
-                                array(
-                                    "class_name" => $class_name,
-                                    "parameter_name" => $arg_name
-                                )
-                            );
-
-                            return null;
-                        }
-                        if (!($parameter_type instanceof ReflectionNamedType)) {
-                            $this->results[] = array(
-                                self::ERROR_REFLECTION_PARAMETER,
-                                array(
-                                    "class_name" => $class_name,
-                                    "parameter_name" => $arg_name
-                                )
-                            );
-
-                            return null;
-                        }
+                        assert($parameter_type !== null);
+                        assert($parameter_type instanceof ReflectionNamedType);
                         $dependency_class_name
                             = $parameter_type->getName();
-                        $index
-                            = $this->getIndexName($dependency_class_name);
-                        if (!$this->hasClass($dependency_class_name)) {
-                            $this->createClass($dependency_class_name);
-                        }
-                        $dependencies[] = $this->classes[$index];
+                        $dependency = $this->getClass($dependency_class_name);
+                        $dependencies[] = $dependency;
                     }
                 }
             }
@@ -344,12 +280,12 @@ class Injector
      * @return mixed
      */
     public function getClassArg(string $class_name, string $arg_name)
-    : mixed {
+    : mixed
+    {
         $name = $this->getIndexName($class_name);
-        if (!isset($this->classes_args[$name])) {
-            return null;
-        }
-        if (!isset($this->classes_args[$name][$arg_name])) {
+
+        if (!isset($this->classes_args[$name]) ||
+            !isset($this->classes_args[$name][$arg_name])) {
             return null;
         }
 

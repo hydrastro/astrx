@@ -108,7 +108,9 @@ class ContentManager
         // so we have a way nicer error/results display.
         // For instance, we're handling the errors of these classes:
         // Injector, Config, Prelude, ErrorHandler
-        $this->ErrorHandler->addMultipleResultsMaps($this->getInitResultsMap());
+        foreach ($this->getInitResultsMap() as $class_name => $class_map) {
+            $this->ErrorHandler->addResultsMap($class_name, $class_map);
+        }
 
         // We can now start building our response.
         $TemplateEngine = $this->injector->createClass("TemplateEngine");
@@ -336,16 +338,6 @@ class ContentManager
     {
         return array(
             "Injector" => array(
-                Injector::ERROR_HELPER_METHOD_NOT_FOUND => array(
-                    500,
-                    ERROR_HELPER_METHOD_NOT_FOUND,  // class_name, method_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
-                Injector::ERROR_INVALID_HELPER_METHOD => array(
-                    500,
-                    ERROR_INVALID_HELPER_METHOD,  // class_name, method_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
                 Injector::ERROR_HELPER_REFLECTION => array(
                     500,
                     ERROR_METHOD_REFLECTION, // class_name, method_name
@@ -356,25 +348,9 @@ class ContentManager
                     ERROR_CLASS_NOT_FOUND, // class_name
                     ErrorHandler::LOG_LEVEL_ERROR
                 ),
-                Injector::ERROR_CLASS_METHOD_NOT_FOUND => array(
-                    500,
-                    ERROR_CLASS_METHOD_NOT_FOUND, // class_name, method_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
                 Injector::ERROR_CLASS_NOT_FOUND_2 => array(
                     500,
                     ERROR_CLASS_NOT_FOUND, // class_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
-                Injector::ERROR_CLASS_NOT_FOUND_3 => array(
-                    500,
-                    ERROR_CLASS_NOT_FOUND, // class_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
-                Injector::ERROR_CLASS_OR_PARAMETER_NOT_FOUND => array(
-                    500,
-                    ERROR_CLASS_OR_PARAMETER_NOT_FOUND, // class_name,
-                    // parameter_name
                     ErrorHandler::LOG_LEVEL_ERROR
                 ),
                 Injector::ERROR_CLASS_REFLECTION => array(
@@ -382,11 +358,6 @@ class ContentManager
                     ERROR_CLASS_REFLECTION, // message
                     ErrorHandler::LOG_LEVEL_ERROR
                 ),
-                Injector::ERROR_REFLECTION_PARAMETER => array(
-                    500,
-                    ERROR_REFLECTION_PARAMETER, // class_name, parameter_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                )
             ),
             "Config" => array(
                 Config::ERROR_CONFIG_NOT_FOUND => array(

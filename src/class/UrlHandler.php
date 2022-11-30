@@ -18,11 +18,11 @@ class UrlHandler
      * @var array<int, string> $current_page_parameters Current page
      * parameters.
      */
-    public array $current_page_parameters = array();
+    private array $current_page_parameters = array();
     /**
      * @var array<string, string> $parameters_map Parameters map.
      */
-    public array $parameters_map = array();
+    private array $parameters_map = array();
     /**
      * @var int $current_route Current route number.
      */

@@ -73,20 +73,25 @@ class ErrorHandler
      */
     public function setEnvironment(int $environment)
     : void {
-        // TODO: check assertions.
         switch ($environment) {
             default:
                 $this->results[] = array(
                     self::ERROR_UNDEFINED_ENVIRONMENT
                 );
-            case self::ENVIRONMENT_TESTING:
             case self::ENVIRONMENT_DEVELOPMENT:
+                if (ini_get("zend.assertions") === "0") {
+                    ini_set("zend.assertions", "0");
+                }
+            case self::ENVIRONMENT_TESTING:
                 ini_set("display_errors", "1");
                 ini_set("display_startup_errors", "1");
                 error_reporting(E_ALL);
                 $this->log_level = self::LOG_LEVEL_DEBUG;
                 break;
             case self::ENVIRONMENT_STAGING:
+                if (ini_get("zend.assertions") === "1") {
+                    ini_set("zend.assertions", "0");
+                }
             case self::ENVIRONMENT_PRODUCTION:
                 ini_set("display_errors", "0");
                 ini_set("display_startup_errors", "1");
@@ -229,24 +234,21 @@ class ErrorHandler
                     $messages[] = $message;
                 }
             }
-        } else {
-            foreach ($results as $class_name => $class_results) {
-                foreach ($class_results as $class_result) {
-                    $result_map = $results_map[$class_name][$class_result[0]];
-                    if ($this->log_level > $result_map[3]) {
-                        continue;
-                    }
-                    if (is_string($result_map[1]) &&
-                        is_array($class_result[1])) {
-                        $messages[] = $this->interpolate(
-                            $result_map[1],
-                            $class_result[1]
-                        );
-                    } else {
-                        $messages[]
-                            = "An error occurred and another error occurred while trying to display the previous error";
-                    }
+
+            return $messages;
+        }
+        foreach ($results as $class_name => $class_results) {
+            foreach ($class_results as $class_result) {
+                $result_map = $results_map[$class_name][$class_result[0]];
+                if ($this->log_level > $result_map[3]) {
+                    continue;
                 }
+                assert(is_string($result_map[1]));
+                assert(is_array($class_result[1]));
+                $messages[] = $this->interpolate(
+                    $result_map[1],
+                    $class_result[1]
+                );
             }
         }
 
@@ -335,21 +337,6 @@ class ErrorHandler
     }
 
     /**
-     * Add Multiple Results Maps.
-     * Adds multiple results maps of different classes.
-     *
-     * @param array<string, array<int, array<int, mixed>>> $maps Result maps.
-     *
-     * @return void
-     */
-    public function addMultipleResultsMaps(array $maps)
-    : void {
-        foreach ($maps as $class_name => $class_map) {
-            $this->addResultsMap($class_name, $class_map);
-        }
-    }
-
-    /**
      * Interpolate.
      * Interpolates context values into the message placeholders.
      *
@@ -366,7 +353,7 @@ class ErrorHandler
             // check that the value can be cast to string
             if (!is_array($val) &&
                 (!is_object($val) || method_exists($val, '__toString'))) {
-                $replace['{' . $key . '}'] = $val;
+                $replace['{{' . $key . '}}'] = $val;
             }
         }
 

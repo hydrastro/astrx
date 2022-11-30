@@ -72,24 +72,24 @@ class Page
     /**
      * Page Constructor.
      *
-     * @param int                              $id                Page id.
-     * @param string                           $url_id            Page url id.
-     * @param bool                             $i18n              Page
-     *                                                            internationalization
-     *                                                            flag.
-     * @param string                           $file_name         Page file name.
-     * @param bool                             $template          Template flag.
-     * @param bool                             $controller        Controller flag.
-     * @param bool                             $hidden            Hidden flag.
-     * @param array<int, array<string,mixed>>  $ancestors         Ancestors array.
-     * @param bool                             $index             Index flag.
-     * @param bool                             $follow            Follow flag.
-     * @param string                           $title             Title.
-     * @param string                           $description       Description.
-     * @param array<int, array<string, mixed>> $keywords          Keywords
-     *                                                            array.
-     * @param string                           $template_filename Template
-     *                                                            filename.
+     * @param int                              $id                 Page id.
+     * @param string                           $url_id             Page url id.
+     * @param bool                             $i18n               Page
+     *                                                             internationalization
+     *                                                             flag.
+     * @param string                           $file_name          Page file name.
+     * @param bool                             $template           Template flag.
+     * @param bool                             $controller         Controller flag.
+     * @param bool                             $hidden             Hidden flag.
+     * @param array<int, array<string,mixed>>  $ancestors          Ancestors array.
+     * @param bool                             $index              Index flag.
+     * @param bool                             $follow             Follow flag.
+     * @param string                           $title              Title.
+     * @param string                           $description        Description.
+     * @param array<int, array<string, mixed>> $keywords           Keywords
+     *                                                             array.
+     * @param string                           $template_file_name Template
+     *                                                             filename.
      */
     public function __construct(
         int $id,
@@ -105,7 +105,7 @@ class Page
         string $title = "",
         string $description = "",
         array $keywords = array(),
-        string $template_filename = "",
+        string $template_file_name = "",
     ) {
         $this->id = $id;
         $this->url_id = $url_id;
@@ -120,6 +120,6 @@ class Page
         $this->title = $title;
         $this->description = $description;
         $this->keywords = $keywords;
-        $this->template_file_name = $template_filename;
+        $this->template_file_name = $template_file_name;
     }
 }

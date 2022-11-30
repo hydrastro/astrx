@@ -13,6 +13,7 @@ class Request
     {
         // Empty constructor because php may use $this->request() as
         // constructor.
+        // So here goes nothing.
     }
 
     /**
