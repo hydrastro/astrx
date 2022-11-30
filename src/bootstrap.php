@@ -2,7 +2,8 @@
 
 declare(strict_types = 1);
 
-require CLASS_DIR . "Autoloader.php";
-
-new Autoloader();
+spl_autoload_register(function (string $class)
+: void {
+    require CLASS_DIR . $class . ".php";
+});
 new Prelude();

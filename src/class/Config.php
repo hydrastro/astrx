@@ -16,7 +16,7 @@ class Config
     /**
      * @var string $lang Language.
      */
-    public string $lang;
+    private string $lang;
     /**
      * @var array<string, array<string, mixed>> $configuration Config array.
      */

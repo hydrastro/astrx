@@ -6,8 +6,6 @@ declare(strict_types = 1);
  */
 class ContentManager
 {
-    public const ERROR_INVALID_I18N_URL_ID = 0;
-    public const ERROR_INVALID_LANGUAGE = 1;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -85,22 +83,17 @@ class ContentManager
                 "default_language"
             );
             assert(is_string($fallback_lang));
-            if (!$this->config->setLang($fallback_lang)) {
-                $this->results[] = array(
-                    self::ERROR_INVALID_LANGUAGE,
-                    array("lang" => $fallback_lang)
-                );
-
-                $catastrophe_message = $this->config->getConfig(
-                    "ContentManager",
-                    "language_catastrophe_message"
-                );
-                assert(is_string($catastrophe_message));
-                trigger_error($catastrophe_message);
-
-                return;
-            }
-
+            $language_catastrophe_message = $this->config->getConfig(
+                "ContentManager",
+                "language_catastrophe_message",
+                "Error: no language file could be loaded."
+            );
+            assert(is_string($language_catastrophe_message));
+            assert(
+                $this->config->setLang($fallback_lang),
+                $language_catastrophe_message
+            );
+            // Fixing the current page parameters.
             if ($url_rewrite) {
                 $UrlHandler->setParameter(
                     "language_parameter_name",
@@ -141,8 +134,9 @@ class ContentManager
         );
 
         // Creating database connection.
-        // $config->loadConfig("PDO"); It's a built in class so its config
-        // will just be loaded along with the main configs.
+        // We could create it through the Injector, it doesn't matter. This
+        // class is required either way, so it would be just a useless
+        // complication.
         $dsn = $this->config->getConfig("PDO", "db_type", "");
         assert(is_string($dsn));
         $host = $this->config->getConfig("PDO", "db_host", "");
@@ -153,20 +147,12 @@ class ContentManager
         assert(is_string($passwd));
         $username = $this->config->getConfig("PDO", "db_username", "");
         assert(is_string($username));
-        $this->injector->setClassArgs(
-            "PDO", array(
-                     "dsn" => $dsn .
-                              ":host=" .
-                              $host .
-                              ";dbname=" .
-                              $dbname .
-                              ";",
-                     "username" => $username,
-                     "password" => $passwd
-                 )
+        $pdo = new PDO(
+            $dsn . ":host=" . $host . ";dbname=" . $dbname . ";",
+            $username,
+            $passwd
         );
-        $pdo = $this->injector->createClass("PDO");
-        assert($pdo instanceof PDO);
+        $this->injector->setClass($pdo);
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         $pdo->setAttribute(
             PDO::ATTR_ERRMODE,
@@ -186,14 +172,8 @@ class ContentManager
             assert(is_string($url_id));
             $page_id = $i18n_pages["id"];
             assert(is_int($page_id));
-            if (defined($url_id)) {
-                $resolved_i18n_ids[constant($url_id)] = $page_id;
-            } else {
-                $this->results[] = array(
-                    self::ERROR_INVALID_I18N_URL_ID,
-                    array("url_id" => $page_id)
-                );
-            }
+            assert(defined($url_id));
+            $resolved_i18n_ids[constant($url_id)] = $page_id;
         }
 
         // Loading the current page.
@@ -243,6 +223,12 @@ class ContentManager
             if ($current_page->template_file_name !== "") {
                 $template_file_name = $current_page->template_file_name;
             }
+            spl_autoload_register(function (string $class)
+            : void {
+                if (strpos($class, "TemplateHandler")) {
+                    require TEMPLATE_HANDLER_DIR . $class . ".php";
+                }
+            }, true, true);
             $TemplateHandler = $this->injector->getClass(
                 $this->getTemplateHandlerName($template_file_name)
             );
@@ -261,6 +247,12 @@ class ContentManager
             $controller_name = $this->getControllerName(
                 $current_page->file_name
             );
+            spl_autoload_register(function (string $class)
+            : void {
+                if (strpos($class, "Controller")) {
+                    require CONTROLLER_DIR . $class . ".php";
+                }
+            }, true, true);
             $controller = $this->injector->getClass($controller_name);
             assert(is_object($controller));
             assert(method_exists($controller, "init"));
@@ -277,7 +269,6 @@ class ContentManager
                     $this->getTemplateHandlerName($template_file_name)
                 );
                 assert(is_object($TemplateHandler));
-                assert(method_exists($TemplateHandler, "getTemplateArgs"));
             }
             if (method_exists($TemplateHandler, "anyLastArgs")) {
                 $this->template_args = array_merge(
@@ -302,7 +293,7 @@ class ContentManager
      *
      * @return string
      */
-    public function getControllerName(string $file_name)
+    private function getControllerName(string $file_name)
     : string {
         return str_replace(
                    '_',
@@ -322,7 +313,7 @@ class ContentManager
      *
      * @return string
      */
-    public function getTemplateHandlerName(string $file_name)
+    private function getTemplateHandlerName(string $file_name)
     : string {
         return str_replace(
                    '_',
@@ -424,36 +415,21 @@ class ContentManager
                 )
             ),
             "UrlHandler" => array(
-                "results_map" => array(
-                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME => array(
-                        500,
-                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
-                        ErrorHandler::LOG_LEVEL_ERROR
-                    ),
-                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_2 => array(
-                        500,
-                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
-                        ErrorHandler::LOG_LEVEL_ERROR
-                    ),
-                    UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_3 => array(
-                        500,
-                        ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
-                        ErrorHandler::LOG_LEVEL_ERROR
-                    ),
-                )
-            ),
-            "ContentManager" => array(
-                self::ERROR_INVALID_I18N_URL_ID => array(
+                UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME => array(
                     500,
-                    ERROR_INVALID_I18N_URL_ID, // url_id
-                    ErrorHandler::LOG_LEVEL_WARNING
+                    ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                    ErrorHandler::LOG_LEVEL_ERROR
                 ),
-                self::ERROR_INVALID_LANGUAGE => array(
+                UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_2 => array(
                     500,
-                    ERROR_INVALID_LANGUAGE, // lang
-                    ErrorHandler::LOG_LEVEL_NOTICE
+                    ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                    ErrorHandler::LOG_LEVEL_ERROR
+                ),
+                UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_3 => array(
+                    500,
+                    ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
+                    ErrorHandler::LOG_LEVEL_ERROR
                 )
-
             )
         );
     }

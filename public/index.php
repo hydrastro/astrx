@@ -19,6 +19,8 @@ const LANG_DIR = INDEX_DIR . "lang" . DIRECTORY_SEPARATOR;
 const CONFIG_DIR = INDEX_DIR . "config" . DIRECTORY_SEPARATOR;
 const TEMPLATE_DIR = INDEX_DIR . "template" . DIRECTORY_SEPARATOR;
 const CONTROLLER_DIR = INDEX_DIR . "controller" . DIRECTORY_SEPARATOR;
+const TEMPLATE_HANDLER_DIR
+= INDEX_DIR . "template_handler" . DIRECTORY_SEPARATOR;
 
 set_include_path(__DIR__);
 

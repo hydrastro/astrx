@@ -58,7 +58,18 @@ Here are the golden rules for this project's database design:
    attribute.
 3. Tables should be normalized when possible. We do not fear joins.
 4. Remember that ten fast queries are better than a slow query.
-5. Verbosity is apprecciated. This rule applies also to the code.
+5. Tables must have a primary key and its attributes shouldn't be duplicated.
+6. Verbosity is appreciated. This rule applies also to the code.
+7. Properly done joins are better than multiple queries.
+8. Views are appreciated when there are more than two joins.
+
+### Architecture and Constraints
+
+There are some constraints in this project.
+The way the class are named and loaded, their configuration methods
+The way templates are named, the way the pages are internationalized etc.
+Here below will be listed all the "constraints" in a short list.
+Each constraint is explained more in depth in other sections of this file.
 
 ### Injector (and Config)
 
@@ -302,14 +313,14 @@ In no case they should use any other module's definitions.
 
 ## TODO List
 
-- [ ] Modularization
+- [~] Modularization
 - [ ] Module rewrite/check
-- [ ] I18n
+- [X] I18n
 - [ ] POST-Redirect-GET
 - [ ] API
 - [ ] Objects support in the template
 - [ ] ZKP login method. ( challenge-text, challenge-input)
-- [ ] Generate a password for me
+  ~~- [ ] Generate a password for me~~
 
 # Hiatus resume README
 
@@ -323,3 +334,12 @@ In no case they should use any other module's definitions.
   here. Check if class has properly been loaded.
 - [ ] Fix PHPDoc.
 - [ ] No composer? Ok. But at least let's have a proper dev. environment!
+
+### TODO 2.
+
+- [ ] Check useless if statements and replace them with assertions
+- [ ] Provide an ad-hoc super optimized code? Remove useless if clauses on
+  internal checks. Maybe replace those if statements with an assertion and
+  define
+  assertion callback function
+- [ ] Assertions handler
