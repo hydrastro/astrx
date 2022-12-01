@@ -244,6 +244,9 @@ class ErrorHandler
                     continue;
                 }
                 assert(is_string($result_map[1]));
+                if ($class_result[1] === null) {
+                    $class_result[1] = array();
+                }
                 assert(is_array($class_result[1]));
                 $messages[] = $this->interpolate(
                     $result_map[1],

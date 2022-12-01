@@ -48,7 +48,6 @@ class TemplateEngine
     public const AST_VALUE = 1;
     public const INDEX_RENDER_BODY = 1;
     public const INDEX_FUNCTIONS_CODE = 2;
-    public const ERROR_INVALID_PARSE_MODE = 0;
     public const ERROR_TEMPLATE_CLASS_CREATION = 1;
     public const ERROR_TEMPLATE_AST_INCONSISTENCY = 2;
     public const ERROR_UNDEFINED_TOKEN_ARGUMENT = 3;
@@ -131,20 +130,12 @@ class TemplateEngine
      *
      * @param int $parse_mode Parse mode.
      *
-     * @return bool
+     * @return void
      */
     public function setParseMode(int $parse_mode)
-    : bool {
-        if (!in_array($parse_mode, self::PARSE_MODES)) {
-            $this->results[] = array(
-                self::ERROR_INVALID_PARSE_MODE
-            );
-
-            return false;
-        }
+    : void {
+        assert(in_array($parse_mode, self::PARSE_MODES));
         $this->parse_mode = $parse_mode;
-
-        return true;
     }
 
     /**
@@ -181,7 +172,7 @@ class TemplateEngine
             }
         }
         $result = null;
-        if (!empty($parent) && is_array($parent)) {
+        if (is_array($parent) && $parent !== array()) {
             if (isset($parent[0]) && is_array($parent[0])) {
                 $parent = $parent[$loop_index];
             }
@@ -253,7 +244,6 @@ class TemplateEngine
                     self::ERROR_INVALID_DEREFERENCE,
                     array("value" => $value, "args" => print_r($args, true))
                 );
-                // continue;
             }
         }
 
@@ -479,7 +469,7 @@ class TemplateEngine
                     );
                 }
             }
-            if (empty($buffer)) {
+            if ($buffer === "") {
                 continue;
             }
             $tokenized[] = array(
@@ -533,19 +523,14 @@ class TemplateEngine
 
                     return null;
                 }
-                $index = count($branches) - 1;
-                if (!empty($branches[$index])) {
-                    $AST = &$branches[$index];
-                } else {
-                    $AST = array($AST);
-                }
+                $AST = array($AST);
 
                 array_pop($branches);
                 array_pop($branch_names);
             }
             $AST[] = $tokenized[$i];
         }
-        if (!empty($branch_names)) {
+        if ($branch_names !== array()) {
             $this->results[] = array(
                 self::ERROR_UNCLOSED_LOOP_TOKEN,
                 array("unclosed_tokens" => print_r($branch_names, true))
@@ -614,19 +599,19 @@ class TemplateEngine
     )
     : ?array {
         $code = '';
-        if (!empty($loop_parents)) {
+        if ($loop_parents !== array()) {
             $end_parent = end($loop_parents);
             $code .= "function " . ltrim(
                     $end_parent[self::AST_VALUE],
                     self::TOKEN_OPERATOR_DEREFERENCE
-                ) . $iteration_number . '($args,$parent){$buffer="";$i=0;';
+                ) . $iteration_number . '($args,$parent,$i){$buffer="";';
             $code .= match ($end_parent[self::AST_TYPE]) {
                 default => '$resolved=$this->TemplateEngine->resolveValue("' .
                            $end_parent[self::AST_VALUE] .
-                           '",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif(!empty($resolved)){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){',
+                           '",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif($resolved!==null){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){',
                 self::TOKEN_TYPE_INVERTED_LOOP_START => '$resolved=$this->TemplateEngine->resolveValue("' .
                                                         $end_parent[self::AST_VALUE] .
-                                                        '",$args,$parent,$i);echo"\n\n\n\n";if(!is_array($resolved)&&empty($resolved)){',
+                                                        '",$args,$parent,$i);if(!is_array($resolved)&&$resolved!==null){'
             };
         } else {
             $code .= '$i=0;';
@@ -664,11 +649,11 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
                 case self::TOKEN_TYPE_LOOP_START:
-                    $function_name = $value . $iteration_number;
-                    $code .= '$buffer.=$this->' .
-                             $function_name .
-                             '($args,$parent);';
-                    $loop_parents[] = $AST[$i];
+                $function_name = $value . $iteration_number;
+                $code .= '$buffer.=$this->' .
+                         $function_name .
+                         '($args,$parent,$i);';
+                $loop_parents[] = $AST[$i];
                     if (!is_array($AST[$i - 1])) {
                         $this->results[] = array(
                             self::ERROR_TEMPLATE_AST_INCONSISTENCY
@@ -711,7 +696,7 @@ class TemplateEngine
                     break;
             }
         }
-        if (!empty($loop_parents)) {
+        if ($loop_parents !== array()) {
             $code .= '} return $buffer;}';
             $functions_code[] = $code;
             array_pop($loop_parents);

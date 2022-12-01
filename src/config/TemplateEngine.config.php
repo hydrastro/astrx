@@ -6,11 +6,6 @@ return array(
     "TemplateEngine" => array(
         "template_dir" => TEMPLATE_DIR,
         "results_map" => array(
-            TemplateEngine::ERROR_INVALID_PARSE_MODE => array(
-                500,
-                ERROR_INVALID_PARSE_MODE,
-                ErrorHandler::LOG_LEVEL_ERROR
-            ),
             TemplateEngine::ERROR_TEMPLATE_CLASS_CREATION => array(
                 500,
                 ERROR_TEMPLATE_CLASS_CREATION,
