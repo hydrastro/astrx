@@ -32,7 +32,6 @@ class TemplateEngine
             self::TOKEN_TYPE_PARTIAL,
             self::TOKEN_TYPE_INVERTED_LOOP_START,
             self::TOKEN_TYPE_LOOP_END,
-            self::TOKEN_TYPE_LOOP_END,
             self::TOKEN_TYPE_LOOP_START,
             self::TOKEN_TYPE_UNESCAPED_VAR
         );
@@ -278,7 +277,9 @@ class TemplateEngine
                     '{function render($args=array(),$parent=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
-                    require("' . $this->getTemplateDir() . $template .
+                    require("' .
+                         $this->getTemplateDir() .
+                         $template .
                          '.php");$buffer = ob_get_clean();';
             } else {
                 $code .= '$buffer=file_get_contents("' .
@@ -487,14 +488,16 @@ class TemplateEngine
                       $type === self::TOKEN_TYPE_INVERTED_LOOP_START) {
                 assert($value === end($unclosed_loops));
                 array_pop($unclosed_loops);
-                array_unshift($AST, array(
-                    array(
-                        self::AST_TYPE => self::TOKEN_TYPE_LOOP_END,
-                        self::AST_VALUE => $value
-                    )
-                ));
 
-                return $AST;
+                return array_merge(
+                    array(
+                        array(
+                            self::AST_TYPE => self::TOKEN_TYPE_LOOP_END,
+                            self::AST_VALUE => $value
+                        )
+                    ),
+                    $AST
+                );
             } else {
                 $AST[] = $tokenized[$i];
             }

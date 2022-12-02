@@ -1,5 +1,6 @@
 <h1>AstrX</h1>
 
+<pre>
 {{#navbar}}
 name: {{name}}
 url: {{url}}
@@ -9,7 +10,6 @@ highlight: {{#highlight}}Y{{/highlight}}{{^highlight}}N{{/highlight}}
 -------------
 {{>*content}}
 -------------
-<pre>
 Page title: {{title}}
 Page description: {{description}}
 Page keywords: {{keywords}}
