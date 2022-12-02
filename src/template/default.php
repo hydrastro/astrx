@@ -1,7 +1,14 @@
 <h1>AstrX</h1>
 
-{{>*content}}
+{{#navbar}}
+name: {{name}}
+url: {{url}}
+highlight: {{#highlight}}Y{{/highlight}}{{^highlight}}N{{/highlight}}
+{{/navbar}}
 
+-------------
+{{>*content}}
+-------------
 <pre>
 Page title: {{title}}
 Page description: {{description}}
@@ -12,9 +19,4 @@ Follow: {{follow}}
 
 rendered in {{time}}.
 
-{{#navbar}}
-    name: {{name}}
-    url: {{url}}
-    highlight: {{#highlight}}Y{{/highlight}}{{^highlight}}N{{/highlight}}
-{{/navbar}}
 </pre>

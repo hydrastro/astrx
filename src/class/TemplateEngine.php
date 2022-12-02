@@ -278,8 +278,7 @@ class TemplateEngine
                     '{function render($args=array(),$parent=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
-                    require("' . $this->getTemplateDir() .
-                         $template .
+                    require("' . $this->getTemplateDir() . $template .
                          '.php");$buffer = ob_get_clean();';
             } else {
                 $code .= '$buffer=file_get_contents("' .
@@ -449,40 +448,59 @@ class TemplateEngine
     /**
      * Parse Template.
      * Generates an abstract syntax tree from a tokenized template.
-     *
-     * @param array<int, array<int, string>> $tokenized Tokenized template.
+     * @return array<int, mixed>
+     */
+    /**
+     * @param array<int, array<int, string>> $tokenized      Tokenized template.
+     * @param int                            $index          Recursion loop index.
+     * @param array<int, string>             $unclosed_loops Unclosed loops array.
      *
      * @return array<int, mixed>
      */
-    private function parseTemplate(array $tokenized)
+    private function parseTemplate(
+        array $tokenized,
+        int &$index = -1,
+        array &$unclosed_loops = array()
+    )
     : array {
         $AST = array();
-        $branches = array();
-        $branch_names = array();
-        for ($i = count($tokenized) - 1; $i >= 0; $i--) {
+
+        $index = ($index === -1) ? count($tokenized) - 1 : $index;
+        for ($i = &$index; $i >= 0; $i--) {
             $type = $tokenized[$i][self::AST_TYPE];
             $value = $tokenized[$i][self::AST_VALUE];
 
             if ($type === self::TOKEN_TYPE_LOOP_END) {
-                $index = count($AST);
-                $AST[$index] = array();
-                $branches[] = &$AST;
-                $AST = &$AST[$index];
-                $branch_names[] = $value;
-            }
-            if ($type === self::TOKEN_TYPE_LOOP_START ||
-                $type === self::TOKEN_TYPE_INVERTED_LOOP_START) {
-                // Asserting that loops are properly nested.
-                assert($value === end($branch_names));
-                $AST = array($AST);
+                $unclosed_loops[] = $value;
 
-                array_pop($branches);
-                array_pop($branch_names);
+                $i--;
+                $result = $this->parseTemplate(
+                    $tokenized,
+                    $i,
+                    $unclosed_loops
+                );
+                if ($result !== array()) {
+                    $AST[] = $result;
+                    $AST[] = $tokenized[$i];
+                }
+            } elseif ($type === self::TOKEN_TYPE_LOOP_START ||
+                      $type === self::TOKEN_TYPE_INVERTED_LOOP_START) {
+                assert($value === end($unclosed_loops));
+                array_pop($unclosed_loops);
+                array_unshift($AST, array(
+                    array(
+                        self::AST_TYPE => self::TOKEN_TYPE_LOOP_END,
+                        self::AST_VALUE => $value
+                    )
+                ));
+
+                return $AST;
+            } else {
+                $AST[] = $tokenized[$i];
             }
-            $AST[] = $tokenized[$i];
         }
-        // Asserting that there are no loops left open.
-        assert($branch_names === array());
+        // Asserting that every open loop is being closed.
+        assert($unclosed_loops === array());
 
         return $AST;
     }
@@ -550,10 +568,10 @@ class TemplateEngine
             $code .= match ($end_parent[self::AST_TYPE]) {
                 default => '$resolved=$this->TemplateEngine->resolveValue("' .
                            $end_parent[self::AST_VALUE] .
-                           '",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif($resolved!==null){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){',
+                           '",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){',
                 self::TOKEN_TYPE_INVERTED_LOOP_START => '$resolved=$this->TemplateEngine->resolveValue("' .
                                                         $end_parent[self::AST_VALUE] .
-                                                        '",$args,$parent,$i);if(!is_array($resolved)&&$resolved!==null){'
+                                                        '",$args,$parent,$i);if(!$resolved){'
             };
         } else {
             $code .= '$i=0;';
