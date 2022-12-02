@@ -48,19 +48,9 @@ class TemplateEngine
     public const AST_VALUE = 1;
     public const INDEX_RENDER_BODY = 1;
     public const INDEX_FUNCTIONS_CODE = 2;
-    public const ERROR_TEMPLATE_CLASS_CREATION = 1;
-    public const ERROR_TEMPLATE_AST_INCONSISTENCY = 2;
-    public const ERROR_UNDEFINED_TOKEN_ARGUMENT = 3;
-    public const ERROR_UNDEFINED_TOKEN_ARGUMENT_2 = 4;
-    public const ERROR_INVALID_DEREFERENCE = 5;
-    public const ERROR_TEMPLATE_FILE_NOT_FOUND = 6;
-    public const ERROR_MALFORMED_TAG_CHANGE = 7;
-    public const ERROR_UNCLOSED_TOKEN = 8;
-    public const ERROR_MALFORMED_TAG_CHANGE_2 = 9;
-    public const ERROR_UNCLOSED_TOKEN_2 = 10;
-    public const ERROR_LOOP_TOKEN_MISMATCH = 11;
-    public const ERROR_UNCLOSED_LOOP_TOKEN = 12;
-    public const ERROR_TEMPLATE_EVALUATION = 13;
+    public const ERROR_UNDEFINED_TOKEN_ARGUMENT = 0;
+    public const ERROR_INVALID_DEREFERENCE = 1;
+    public const ERROR_TEMPLATE_EVALUATION = 2;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
@@ -157,39 +147,39 @@ class TemplateEngine
     )
     : mixed {
         if ($value === self::TOKEN_OPERATOR_DOT) {
-            if (is_array($parent) && isset($parent[$loop_index])) {
-                return $parent[$loop_index];
-            } else {
-                $this->results[] = array(
-                    self::ERROR_UNDEFINED_TOKEN_ARGUMENT,
-                    array(
-                        "parent" => print_r($parent, true),
-                        "args" => print_r($args, true)
-                    )
-                );
+            // Fails in this case, because the template makes no sense:
+            // $section = array("a" => "a", "b" => "b");
+            // {{#section}}{{.}}{{/section}}
+            // Correct usage:
+            // {{section.a}}{{section.b}}
+            assert(is_array($parent) && isset($parent[$loop_index]));
 
-                return "";
-            }
+            return $parent[$loop_index];
         }
         $result = null;
         if (is_array($parent) && $parent !== array()) {
             if (isset($parent[0]) && is_array($parent[0])) {
                 $parent = $parent[$loop_index];
             }
+            // Resolving value against the current parent context stack.
             $result = $this->resolveValueHelper(
                 $parent,
                 $value,
             );
         }
         if ($result === null) {
+            // Resolving value against the whole context stack.
             $result = $this->resolveValueHelper(
                 $args,
                 $value,
             );
         }
         if ($result === null) {
+            // Undefined variable. It should interpolate to an empty string
+            // so there's no need to make an assertion here, however for
+            // easier debugging we log this into the errors.
             $this->results[] = array(
-                self::ERROR_UNDEFINED_TOKEN_ARGUMENT_2,
+                self::ERROR_UNDEFINED_TOKEN_ARGUMENT,
                 array(
                     "parent" => print_r($parent, true),
                     "args" => print_r($args, true)
@@ -266,42 +256,24 @@ class TemplateEngine
         = self::PARSE_MODE_TEMPLATE,
         bool $php_processing = false
     )
-    : ?object {
+    : object|null {
         if (array_key_exists($template, $this->known_templates)) {
             return $this->getTemplateClass($this->known_templates[$template]);
         }
 
         $template_file = $this->getTemplateDir() . $template . ".php";
-        if (!file_exists($template_file) ||
-            ($content = file_get_contents($template_file)) === false) {
-            $this->results[] = array(
-                self::ERROR_TEMPLATE_FILE_NOT_FOUND,
-                array(
-                    "template" => $template,
-                    "template_file" => $template_file
-                )
-            );
+        assert(file_exists($template_file));
+        $content = file_get_contents($template_file);
+        assert($content !== false);
 
-            return null;
-        }
         $class_name = $this->getTemplateClassName($template, $content);
 
         if ($parse_mode == self::PARSE_MODE_TEMPLATE) {
             $tokenized = $this->tokenizeTemplate($content);
-            if ($tokenized === null) {
-                return null;
-            }
             $AST = $this->parseTemplate($tokenized);
-            if ($AST === null) {
-                return null;
-            }
             $code = $this->compileTemplate($class_name, $AST, $php_processing);
-            if ($code === null) {
-                return null;
-            }
         } else {
-            $code = '<?php class ' .
-                    $class_name .
+            $code = '<?php class ' . $class_name .
                     '{function render($args=array(),$parent=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
@@ -387,10 +359,10 @@ class TemplateEngine
      *
      * @param string $template_body Template body.
      *
-     * @return array<int, array<int, string>>|null
+     * @return array<int, array<int, string>>
      */
     private function tokenizeTemplate(string $template_body)
-    : ?array {
+    : array {
         $tokenized = array();
         $open_tag = self::TEMPLATE_OPEN_TAG;
         $close_tag = self::TEMPLATE_CLOSE_TAG;
@@ -401,16 +373,13 @@ class TemplateEngine
         for ($i = 1; $i < $template_length; $i++) {
             $i--;
             $close_tag_length = strlen($close_tag);
-            if (substr($template_body, $i, $close_tag_length) == $close_tag) {
+            if (substr($template_body, $i, $close_tag_length) === $close_tag) {
                 if ($type == self::TOKEN_TYPE_CHANGE_TAGS) {
+                    // Tag change should have this format: {{=VAL1 VAL2=}}
                     $tags = explode(" ", $buffer);
-                    if (count($tags) != 2) {
-                        $this->results[] = array(
-                            self::ERROR_MALFORMED_TAG_CHANGE
-                        );
-
-                        return null;
-                    }
+                    // Malformed tag change.
+                    assert(count($tags) === 2);
+                    assert($tags[0] !== $tags[1]);
                     $open_tag = $tags[0];
                     $close_tag = $tags[1];
                 }
@@ -421,11 +390,7 @@ class TemplateEngine
             $open_tag_length = strlen($open_tag);
             $close_tag_length = strlen($close_tag);
             if (substr($template_body, $i, $open_tag_length) == $open_tag) {
-                if ($unclosed_token) {
-                    $this->results[] = array(
-                        self::ERROR_UNCLOSED_TOKEN
-                    );
-                }
+                assert(!$unclosed_token);
                 $unclosed_token = true;
                 if (in_array(
                     $template_body[$i + $open_tag_length],
@@ -451,18 +416,17 @@ class TemplateEngine
                 $i++;
             }
             if ($unclosed_token) {
+                // Adjusting the token content, removing heading spaces
                 $buffer = trim($buffer);
-                if ($type == self::TOKEN_TYPE_CHANGE_TAGS) {
-                    if (substr(
-                            $buffer,
-                            -1
-                        ) != self::TOKEN_TYPE_CHANGE_TAGS) {
-                        $this->results[] = array(
-                            self::ERROR_MALFORMED_TAG_CHANGE_2
-                        );
-
-                        return null;
-                    }
+                if ($type === self::TOKEN_TYPE_CHANGE_TAGS) {
+                    // Change tags token must close with "="
+                    assert(
+                        substr($buffer, -1) === self::TOKEN_TYPE_CHANGE_TAGS
+                    );
+                    // Adjusting the change tags token content, removing the
+                    // final "="
+                    // This cleanup can be done elsewhere but here works so...
+                    // here it is.
                     $buffer = rtrim(
                         $buffer,
                         self::TOKEN_TYPE_CHANGE_TAGS
@@ -477,11 +441,7 @@ class TemplateEngine
                 self::AST_VALUE => $buffer
             );
         }
-        if ($unclosed_token) {
-            $this->results[] = array(
-                self::ERROR_UNCLOSED_TOKEN_2
-            );
-        }
+        assert(!$unclosed_token);
 
         return $tokenized;
     }
@@ -492,10 +452,10 @@ class TemplateEngine
      *
      * @param array<int, array<int, string>> $tokenized Tokenized template.
      *
-     * @return array<int, mixed>|null
+     * @return array<int, mixed>
      */
     private function parseTemplate(array $tokenized)
-    : ?array {
+    : array {
         $AST = array();
         $branches = array();
         $branch_names = array();
@@ -512,17 +472,8 @@ class TemplateEngine
             }
             if ($type == self::TOKEN_TYPE_LOOP_START ||
                 $type == self::TOKEN_TYPE_INVERTED_LOOP_START) {
-                if ($value != end($branch_names)) {
-                    $this->results[] = array(
-                        self::ERROR_LOOP_TOKEN_MISMATCH,
-                        array(
-                            "opening_tag" => $value,
-                            "closing_tag" => end($branch_names)
-                        )
-                    );
-
-                    return null;
-                }
+                // Asserting that loops are properly nested.
+                assert($value === end($branch_names));
                 $AST = array($AST);
 
                 array_pop($branches);
@@ -530,14 +481,8 @@ class TemplateEngine
             }
             $AST[] = $tokenized[$i];
         }
-        if ($branch_names !== array()) {
-            $this->results[] = array(
-                self::ERROR_UNCLOSED_LOOP_TOKEN,
-                array("unclosed_tokens" => print_r($branch_names, true))
-            );
-
-            return null;
-        }
+        // Asserting that there are no loops left open.
+        assert($branch_names === array());
 
         return $AST;
     }
@@ -550,18 +495,15 @@ class TemplateEngine
      * @param array<int, mixed> $AST            Abstract syntax tree.
      * @param bool              $php_processing PHP processing flag.
      *
-     * @return string|null
+     * @return string
      */
     private function compileTemplate(
         string $class_name,
         array $AST,
         bool $php_processing
     )
-    : ?string {
+    : string {
         $code = $this->writeCode($AST);
-        if ($code === null) {
-            return null;
-        }
 
         $class = "<?php class " .
                  $class_name .
@@ -589,7 +531,7 @@ class TemplateEngine
      * @param array<int, string>             $functions_code   Functions code.
      * @param int                            $iteration_number Iteration number.
      *
-     * @return array<int, array<int, string>>|null
+     * @return array<int, array<int, string>>
      */
     private function writeCode(
         array $AST,
@@ -597,7 +539,7 @@ class TemplateEngine
         array &$functions_code = array(),
         int $iteration_number = 0
     )
-    : ?array {
+    : array {
         $code = '';
         if ($loop_parents !== array()) {
             $end_parent = end($loop_parents);
@@ -619,20 +561,18 @@ class TemplateEngine
 
         for ($i = count($AST) - 1; $i >= 0; $i--) {
             $iteration_number++;
-            if (!is_array($AST[$i])) {
-                $this->results[] = array(
-                    self::ERROR_TEMPLATE_CLASS_CREATION
-                );
-
-                return null;
-            }
-            $value = (in_array(
+            // Asserting that the Abstract Syntax Tree is properly formatted
+            assert(is_array($AST[$i]));
+            if ((in_array(
                 $AST[$i][self::AST_TYPE],
                 self::TOKENS_POINTING_TO_ARGS
-            )) ?
-                '$this->TemplateEngine->resolveValue("' .
-                $AST[$i][self::AST_VALUE] .
-                '",$args,$parent,$i)' : $AST[$i][self::AST_VALUE];
+            ))) {
+                $value = '$this->TemplateEngine->resolveValue("' .
+                         $AST[$i][self::AST_VALUE] .
+                         '",$args,$parent,$i)';
+            } else {
+                $value = $AST[$i][self::AST_VALUE];
+            }
 
             switch ($AST[$i][self::AST_TYPE]) {
                 default:
@@ -649,18 +589,14 @@ class TemplateEngine
                     break;
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
                 case self::TOKEN_TYPE_LOOP_START:
-                $function_name = $value . $iteration_number;
-                $code .= '$buffer.=$this->' .
-                         $function_name .
-                         '($args,$parent,$i);';
-                $loop_parents[] = $AST[$i];
-                    if (!is_array($AST[$i - 1])) {
-                        $this->results[] = array(
-                            self::ERROR_TEMPLATE_AST_INCONSISTENCY
-                        );
-
-                        return null;
-                    }
+                    $function_name = $value . $iteration_number;
+                    $code .= '$buffer.=$this->' .
+                             $function_name .
+                             '($args,$parent,$i);';
+                    $loop_parents[] = $AST[$i];
+                    // Asserting that the AST is properly formatted
+                    assert(is_array($AST[$i - 1]));
+                    // Recursive call!
                     $this->writeCode(
                         $AST[$i - 1],
                         $loop_parents,
