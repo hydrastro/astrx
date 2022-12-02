@@ -268,17 +268,17 @@ class TemplateEngine
 
         $class_name = $this->getTemplateClassName($template, $content);
 
-        if ($parse_mode == self::PARSE_MODE_TEMPLATE) {
+        if ($parse_mode === self::PARSE_MODE_TEMPLATE) {
             $tokenized = $this->tokenizeTemplate($content);
             $AST = $this->parseTemplate($tokenized);
             $code = $this->compileTemplate($class_name, $AST, $php_processing);
         } else {
-            $code = '<?php class ' . $class_name .
+            $code = '<?php class ' .
+                    $class_name .
                     '{function render($args=array(),$parent=array()){';
             if ($php_processing) {
                 $code .= 'extract($args);ob_start();
-                    require("' .
-                         $this->getTemplateDir() .
+                    require("' . $this->getTemplateDir() .
                          $template .
                          '.php");$buffer = ob_get_clean();';
             } else {
@@ -374,7 +374,7 @@ class TemplateEngine
             $i--;
             $close_tag_length = strlen($close_tag);
             if (substr($template_body, $i, $close_tag_length) === $close_tag) {
-                if ($type == self::TOKEN_TYPE_CHANGE_TAGS) {
+                if ($type === self::TOKEN_TYPE_CHANGE_TAGS) {
                     // Tag change should have this format: {{=VAL1 VAL2=}}
                     $tags = explode(" ", $buffer);
                     // Malformed tag change.
@@ -389,7 +389,7 @@ class TemplateEngine
             }
             $open_tag_length = strlen($open_tag);
             $close_tag_length = strlen($close_tag);
-            if (substr($template_body, $i, $open_tag_length) == $open_tag) {
+            if (substr($template_body, $i, $open_tag_length) === $open_tag) {
                 assert(!$unclosed_token);
                 $unclosed_token = true;
                 if (in_array(
@@ -408,7 +408,7 @@ class TemplateEngine
                          $template_body,
                          $i,
                          $close_tag_length
-                     ) == $close_tag) &&
+                     ) === $close_tag) &&
                    !(substr($template_body, $i, $open_tag_length) ==
                      $open_tag) &&
                    $i < $template_length) {
@@ -463,15 +463,15 @@ class TemplateEngine
             $type = $tokenized[$i][self::AST_TYPE];
             $value = $tokenized[$i][self::AST_VALUE];
 
-            if ($type == self::TOKEN_TYPE_LOOP_END) {
+            if ($type === self::TOKEN_TYPE_LOOP_END) {
                 $index = count($AST);
                 $AST[$index] = array();
                 $branches[] = &$AST;
                 $AST = &$AST[$index];
                 $branch_names[] = $value;
             }
-            if ($type == self::TOKEN_TYPE_LOOP_START ||
-                $type == self::TOKEN_TYPE_INVERTED_LOOP_START) {
+            if ($type === self::TOKEN_TYPE_LOOP_START ||
+                $type === self::TOKEN_TYPE_INVERTED_LOOP_START) {
                 // Asserting that loops are properly nested.
                 assert($value === end($branch_names));
                 $AST = array($AST);

@@ -162,7 +162,7 @@ class UrlHandler
         $base_path = explode('/', $config_base_path);
         // Removing base path
         for ($i = 0; $i < count($base_path) - 1; $i++) {
-            if ($url_path[$i] == $base_path[$i]) {
+            if ($url_path[$i] === $base_path[$i]) {
                 unset($url_path[$i]);
             }
         }
@@ -258,7 +258,7 @@ class UrlHandler
         $url = "";
         if ($full_url) {
             $url = 'http';
-            if (isset($_SERVER["HTTPS"]) && $_SERVER['HTTPS'] == "on") {
+            if (isset($_SERVER["HTTPS"]) && $_SERVER['HTTPS'] === "on") {
                 $url .= "s";
             }
             $url .= "://";

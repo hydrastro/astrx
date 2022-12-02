@@ -120,7 +120,7 @@ class DefaultTemplateHandler
                     false,
                     true
                 );
-                $highlight = ($this->page->id == $entry["page_id"]);
+                $highlight = ($this->page->id === $entry["page_id"]);
             } else {
                 $url = $entry["url"];
                 $highlight = false;
