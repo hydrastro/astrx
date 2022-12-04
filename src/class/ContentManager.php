@@ -120,7 +120,7 @@ class ContentManager
 
         // Getting the parameter name of the page id.
         $page_id_parameter_name = $UrlHandler->getParameterName(
-            "page_id_parameter_name",
+            "page_id_parameter_name"
         );
         assert(is_string($page_id_parameter_name));
         // Setting the current page id.
@@ -181,7 +181,7 @@ class ContentManager
         // Loading the current page.
         $current_page = null;
         // Checking whether the current page is an internationalized page.
-        if (isset($resolved_i18n_ids[$current_page_parameter])) {
+        if (array_key_exists($current_page_parameter, $resolved_i18n_ids)) {
             $current_page = $PageHandler->getPage(
                 $resolved_i18n_ids[$current_page_parameter]
             );

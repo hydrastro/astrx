@@ -68,7 +68,7 @@ class UrlHandler
      */
     public function setParameter(string $parameter_name, string $value)
     : bool {
-        if (!isset($this->parameters_map[$parameter_name])) {
+        if (!array_key_exists($parameter_name, $this->parameters_map)) {
             $this->results[] = array(
                 self::ERROR_UNDEFINED_PARAMETER_NAME,
                 array(
@@ -112,7 +112,10 @@ class UrlHandler
         if ($this->url_rewrite) {
             foreach ($current_page_parameters_config as $parameter_config) {
                 assert(is_string($parameter_config));
-                if (isset($this->parameters_map[$parameter_config])) {
+                if (array_key_exists(
+                    $parameter_config,
+                    $this->parameters_map
+                )) {
                     $parameter_name = $this->parameters_map[$parameter_config];
                 } else {
                     $this->results[] = array(
@@ -176,7 +179,8 @@ class UrlHandler
         $route = array_values(array_filter($url_path));
 
         foreach ($this->current_page_parameters as $key => $parameter) {
-            $_GET[$parameter] = (isset($route[$key])) ? $route[$key] : null;
+            $_GET[$parameter] = (array_key_exists($key, $route)) ?
+                $route[$key] : null;
         }
     }
 
@@ -258,9 +262,8 @@ class UrlHandler
         $url = "";
         if ($full_url) {
             $url = 'http';
-            if (isset($_SERVER["HTTPS"]) && $_SERVER['HTTPS'] === "on") {
-                $url .= "s";
-            }
+            $url .= (array_key_exists("HTTPS", $_SERVER) &&
+                     $_SERVER["HTTPS"] === "on") ? "s" : "";
             $url .= "://";
             $server = (array_key_exists("SERVER_NAME", $_SERVER)) ?
                 $_SERVER["SERVER_NAME"] : "";
@@ -274,7 +277,7 @@ class UrlHandler
         if ($keep_current) {
             // Setting the current page parameters data.
             foreach ($this->current_page_parameters as $page_parameter) {
-                if (isset($_GET[$page_parameter])) {
+                if (array_key_exists($page_parameter, $_GET)) {
                     $data[$page_parameter] = $_GET[$page_parameter];
                 }
             }
@@ -291,8 +294,9 @@ class UrlHandler
                         "parameter_name" => $resolved_key,
                     )
                 );
+                $resolved_key = "";
             }
-            if (isset($_GET[$resolved_key])) {
+            if (array_key_exists($resolved_key, $_GET)) {
                 $data[$resolved_key] = $_GET[$resolved_key];
             }
         }
@@ -334,7 +338,7 @@ class UrlHandler
      */
     public function getParameterName(string $parameter_name)
     : string|null {
-        if (isset($this->parameters_map[$parameter_name])) {
+        if (array_key_exists($parameter_name, $this->parameters_map)) {
             return $this->parameters_map[$parameter_name];
         }
 

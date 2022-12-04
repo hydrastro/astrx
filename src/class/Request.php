@@ -6,14 +6,62 @@ declare(strict_types = 1);
  */
 class Request
 {
+    public string $ip;
+
     /**
      * Request Constructor.
      */
     public function __construct()
     {
-        // Empty constructor because php may use $this->request() as
-        // constructor.
-        // So here goes nothing.
+        $this->ip = $this->getIp();
+    }
+
+    /**
+     * Get Ip.
+     * Returns the requests IP address.
+     *
+     * @param bool $trust_client Trust the client flag. Note: the client may
+     *                           spoof its IP address, the only thing that is
+     *                           certain here is REMOTE_ADDR.
+     *
+     * @return string
+     */
+    public function getIp(bool $trust_client = false)
+    : string {
+        if (array_key_exists("REMOTE_ADDR", $_SERVER)) {
+            $current_ip = $_SERVER["REMOTE_ADDR"];
+        } else {
+            $current_ip = "0.0.0.0";
+        }
+        if (!$trust_client) {
+            return $current_ip;
+        }
+        foreach (
+            array(
+                'HTTP_CLIENT_IP',
+                'HTTP_X_FORWARDED_FOR',
+                'HTTP_X_FORWARDED',
+                'HTTP_X_CLUSTER_CLIENT_IP',
+                'HTTP_FORWARDED_FOR',
+                'HTTP_FORWARDED',
+                'REMOTE_ADDR'
+            ) as $key
+        ) {
+            if (array_key_exists($key, $_SERVER)) {
+                foreach (array_map('trim', explode(',', $_SERVER[$key])) as $ip)
+                {
+                    if (filter_var(
+                            $ip,
+                            FILTER_VALIDATE_IP,
+                            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+                        ) !== false) {
+                        return $ip;
+                    }
+                }
+            }
+        }
+
+        return $current_ip;
     }
 
     /**

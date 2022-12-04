@@ -77,6 +77,10 @@ class TemplateEngine
           DIRECTORY_SEPARATOR .
           "template" .
           DIRECTORY_SEPARATOR;
+    /**
+     * @var string $template_extension Template extension.
+     */
+    private string $template_extension = ".html";
 
     /**
      * Get Configuration Methods.
@@ -86,7 +90,29 @@ class TemplateEngine
     public function getConfigurationMethods()
     : array
     {
-        return array();
+        return array("setTemplateExtension", "setTemplateDir");
+    }
+
+    /**
+     * Get Template Extension.
+     * Returns the template files extension.
+     * @return string
+     */
+    public function getTemplateExtension()
+    : string
+    {
+        return $this->template_extension;
+    }
+
+    /**
+     * Set Template Extension.
+     * Sets the extension of the template files.
+     *
+     * @param string $template_extension
+     */
+    public function setTemplateExtension(string $template_extension)
+    : void {
+        $this->template_extension = $template_extension;
     }
 
     /**
@@ -151,13 +177,13 @@ class TemplateEngine
             // {{#section}}{{.}}{{/section}}
             // Correct usage:
             // {{section.a}}{{section.b}}
-            assert(is_array($parent) && isset($parent[$loop_index]));
+            assert(is_array($parent) && array_key_exists($loop_index, $parent));
 
             return $parent[$loop_index];
         }
         $result = null;
         if (is_array($parent) && $parent !== array()) {
-            if (isset($parent[0]) && is_array($parent[0])) {
+            if (array_key_exists(0, $parent) && is_array($parent[0])) {
                 $parent = $parent[$loop_index];
             }
             // Resolving value against the current parent context stack.
@@ -219,14 +245,15 @@ class TemplateEngine
             if (!is_array($current_value)) {
                 return null;
             }
-            if (!isset($current_value[$clean_exploded[$i]])) {
+            if (!array_key_exists($clean_exploded[$i], $current_value)) {
                 return null;
             } else {
                 $current_value = $current_value[$clean_exploded[$i]];
             }
         }
         for ($j = 0; $j < $dereference_levels; $j++) {
-            if (is_string($current_value) && isset($args[$current_value])) {
+            if (is_string($current_value) &&
+                array_key_exists($current_value, $args)) {
                 $current_value = $args[$current_value];
             } else {
                 $this->results[] = array(
@@ -260,7 +287,9 @@ class TemplateEngine
             return $this->getTemplateClass($this->known_templates[$template]);
         }
 
-        $template_file = $this->getTemplateDir() . $template . ".php";
+        $template_file = $this->getTemplateDir() .
+                         $template .
+                         $this->getTemplateExtension();
         assert(file_exists($template_file));
         $content = file_get_contents($template_file);
         assert($content !== false);

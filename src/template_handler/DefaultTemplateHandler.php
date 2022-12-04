@@ -17,19 +17,22 @@ class DefaultTemplateHandler
     private ErrorHandler $ErrorHandler;
     private Page $page;
     private UrlHandler $UrlHandler;
+    private Request $request;
 
     public function __construct(
         Config $config,
         Injector $injector,
         ErrorHandler $ErrorHandler,
         Page $page,
-        UrlHandler $UrlHandler
+        UrlHandler $UrlHandler,
+        Request $request
     ) {
         $this->config = $config;
         $this->injector = $injector;
         $this->ErrorHandler = $ErrorHandler;
         $this->page = $page;
         $this->UrlHandler = $UrlHandler;
+        $this->request = $request;
     }
 
     /**
@@ -104,6 +107,35 @@ class DefaultTemplateHandler
             }, $keywords)
         );
 
+        // Setting some shit
+        $template_args["lang"] = $this->config->getLang();
+        $template_args["website_name"] = $this->config->getConfig(
+            "ContentManager",
+            "website_name"
+        );
+        $template_args["main_page"] = ucwords(WORDING_MAIN_PAGE);
+        $template_args["year"] = date("Y");
+
+        // TODO
+        $css_file = TEMPLATE_DIR . "style.css";
+        $template_args["css"] = str_replace(
+            array("\r\n", "\r", "\n", "\t", '  ', '    ', '    '),
+            '',
+            str_replace(
+                ': ',
+                ':',
+                preg_replace(
+                    '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
+                    '',
+                    file_get_contents($css_file)
+                )
+            )
+        );
+        $template_args["title_url"] = "";
+        $template_args["generated_in"] = "Generated in: ";
+        $template_args["ip"] = $this->request->getIp();
+        $template_args["con"] = print_r($_GET, true);
+
         // Setting navigation bar arguments.
         $NavigationBar = $this->injector->getClass("NavigationBar");
         assert($NavigationBar instanceof NavigationBar);
@@ -135,7 +167,7 @@ class DefaultTemplateHandler
                 $name = $entry["name"];
             }
             $cleaned_navigation_bar[] = array(
-                "name" => $name,
+                "name" => ucwords($name),
                 "url" => $url,
                 "highlight" => $highlight
             );
@@ -177,7 +209,8 @@ class DefaultTemplateHandler
     {
         $template_args = array();
         // Errors handling:
-        $template_args["results"] = $this->ErrorHandler->getResults();
+        $template_args["results"] = $this->ErrorHandler->getResultsMessages();
+        $template_args["got_results"] = ($template_args["results"] !== array());
         // I like to know how much all of this took, so I set an additional
         // parameter for the page rendering.
         $template_args["time"] = round(

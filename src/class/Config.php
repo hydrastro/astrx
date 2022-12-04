@@ -313,4 +313,14 @@ class Config
             require_once($lang_file);
         }
     }
+
+    /**
+     * Get Lang.
+     * Returns the current language.
+     * @return string
+     */
+    public function getLang()
+    {
+        return $this->lang;
+    }
 }

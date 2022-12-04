@@ -25,7 +25,7 @@ class Injector
     /**
      * @var array<string, array<string, mixed>> $classes_args Classes arguments.
      */
-    private array $classes_args;
+    private array $classes_args = array();
     /**
      * @var array<int, array<int, mixed>> $helpers Helpers array.
      */
@@ -284,8 +284,8 @@ class Injector
     {
         $name = $this->getIndexName($class_name);
 
-        if (!isset($this->classes_args[$name]) ||
-            !isset($this->classes_args[$name][$arg_name])) {
+        if (!array_key_exists($name, $this->classes_args) ||
+            !array_key_exists($arg_name, $this->classes_args[$name])) {
             return null;
         }
 

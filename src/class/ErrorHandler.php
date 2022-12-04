@@ -159,7 +159,7 @@ class ErrorHandler
         }
 
         http_response_code(500);
-        $failsafe = TEMPLATE_DIR . "failsafe.php";
+        $failsafe = TEMPLATE_DIR . "failsafe.html";
         $messages = $this->getResultsMessages();
         if (file_exists($failsafe)) {
             require($failsafe);
@@ -243,6 +243,7 @@ class ErrorHandler
                 if ($this->log_level > $result_map[3]) {
                     continue;
                 }
+                print_r($results_map);
                 assert(is_string($result_map[1]));
                 if ($class_result[1] === null) {
                     $class_result[1] = array();

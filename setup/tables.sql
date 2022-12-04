@@ -191,7 +191,7 @@ VALUES (1, 1),
 INSERT INTO `navigation_bar_ids`() VALUE ();
 
 INSERT INTO `navigation_bar_entry`(`id`, `internal`, `name`, `i18n`)
-VALUES (1, 1, 'WORDING_MAIN', 1);
+VALUES (1, 1, 'WORDING_HOME', 1);
 
 INSERT INTO `navigation_bar_internal`(`id`, `page_id`)
 VALUES (1, 1);

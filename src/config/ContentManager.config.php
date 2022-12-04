@@ -14,7 +14,8 @@ return array(
         "default_language" => "en",
         "language_catastrophe_message" => "Error: no language file could be loaded.",
         "main_page_id" => "main",
-        "default_template" => "default"
+        "default_template" => "default",
+        "website_name" => "AstrX"
     ),
     "UrlHandler" => array(
         "base_path" => "/",

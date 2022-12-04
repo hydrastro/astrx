@@ -5,6 +5,7 @@ declare(strict_types = 1);
 return array(
     "TemplateEngine" => array(
         "template_dir" => TEMPLATE_DIR,
+        "template_extension" => ".html",
         "results_map" => array(
             TemplateEngine::ERROR_UNDEFINED_TOKEN_ARGUMENT => array(
                 500,
