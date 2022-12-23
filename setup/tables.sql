@@ -165,6 +165,13 @@ FROM `navigation_bar_entry`
      ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
 ORDER BY `navigation_bar_entry`.`id`;
 
+CREATE TABLE `session`
+(
+    `id`        VARCHAR(255) NOT NULL PRIMARY KEY,
+    `timestamp` INT          NOT NULL,
+    `data`      BLOB
+);
+
 
 -- TABLE INSERTIONS
 

@@ -20,6 +20,11 @@ class UrlHandler
      */
     private array $current_page_parameters = array();
     /**
+     * @var array<int, string> $current_page_end_parameters Ending Parameters
+     * array.
+     */
+    private array $current_page_end_parameters = array();
+    /**
      * @var array<string, string> $parameters_map Parameters map.
      */
     private array $parameters_map = array();

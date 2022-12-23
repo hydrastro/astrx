@@ -163,21 +163,12 @@ class Response
      *
      * @param int $status_code
      *
-     * @return bool
+     * @return void
      */
     public function setStatusCode(int $status_code)
-    : bool {
-        if (!in_array($status_code, $this->http_status_codes)) {
-            $this->results[] = array(
-                self::ERROR_INVALID_HTTP_STATUS_CODE,
-                array("status_code" => "$status_code")
-            );
-
-            return false;
-        }
+    : void {
+        assert(in_array($status_code, $this->http_status_codes));
         $this->status_code = $status_code;
-
-        return true;
     }
 
     /**
@@ -209,7 +200,7 @@ class Response
 
     /**
      * Send.
-     * Send request.
+     * Send response.
      * @return void
      */
     public function send()

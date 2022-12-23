@@ -18,6 +18,7 @@ class DefaultTemplateHandler
     private Page $page;
     private UrlHandler $UrlHandler;
     private Request $request;
+    private Response $response;
 
     public function __construct(
         Config $config,
@@ -25,7 +26,8 @@ class DefaultTemplateHandler
         ErrorHandler $ErrorHandler,
         Page $page,
         UrlHandler $UrlHandler,
-        Request $request
+        Request $request,
+        Response $response
     ) {
         $this->config = $config;
         $this->injector = $injector;
@@ -33,6 +35,26 @@ class DefaultTemplateHandler
         $this->page = $page;
         $this->UrlHandler = $UrlHandler;
         $this->request = $request;
+        $this->response = $response;
+
+        // Setting the session handler.
+        $SessionHandler = $injector->getClass("SecureSessionHandler");
+        session_set_save_handler($SessionHandler, true);
+
+        // Handling the user inputs.
+        $PostRedirectGet = $injector->getClass("PostRedirectGet");
+        if (isset($_POST)) {
+            $data = serialize($_POST);
+            $token = hash_hmac("SHA-512", $data, "key");
+            $PostRedirectGet->store($token, $_POST);
+
+            $response->setStatusCode(301);
+            $UrlHandler->getUrl(array());
+
+            // TODO check if it's okay here.
+            $this->response->send();
+            die();
+        }
     }
 
     /**
@@ -48,7 +70,7 @@ class DefaultTemplateHandler
         // Setting the page meta tags.
         $template_args["index"] = $this->page->index;
         $template_args["follow"] = $this->page->follow;
-        $template_args["content"] = $this->page->file_name;
+        $template_args["include"] = $this->page->file_name;
 
         // Setting the page title and description.
         if ($this->page->i18n) {
@@ -107,14 +129,22 @@ class DefaultTemplateHandler
             }, $keywords)
         );
 
-        // Setting some shit
+        // Setting some arguments for the template
         $template_args["lang"] = $this->config->getLang();
         $template_args["website_name"] = $this->config->getConfig(
             "ContentManager",
             "website_name"
         );
-        $template_args["main_page"] = ucwords(WORDING_MAIN_PAGE);
+        $template_args["title_url"] = $this->UrlHandler->getUrl(
+            array(
+                "page_id_parameter_name" => "WORDING_MAIN"
+            ),
+            false,
+            true
+        );
         $template_args["year"] = date("Y");
+        $template_args["generated_in"] = "Generated in: ";
+        $template_args["ip"] = $this->request->ip;
 
         // TODO
         $css_file = TEMPLATE_DIR . "style.css";
@@ -131,10 +161,6 @@ class DefaultTemplateHandler
                 )
             )
         );
-        $template_args["title_url"] = "";
-        $template_args["generated_in"] = "Generated in: ";
-        $template_args["ip"] = $this->request->getIp();
-        $template_args["con"] = print_r($_GET, true);
 
         // Setting navigation bar arguments.
         $NavigationBar = $this->injector->getClass("NavigationBar");
@@ -148,7 +174,6 @@ class DefaultTemplateHandler
                     array(
                         "page_id_parameter_name" => $entry["page_id"]
                     ),
-                    true,
                     false,
                     true
                 );

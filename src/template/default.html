@@ -9,7 +9,7 @@
      /_/   \_\___/\__|_| /_/\_\
 
 	Copyright (c) {{year}}-->
-    <title>{{title}}></title>
+    <title>{{title}}</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="author" content="{{website_name}}"/>
     <meta name="dcterms.dateCopyrighted" content="{{year}}"/>
@@ -40,7 +40,7 @@
         <div id="news">{{#results}}<p>{{.}}</p>{{/results}}
         </div>{{/got_results}}
     <div id="main">
-        {{>*content}}
+        {{>*include}}
         <p id="go_top">{{generated_in}} {{time}}s<span class="right"><a
                 href="#">{{go_top}}</a></span></p>
     </div>
