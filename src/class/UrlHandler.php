@@ -20,11 +20,6 @@ class UrlHandler
      */
     private array $current_page_parameters = array();
     /**
-     * @var array<int, string> $current_page_end_parameters Ending Parameters
-     * array.
-     */
-    private array $current_page_end_parameters = array();
-    /**
      * @var array<string, string> $parameters_map Parameters map.
      */
     private array $parameters_map = array();
@@ -32,6 +27,14 @@ class UrlHandler
      * @var int $current_route Current route number.
      */
     private int $current_route = 0;
+	/**
+	 * @var int $total_routes Total routes number.
+	 */
+	private int $total_routes = 0;
+	/**
+	 * @var array $routes Routes array.
+	 */
+	private array $routes = array();
     /**
      * @var bool $url_rewrite Url rewrite.
      */
@@ -44,6 +47,39 @@ class UrlHandler
      * @var string $base_path Base path.
      */
     private string $base_path = "/";
+	/**
+	 * @var bool $session_use_cookies Session use cookies flag.
+	 */
+	private bool $session_use_cookies = false;
+	/**
+	 * @var string $session_id_regex Session id regex.
+	 */
+	private string $session_id_regex = "[0-9a-fA-F]{256}";
+
+	public function __construct() {
+		// TODO
+		$request_uri = $_SERVER['REQUEST_URI']??"";
+		$url_path = explode('/', $request_uri);
+		$config_base_path = $this->base_path;
+		assert(is_string($config_base_path));
+		$base_path = explode('/', $config_base_path);
+		// Removing base path
+		for ($i = 0; $i < count($base_path) - 1; $i++) {
+			if ($url_path[$i] === $base_path[$i]) {
+				unset($url_path[$i]);
+			}
+		}
+		// Decoding url (%20 -> ' ').
+		foreach ($url_path as &$url) {
+			$url = urldecode($url);
+		}
+		// array_filter() removes, if there are any, empty values caused by
+		// multiple slashes: example.com/id///page//foo//
+		// array_values() reindexes the array.
+		$route = array_values(array_filter($url_path));
+		$this->total_routes = count($route);
+		$this->routes = $route;
+	}
 
     /**
      * Get Configuration Methods.
@@ -58,9 +94,27 @@ class UrlHandler
             "setBasePath",
             "setUrlRewrite",
             "setParametersMap",
+			"setSessionUseCookies",
+			"setSessionIdRegex",
             "initializeCurrentPageParameters"
         );
     }
+
+	/**
+	 * @param string $session_id_regex
+	 */
+	public function setSessionIdRegex(string $session_id_regex)
+	: void {
+		$this->session_id_regex = $session_id_regex;
+	}
+
+	/**
+	 * @param bool $session_use_cookies
+	 */
+	public function setSessionUseCookies(bool $session_use_cookies)
+	: void {
+		$this->session_use_cookies = $session_use_cookies;
+	}
 
     /**
      * Set Parameter.
@@ -115,27 +169,34 @@ class UrlHandler
     )
     : void {
         if ($this->url_rewrite) {
+			$parameters = array();
             foreach ($current_page_parameters_config as $parameter_config) {
                 assert(is_string($parameter_config));
-                if (array_key_exists(
-                    $parameter_config,
-                    $this->parameters_map
-                )) {
-                    $parameter_name = $this->parameters_map[$parameter_config];
-                } else {
-                    $this->results[] = array(
-                        self::ERROR_UNDEFINED_PARAMETER_NAME,
-                        array(
-                            "parameter_name" => $parameter_config,
-                        )
-                    );
-                    $parameter_name = $parameter_config;
-                }
-                // Puts the parameters on the url stack to $_GET
-                $this->setCurrentPageParameters(array($parameter_name));
+				assert(array_key_exists($parameter_config,
+					$this->parameters_map));
+				$parameters[] = $this->parameters_map[$parameter_config];
             }
+	        // Puts the parameters on the url stack to $_GET
+	        $this->setCurrentPageParameters($parameters);
         }
     }
+
+
+	public function setSessionId(string $session_id_parameter_name) {
+		if(!$this->url_rewrite) {
+			return;
+		}
+		if($this->session_use_cookies){
+			return;
+		}
+		if($this->total_routes <= $this->current_route) {
+			return;
+		}
+		if(!preg_match($this->session_id_regex, end($this->routes))) {
+			return;
+		}
+		$_GET[$session_id_parameter_name] = end($this->routes);
+	}
 
     /**
      * Set Current Page Parameters.
@@ -163,25 +224,7 @@ class UrlHandler
             $this->current_route = count($parameters);
         }
 
-        $request_uri = $_SERVER['REQUEST_URI']??"";
-        $url_path = explode('/', $request_uri);
-        $config_base_path = $this->base_path;
-        assert(is_string($config_base_path));
-        $base_path = explode('/', $config_base_path);
-        // Removing base path
-        for ($i = 0; $i < count($base_path) - 1; $i++) {
-            if ($url_path[$i] === $base_path[$i]) {
-                unset($url_path[$i]);
-            }
-        }
-        // Decoding url (%20 -> ' ').
-        foreach ($url_path as &$url) {
-            $url = urldecode($url);
-        }
-        // array_filter() removes, if there are any, empty values caused by
-        // multiple slashes: example.com/id///page//foo//
-        // array_values() reindexes the array.
-        $route = array_values(array_filter($url_path));
+		$route = $this->routes;
 
         foreach ($this->current_page_parameters as $key => $parameter) {
             $_GET[$parameter] = (array_key_exists($key, $route)) ?

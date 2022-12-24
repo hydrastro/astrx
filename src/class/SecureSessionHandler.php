@@ -14,11 +14,11 @@ class SecureSessionHandler implements SessionHandlerInterface,
      */
     private PDO $pdo;
     /**
-     * @var int $sid_bytes Session ID Bytes.
+     * @var int $sid_bytes Session ID bytes.
      */
     private int $sid_bytes = 128;
     /**
-     * @var string $database_session_id Database Session ID.
+     * @var string $database_session_id Database session ID.
      */
     private string $database_session_id;
 
@@ -240,7 +240,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
         );
         $stmt->execute(array("id" => $hashed));
 
-        return $stmt->fetch();
+        return !$stmt->fetch();
     }
 
     /**

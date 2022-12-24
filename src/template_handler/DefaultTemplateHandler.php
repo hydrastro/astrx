@@ -18,7 +18,6 @@ class DefaultTemplateHandler
     private Page $page;
     private UrlHandler $UrlHandler;
     private Request $request;
-    private Response $response;
 
     public function __construct(
         Config $config,
@@ -26,8 +25,7 @@ class DefaultTemplateHandler
         ErrorHandler $ErrorHandler,
         Page $page,
         UrlHandler $UrlHandler,
-        Request $request,
-        Response $response
+        Request $request
     ) {
         $this->config = $config;
         $this->injector = $injector;
@@ -35,26 +33,6 @@ class DefaultTemplateHandler
         $this->page = $page;
         $this->UrlHandler = $UrlHandler;
         $this->request = $request;
-        $this->response = $response;
-
-        // Setting the session handler.
-        $SessionHandler = $injector->getClass("SecureSessionHandler");
-        session_set_save_handler($SessionHandler, true);
-
-        // Handling the user inputs.
-        $PostRedirectGet = $injector->getClass("PostRedirectGet");
-        if (isset($_POST)) {
-            $data = serialize($_POST);
-            $token = hash_hmac("SHA-512", $data, "key");
-            $PostRedirectGet->store($token, $_POST);
-
-            $response->setStatusCode(301);
-            $UrlHandler->getUrl(array());
-
-            // TODO check if it's okay here.
-            $this->response->send();
-            die();
-        }
     }
 
     /**

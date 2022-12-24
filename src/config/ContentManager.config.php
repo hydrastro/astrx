@@ -21,13 +21,19 @@ return array(
         "base_path" => "/",
         "entry_point" => "index.php",
         "url_rewrite" => true,
+		// Parameters map is an abstraction that allows us to dynamically
+        // change the parameters name from here, without breaking the code.
+        "parameters_map" => array(
+	        "language_parameter_name" => "lang",
+	        "page_id_parameter_name" => "id",
+	        "session_id_parameter_name" => "session_id"
+        ),
         "current_page_parameters_config" => array(
             "language_parameter_name",
             "page_id_parameter_name"
         ),
-        "parameters_map" => array(
-            "language_parameter_name" => "lang",
-            "page_id_parameter_name" => "id"
-        )
+		// Session: use cookies or last page parameters?
+        "session_use_cookies" => false,
+        "session_id_regex" => "/^[0-9a-fA-F]{256}$/"
     )
 );
