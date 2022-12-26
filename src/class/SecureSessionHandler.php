@@ -102,7 +102,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
      */
     public function getDatabaseSessionId(string $id)
     : string {
-        return crypt($id, '$6$');
+        return hash("SHA512", $id);
     }
 
     /**
