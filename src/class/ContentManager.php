@@ -130,10 +130,6 @@ class ContentManager
             $this->config->getConfig("ContentManager", "main_page_id", "")
         );
         assert(is_string($current_page_parameter));
-        $UrlHandler->setParameter(
-            "page_id_parameter_name",
-            $current_page_parameter
-        );
 
         // Creating database connection.
         // We could create it through the Injector, it doesn't matter. This
@@ -210,13 +206,23 @@ class ContentManager
         }
         assert($current_page instanceof Page);
         $this->injector->setClass($current_page);
+        $UrlHandler->setParameter(
+            "page_id_parameter_name",
+            $current_page->resolved_url_id
+        );
 
-        // Calls to controllers.
-        // Controllers can either build a response themselves and send it
-        // or alternatively they can fall back here to default template.
-        // Controllers can edit the default template arguments;
-        // ContentManager can be injected and template_args is public.
-        // So $this->ContentManager->template_args["key"] = "value";
+        // Setting the default template name.
+        $template_file_name = $this->config->getConfig(
+            "ContentManager",
+            "default_template",
+            "default"
+        );
+        assert(is_string($template_file_name));
+
+        // Loading language files.
+        $this->config->loadPageLang($current_page->url_id);
+        $this->config->loadKeywordsLang();
+
         if ($current_page->controller) {
             $controller_name = $this->getControllerName(
                 $current_page->file_name
@@ -228,45 +234,45 @@ class ContentManager
                 }
             }, true, true);
             $controller = $this->injector->getClass($controller_name);
-            assert(is_object($controller));
-			// The controller constructor has set up this page's current url
-	        // in the url handler class, so now we can handle sessions.
-	        $this->handleSession($UrlHandler, $request, $response);
+            // The controller constructor has set up this page's current url
+            // in the url handler class, so now we can handle sessions.
+        }
+        $this->handleSession($UrlHandler, $request, $response);
 
-			// Calling the controller.
-            assert(method_exists($controller, "init"));
-            $controller->init();
-        } else {
-	        $this->handleSession($UrlHandler, $request, $response);
+        // Setting up the template arguments if the page has a template.
+        // The template handler is called before the controller because the
+        // controller may overwrite the render arguments.
+        if ($current_page->template) {
+            // Falling back to the default template if a custom template isn't set.
+            if ($current_page->template_file_name !== "") {
+                $template_file_name = $current_page->template_file_name;
+            }
+            spl_autoload_register(function (string $class)
+            : void {
+                if (strpos($class, "TemplateHandler")) {
+                    require TEMPLATE_HANDLER_DIR . $class . ".php";
+                }
+            }, true, true);
+            $TemplateHandler = $this->injector->getClass(
+                $this->getTemplateHandlerName($template_file_name)
+            );
+            assert(is_object($TemplateHandler));
+            assert(method_exists($TemplateHandler, "getTemplateArgs"));
+            $this->template_args = $TemplateHandler->getTemplateArgs();
         }
 
-	    // Setting the default template name.
-	    $template_file_name = $this->config->getConfig(
-		    "ContentManager",
-		    "default_template",
-		    "default"
-	    );
-	    assert(is_string($template_file_name));
-
-	    // Setting up the template arguments if the page has a template.
-	    if ($current_page->template) {
-		    // Falling back to the default template if a custom template isn't set.
-		    if ($current_page->template_file_name !== "") {
-			    $template_file_name = $current_page->template_file_name;
-		    }
-		    spl_autoload_register(function (string $class)
-		    : void {
-			    if (strpos($class, "TemplateHandler")) {
-				    require TEMPLATE_HANDLER_DIR . $class . ".php";
-			    }
-		    }, true, true);
-		    $TemplateHandler = $this->injector->getClass(
-			    $this->getTemplateHandlerName($template_file_name)
-		    );
-		    assert(is_object($TemplateHandler));
-		    assert(method_exists($TemplateHandler, "getTemplateArgs"));
-		    $this->template_args = $TemplateHandler->getTemplateArgs();
-	    }
+        // Calls to controllers.
+        // Controllers can either build a response themselves and send it
+        // or alternatively they can fall back here to default template.
+        // Controllers can edit the default template arguments;
+        // ContentManager can be injected and template_args is public.
+        // So $this->ContentManager->template_args["key"] = "value";
+        if ($current_page->controller) {
+            assert(isset($controller));
+            assert(is_object($controller));
+            assert(method_exists($controller, "init"));
+            $controller->init();
+        }
 
         // Loading the template.
         $template = $TemplateEngine->loadTemplate($template_file_name);
@@ -294,51 +300,101 @@ class ContentManager
         $response->send();
     }
 
-	private function handleSession($UrlHandler, $request, $response) {
-		// Setting the session handler.
-		$SessionHandler = $this->injector->getClass("SecureSessionHandler");
-		session_set_save_handler($SessionHandler, true);
+    /**
+     * Handle Session.
+     * Initializes the session.
+     *
+     * @param UrlHandler $UrlHandler URL Handler class.
+     * @param Request    $request    Request class.
+     * @param Response   $response   Response class.
+     *
+     * @return void
+     */
+    private function handleSession(
+        UrlHandler $UrlHandler,
+        Request $request,
+        Response $response
+    )
+    : void {
+        // Setting the session handler.
+        $SessionHandler = $this->injector->getClass("SecureSessionHandler");
+        assert($SessionHandler instanceof SecureSessionHandler);
+        session_set_save_handler($SessionHandler, true);
 
-		// Adjusting the Session ID in the URL Handler.
-		// We now have a complete URL: if there are extra parameters we check
-		// if the last parameter may be a session ID, and in case if it is,
-		// we initialize a new session with that ID, otherwise we log an
-		// attempt of session id fixation.
-		$session_id_parameter_name = $UrlHandler->getParameterName("session_id_parameter_name");
-		assert(is_string($session_id_parameter_name));
-		$UrlHandler->setSessionId($session_id_parameter_name);
+        // Adjusting the Session ID in the URL Handler.
+        // We now have a complete URL: if there are extra parameters we check
+        // if the last parameter may be a session ID, and in case if it is,
+        // we initialize a new session with that ID, otherwise we log an
+        // attempt of session id fixation.
+        $session_id_parameter_name = $UrlHandler->getParameterName(
+            "session_id_parameter_name"
+        );
+        assert(is_string($session_id_parameter_name));
+        $UrlHandler->setSessionId($session_id_parameter_name);
 
-		$session_id_parameter = $request->get(
-			$session_id_parameter_name,
-			""
-		);
-		assert(is_string($session_id_parameter));
+        $session_id_parameter = $request->get(
+            $session_id_parameter_name,
+            ""
+        );
+        assert(is_string($session_id_parameter));
 
-		if($session_id_parameter !== "" && $SessionHandler->validateId
-			($session_id_parameter)) {
-			session_id($session_id_parameter);
-		} else {
-			// BAN.
-		}
+        if ($session_id_parameter !== "") {
+            if ($SessionHandler->validateId($session_id_parameter)) {
+                session_id($session_id_parameter);
+            } else {
+            }
+        }
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        $current_session_id = session_id();
+        assert(is_string($current_session_id));
+        $UrlHandler->setParameter(
+            "session_id_parameter_name",
+            $current_session_id
+        );
 
-		if(session_status() === PHP_SESSION_NONE) {
-			session_start();
-		}
+        // Handling the user inputs.
+        $prg_token_parameter_name = $UrlHandler->getParameterName(
+            "prg_token_parameter_name"
+        );
+        assert(is_string($prg_token_parameter_name));
+        $PostRedirectGet = $this->injector->getClass("PostRedirectGet");
+        assert($PostRedirectGet instanceof PostRedirectGet);
+        // Handling a POST request: storing the data into the session and
+        // redirecting the user.
+        if ($_POST !== array()) {
+            // Storing the POST data.
+            $data = serialize($_POST);
+            $token = hash_hmac("SHA256", $data, $current_session_id);
+            $PostRedirectGet->store($token, $_POST);
 
-		// Handling the user inputs.
-		$PostRedirectGet = $this->injector->getClass("PostRedirectGet");
-		if (isset($_POST)) {
-			$data = serialize($_POST);
-			$token = hash_hmac("SHA-512", $data, "key");
-			$PostRedirectGet->store($token, $_POST);
+            // Adjusting the redirect URL.
+            $UrlHandler->setCurrentPageEndingParameters(
+                array(
+                    "prg_token_parameter_name" => $token,
+                    "session_id_parameter_name" => $current_session_id
+                )
+            );
 
-			$response->setStatusCode(301);
-			$response->setContent("lol");
+            $redirect_url = $UrlHandler->getUrl();
 
-			$response->send();
-			die();
-		}
-	}
+            $response->setStatusCode(Response::HTTP_FOUND);
+            $response->addHeader("Location: " . $redirect_url);
+            $response->send();
+            echo "FUUUU";
+            die();
+        }
+        // Checking GET requests of the PostRedirectGet pattern.
+        $UrlHandler->setPRGToken($prg_token_parameter_name);
+        $prg_token = $request->get($prg_token_parameter_name);
+        if ($prg_token !== null) {
+            assert(is_string($prg_token));
+            $prg_data = $PostRedirectGet->load($prg_token);
+            assert(is_array($prg_data));
+            $_POST = array_merge($_POST, $prg_data);
+        }
+    }
 
     /**
      * Get Controller Name.

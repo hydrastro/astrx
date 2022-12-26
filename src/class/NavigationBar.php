@@ -33,7 +33,9 @@ class NavigationBar
             `name`,
             `i18n`,
             `page_id`,
-            `url`
+            `url`,
+            `url_id`,
+            `page_i18n`
         FROM
             `resolved_navigation_bar`
         "

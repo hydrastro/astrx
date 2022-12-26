@@ -24,16 +24,18 @@ return array(
 		// Parameters map is an abstraction that allows us to dynamically
         // change the parameters name from here, without breaking the code.
         "parameters_map" => array(
-	        "language_parameter_name" => "lang",
-	        "page_id_parameter_name" => "id",
-	        "session_id_parameter_name" => "session_id"
+            "language_parameter_name" => "lang",
+            "page_id_parameter_name" => "id",
+            "session_id_parameter_name" => "session_id",
+            "prg_token_parameter_name" => "token"
         ),
         "current_page_parameters_config" => array(
             "language_parameter_name",
             "page_id_parameter_name"
         ),
-		// Session: use cookies or last page parameters?
+        // Session: use cookies or last page parameters?
         "session_use_cookies" => false,
-        "session_id_regex" => "/^[0-9a-fA-F]{256}$/"
+        "session_id_regex" => "/^[\da-fA-F]{256}$/",
+        "prg_token_regex" => "/^[\da-fA-F]{64}$/"
     )
 );

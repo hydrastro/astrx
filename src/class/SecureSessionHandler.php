@@ -18,9 +18,9 @@ class SecureSessionHandler implements SessionHandlerInterface,
      */
     private int $sid_bytes = 128;
     /**
-     * @var string $database_session_id Database session ID.
+     * @var string $current_session_id Current session ID.
      */
-    private string $database_session_id;
+    private string $current_session_id;
 
     /**
      * @param PDO $pdo PDO.
@@ -102,11 +102,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
      */
     public function getDatabaseSessionId(string $id)
     : string {
-        if (!isset($this->database_session_id)) {
-            $this->database_session_id = crypt($id, '$6$');
-        }
-
-        return $this->database_session_id;
+        return crypt($id, '$6$');
     }
 
     /**
@@ -129,6 +125,9 @@ class SecureSessionHandler implements SessionHandlerInterface,
             "DELETE FROM `session` WHERE `timestamp` < :max_timestamp"
         );
         $stmt->execute(array("max_timestamp" => $max_timestamp));
+        if (!is_array($result)) {
+            return 0;
+        }
 
         return $result["count"];
     }
@@ -158,7 +157,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
      *
      * @param string $id Session id.
      *
-     * @return array|false
+     * @return array<string, string>|false
      */
     public function readDatabaseSession(string $id)
     : array|false {
@@ -166,8 +165,12 @@ class SecureSessionHandler implements SessionHandlerInterface,
             "SELECT `data` FROM `session` WHERE `id` = :id"
         );
         $query->execute(array("id" => $id));
+        $result = $query->fetch();
+        if (!is_array($result)) {
+            return false;
+        }
 
-        return $query->fetch();
+        return $result;
     }
 
     /**
@@ -193,13 +196,16 @@ class SecureSessionHandler implements SessionHandlerInterface,
         );
         assert(hash_equals($hmac, $new_hmac));
 
-        return openssl_decrypt(
+        $decrypted = openssl_decrypt(
             $ciphertext,
             $cipher_algo,
             mb_substr($id, 0, 32, "8bit"),
             OPENSSL_RAW_DATA,
             $iv
         );
+        assert(is_string($decrypted));
+
+        return $decrypted;
     }
 
     /**
@@ -212,7 +218,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
     : string
     {
         do {
-            $sid = bin2hex(random_bytes($this->sid_bytes));
+            $sid = bin2hex(random_bytes(max(1, $this->sid_bytes)));
             $hashed = $this->getDatabaseSessionId($sid);
             $stmt = $this->pdo->prepare(
                 "SELECT `id` FROM `session` WHERE `id` = :id"
@@ -220,6 +226,8 @@ class SecureSessionHandler implements SessionHandlerInterface,
             $stmt->execute(array("id" => $hashed));
             $result = $stmt->fetch();
         } while ($result !== false);
+
+        $this->current_session_id = $sid;
 
         return $sid;
     }
@@ -234,13 +242,18 @@ class SecureSessionHandler implements SessionHandlerInterface,
      */
     public function validateId(string $id)
     : bool {
+        if (isset($this->current_session_id) &&
+            $id === $this->current_session_id) {
+            return true;
+        }
         $hashed = $this->getDatabaseSessionId($id);
         $stmt = $this->pdo->prepare(
             "SELECT `id` FROM `session` WHERE `id` = :id"
         );
         $stmt->execute(array("id" => $hashed));
+        $result = $stmt->fetch();
 
-        return !$stmt->fetch();
+        return ($result !== false);
     }
 
     /**

@@ -52,7 +52,6 @@ class DefaultTemplateHandler
 
         // Setting the page title and description.
         if ($this->page->i18n) {
-            $this->config->loadPageLang($this->page->url_id);
             if (defined($this->page->url_id . "_PAGE_TITLE")) {
                 $template_args["title"] = constant(
                     $this->page->url_id . "_PAGE_TITLE"
@@ -69,7 +68,6 @@ class DefaultTemplateHandler
         }
 
         // Loading the page keywords.
-        $this->config->loadKeywordsLang();
         $keywords_filter = function (array $keywords, bool $i18n) {
             return array_filter(
                 array_map(
@@ -113,11 +111,13 @@ class DefaultTemplateHandler
             "ContentManager",
             "website_name"
         );
+        $resolved_main_page = constant("WORDING_MAIN");
+        assert(is_string($resolved_main_page));
         $template_args["title_url"] = $this->UrlHandler->getUrl(
             array(
-                "page_id_parameter_name" => "WORDING_MAIN"
+                "page_id_parameter_name" => $resolved_main_page
             ),
-            false,
+            true,
             true
         );
         $template_args["year"] = date("Y");
@@ -148,9 +148,11 @@ class DefaultTemplateHandler
         foreach ($navigation_bar as $entry) {
             assert(is_array($entry));
             if ($entry["internal"]) {
+                $entry_name = ($entry["page_i18n"]) ?
+                    constant($entry["url_id"]) : $entry["url_id"];
                 $url = $this->UrlHandler->getUrl(
                     array(
-                        "page_id_parameter_name" => $entry["page_id"]
+                        "page_id_parameter_name" => $entry_name
                     ),
                     false,
                     true

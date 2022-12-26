@@ -12,7 +12,7 @@ class Response
      */
     private int $status_code = 200;
     /**
-     * @var array<string, string> $headers Response headers.
+     * @var array<int, string> $headers Response headers.
      */
     private array $headers = array();
     /**
@@ -188,14 +188,13 @@ class Response
      * Add Header.
      * Adds a header to the response.
      *
-     * @param string $header_name  Header name.
      * @param string $header_value Header value.
      *
      * @return void
      */
-    public function addHeader(string $header_name, string $header_value)
+    public function addHeader(string $header_value)
     : void {
-        $this->headers[$header_name] = $header_value;
+        $this->headers[] = $header_value;
     }
 
     /**

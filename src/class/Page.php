@@ -12,7 +12,7 @@ class Page
      */
     public int $id;
     /**
-     * @var string $url_id Page URL id.
+     * @var string $url_id Page (unresolved) URL id.
      */
     public string $url_id;
     /**
@@ -68,6 +68,10 @@ class Page
      * @var string $template_file_name Template file name.
      */
     public string $template_file_name;
+    /**
+     * @var string $resolved_url_id Resolved URL id.
+     */
+    public string $resolved_url_id;
 
     /**
      * Page Constructor.
@@ -121,5 +125,12 @@ class Page
         $this->description = $description;
         $this->keywords = $keywords;
         $this->template_file_name = $template_file_name;
+        if (($i18n)) {
+            $resolved = constant($url_id);
+            assert(is_string($resolved));
+            $this->resolved_url_id = $resolved;
+        } else {
+            $this->resolved_url_id = $url_id;
+        }
     }
 }

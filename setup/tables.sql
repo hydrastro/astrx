@@ -153,9 +153,11 @@ CREATE VIEW resolved_navigation_bar AS
 SELECT `navigation_bar_entry`.`id`,
        `internal`,
        `name`,
-       `i18n`,
+       `navigation_bar_entry`.`i18n`,
        `page_id`,
-       `url`
+       `url`,
+       `url_id`,
+       `page`.`i18n` AS `page_i18n`
 FROM `navigation_bar_entry`
          LEFT JOIN
      `navigation_bar_internal`
@@ -163,6 +165,9 @@ FROM `navigation_bar_entry`
          LEFT JOIN
      `navigation_bar_external`
      ON `navigation_bar_internal`.`id` = `navigation_bar_entry`.`id`
+         LEFT JOIN
+     `page`
+     ON `navigation_bar_internal`.`page_id` = `page`.`id`
 ORDER BY `navigation_bar_entry`.`id`;
 
 CREATE TABLE `session`
