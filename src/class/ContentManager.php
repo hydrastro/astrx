@@ -499,16 +499,6 @@ class ContentManager
                     500,
                     ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
                     ErrorHandler::LOG_LEVEL_ERROR
-                ),
-                UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_2 => array(
-                    500,
-                    ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
-                    ErrorHandler::LOG_LEVEL_ERROR
-                ),
-                UrlHandler::ERROR_UNDEFINED_PARAMETER_NAME_3 => array(
-                    500,
-                    ERROR_UNDEFINED_PARAMETER_NAME, // parameter_name
-                    ErrorHandler::LOG_LEVEL_ERROR
                 )
             )
         );

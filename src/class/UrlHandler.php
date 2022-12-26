@@ -8,8 +8,6 @@ declare(strict_types = 1);
 class UrlHandler
 {
     public const ERROR_UNDEFINED_PARAMETER_NAME = 0;
-    public const ERROR_UNDEFINED_PARAMETER_NAME_2 = 1;
-    public const ERROR_UNDEFINED_PARAMETER_NAME_3 = 2;
     /**
      * @var array<int, array<int, mixed>> $results Results array.
      */
