@@ -342,6 +342,7 @@ class ContentManager
             if ($SessionHandler->validateId($session_id_parameter)) {
                 session_id($session_id_parameter);
             } else {
+                // BAN
             }
         }
         if (session_status() === PHP_SESSION_NONE) {
@@ -382,7 +383,6 @@ class ContentManager
             $response->setStatusCode(Response::HTTP_FOUND);
             $response->addHeader("Location: " . $redirect_url);
             $response->send();
-            echo "FUUUU";
             die();
         }
         // Checking GET requests of the PostRedirectGet pattern.

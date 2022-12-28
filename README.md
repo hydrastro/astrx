@@ -345,3 +345,29 @@ In no case they should use any other module's definitions.
   assertion callback function
 - [ ] Assertions handler
 - [ ] Rewrite this file.
+
+# Hiatus (again) resume README
+
+What's left to be done:
+Adjusting the path for the controllers and the templates.
+Page parents should be split in order to access child pages, but there's a
+problem: internationalization.
+So the paths would become /template/WORDING_USER/profile.html etc.
+
+There's also left to be figured out how to share one controller between multiple
+pages.
+I guess we could just specify the controller name in the page table.
+
+Is sharing controllers necessary?
+Very likely.
+
+Also: if a loaded page is HIDDEN, redirect to UNAUTHORIZED.
+
+One last thing to check: proper folders permissions (TEMPLATE_CACHE_DIR).
+this will probably be left to be done in the setup script.
+
+$CONFIG->CLASSLANGHELPER: if lang not found TRY to load the default lang as a
+fallback. Example case: a website is 90% translated, but those untranslated
+pages SHOULD NOT BREAK. We fall back to the default lang and display a NOTICE
+MESSAGE INSTEAD.
+if(file_exists(fallback)) { $this->results[] = array( FALLBACK_LANG )
