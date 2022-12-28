@@ -81,6 +81,42 @@ class TemplateEngine
      * @var string $template_extension Template extension.
      */
     private string $template_extension = ".html";
+    /**
+     * @var string $template_cache_dir Template cache directory.
+     */
+    private string $template_cache_dir
+        = __DIR__ .
+          DIRECTORY_SEPARATOR .
+          ".." .
+          DIRECTORY_SEPARATOR .
+          "cache" .
+          DIRECTORY_SEPARATOR;
+    /**
+     * @var bool $cache_templates Templates caching flag.
+     */
+    private bool $cache_templates = true;
+
+    /**
+     * Set Cache Templates.
+     * Sets the templates caching flag.
+     *
+     * @param bool $cache_templates
+     */
+    public function setCacheTemplates(bool $cache_templates)
+    : void {
+        $this->cache_templates = $cache_templates;
+    }
+
+    /**
+     * Get Cache Templates.
+     * Returns the templates caching flag.
+     * @return bool
+     */
+    public function getCacheTemplates()
+    : bool
+    {
+        return $this->cache_templates;
+    }
 
     /**
      * Get Configuration Methods.
@@ -90,7 +126,33 @@ class TemplateEngine
     public function getConfigurationMethods()
     : array
     {
-        return array("setTemplateExtension", "setTemplateDir");
+        return array(
+            "setTemplateExtension",
+            "setTemplateDir",
+            "setTemplateCacheDir"
+        );
+    }
+
+    /**
+     * Get Template Cache Dir.
+     * Returns the template cache directory.
+     * @return string
+     */
+    public function getTemplateCacheDir()
+    : string
+    {
+        return $this->template_cache_dir;
+    }
+
+    /**
+     * Set Template Cache Dir.
+     * Sets the template cache dir.
+     *
+     * @param string $template_cache_dir
+     */
+    public function setTemplateCacheDir(string $template_cache_dir)
+    : void {
+        $this->template_cache_dir = $template_cache_dir;
     }
 
     /**
@@ -293,8 +355,17 @@ class TemplateEngine
         assert(file_exists($template_file));
         $content = file_get_contents($template_file);
         assert($content !== false);
-
         $class_name = $this->getTemplateClassName($template, $content);
+
+        if ($this->getCacheTemplates()) {
+            $cache_filename = $this->getTemplateCacheDir() . $template . ".php";
+            if (file_exists($cache_filename)) {
+                require_once $cache_filename;
+                $this->known_templates[$template] = $class_name;
+
+                return $this->getTemplateClass($class_name);
+            }
+        }
 
         if ($parse_mode === self::PARSE_MODE_TEMPLATE) {
             $tokenized = $this->tokenizeTemplate($content);
@@ -324,6 +395,11 @@ class TemplateEngine
         }
 
         $this->known_templates[$template] = $class_name;
+
+        if ($this->getCacheTemplates()) {
+            $cache_filename = $this->getTemplateCacheDir() . $template . ".php";
+            file_put_contents($cache_filename, $code);
+        }
 
         return $this->getTemplateClass($class_name);
     }

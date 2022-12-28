@@ -10,12 +10,12 @@
 
 ### Code quality
 
-Phpstan checks only. Level 9: `./vendor/bin/phpstan analyse src --level=9`.  
-No psalm. No phpcs.  
-Code formatting is done by the IDE.  
+Phpstan checks **only**. Level 9: `./vendor/bin/phpstan analyse src --level=9`
+.  
+Code formatting is left to be done by the IDE.  
 Use strict types in every file.
 
-Separation of concerns is more important than possible code duplication?
+Is separation of concerns more important than possible code duplication?
 
 ### Docker, Nginx, PHP, MySQL
 
@@ -313,31 +313,32 @@ In no case they should use any other module's definitions.
 
 ## TODO List
 
-- [~] Modularization
-- [ ] Module rewrite/check
+- [X] Modularization
+- [X] Module rewrite/check
 - [X] I18n
-- [ ] POST-Redirect-GET
+- [X] POST-Redirect-GET
 - [ ] API
-- [ ] Objects support in the template
+- [X] Objects support in the template
 - [ ] ZKP login method. ( challenge-text, challenge-input)
   ~~- [ ] Generate a password for me~~
 
 # Hiatus resume README
 
-- [ ] Check for parameter validations redundancy e.g.: parent validates
+- [X] Check for parameter validations redundancy e.g.: parent validates
   parameters and calls child who revalidates the same parameters
-- [ ] Define how to handle validation redundancy
+- [X] Define how to handle validation redundancy
 - [ ] Check functions scope
-- [ ] Never use arrays, type everything (FUCK): first off all variables then the
+- [~] Never use arrays, type everything (FUCK): first off all variables then the
   arrays. More class files, less type cheks (issets).
-- [ ] ResultMessage class: instead of arrays. Not sure about constructor checks
+  ~~- [ ] ResultMessage class: instead of arrays. Not sure about constructor
+  checks~~
   here. Check if class has properly been loaded.
-- [ ] Fix PHPDoc.
-- [ ] No composer? Ok. But at least let's have a proper dev. environment!
+- [X] Fix PHPDoc.
+- [X] No composer? Ok. But at least let's have a proper dev. environment!
 
 ### TODO 2.
 
-- [ ] Check useless if statements and replace them with assertions
+- [X] Check useless if statements and replace them with assertions
 - [ ] Provide an ad-hoc super optimized code? Remove useless if clauses on
   internal checks. Maybe replace those if statements with an assertion and
   define

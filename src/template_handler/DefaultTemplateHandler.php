@@ -157,6 +157,8 @@ class DefaultTemplateHandler
                     false,
                     true
                 );
+                // TODO: $highlight = in_array($this->page->id,
+                // $this->page->ancestors);
                 $highlight = ($this->page->id === $entry["page_id"]);
             } else {
                 $url = $entry["url"];
@@ -178,6 +180,13 @@ class DefaultTemplateHandler
             );
         }
         $template_args["navbar"] = $cleaned_navigation_bar;
+
+        // TODO: load user navigation bar.
+        if (array_key_exists("logged_in", $_SESSION) &&
+            $_SESSION["logged_in"]) {
+        } else {
+            $_SESSION["logged_in"] = false;
+        }
 
         return $template_args;
     }
