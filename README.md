@@ -371,3 +371,84 @@ fallback. Example case: a website is 90% translated, but those untranslated
 pages SHOULD NOT BREAK. We fall back to the default lang and display a NOTICE
 MESSAGE INSTEAD.
 if(file_exists(fallback)) { $this->results[] = array( FALLBACK_LANG )
+
+Some considerations: it will be okay to store controllers and templates is
+subdirectories named with the i18n constant names (e.g. WORDING_USER).
+We could also consider using the url_id field in place of the filename.
+/page/WORDING_FOO/filename.php, /controller/WORDING_FOO/filenameController.php
+References to file names can't be resolved dynamically but should rather be
+static.
+We could resolve it with the filenames though. Yeah this would make things
+looking better.
+So we'd have to retrieve "ancestorsFilenames".
+Therefore yeah we have to choose between
+/page/WORDING_FOO/WORDING_BAR.php
+/page/WORDING_FOO/filename.php
+/page/foo/filename.php
+
+I'd say let's keep the filename filed and just retrieve it.
+--
+
+The setup script:
+The user should read carefully all the configs and edit them.
+
+Then we could "build" the application.
+loading all the configs, var_exporting them and placing the dumped array
+manually into the $Config class, maybe passing them into the constructor.
+```php
+clas Config {
+    public function __construct(ErrorHandler $ErrorHandler, array $config);
+}
+```
+The critical parts of building the application would be includes and requires
+therefore those should be wrapped around if statements.
+if(!class_exist(controller)) { require controller_file }
+So in the `Config` class:
+```php
+$this->configuration = require(CONFIG_DIR . "config.php");
+```
+becomes
+```php
+$config_file = CONFIG_DIR . "config.php";
+if(file_exists($config_file)) {
+    $this->configuration = require($config_file);
+}
+```
+Requires and includes which are within functions registered to spl_autoload_register
+are okay since they're called only if a class doesn't exist.
+
+Then we would just build all the existing themplates: we need to edit the
+TemplateEngine class to allow loading pre-built templates (existing classes).
+and maybe having a template signature (template class name) that doesn't rely
+on reading the template file.
+
+For extreme optimization:
+writing all the classes default config into the classes themselves.
+then disabling the class helper methods.
+There are some methods though that are essential. Those should be put into
+the class constructors.
+E.g. PDO credentials and the mailserver credentials & config.
+
+CHECK IF REMOVING $config["class_name"]["var_name"] makes the helper method
+scream. IF SO, SHUT IT UP/notify silently (DEBUG).
+```php
+        $template_file = $this->getTemplateDir() .
+                         $template . // <- here dots should be replaced with
+                                     // slashes. For properly loading templates
+                                     // in folders. OR MAYBE NOT?
+                                     // if we allow slashes in template names
+                                     // we should replace slashes with
+                                     // underscores when genereating the class
+                                     // name for the template.
+                         $this->getTemplateExtension();
+```
+
+So the idea is:
+building all the classes and loading them.
+manually loading the config array into the config class.
+two ways of dumping the config class array:
+1. Full. Entire array is dumped.
+2. Minimal. Only critical sections are dumped, note: the user MUST set other
+configs directly into the classes. With this config the injector helper methods
+can be turned off.
+Helper methods: loadClassAndConfig, configurationMethodsHelper, addClass
