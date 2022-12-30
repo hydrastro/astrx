@@ -452,3 +452,13 @@ two ways of dumping the config class array:
 configs directly into the classes. With this config the injector helper methods
 can be turned off.
 Helper methods: loadClassAndConfig, configurationMethodsHelper, addClass
+
+Controllers are responsible for building responses.
+Therefore controllers are responsible for buliding both HTML adn JSON
+JSON responses are specific for the API.
+So. Controllers call an init function. then they should set BOTH the template
+arguments AND the general JSON response data.
+So. when controllers call the models we should be sure that there's only ONE
+response in the controller ?
+Anyways yeah. You got the idea. Controllers should also set JSON data.
+Multiple responses? Status code = max. Response = responses.
