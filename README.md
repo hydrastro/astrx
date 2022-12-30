@@ -462,3 +462,8 @@ So. when controllers call the models we should be sure that there's only ONE
 response in the controller ?
 Anyways yeah. You got the idea. Controllers should also set JSON data.
 Multiple responses? Status code = max. Response = responses.
+
+Another thing that would be cool to implement is: EMPTY template, load all the
+page data through the API with javascript: so web crawlers can't index
+ANYTHING (idea proudly stolen from @meh. .
+/api/getPageData/ -> returns rendered {{*content}} as a string.
