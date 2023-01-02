@@ -467,3 +467,7 @@ Another thing that would be cool to implement is: EMPTY template, load all the
 page data through the API with javascript: so web crawlers can't index
 ANYTHING (idea proudly stolen from @meh. .
 /api/getPageData/ -> returns rendered {{*content}} as a string.
+
+### (Re)Move `getConfigurationMethods`
+
+To the configurations array.
