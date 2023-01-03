@@ -348,6 +348,8 @@ In no case they should use any other module's definitions.
 
 # Hiatus (again) resume README
 
+# Read EVERYTHING before jumping to code
+
 What's left to be done:
 Adjusting the path for the controllers and the templates.
 Page parents should be split in order to access child pages, but there's a
@@ -510,3 +512,38 @@ log to a file messages that are not displayed?
 ### Async
 
 ASYNC PDO CONNECTION?
+
+# Future performance improvements
+
+ - add config caching flag which enables memcached:
+wherEVER there's a query we try to load it from the cache and store it if not present
+check for typical usages
+dumping data into php directly is insane and should not be done
+- sessions should be all stored in memcached since they're supposed to be volatile
+and since mysql is too slow and caching with mysql doesn't make sense here
+if caching is not enabled we can fallback to pho
+- template renders are too complex to be cached: caching would be appropriate for static pages
+but ours are all dynamic
+
+check if there's a cache psr  
+caching can implemented in different ways, in almost every case it comes with pdo
+
+async pdo makes no sense
+check if there's a way to build a connection only when strictly needed
+
+
+# check memory usage
+
+and unset unused things!!
+
+## Session Handler and sessions
+
+absolutely adjust the cookie options!
+session ddos shouldn't be a thing. if it is, the implementation is too slow!
+
+## ini settings
+
+some of them don't make sense.
+doesn't make sense to set them every time.
+
+they make things easier for development but should be set as default in php ini in production
