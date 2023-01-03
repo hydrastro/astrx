@@ -473,3 +473,8 @@ ANYTHING (idea proudly stolen from @meh. .
 To the configurations array.
 
 ### Merge template args of the ContentManager with the template handler args.
+
+### IMPORTANT
+
+Test the application in production environment: language constants should be
+loaded in a different way.
