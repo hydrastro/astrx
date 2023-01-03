@@ -478,3 +478,14 @@ To the configurations array.
 
 Test the application in production environment: language constants should be
 loaded in a different way.
+
+There are some things that should NOT be asserted, for example: loading the
+fallback language file!
+
+```php
+            assert(
+                $this->config->setLang($fallback_lang),
+                $language_catastrophe_message
+            );
+```
+this is very bad.
