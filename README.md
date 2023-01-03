@@ -471,3 +471,5 @@ ANYTHING (idea proudly stolen from @meh. .
 ### (Re)Move `getConfigurationMethods`
 
 To the configurations array.
+
+### Merge template args of the ContentManager with the template handler args.
