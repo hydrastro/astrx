@@ -489,3 +489,24 @@ fallback language file!
             );
 ```
 this is very bad.
+
+### PDO CACHE
+
+cache for pdo basic queries: page retrival
+var_export to a config / cache file to build the cache
+
+if cache and cache file exists
+       return include cache fil
+
+pdo select
+if cache
+   file put contents var export
+return data
+
+### Logger
+
+log to a file messages that are not displayed?
+
+### Async
+
+ASYNC PDO CONNECTION?
