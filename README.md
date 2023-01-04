@@ -547,3 +547,9 @@ some of them don't make sense.
 doesn't make sense to set them every time.
 
 they make things easier for development but should be set as default in php ini in production
+
+# User login
+
+Normal username/email - password login; no javascript.  
+Leaving room for javascript implementations though: on the backend ( API? ) we check if
+the user is loggin in with javascript. Javascript -> ZKP login method.
