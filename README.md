@@ -564,6 +564,6 @@ Maybe we should make a class for handling the language strings. And not store th
 non cached content
 {{!cache_start}}
 cached content
-{{cache_end}}
+{{!cache_end}}
 non cached content
 ```
