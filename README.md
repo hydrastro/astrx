@@ -553,3 +553,8 @@ they make things easier for development but should be set as default in php ini 
 Normal username/email - password login; no javascript.  
 Leaving room for javascript implementations though: on the backend ( API? ) we check if
 the user is loggin in with javascript. Javascript -> ZKP login method.
+
+# Language constants
+
+Maybe we should make a class for handling the language strings. And not store them in constants.
+
