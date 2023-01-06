@@ -558,3 +558,12 @@ the user is loggin in with javascript. Javascript -> ZKP login method.
 
 Maybe we should make a class for handling the language strings. And not store them in constants.
 
+# Template fragmets caching
+
+```
+non cached content
+{{!cache_start}}
+cached content
+{{cache_end}}
+non cached content
+```
