@@ -567,3 +567,13 @@ cached content
 {{!cache_end}}
 non cached content
 ```
+
+# OAuth2
+
+The login system should allow this auth. method for external applications.
+So we can consider using OAUTH2 over SMTP
+
+# Caching
+
+Since pages are being cached we could filter the responses in ordere to
+minimize their size. E.g. removing useless indentation spaces
