@@ -577,3 +577,8 @@ So we can consider using OAUTH2 over SMTP
 
 Since pages are being cached we could filter the responses in ordere to
 minimize their size. E.g. removing useless indentation spaces
+
+# Cronjobs
+
+/src/cron.php:
+/src/cronjobs/cronjob_name.php
