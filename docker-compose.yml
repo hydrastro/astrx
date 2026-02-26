@@ -13,6 +13,7 @@ services:
         volumes:
             - ./public:/app/public
             - ./src:/app/src
+            - ./resources:/app/resources
         networks:
             - php-network
         depends_on:
@@ -27,6 +28,7 @@ services:
       volumes:
         - ./public:/app/public
         - ./src:/app/src
+        - ./resources:/app/resources
       networks:
         - php-network
     mariadb:
