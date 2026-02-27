@@ -7,13 +7,10 @@ use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
 use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
-use AstrX\Result\DiagnosticSinkAwareInterface;
-use AstrX\Result\DiagnosticSinkTrait;
 
-final class Translator implements DiagnosticSinkAwareInterface
+final class Translator
 {
-    use DiagnosticSinkTrait;
-    // Translator-owned diagnostics policy
+    // policy lives here
     public const ID_MISSING_TRANSLATION = 'astrx.i18n/missing_translation';
     public const LVL_MISSING_TRANSLATION = DiagnosticLevel::NOTICE;
 
@@ -25,11 +22,16 @@ final class Translator implements DiagnosticSinkAwareInterface
     /** @var array<string, string|callable(array, Translator): string> */
     private array $catalog = [];
 
-    private ?DiagnosticSinkInterface $sink;
+    private ?DiagnosticSinkInterface $sink = null;
 
     public function __construct(string $locale = 'en', ?DiagnosticSinkInterface $sink = null)
     {
         $this->locale = $locale;
+        $this->sink = $sink;
+    }
+
+    public function setDiagnosticSink(?DiagnosticSinkInterface $sink): void
+    {
         $this->sink = $sink;
     }
 
@@ -41,11 +43,6 @@ final class Translator implements DiagnosticSinkAwareInterface
     public function locale(): string
     {
         return $this->locale;
-    }
-
-    public function setDiagnosticSink(?DiagnosticSinkInterface $sink): void
-    {
-        $this->sink = $sink;
     }
 
     /**
@@ -68,7 +65,6 @@ final class Translator implements DiagnosticSinkAwareInterface
             return;
         }
 
-        // Basic validation
         foreach ($data as $k => $v) {
             if (!is_string($k) || !(is_string($v) || is_callable($v))) {
                 $this->emit(new InvalidLanguageFileDiagnostic(
@@ -97,8 +93,6 @@ final class Translator implements DiagnosticSinkAwareInterface
     }
 
     /**
-     * Translate a key.
-     *
      * @param array<string, scalar|\Stringable|null> $vars
      */
     public function t(string $key, array $vars = [], ?string $fallback = null): string
@@ -119,14 +113,11 @@ final class Translator implements DiagnosticSinkAwareInterface
             return $this->interpolate($entry, $vars);
         }
 
-        // callable: give it vars + translator for composition
         $out = $entry($vars, $this);
         return $this->interpolate($out, $vars);
     }
 
     /**
-     * Simple interpolation: {NAME} placeholders.
-     *
      * @param array<string, scalar|\Stringable|null> $vars
      */
     private function interpolate(string $template, array $vars): string
@@ -146,5 +137,10 @@ final class Translator implements DiagnosticSinkAwareInterface
         }
 
         return strtr($template, $replace);
+    }
+
+    private function emit(\AstrX\Result\DiagnosticInterface $d): void
+    {
+        $this->sink?->emit($d);
     }
 }

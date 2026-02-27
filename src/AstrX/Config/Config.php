@@ -11,13 +11,8 @@ use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
 
 final class Config
 {
-    private string $lang;
-
     /** @var array<string, array<string, mixed>> */
     private array $configuration;
-
-    /** @var list<string> */
-    private array $deferredLangClasses = [];
 
     private DiagnosticSinkInterface $sink;
 
@@ -27,10 +22,10 @@ final class Config
         $this->sink = $sink;
     }
 
-    public function getConfig(string $classShortName, string $configName, mixed $fallback = null): mixed
+    public function getConfig(string $domain, string $key, mixed $fallback = null): mixed
     {
-        if (isset($this->configuration[$classShortName]) && array_key_exists($configName, $this->configuration[$classShortName])) {
-            return $this->configuration[$classShortName][$configName];
+        if (isset($this->configuration[$domain]) && array_key_exists($key, $this->configuration[$domain])) {
+            return $this->configuration[$domain][$key];
         }
 
         if ($fallback !== null) {
@@ -40,82 +35,22 @@ final class Config
         $this->sink->emit(new ConfigNotFoundDiagnostic(
                               id: 'astrx.config/get_config.not_found',
                               level: DiagnosticLevel::WARNING,
-                              classShortName: $classShortName,
-                              configName: $configName
+                              classShortName: $domain,
+                              configName: $key
                           ));
 
         return null;
     }
 
-    public function addDeferredLangClass(object $class): void
-    {
-        $this->deferredLangClasses[] = get_class($class);
-    }
-
-    public function setLangAndLoadDeferred(string $lang): bool
-    {
-        $languages = $this->getConfig("Prelude", "available_languages");
-        if (!is_array($languages) || !in_array($lang, $languages, true)) {
-            return false;
-        }
-
-        $this->lang = $lang;
-
-        $general = LANG_DIR . "$lang.php";
-        if (file_exists($general)) {
-            require $general;
-        }
-
-        foreach ($this->deferredLangClasses as $fqcn) {
-            $this->loadLangForFqcn($fqcn);
-        }
-
-        // after language is set, no more deferrals are needed
-        $this->deferredLangClasses = [];
-
-        return true;
-    }
-
     /**
-     * Injector helper hook. Signature: (object $instance, string $className)
-     * Loads config/lang and applies config.
+     * Loads optional per-module config file:
+     * CONFIG_DIR/{Domain}.config.php
+     *
+     * Safe to call multiple times.
      */
-    public function onClassCreated(object $instance, string $className): void
+    public function loadModuleConfig(string $domain): void
     {
-        // 1) lang
-        if (isset($this->lang)) {
-            $this->loadLangForFqcn($className);
-        } else {
-            $this->deferredLangClasses[] = $className;
-        }
-
-        // 2) per-class config file merge
-        $this->loadConfigForFqcn($className);
-
-        // 3) apply config values to instance (if any)
-        $short = (new \ReflectionClass($className))->getShortName();
-        $cfg = $this->configuration[$short] ?? null;
-        if (is_array($cfg)) {
-            $this->applyConfigToInstance($instance, $cfg);
-        }
-    }
-
-    private function loadLangForFqcn(string $fqcn): void
-    {
-        $short = (new \ReflectionClass($fqcn))->getShortName();
-        $lang = $this->lang;
-
-        $file = LANG_DIR . "$lang/$short.$lang.php";
-        if (file_exists($file)) {
-            require_once $file;
-        }
-    }
-
-    private function loadConfigForFqcn(string $fqcn): void
-    {
-        $short = (new \ReflectionClass($fqcn))->getShortName();
-        $path = CONFIG_DIR . "$short.config.php";
-
+        $path = CONFIG_DIR . $domain . ".config.php";
         if (!file_exists($path)) {
             return;
         }
@@ -130,8 +65,21 @@ final class Config
             return;
         }
 
-        // merge whole tree
+        // merge top-level domains
         $this->configuration = array_merge($this->configuration, $loaded);
+    }
+
+    /**
+     * Applies the config section for $domain to $instance.
+     * If there's no section, does nothing.
+     */
+    public function applyModuleConfig(object $instance, string $domain): void
+    {
+        $cfg = $this->configuration[$domain] ?? null;
+        if (!is_array($cfg)) {
+            return;
+        }
+        $this->applyConfigToInstance($instance, $cfg);
     }
 
     /**
