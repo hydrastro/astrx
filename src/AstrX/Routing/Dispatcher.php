@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\Routing;
 
@@ -8,31 +7,29 @@ use AstrX\Result\Result;
 
 final class Dispatcher
 {
-    /**
-     * Drive controller chain until it returns null next controller.
-     */
-    public function dispatch(
-        Controller $entry,
-        RouteState $state,
-        RouteStack $stack
-    )
-    : Result {
+    public function __construct(private ?RoutingAliasLoader $aliasLoader = null, private ?string $locale = null) {}
+
+    public function dispatch(\AstrX\Controller\Controller $entry, RouteState $state, RouteInput $input): Result
+    {
         $current = $entry;
 
         while (true) {
-            $r = $current->handle($state, $stack);
-            if (!$r->isOk()) {
-                return $r;
+            // If query mode and controller declares a routing domain, extend aliases
+            if ($input instanceof QueryRouteInput && $current instanceof RoutingDomainInterface && $this->aliasLoader && $this->locale) {
+                $domainAliases = $this->aliasLoader->loadDomain($this->locale, $current->routingDomain());
+                $input = $input->withAliases($domainAliases);
             }
 
-            $next = $r->unwrap(); // ok payload is either Controller|null
-            if ($next === null) {
-                return Result::ok(null, $r->diagnostics());
-            }
-            if (!$next instanceof Controller) {
-                // programmer misuse; treat as fatal Result error
+            $r = $current->handle($state, $input);
+            if (!$r->isOk()) return $r;
+
+            $next = $r->unwrap();
+            if ($next === null) return Result::ok(null, $r->diagnostics());
+
+            if (!$next instanceof \AstrX\Controller\Controller) {
                 return Result::err(null, $r->diagnostics());
             }
+
             $current = $next;
         }
     }

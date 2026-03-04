@@ -43,13 +43,11 @@ final class Config
     }
 
     /**
-     * Loads optional per-module config file:
-     * CONFIG_DIR/{Domain}.config.php
-     *
-     * Safe to call multiple times.
+     * Loads optional per-module config file: CONFIG_DIR/{Domain}.config.php
      */
     public function loadModuleConfig(string $domain): void
     {
+        // todo: check for annotation / interface and do deterministic loading
         $path = CONFIG_DIR . $domain . ".config.php";
         if (!file_exists($path)) {
             return;
@@ -65,13 +63,11 @@ final class Config
             return;
         }
 
-        // merge top-level domains
         $this->configuration = array_merge($this->configuration, $loaded);
     }
 
     /**
      * Applies the config section for $domain to $instance.
-     * If there's no section, does nothing.
      */
     public function applyModuleConfig(object $instance, string $domain): void
     {
@@ -87,7 +83,6 @@ final class Config
      */
     private function applyConfigToInstance(object $instance, array $cfg): void
     {
-        // 1) explicit interface
         if ($instance instanceof ConfigurableInterface) {
             $instance->applyConfig($cfg);
             return;
@@ -95,7 +90,6 @@ final class Config
 
         $rc = new \ReflectionObject($instance);
 
-        // 2) property injection
         foreach ($rc->getProperties() as $prop) {
             $attrs = $prop->getAttributes(InjectConfig::class);
             if ($attrs === []) continue;
@@ -107,7 +101,6 @@ final class Config
             $prop->setValue($instance, $cfg[$key]);
         }
 
-        // 3) setter injection
         foreach ($rc->getMethods() as $method) {
             $attrs = $method->getAttributes(InjectConfig::class);
             if ($attrs === []) continue;

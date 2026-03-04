@@ -10,7 +10,6 @@ use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
 
 final class Translator
 {
-    // policy lives here
     public const ID_MISSING_TRANSLATION = 'astrx.i18n/missing_translation';
     public const LVL_MISSING_TRANSLATION = DiagnosticLevel::NOTICE;
 
@@ -45,9 +44,16 @@ final class Translator
         return $this->locale;
     }
 
-    /**
-     * Load lang file returning array<string, string|callable>.
-     */
+    public function loadDomain(string $langDir, string $domain): void
+    {
+        // todo: check for annotation / interface and do deterministic loading
+        $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
+                . $this->locale . DIRECTORY_SEPARATOR
+                . $domain . '.' . $this->locale . '.php';
+
+        $this->loadFile($file);
+    }
+
     public function loadFile(string $file): void
     {
         if (!is_file($file)) {
@@ -78,18 +84,6 @@ final class Translator
 
         /** @var array<string, string|callable(array, Translator): string> $data */
         $this->catalog = array_merge($this->catalog, $data);
-    }
-
-    /**
-     * Convention: LANG_DIR/{locale}/{domain}.{locale}.php
-     */
-    public function loadDomain(string $langDir, string $domain): void
-    {
-        $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
-                . $this->locale . DIRECTORY_SEPARATOR
-                . $domain . '.' . $this->locale . '.php';
-
-        $this->loadFile($file);
     }
 
     /**

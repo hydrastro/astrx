@@ -4,9 +4,10 @@ declare(strict_types=1);
 namespace AstrX;
 
 use AstrX\Config\Config;
+use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
+use AstrX\Module\ModuleLoader;
 use AstrX\Result\DiagnosticsCollector;
-use AstrX\Template\TemplateEngine;
 
 final class Prelude
 {
@@ -17,72 +18,37 @@ final class Prelude
         $errorHandler = new ErrorHandler($collector);
 
         $config = new Config($collector);
-        $config->addDeferredLangClass($config);
 
+        // environment setup
         $rawEnv = $config->getConfig('Prelude', 'environment', EnvironmentType::DEVELOPMENT->value);
-
         try {
             $env = EnvironmentType::from($rawEnv);
         } catch (\ValueError) {
             $env = EnvironmentType::DEVELOPMENT;
         }
-
         $errorHandler->setEnvironment($env);
 
+        $translator = new Translator('en', $collector);
+
+        $moduleLoader = new ModuleLoader($config, $translator);
+
         $injector = new Injector();
-        $config->addDeferredLangClass($injector);
 
-        // IMPORTANT: hook config/lang auto-loading + config injection
-        $injector->addHelper($config, 'onClassCreated')->drainTo($collector);
+        // Register helper: load module assets on class creation
+        $injector->addHelper($moduleLoader, 'onClassCreated')->drainTo($collector);
 
-        $injector->addHelper(
-            new class($collector) {
-                public function __construct(private \AstrX\Result\DiagnosticSinkInterface $sink) {}
-                public function onClassCreated(object $obj, string $className):
-                void
-                {
-                    if ($obj instanceof \AstrX\Result\DiagnosticSinkAwareInterface) {
-                        $obj->setDiagnosticSink($this->sink);
-                    }
-                }
-            },
-            'onClassCreated'
-        )->drainTo($collector);
-
-
-        // share instances
-        $injector->setClass($config);
-        $injector->setClass($errorHandler);
+        // Register shared instances
         $injector->setClass($collector);
+        $injector->setClass($errorHandler);
+        $injector->setClass($config);
+        $injector->setClass($translator);
+        $injector->setClass($moduleLoader);
+        $injector->setClass($injector);
         $injector->setClass($this);
 
-
-        $foo = $injector->createClass(\AstrX\Foo::class)
-            ->drainTo($collector)
-            ->unwrap();
-
-        echo $foo->run();
-
-        $templateEngine = $injector->createClass
-        (\AstrX\Template\TemplateEngine::class)->drainTo($collector)->unwrap();
-        assert($templateEngine instanceof TemplateEngine);
-        $template = $templateEngine->loadTemplate("test");//->unwrap();
-        // assert($template instanceof Template);
-        echo "<pre>";
-        print_r( $collector->diagnostics()->toArray());
-
-        $render = $template->render(array("test"=>"this is a test", "ar"=>array("foo","bar","baz")));
-
-        echo $render;
-
-
-/*
-        $contentManager = $injector->createClass("AstrX\\ContentManager")
-            ->drainTo($collector)
-            ->unwrap();
-
-        assert($contentManager instanceof ContentManager);
-        $contentManager->init();
-*/
+        // Create ContentManager and run
+        $cm = $injector->createClass(ContentManager::class)->drainTo($collector)->unwrap();
+        assert($cm instanceof ContentManager);
+        $cm->init();
     }
 }

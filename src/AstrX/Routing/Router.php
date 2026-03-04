@@ -1,138 +1,98 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\Routing;
 
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticSinkInterface;
-use AstrX\Routing\Diagnostics\UndefinedQueryKeyDiagnostic;
+use AstrX\Routing\Diagnostic\UndefinedQueryKeyDiagnostic;
 
 final class Router
 {
-    // Diagnostics policy (IDs + levels here)
     public const ID_UNDEFINED_QUERY_KEY = 'astrx.routing/undefined_query_key';
     public const LVL_UNDEFINED_QUERY_KEY = DiagnosticLevel::WARNING;
+
     private ?DiagnosticSinkInterface $sink = null;
 
     public function __construct(
         private RoutingConfig $cfg,
         private QueryParamRegistry $registry
-    ) {
-    }
+    ) {}
 
-    public function setDiagnosticSink(?DiagnosticSinkInterface $sink)
-    : void {
+    public function setDiagnosticSink(?DiagnosticSinkInterface $sink): void
+    {
         $this->sink = $sink;
     }
 
     /**
-     * Parse request into (state, stack).
-     * - rewrite: stack is remaining segments after consuming optional locale/session/page
-     * - query: stack is empty; params come from query
-     *
      * @param array<string,string> $query
      */
-    public function parse(string $requestUri, array $query)
-    : ParsedRoute {
+    public function parse(string $requestUri, array $query, RoutingContext $ctx): ParsedRoute
+    {
         $state = new RouteState();
 
         if ($this->cfg->mode === UrlMode::REWRITE) {
-            $stack = RouteStack::fromRequestUri(
-                $requestUri,
-                $this->cfg->basePath
-            );
+            $stack = RouteStack::fromRequestUri($requestUri, $this->cfg->basePath);
 
-            // optional head: locale
-            $locale = $this->cfg->defaultLocale;
+            // Optional head: locale (if matches availableLocales)
+            $locale = $ctx->defaultLocale;
             $peek = $stack->peek();
-            if ($peek !== null &&
-                in_array($peek, $this->cfg->availableLocales, true)) {
+            if ($peek !== null && $ctx->isLocale($peek)) {
                 $locale = (string)$stack->take();
             }
-            $state->set($this->cfg->localeKey, $locale);
+            $state->set($ctx->localeKey, $locale);
 
-            // optional head: sessionId (only if cookies disabled)
+            // Optional head: session id (only when cookies disabled)
             $sid = null;
-            if (!$this->cfg->sessionUseCookies) {
+            if (!$ctx->sessionUseCookies) {
                 $p = $stack->peek();
-                if ($p !== null &&
-                    preg_match($this->cfg->sessionIdRegex, $p) === 1) {
+                if ($p !== null && $ctx->isSessionId($p)) {
                     $sid = (string)$stack->take();
                 }
             }
-            $state->set($this->cfg->sessionKey, $sid);
+            $state->set($ctx->sessionKey, $sid);
 
-            // required-ish: page id (defaults to "main" if absent)
+            // First required segment (page); default to main
             $page = $stack->take();
-            $state->set($this->cfg->pageKey, $page??'main');
+            $state->set($ctx->pageKey, $page ?? 'main');
 
             return new ParsedRoute($state, $stack);
         }
 
         // QUERY MODE
-        // Locale affects external key names. Locale itself we resolve from "global domain" = "config".
-        $locale = $this->cfg->defaultLocale;
 
-        // Resolve locale from query using configured external key for canonical 'lang'
-        $langExternal = $this->registry->externalKey(
-            $locale,
-            ['config'],
-            $this->cfg->localeKey
-        )??$this->cfg->localeKey;
-        if (isset($query[$langExternal]) &&
-            in_array(
-                $query[$langExternal],
-                $this->cfg->availableLocales,
-                true
-            )) {
+        // Determine locale from query, using the locale mapping from domain "config".
+        $locale = $ctx->defaultLocale;
+        $langExternal = $this->registry->externalKey($locale, ['config'], $ctx->localeKey) ?? $ctx->localeKey;
+
+        if (isset($query[$langExternal]) && $ctx->isLocale($query[$langExternal])) {
             $locale = $query[$langExternal];
         }
-        $state->set($this->cfg->localeKey, $locale);
+        $state->set($ctx->localeKey, $locale);
 
-        // Convert query external keys to canonical keys using domain search order.
-        // Search order: ['config', pageDomain?, controllerDomain?] – at parse time we only know page AFTER mapping.
-        // So we do two passes:
-        // pass 1: map known global keys from 'config' domain
+        // Pass 1: map global keys (domain "config")
         foreach ($query as $extKey => $value) {
-            $canon = $this->registry->canonicalKey(
-                $locale,
-                ['config'],
-                $extKey
-            );
+            $canon = $this->registry->canonicalKey($locale, ['config'], $extKey);
             if ($canon !== null) {
                 $state->set($canon, $value);
             }
         }
 
-        // Resolve page using canonical key
-        $pageExt = $this->registry->externalKey(
-            $locale,
-            ['config'],
-            $this->cfg->pageKey
-        )??$this->cfg->pageKey;
-        $page = $query[$pageExt]??'main';
-        $state->set($this->cfg->pageKey, $page);
+        // Resolve page (fallback main)
+        $pageExt = $this->registry->externalKey($locale, ['config'], $ctx->pageKey) ?? $ctx->pageKey;
+        $page = $query[$pageExt] ?? 'main';
+        $state->set($ctx->pageKey, $page);
 
-        // session id in query when cookies disabled
-        if (!$this->cfg->sessionUseCookies) {
-            $sidExt = $this->registry->externalKey(
-                $locale,
-                ['config'],
-                $this->cfg->sessionKey
-            )??$this->cfg->sessionKey;
-            $state->set($this->cfg->sessionKey, $query[$sidExt]??null);
+        // Session in query if cookies disabled
+        if (!$ctx->sessionUseCookies) {
+            $sidExt = $this->registry->externalKey($locale, ['config'], $ctx->sessionKey) ?? $ctx->sessionKey;
+            $state->set($ctx->sessionKey, $query[$sidExt] ?? null);
         }
 
-        // pass 2: map page-specific keys from domain "{Page}" (shortname convention)
-        $pageDomain
-            = $page; // your page id can be used as domain if you keep them aligned; otherwise map id->domain in registry
+        // Pass 2: map page-domain keys (domain is page id here)
+        $pageDomain = $page;
         foreach ($query as $extKey => $value) {
-            $canon = $this->registry->canonicalKey(
-                $locale,
-                ['config', $pageDomain],
-                $extKey
-            );
+            $canon = $this->registry->canonicalKey($locale, ['config', $pageDomain], $extKey);
             if ($canon !== null) {
                 $state->set($canon, $value);
             }
@@ -142,123 +102,91 @@ final class Router
     }
 
     /**
-     * Build URL from a RouteState and controller-produced path segments.
-     *
-     * @param list<string> $pathSegments controller chain output (page controller + subcontrollers)
+     * @param list<string> $pathSegments controller-built tail after the page
      */
-    public function buildUrl(RouteState $state, array $pathSegments)
-    : string {
-        $locale = $state->get($this->cfg->localeKey, $this->cfg->defaultLocale)
-                  ??
-                  $this->cfg->defaultLocale;
-        $sid = $state->get($this->cfg->sessionKey, null);
+    public function buildUrl(RouteState $state, array $pathSegments, RoutingContext $ctx): string
+    {
+        $locale = $state->get($ctx->localeKey, $ctx->defaultLocale) ?? $ctx->defaultLocale;
+        $sid = $state->get($ctx->sessionKey, null);
+        $page = $state->get($ctx->pageKey, 'main') ?? 'main';
 
         if ($this->cfg->mode === UrlMode::REWRITE) {
             $segments = [];
 
-            // optional head: locale (only include if not default)
-            if ($locale !== $this->cfg->defaultLocale) {
+            // optional head locale (only if not default)
+            if ($locale !== $ctx->defaultLocale) {
                 $segments[] = $locale;
             }
 
-            // optional head: session id (if cookies disabled)
-            if (!$this->cfg->sessionUseCookies && $sid !== null) {
+            // optional head sid (if cookies disabled)
+            if (!$ctx->sessionUseCookies && $sid !== null) {
                 $segments[] = $sid;
             }
 
-            // required page + tail segments
-            $page = $state->get($this->cfg->pageKey, 'main')??'main';
             $segments[] = $page;
             $segments = array_merge($segments, $pathSegments);
 
             $path = implode('/', array_map('rawurlencode', $segments)) . '/';
-
             return rtrim($this->cfg->basePath, '/') . '/' . $path;
         }
 
-        // QUERY MODE: external keys depend on locale and domain.
-        $domains = ['config', $state->get($this->cfg->pageKey, 'main')??'main'];
+        // QUERY MODE
+        $domains = ['config', $page];
 
         /** @var array<string,string> $externalQuery */
         $externalQuery = [];
 
-        // Always include locale
-        $langExt = $this->registry->externalKey(
-            $locale,
-            ['config'],
-            $this->cfg->localeKey
-        );
+        // locale
+        $langExt = $this->registry->externalKey($locale, ['config'], $ctx->localeKey);
         if ($langExt === null) {
-            $this->emitUndefinedQueryKey($locale, $this->cfg->localeKey);
-            $langExt = $this->cfg->localeKey;
+            $this->emitUndefinedQueryKey($locale, $ctx->localeKey);
+            $langExt = $ctx->localeKey;
         }
         $externalQuery[$langExt] = $locale;
 
-        // Include page
-        $pageExt = $this->registry->externalKey(
-            $locale,
-            ['config'],
-            $this->cfg->pageKey
-        );
+        // page
+        $pageExt = $this->registry->externalKey($locale, ['config'], $ctx->pageKey);
         if ($pageExt === null) {
-            $this->emitUndefinedQueryKey($locale, $this->cfg->pageKey);
-            $pageExt = $this->cfg->pageKey;
+            $this->emitUndefinedQueryKey($locale, $ctx->pageKey);
+            $pageExt = $ctx->pageKey;
         }
-        $externalQuery[$pageExt] = $state->get($this->cfg->pageKey, 'main')
-                                   ??
-                                   'main';
+        $externalQuery[$pageExt] = $page;
 
-        // Session if cookies disabled
-        if (!$this->cfg->sessionUseCookies && $sid !== null) {
-            $sidExt = $this->registry->externalKey(
-                $locale,
-                ['config'],
-                $this->cfg->sessionKey
-            );
+        // sid in query if cookies disabled
+        if (!$ctx->sessionUseCookies && $sid !== null) {
+            $sidExt = $this->registry->externalKey($locale, ['config'], $ctx->sessionKey);
             if ($sidExt === null) {
-                $this->emitUndefinedQueryKey($locale, $this->cfg->sessionKey);
-                $sidExt = $this->cfg->sessionKey;
+                $this->emitUndefinedQueryKey($locale, $ctx->sessionKey);
+                $sidExt = $ctx->sessionKey;
             }
             $externalQuery[$sidExt] = $sid;
         }
 
-        // Tail segments become query params in query mode.
-        // Convention: controller chain should also set canonical params in RouteState; then we externalize them.
+        // other canonical params externalized
         foreach ($state->all() as $canon => $val) {
-            if ($val === null) {
-                continue;
-            }
-            if ($canon === $this->cfg->localeKey ||
-                $canon === $this->cfg->pageKey ||
-                $canon === $this->cfg->sessionKey) {
-                continue;
-            }
+            if ($val === null) continue;
+            if ($canon === $ctx->localeKey || $canon === $ctx->pageKey || $canon === $ctx->sessionKey) continue;
 
             $ext = $this->registry->externalKey($locale, $domains, $canon);
             if ($ext === null) {
                 $this->emitUndefinedQueryKey($locale, $canon);
-                $ext = $canon; // fallback
+                $ext = $canon;
             }
             $externalQuery[$ext] = $val;
         }
 
-        $base = rtrim($this->cfg->basePath, '/') .
-                '/' .
-                ltrim($this->cfg->entryPoint, '/');
+        $base = rtrim($this->cfg->basePath, '/') . '/' . ltrim($this->cfg->entryPoint, '/');
         $qs = http_build_query($externalQuery, '', '&');
-
         return $qs === '' ? $base : ($base . '?' . $qs);
     }
 
-    private function emitUndefinedQueryKey(string $locale, string $canonicalKey)
-    : void {
-        $this->sink?->emit(
-            new UndefinedQueryKeyDiagnostic(
-                self::ID_UNDEFINED_QUERY_KEY,
-                self::LVL_UNDEFINED_QUERY_KEY,
-                $locale,
-                $canonicalKey
-            )
-        );
+    private function emitUndefinedQueryKey(string $locale, string $canonicalKey): void
+    {
+        $this->sink?->emit(new UndefinedQueryKeyDiagnostic(
+                               self::ID_UNDEFINED_QUERY_KEY,
+                               self::LVL_UNDEFINED_QUERY_KEY,
+                               $locale,
+                               $canonicalKey
+                           ));
     }
 }

@@ -9,22 +9,16 @@ use AstrX\I18n\Translator;
 
 final class ModuleLoader
 {
-    private Config $config;
-    private Translator $translator;
-    /** @var array<string, true> */
-    private array $pendingLangDomains = [];
     private bool $localeSet = false;
+    /** @var array<string,true> */
+    private array $pendingLangDomains = [];
 
-    public function __construct(Config $config, Translator $translator)
-    {
-        $this->config = $config;
-        $this->translator = $translator;
+    public function __construct(
+        private Config $config,
+        private Translator $translator
+    ) {
     }
 
-    /**
-     * Boundary: called after ContentManager decides the locale.
-     * Loads all deferred language domains.
-     */
     public function setLocale(string $locale)
     : void {
         $this->translator->setLocale($locale);
@@ -33,28 +27,21 @@ final class ModuleLoader
         foreach (array_keys($this->pendingLangDomains) as $domain) {
             $this->translator->loadDomain(LANG_DIR, $domain);
         }
-
         $this->pendingLangDomains = [];
     }
 
     /**
-     * Injector helper hook. Signature: (object $instance, string $fqcn)
-     * Loads optional module assets:
-     * - config: CONFIG_DIR/{Domain}.config.php
-     * - lang:   LANG_DIR/{locale}/{Domain}.{locale}.php (or deferred until locale set)
-     * Then applies config section to instance (attributes/interface).
+     * Injector helper hook: called for each created class.
      */
     public function onClassCreated(object $instance, string $fqcn)
     : void {
         $domain = (new \ReflectionClass($fqcn))->getShortName();
 
-        // 1) config file (optional)
+        // config is always loadable
         $this->config->loadModuleConfig($domain);
-
-        // 2) apply config section to instance (optional)
         $this->config->applyModuleConfig($instance, $domain);
 
-        // 3) lang file (optional)
+        // lang may be deferred
         if ($this->localeSet) {
             $this->translator->loadDomain(LANG_DIR, $domain);
         } else {
