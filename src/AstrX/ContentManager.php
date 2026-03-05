@@ -7,20 +7,10 @@ use AstrX\Config\Config;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Result\DiagnosticsCollector;
-use AstrX\Routing\UrlMode;
-use AstrX\Routing\RoutingConfig;
-use AstrX\Routing\RoutingContext;
-use AstrX\Routing\RoutingAliasLoader;
-use AstrX\Routing\Router;
-use AstrX\Routing\ParsedRoute;
-use AstrX\Routing\RouteState;
-use AstrX\Routing\RouteStack;
-use AstrX\Routing\RewriteRouteInput;
-use AstrX\Routing\QueryRouteInput;
-use AstrX\Routing\RouteInput;
-use AstrX\Routing\Dispatcher;
-use AstrX\Routing\EntryController;
-use AstrX\Template\TemplateEngine;
+use AstrX\I18n\Translator;
+use AstrX\Routing\UrlStack;
+use AstrX\Routing\CurrentUrl;
+use AstrX\Routing\Request;
 use PDO;
 
 final class ContentManager
@@ -32,214 +22,152 @@ final class ContentManager
         private Config $config,
         private DiagnosticsCollector $collector,
         private ModuleLoader $moduleLoader,
-        private \AstrX\I18n\Translator $translator,
+        private Translator $translator,
     ) {}
 
     public function init(): void
     {
-        // -----------------------
-        // A) Build routing mechanics (RoutingConfig)
-        // -----------------------
-        $modeRaw = (string)$this->config->getConfig('Routing', 'mode', UrlMode::REWRITE->value);
-        $mode = $modeRaw === UrlMode::QUERY->value ? UrlMode::QUERY : UrlMode::REWRITE;
+        // routing config
+        $urlRewrite = $this->config->getConfig('Routing', 'url_rewrite', true);
+        assert(is_bool($urlRewrite));
 
-        $basePath = (string)$this->config->getConfig('Routing', 'base_path', '/');
-        $entryPoint = (string)$this->config->getConfig('Routing', 'entry_point', 'index.php');
+        $basePath = $this->config->getConfig('Routing', 'base_path', '/');
+        assert(is_string($basePath));
 
-        $routingCfg = new RoutingConfig($mode, $basePath, $entryPoint);
-
-        // -----------------------
-        // B) Policy owned here (RoutingContext)
-        // -----------------------
         $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
-        if (!is_array($availableLocales)) $availableLocales = ['en'];
-        $availableLocales = array_values(array_filter($availableLocales, fn($x) => is_string($x) && $x !== ''));
+        assert(is_array($availableLocales));
 
-        $defaultLocale = (string)$this->config->getConfig('Prelude', 'default_language', $availableLocales[0] ?? 'en');
+        $defaultLocale = $this->config->getConfig('Prelude', 'default_language', 'en');
+        assert(is_string($defaultLocale));
 
-        $sessionUseCookies = (bool)$this->config->getConfig('Session', 'use_cookies', true);
-        $sessionIdRegex = (string)$this->config->getConfig('Session', 'session_id_regex', '/^[\da-fA-F]{64,256}$/');
+        $sessionUseCookies = $this->config->getConfig('Session', 'use_cookies', true);
+        assert(is_bool($sessionUseCookies));
 
-        $localeKey  = (string)$this->config->getConfig('Routing', 'locale_key', 'lang');
-        $sessionKey = (string)$this->config->getConfig('Routing', 'session_key', 'sid');
-        $pageKey    = (string)$this->config->getConfig('Routing', 'page_key', 'page');
+        $sessionIdRegex = $this->config->getConfig('Session', 'session_id_regex', '/^[\da-fA-F]{64,256}$/');
+        assert(is_string($sessionIdRegex));
+        assert(@preg_match($sessionIdRegex, '') !== false); // regex compiles
 
-        $defaultPage = (string)$this->config->getConfig('Routing', 'default_page', 'main');
+        $localeKey  = $this->config->getConfig('Routing', 'locale_key', 'lang');
+        assert(is_string($localeKey));
+        $sessionKey = $this->config->getConfig('Routing', 'session_key', 'sid');
+        assert(is_string($sessionKey));
+        $pageKey    = $this->config->getConfig('Routing', 'page_key', 'page');
+        assert(is_string($pageKey));
 
-        $ctx = new RoutingContext(
-            defaultLocale: $defaultLocale,
-            availableLocales: $availableLocales,
-            sessionUseCookies: $sessionUseCookies,
-            sessionIdRegex: $sessionIdRegex,
-            localeKey: $localeKey,
-            sessionKey: $sessionKey,
-            pageKey: $pageKey
-        );
+        $defaultPage = $this->config->getConfig('Routing', 'default_page', 'main');
+        assert(is_string($defaultPage));
 
-        // -----------------------
-        // C) Read raw request
-        // -----------------------
-        $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+        $request = $this->injector->getClass(Request::class)->unwrap();
+        assert($request instanceof Request);
 
-        /** @var array<string,string> $query */
-        $query = [];
-        foreach ($_GET as $k => $v) {
-            if (is_string($k) && (is_string($v) || is_numeric($v))) $query[$k] = (string)$v;
-        }
+        $currentUrl = new CurrentUrl();
 
-        // -----------------------
-        // D) Head parsing (locale/sid/page) using alias files for QUERY mode
-        // -----------------------
-        $aliasLoader = new RoutingAliasLoader(RESOURCE_LANG_DIR);
+        if ($urlRewrite) {
+            $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+            $stack = UrlStack::fromRequest($requestUri, $basePath);
 
-        $state = new RouteState();
+            // HEAD parsing: [lang]? [sid]? page
+            $first = $stack->pop();
+            $lang = $defaultLocale;
 
-        $input = $this->makeRouteInputAndParseHead(
-            cfg: $routingCfg,
-            ctx: $ctx,
-            aliasLoader: $aliasLoader,
-            query: $query,
-            requestUri: (string)$requestUri,
-            defaultPage: $defaultPage,
-            outState: $state
-        );
-
-        // locale is now known -> enable module lang loading
-        $locale = $state->get($ctx->localeKey, $ctx->defaultLocale) ?? $ctx->defaultLocale;
-        $this->translator->setLocale($locale);
-        $this->moduleLoader->setLocale($locale);
-
-        // -----------------------
-        // E) Setup PDO + session early (needed for PageHandler + PRG)
-        // -----------------------
-        $this->setupPdo();
-        $this->setupSession($state, $ctx);
-
-        // -----------------------
-        // F) Resolve Page from DB
-        // -----------------------
-        /** @var \PageHandler $pageHandler */
-        $pageHandler = $this->injector->createClass(\PageHandler::class)->drainTo($this->collector)->unwrap();
-
-        $pageToken = $state->get($ctx->pageKey, $defaultPage) ?? $defaultPage;
-
-        $page = $this->resolvePage($pageHandler, $pageToken, $locale);
-
-        // Put page info into template args (base)
-        $this->template_args = [
-            'locale' => $locale,
-            'page' => $pageToken,
-        ];
-
-        // -----------------------
-        // G) Instantiate controller and run controller chain
-        // -----------------------
-        $dispatcher = new Dispatcher();
-
-        $entry = new EntryController($ctx, function(string $pageId) use ($page) {
-            // pageId can be the token; we’re using DB page->file_name for controller mapping
-            if (!$page->controller) return null;
-            return $this->instantiateControllerForPage($page->file_name);
-        });
-
-        $result = $dispatcher->dispatch($entry, $state, $input);
-        $result->drainTo($this->collector);
-
-        // -----------------------
-        // H) Render template
-        // -----------------------
-        $templateFile = $page->template_file_name !== ''
-            ? $page->template_file_name
-            : (string)$this->config->getConfig('ContentManager', 'default_template', 'test');
-
-        /** @var TemplateEngine $templateEngine */
-        $templateEngine = $this->injector->createClass(TemplateEngine::class)->drainTo($this->collector)->unwrap();
-        if (method_exists($templateEngine, 'setDiagnosticSink')) {
-            $templateEngine->setDiagnosticSink($this->collector);
-        }
-
-        $r = $templateEngine->renderTemplate($templateFile, $this->template_args);
-        $r->drainTo($this->collector);
-
-        echo $r->valueOr('<h1>Template failed</h1>');
-    }
-
-    private function makeRouteInputAndParseHead(
-        RoutingConfig $cfg,
-        RoutingContext $ctx,
-        RoutingAliasLoader $aliasLoader,
-        array $query,
-        string $requestUri,
-        string $defaultPage,
-        RouteState $outState
-    ): RouteInput {
-        if ($cfg->mode === UrlMode::REWRITE) {
-            $stack = RouteStack::fromRequestUri($requestUri, $cfg->basePath);
-
-            // optional locale
-            $locale = $ctx->defaultLocale;
-            $p = $stack->peek();
-            if ($p !== null && $ctx->isLocale($p)) {
-                $locale = (string)$stack->take();
+            if ($first !== null && in_array($first, $availableLocales, true)) {
+                $lang = $first;
+            } else {
+                // if first is not a locale, it's either sid or page. push it back logically:
+                // easiest: treat it as "pageCandidate"
+                $pageCandidate = $first;
+                $first = null;
             }
-            $outState->set($ctx->localeKey, $locale);
 
-            // optional sid (only if cookies disabled)
+            $currentUrl->set($localeKey, $lang);
+
+            // sid
             $sid = null;
-            if (!$ctx->sessionUseCookies) {
-                $p = $stack->peek();
-                if ($p !== null && $ctx->isSessionId($p)) {
-                    $sid = (string)$stack->take();
+            $next = $stack->pop();
+
+            if (!$sessionUseCookies && $next !== null && preg_match($sessionIdRegex, $next) === 1) {
+                $sid = $next;
+                $next = $stack->pop();
+            }
+
+            if ($sid !== null) {
+                $currentUrl->set($sessionKey, $sid);
+            }
+
+            // page
+            $page = $next ?? ($pageCandidate ?? null) ?? $defaultPage;
+            $currentUrl->set($pageKey, $page);
+
+            // Now configure Request to read from CurrentUrl in rewrite mode
+            $request->configureRewrite(true, $currentUrl);
+        } else {
+            // QUERY MODE: lang key is canonical and not translated
+            $lang = $request->get($localeKey, $defaultLocale);
+            assert(is_string($lang));
+            if (!in_array($lang, $availableLocales, true)) {
+                $lang = $defaultLocale;
+            }
+            $this->translator->setLocale($lang);
+
+            // just ensure canonical keys exist for downstream code
+            $currentUrl->set($localeKey, $lang);
+
+            if (!$sessionUseCookies) {
+                $sid = $request->get($sessionKey, null);
+                if (is_string($sid) && preg_match($sessionIdRegex, $sid) === 1) {
+                    $currentUrl->set($sessionKey, $sid);
                 }
             }
-            $outState->set($ctx->sessionKey, $sid);
 
-            // page (first required, default if absent)
-            $page = $stack->take();
-            $outState->set($ctx->pageKey, $page ?? $defaultPage);
+            $page = $request->get($pageKey, $defaultPage);
+            assert(is_string($page));
+            $currentUrl->set($pageKey, $page);
 
-            return new RewriteRouteInput($stack);
+            // In query mode, Request keeps reading from $_GET; but we still keep CurrentUrl
+            // as the canonical bag for URL building later if you want.
+            $request->configureRewrite(false, null);
         }
 
-        // QUERY MODE: determine locale by trying each locale's global routing aliases
-        $locale = $ctx->defaultLocale;
+        // Locale is now known
+        $lang = $currentUrl->get($localeKey, $defaultLocale);
+        assert(is_string($lang));
+        // If Translator::setLocale returns bool in your code, keep this pattern:
+        $this->translator->setLocale($lang);
+        $this->moduleLoader->setLocale($lang);
 
-        foreach ($ctx->availableLocales as $candidate) {
-            $globalAliases = $aliasLoader->loadGlobal($candidate);
-            $extLangKey = $globalAliases[$ctx->localeKey] ?? $ctx->localeKey;
+        // Setup DB (safe to do now)
+        $this->setupPdo();
 
-            if (isset($query[$extLangKey]) && $ctx->isLocale($query[$extLangKey])) {
-                $locale = $query[$extLangKey];
-                break;
-            }
-        }
+        $prgKey = $this->config->getConfig('Session', 'prg_key', 'prg');
+        assert(is_string($prgKey));
 
-        $outState->set($ctx->localeKey, $locale);
-
-        // Build query input with GLOBAL aliases for that locale (entry controller owns these)
-        $global = $aliasLoader->loadGlobal($locale);
-        $qin = new QueryRouteInput($query, $global);
-
-        // sid only if cookies disabled
-        if (!$ctx->sessionUseCookies) {
-            $outState->set($ctx->sessionKey, $qin->queryValue($ctx->sessionKey));
-        } else {
-            $outState->set($ctx->sessionKey, null);
-        }
-
-        // page with default
-        $outState->set($ctx->pageKey, $qin->queryValue($ctx->pageKey) ?? $defaultPage);
-
-        return $qin;
+        $this->setupSessionAndPrg(
+            request: $request,
+            currentUrl: $currentUrl,
+            sessionUseCookies: $sessionUseCookies,
+            sessionKey: $sessionKey,
+            sessionIdRegex: $sessionIdRegex,
+            prgKey: $prgKey
+        );
+        // Next steps: setup session, resolve page from DB, controller chain, render, etc.
+        // (we'll do those after routing is stable)
+        echo "KEK";
     }
 
     private function setupPdo(): void
     {
-        $dsn = (string)$this->config->getConfig("PDO", "db_type", "mysql");
-        $host = (string)$this->config->getConfig("PDO", "db_host", "mysql");
-        $dbname = (string)$this->config->getConfig("PDO", "db_name", "content_manager");
-        $username = (string)$this->config->getConfig("PDO", "db_username", "user");
-        $passwd = (string)$this->config->getConfig("PDO", "db_password", "password");
+        $this->config->loadModuleConfig('PDO');
+
+        $dsn = $this->config->getConfig("PDO", "db_type", "mysql");
+        assert(is_string($dsn));
+        $host = $this->config->getConfig("PDO", "db_host", "mariadb");
+        assert(is_string($host));
+        $dbname = $this->config->getConfig("PDO", "db_name", "content_manager");
+        assert(is_string($dbname));
+        $username = $this->config->getConfig("PDO", "db_username", "user");
+        assert(is_string($username));
+        $passwd = $this->config->getConfig("PDO", "db_password", "password");
+        assert(is_string($passwd));
 
         $pdo = new PDO(
             $dsn . ":host=" . $host . ";dbname=" . $dbname . ";",
@@ -247,26 +175,37 @@ final class ContentManager
             $passwd
         );
 
-        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, (bool)$this->config->getConfig('PDO', 'emulate_prepares', false));
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, (bool)$this->config->getConfig('PDO', 'errmode_exception', true) ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT);
-        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, (bool)$this->config->getConfig('PDO', 'default_fetch_assoc', true) ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH);
+        $emulateParameters = $this->config->getConfig('PDO', 'emulate_prepares', false);
+        assert(is_bool($emulateParameters));
+        $errmodeException = $this->config->getConfig('PDO', 'errmode_exception', true);
+        assert(is_bool($errmodeException));
+        $fetchAssoc = $this->config->getConfig('PDO', 'default_fetch_assoc', true);
+        assert(is_bool($fetchAssoc));
+
+        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulateParameters);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, $errmodeException ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH);
 
         $this->injector->setClass($pdo);
     }
 
-    private function setupSession(RouteState $state, RoutingContext $ctx): void
-    {
-        /** @var \SecureSessionHandler $handler */
-        $handler = $this->injector->getClass(\SecureSessionHandler::class)->unwrap();
-        session_set_save_handler($handler, true);
+    private function setupSessionAndPrg(
+        Request $request,
+        CurrentUrl $currentUrl,
+        bool $sessionUseCookies,
+        string $sessionKey,
+        string $sessionIdRegex,
+        string $prgKey
+    ): void {
+        // Install handler if you have SecureSessionHandler in your project:
+        // $handler = $this->injector->getClass(\AstrX\SecureSessionHandler\SecureSessionHandler::class)->unwrap();
+        // session_set_save_handler($handler, true);
 
-        $sid = $state->get($ctx->sessionKey);
-
-        if (!$ctx->sessionUseCookies && is_string($sid) && $sid !== '' && $ctx->isSessionId($sid)) {
-            if ($handler->validateId($sid)) {
+        // If cookies disabled, accept SID from routing/currentUrl.
+        if (!$sessionUseCookies) {
+            $sid = $currentUrl->get($sessionKey, '');
+            if (is_string($sid) && $sid !== '' && preg_match($sessionIdRegex, $sid) === 1) {
                 session_id($sid);
-            } else {
-                // fixation attempt policy: emit diagnostic or ban later
             }
         }
 
@@ -274,57 +213,42 @@ final class ContentManager
             session_start();
         }
 
-        $state->set($ctx->sessionKey, session_id());
-    }
+        // Ensure canonical SID is set after session_start().
+        $currentUrl->set($sessionKey, (string)session_id());
 
-    private function resolvePage(\PageHandler $pageHandler, string $pageToken, string $locale): \Page
-    {
-        // 1) try direct url_id match (non-i18n)
-        $id = $pageHandler->getPageIdFromUrlId($pageToken);
-        $page = $id !== null ? $pageHandler->getPage($id) : null;
+        // PRG handling
+        /** @var PostRedirectGet $prg */
+        $prg = $this->injector->getClass(PostRedirectGet::class)->unwrap();
+        assert($prg instanceof PostRedirectGet);
 
-        // 2) fallback: i18n pages mapping by translating their url_id keys
-        if ($page === null) {
-            $map = [];
-            foreach ($pageHandler->getInternationalizedPageIds() as $row) {
-                $urlId = (string)$row['url_id']; // e.g. "WORDING_MAIN"
-                $pid = (int)$row['id'];
+        // 1) If POST: store + redirect
+        if ($_POST !== []) {
+            $data = serialize($_POST);
+            $sid = (string)session_id();
+            $token = hash_hmac('sha256', $data, $sid);
 
-                // Translation key convention: use url_id as key in Translator catalogs
-                $resolved = $this->translator->t($urlId);
-                $map[$resolved] = $pid;
-            }
+            $prg->store($token, $_POST);
 
-            if (isset($map[$pageToken])) {
-                $page = $pageHandler->getPage($map[$pageToken]);
-            }
+            // Build redirect URL with token.
+            // For now (minimal), use query mode redirect even in rewrite mode.
+            // Later you can unify with your Url builder.
+            $qs = http_build_query([$prgKey => $token], '', '&');
+            $location = ($_SERVER['REQUEST_URI'] ?? '/');
+            $location = explode('?', $location, 2)[0] . '?' . $qs;
+
+            header('Location: ' . $location, true, 302);
+            exit;
         }
 
-        if ($page === null || $page->hidden) {
-            http_response_code(404);
-
-            $errorUrlId = (string)$this->config->getConfig('ContentManager', 'error_page_url_id', 'WORDING_ERROR');
-            $eid = $pageHandler->getPageIdFromUrlId($errorUrlId);
-
-            $page = $eid !== null ? $pageHandler->getPage($eid) : null;
-            if ($page === null) {
-                $page = $pageHandler->getErrorPage();
+        // 2) If GET has token: load + merge into $_POST
+        $token = $request->get($prgKey, null);
+        if (is_string($token) && $token !== '') {
+            $data = $prg->load($token);
+            if ($data !== []) {
+                $_POST = array_merge($_POST, $data);
             }
+            // Optional: clear one-time token
+            $prg->clear($token);
         }
-
-        return $page;
-    }
-
-    private function instantiateControllerForPage(string $fileName): ?object
-    {
-        $class = str_replace('_', '', ucwords($fileName, '_')) . 'Controller';
-        if (!class_exists($class)) {
-            return null;
-        }
-
-        $r = $this->injector->createClass($class)->drainTo($this->collector);
-        if (!$r->isOk()) return null;
-
-        return $r->unwrap();
     }
 }

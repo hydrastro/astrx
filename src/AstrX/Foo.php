@@ -4,12 +4,12 @@ declare(strict_types = 1);
 
 namespace AstrX;
 
-use AstrX\Config\Attributes\InjectConfig;
+use AstrX\Config\InjectConfig;
 use AstrX\Config\ConfigurableInterface;
 
 final class Foo implements ConfigurableInterface
 {
-    // Property injection (no setter required)
+    // Property injection (no setter required) but does this work with private properties???
     #[InjectConfig('enabled')]
     private bool $enabled = false;
     #[InjectConfig('max_items')]

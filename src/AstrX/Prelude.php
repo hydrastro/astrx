@@ -8,6 +8,8 @@ use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\ErrorHandler\EnvironmentType;
+use AstrX\ErrorHandler\ErrorHandler;
 
 final class Prelude
 {
@@ -20,22 +22,26 @@ final class Prelude
         $config = new Config($collector);
 
         // environment setup
-        $rawEnv = $config->getConfig('Prelude', 'environment', EnvironmentType::DEVELOPMENT->value);
-        try {
-            $env = EnvironmentType::from($rawEnv);
-        } catch (\ValueError) {
-            $env = EnvironmentType::DEVELOPMENT;
-        }
+        $env = EnvironmentType::from(
+            $config->getConfig(
+                'Prelude',
+                'environment',
+                EnvironmentType::DEVELOPMENT->value
+            )
+        );
+        assert($env instanceof EnvironmentType);
         $errorHandler->setEnvironment($env);
 
-        $translator = new Translator('en', $collector);
+        $translator = new Translator($collector);
 
         $moduleLoader = new ModuleLoader($config, $translator);
 
         $injector = new Injector();
 
         // Register helper: load module assets on class creation
-        $injector->addHelper($moduleLoader, 'onClassCreated')->drainTo($collector);
+        $injector->addHelper($moduleLoader, 'onClassCreated')->drainTo(
+            $collector
+        );
 
         // Register shared instances
         $injector->setClass($collector);
@@ -47,7 +53,9 @@ final class Prelude
         $injector->setClass($this);
 
         // Create ContentManager and run
-        $cm = $injector->createClass(ContentManager::class)->drainTo($collector)->unwrap();
+        $cm = $injector->createClass(ContentManager::class)
+            ->drainTo($collector)
+            ->unwrap();
         assert($cm instanceof ContentManager);
         $cm->init();
     }

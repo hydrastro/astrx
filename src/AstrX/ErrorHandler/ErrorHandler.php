@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX;
+namespace AstrX\ErrorHandler;
 
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticSinkInterface;
@@ -57,7 +57,7 @@ final class ErrorHandler
         ini_set('display_errors', $policy['display_errors']);
         ini_set('display_startup_errors', $policy['display_startup_errors']);
         error_reporting($policy['error_reporting']);
-        assert_options(ASSERT_ACTIVE, $policy['assert_active']);
+        // assert_options(ASSERT_ACTIVE, $policy['assert_active']);
 
         if ($environmentType === EnvironmentType::DEVELOPMENT || $environmentType === EnvironmentType::TESTING) {
             ini_set('assert.exception', '1');

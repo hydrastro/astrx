@@ -6,6 +6,8 @@ namespace AstrX\Module;
 
 use AstrX\Config\Config;
 use AstrX\I18n\Translator;
+use ReflectionClass;
+use ReflectionException;
 
 final class ModuleLoader
 {
@@ -14,8 +16,8 @@ final class ModuleLoader
     private array $pendingLangDomains = [];
 
     public function __construct(
-        private Config $config,
-        private Translator $translator
+        private readonly Config $config,
+        private readonly Translator $translator
     ) {
     }
 
@@ -35,7 +37,7 @@ final class ModuleLoader
      */
     public function onClassCreated(object $instance, string $fqcn)
     : void {
-        $domain = (new \ReflectionClass($fqcn))->getShortName();
+         $domain = (new ReflectionClass($fqcn))->getShortName();
 
         // config is always loadable
         $this->config->loadModuleConfig($domain);

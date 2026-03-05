@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX;
+namespace AstrX\ErrorHandler;
 
 use AstrX\Result\AbstractDiagnostic;
 use AstrX\Result\DiagnosticLevel;

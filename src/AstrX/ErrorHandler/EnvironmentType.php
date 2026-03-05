@@ -1,7 +1,7 @@
 <?php
 /* @noinspection PhpUnused */
 
-namespace AstrX;
+namespace AstrX\ErrorHandler;
 
 enum EnvironmentType : int
 

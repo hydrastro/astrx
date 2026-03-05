@@ -10,11 +10,11 @@ use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
 
 final class Translator
 {
-    public const ID_MISSING_TRANSLATION = 'astrx.i18n/missing_translation';
-    public const LVL_MISSING_TRANSLATION = DiagnosticLevel::NOTICE;
+    public const string ID_MISSING_TRANSLATION = 'astrx.i18n/missing_translation';
+    public const DiagnosticLevel LVL_MISSING_TRANSLATION = DiagnosticLevel::NOTICE;
 
-    public const ID_INVALID_LANGUAGE_FILE = 'astrx.i18n/invalid_language_file';
-    public const LVL_INVALID_LANGUAGE_FILE = DiagnosticLevel::ERROR;
+    public const string ID_INVALID_LANGUAGE_FILE = 'astrx.i18n/invalid_language_file';
+    public const DiagnosticLevel LVL_INVALID_LANGUAGE_FILE = DiagnosticLevel::ERROR;
 
     private string $locale;
 
@@ -23,9 +23,9 @@ final class Translator
 
     private ?DiagnosticSinkInterface $sink = null;
 
-    public function __construct(string $locale = 'en', ?DiagnosticSinkInterface $sink = null)
+    public function __construct(?DiagnosticSinkInterface $sink = null)
     {
-        $this->locale = $locale;
+        $this->locale = 'en';
         $this->sink = $sink;
     }
 
@@ -39,14 +39,14 @@ final class Translator
         $this->locale = $locale;
     }
 
-    public function locale(): string
+    public function getLocale(): string
     {
         return $this->locale;
     }
 
     public function loadDomain(string $langDir, string $domain): void
     {
-        // todo: check for annotation / interface and do deterministic loading
+        // todo: check for annotation / interface and do deterministic loading?
         $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR
                 . $domain . '.' . $this->locale . '.php';

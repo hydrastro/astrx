@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-use AstrX\EnvironmentType;
+use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\Routing\UrlMode;
 
 return [

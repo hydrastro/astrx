@@ -8,6 +8,7 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic;
 use AstrX\Config\Diagnostic\ConfigFileInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
+use ReflectionObject;
 
 final class Config
 {
@@ -47,7 +48,7 @@ final class Config
      */
     public function loadModuleConfig(string $domain): void
     {
-        // todo: check for annotation / interface and do deterministic loading
+        // todo: check for annotation / interface and do deterministic loading?
         $path = CONFIG_DIR . $domain . ".config.php";
         if (!file_exists($path)) {
             return;
@@ -88,14 +89,18 @@ final class Config
             return;
         }
 
-        $rc = new \ReflectionObject($instance);
+        $rc = new ReflectionObject($instance);
 
         foreach ($rc->getProperties() as $prop) {
             $attrs = $prop->getAttributes(InjectConfig::class);
-            if ($attrs === []) continue;
+            if ($attrs === []) {
+                continue;
+            }
 
             $key = $attrs[0]->newInstance()->key;
-            if (!array_key_exists($key, $cfg)) continue;
+            if (!array_key_exists($key, $cfg)) {
+                continue;
+            }
 
             $prop->setAccessible(true);
             $prop->setValue($instance, $cfg[$key]);
@@ -103,10 +108,14 @@ final class Config
 
         foreach ($rc->getMethods() as $method) {
             $attrs = $method->getAttributes(InjectConfig::class);
-            if ($attrs === []) continue;
+            if ($attrs === []) {
+                continue;
+            }
 
             $key = $attrs[0]->newInstance()->key;
-            if (!array_key_exists($key, $cfg)) continue;
+            if (!array_key_exists($key, $cfg)) {
+                continue;
+            }
 
             if ($method->getNumberOfParameters() !== 1) {
                 $this->sink->emit(new ConfigSetterInvalidDiagnostic(
