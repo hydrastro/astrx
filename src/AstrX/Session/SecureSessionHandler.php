@@ -3,12 +3,13 @@
 /** @noinspection PhpUnused */
 
 declare(strict_types = 1);
-namespace AstrX\SecureSessionHandler;
+namespace AstrX\Session;
 
 use SessionHandlerInterface;
 use SessionIdInterface;
 use SessionUpdateTimestampHandlerInterface;
 use PDO;
+use AstrX\Config\InjectConfig;
 
 /**
  * Secure Session Handler Class.
@@ -31,6 +32,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
     private string $current_session_id;
     private bool $encrypt = true;
 
+    #[InjectConfig('encrypt')]
     public function setEncrypt(bool $encrypt)
     : void {
         $this->encrypt = $encrypt;
@@ -58,6 +60,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
     /**
      * @param int $sid_bytes
      */
+    #[InjectConfig('sid_bytes')]
     public function setSidBytes(int $sid_bytes)
     : void {
         $this->sid_bytes = $sid_bytes;

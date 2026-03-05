@@ -15,6 +15,7 @@ use AstrX\Page\Page;
 use AstrX\Page\PageHandler;
 use AstrX\Session\PostRedirectGet;
 use PDO;
+use AstrX\Session\SecureSessionHandler;
 
 final class ContentManager
 {
@@ -189,6 +190,8 @@ final class ContentManager
 
         // -------- Dispatch controller or render template --------
         $this->dispatchPage($page, $remainingSegments);
+
+        echo "topkek";
     }
 
     private function setupPdo(): void
@@ -225,18 +228,26 @@ final class ContentManager
     }
 
     private function setupSession(
-        CurrentUrl $current,
+        \AstrX\Routing\CurrentUrl $current,
         bool $sessionUseCookies,
         string $sessionKey,
         string $sessionIdRegex
     ): void {
-        // If you have a DB-backed SecureSessionHandler, install it here.
-        // Otherwise, default PHP session handler is fine.
+        /** @var SecureSessionHandler $handler */
+        $handler = $this->injector
+            ->createClass(SecureSessionHandler::class)
+            ->drainTo($this->collector)
+            ->unwrap();
+        assert($handler instanceof SecureSessionHandler);
+
+        session_set_save_handler($handler, true);
 
         if (!$sessionUseCookies) {
             $sid = $current->get($sessionKey, '');
             if (is_string($sid) && $sid !== '' && preg_match($sessionIdRegex, $sid) === 1) {
-                session_id($sid);
+                if ($handler->validateId($sid)) {
+                    session_id($sid);
+                }
             }
         }
 
@@ -244,7 +255,6 @@ final class ContentManager
             session_start();
         }
 
-        // ensure canonical sid is set (even if cookies are used)
         $current->set($sessionKey, (string)session_id());
     }
 

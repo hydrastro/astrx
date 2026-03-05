@@ -3,23 +3,17 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
-use AstrX\Routing\RouteState;
-use AstrX\Routing\RouteInput;
 use AstrX\Result\Result;
 
 interface Controller
 {
     /**
-     * Return:
-     * - Result::ok(null) finished
-     * - Result::ok(Controller $next) delegate
-     * - Result::err(...) fatal
+     * Controller may:
+     * - mutate ContentManager template args
+     * - send a response itself (API/avatar) and return Result::ok(true)
+     * - or return ok(false) meaning "continue default rendering"
+     *
+     * @return Result<bool> true => response already sent; false => continue rendering
      */
-    public function handle(RouteState $state, RouteInput $input): Result;
-
-    /**
-     * Optional: provide tail segments for rewrite URL building.
-     * @return list<string>
-     */
-    public function buildPath(RouteState $state): array;
+    public function handle(): Result;
 }
