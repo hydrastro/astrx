@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\Controller;
 
@@ -9,27 +8,22 @@ use AstrX\Result\Result;
 
 final class ErrorController implements Controller
 {
-    public function __construct(private ContentManager $cm)
-    {
-    }
+    public function __construct(private ContentManager $cm) {}
 
-    public function handle()
-    : Result
+    public function handle(): Result
     {
         $status = http_response_code();
-        $errorName = ucfirst((string)$this->cm->t('WORDING_ERROR')) .
-                     ' ' .
-                     $status;
+        $errorName = ucfirst((string)WORDING_ERROR) . " " . $status;
+        $key = "WORDING_HTTP_STATUS_" . $status;
 
-        $key = 'WORDING_HTTP_STATUS_' . $status;
-        $errorMessage = (string)$this->cm->t($key, fallback: $key);
+        $errorMessage = defined($key) ? (string)constant($key) : 'Error';
 
-        $this->cm->templateArgs['title'] = $errorName . ' - ' . $errorMessage;
-        $this->cm->templateArgs['description'] = $errorMessage;
-        $this->cm->templateArgs['keywords'] = ucwords($errorName);
-        $this->cm->templateArgs['error_name'] = $errorName;
-        $this->cm->templateArgs['error_message'] = $errorMessage;
+        $this->cm->template_args["title"] = $errorName . " - " . $errorMessage;
+        $this->cm->template_args["description"] = $errorMessage;
+        $this->cm->template_args["keywords"] = ucwords($errorName);
+        $this->cm->template_args["error_name"] = $errorName;
+        $this->cm->template_args["error_message"] = $errorMessage;
 
-        return Result::ok(false);
+        return Result::ok(null);
     }
 }

@@ -8,12 +8,12 @@ use AstrX\Result\Result;
 interface Controller
 {
     /**
-     * Controller may:
-     * - mutate ContentManager template args
-     * - send a response itself (API/avatar) and return Result::ok(true)
-     * - or return ok(false) meaning "continue default rendering"
+     * Execute controller logic.
+     * - MUST NOT echo/exit.
+     * - SHOULD mutate ContentManager template args via injected ContentManager.
+     * - MAY return Result::err(...) for fatal failure.
      *
-     * @return Result<bool> true => response already sent; false => continue rendering
+     * @return Result<null>  (use ok(null) or err($error))
      */
     public function handle(): Result;
 }

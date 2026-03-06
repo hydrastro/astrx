@@ -13,7 +13,7 @@ use AstrX\Routing\Request;
 use AstrX\Routing\UrlStack;
 use AstrX\Page\Page;
 use AstrX\Page\PageHandler;
-use AstrX\Session\PostRedirectGet;
+use AstrX\Session\PrgHandler;
 use PDO;
 use AstrX\Session\SecureSessionHandler;
 
@@ -57,6 +57,8 @@ final class ContentManager
 
         // -------- Locale config --------
         $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
+        // todo check that the array contains only strings. Maybe we could
+        // enforce this with a custom type LanguageCode::EN etc.
         assert(is_array($availableLocales));
         $defaultLocale = $this->config->getConfig('Prelude', 'default_language', 'en');
         assert(is_string($defaultLocale));
@@ -75,127 +77,65 @@ final class ContentManager
         assert(@preg_match($prgTokenRegex, '') !== false);
 
         // -------- Request + canonical bag --------
-        /** @var Request $request */
         $request = $this->injector->getClass(Request::class)->unwrap();
         assert($request instanceof Request);
 
+
         $current = new CurrentUrl();
 
-        // -------- Parse head (rewrite/query) into canonical keys --------
+        $sid = null;
         if ($urlRewrite) {
-            $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+            $requestUri = ($_SERVER['REQUEST_URI'] ?? '/');
             $stack = UrlStack::fromRequest($requestUri, $basePath);
 
-            // [/lang]? [/sid]? /page ...
-            $first = $stack->pop();
-            $locale = $defaultLocale;
-
-            $pageCandidate = null;
-            if ($first !== null && in_array($first, $availableLocales, true)) {
-                $locale = $first;
+            $val = $stack->pop();
+            if ($val !== null && in_array($val, $availableLocales, true)) {
+                $locale = $val;
+                $val = $stack->pop();
+                $current->set($localeKey, $val);
             } else {
-                $pageCandidate = $first; // could be sid or page
-            }
-
-            $current->set($localeKey, $locale);
-
-            $sid = null;
-            $next = $stack->pop();
-
-            if (!$sessionUseCookies && $next !== null && preg_match($sessionIdRegex, $next) === 1) {
-                $sid = $next;
-                $next = $stack->pop();
-            } elseif (!$sessionUseCookies && $pageCandidate !== null && preg_match($sessionIdRegex, $pageCandidate) === 1) {
-                // first segment was actually sid (locale missing)
-                $sid = $pageCandidate;
-                $pageCandidate = null;
-            }
-
-            if ($sid !== null) {
-                $current->set($sessionKey, $sid);
-            }
-
-            $pageToken = $next ?? $pageCandidate ?? $defaultPageToken;
-            if ($pageToken === '') $pageToken = $defaultPageToken;
-            $current->set($pageKey, $pageToken);
-
-            $request->configureRewrite(true, $current);
-            // Keep $stack around for subcontroller consumption later:
-            // For now we keep it local and pass remaining segments to controller if you want.
-            $remainingSegments = $stack->remaining();
-        } else {
-            $locale = $request->get($localeKey, $defaultLocale);
-            assert(is_string($locale));
-            if (!in_array($locale, $availableLocales, true)) {
                 $locale = $defaultLocale;
             }
-            $current->set($localeKey, $locale);
 
-            if (!$sessionUseCookies) {
-                $sid = $request->get($sessionKey, '');
-                if (is_string($sid) && preg_match($sessionIdRegex, $sid) === 1) {
-                    $current->set($sessionKey, $sid);
+            if(!$sessionUseCookies && preg_match($sessionIdRegex, $val) === 1) {
+                $sid = $val;
+                $current->set($sessionKey, $val);
+                $val = $stack->pop();
+            }
+
+            // page token
+            $pageToken = $val;
+
+            // i am not sure about this line... architecturally speaking.
+            $request->configureRewrite(true, $current);
+        } else {
+            // classic mode
+            $locale = $request->get($localeKey);
+            $pageToken = $request->get($pageKey);
+
+            if ($locale !== null) {
+                $current->set($localeKey, $locale);
+                if(!in_array($locale, $availableLocales, true)) {
+                    $locale = $defaultLocale;
                 }
             }
 
-            $pageToken = $request->get($pageKey, $defaultPageToken);
-            assert(is_string($pageToken));
-            if ($pageToken === '') $pageToken = $defaultPageToken;
-            $current->set($pageKey, $pageToken);
-
-            $request->configureRewrite(false, null);
-            $remainingSegments = []; // query mode: “rest” comes from other canonical keys
+            if(!$sessionUseCookies) {
+                $sid = $request->get($sessionKey);
+                if ($sid !== null) {
+                    $current->set($sessionKey, $sid);
+                }
+            }
         }
+        $pageToken = $pageToken ?? $defaultPageToken;
+        $current->set($pageKey, $pageToken);
 
-        // Locale is known now
-        $locale = (string)$current->get($localeKey, $defaultLocale);
+        // here we have $locale, $sid and $pageToken.
         $this->translator->setLocale($locale);
         $this->moduleLoader->setLocale($locale);
 
-        // -------- Setup PDO (manual object, so module config must be loaded explicitly) --------
-        $this->setupPdo();
 
-        /** @var PageHandler $pageHandler */
-        $pageHandler = $this->injector->createClass(PageHandler::class)->drainTo($this->collector)->unwrap();
-        assert($pageHandler instanceof PageHandler);
 
-        // -------- Session start + PRG hook (as “page” prefix) --------
-        $this->setupSession(
-            current: $current,
-            sessionUseCookies: $sessionUseCookies,
-            sessionKey: $sessionKey,
-            sessionIdRegex: $sessionIdRegex
-        );
-
-        // PRG endpoint design: if pageToken === "prg", treat next segment as token and next as real page
-        $pageToken = (string)$current->get($pageKey, $defaultPageToken);
-        if ($pageToken === 'prg') {
-            $this->handlePrgAsPage(
-                urlRewrite: $urlRewrite,
-                request: $request,
-                current: $current,
-                prgTokenKey: $prgTokenKey,
-                prgTokenRegex: $prgTokenRegex,
-                defaultPageToken: $defaultPageToken,
-                remainingSegments: $remainingSegments
-            );
-
-            // after PRG rewrite, update page token
-            $pageToken = (string)$current->get($pageKey, $defaultPageToken);
-        }
-
-        // -------- Resolve Page from DB (supports i18n url tokens) --------
-        $page = $this->resolvePage($pageHandler, $pageToken, $locale);
-        assert($page instanceof Page);
-
-        // -------- Dispatch controller or render template --------
-        $this->dispatchPage($page, $remainingSegments);
-
-        echo "topkek";
-    }
-
-    private function setupPdo(): void
-    {
         $dsn = $this->config->getConfig("PDO", "db_type", "mysql");
         assert(is_string($dsn));
         $host = $this->config->getConfig("PDO", "db_host", "mysql");
@@ -225,38 +165,104 @@ final class ContentManager
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH);
 
         $this->injector->setClass($pdo);
-    }
 
-    private function setupSession(
-        \AstrX\Routing\CurrentUrl $current,
-        bool $sessionUseCookies,
-        string $sessionKey,
-        string $sessionIdRegex
-    ): void {
-        /** @var SecureSessionHandler $handler */
-        $handler = $this->injector
+
+
+        $sessionHandler = $this->injector
             ->createClass(SecureSessionHandler::class)
             ->drainTo($this->collector)
             ->unwrap();
-        assert($handler instanceof SecureSessionHandler);
+        assert($sessionHandler instanceof SecureSessionHandler);
 
-        session_set_save_handler($handler, true);
+        session_set_save_handler($sessionHandler, true);
 
-        if (!$sessionUseCookies) {
-            $sid = $current->get($sessionKey, '');
-            if (is_string($sid) && $sid !== '' && preg_match($sessionIdRegex, $sid) === 1) {
-                if ($handler->validateId($sid)) {
+        if(!$sessionUseCookies) {
+            if ($sid !== null) {
+                if ($sessionHandler->validateId($sid)) {
                     session_id($sid);
+                } else {
+                    // Ban? LMAO or maybe log diagnostic?
+                    assert(true);
                 }
             }
         }
 
-        if (session_status() === PHP_SESSION_NONE) {
+        if(session_status() === PHP_SESSION_NONE) {
             session_start();
         }
+        $sid = session_id();
 
-        $current->set($sessionKey, (string)session_id());
+
+        $prgHandler = $this->injector->getClass(PrgHandler::class)->unwrap();
+        assert($prgHandler instanceof PrgHandler);
+
+        // this is experimental ... i am still working on it.
+        /*
+         * my main doubts are about:
+         * - serializing $_POST to $data and then using $data just for token
+         * computation and then calling prgh->store on $_POST. store is very
+         * likely going to serialize the data again
+         * - geturl: i didn't implement it.
+         * - is it okay to check isset $_POST["prg_id"] ?
+         * given that when i create the post form I add an hidden field named
+         *  prg_id so i can coordinate the request with the origin and
+         * redirection urls. these may be redundant information but it's
+         * better to be safe than sorry
+         *
+         * and by the way: we need to extend Request to account for the data
+         * retrieved through a post-redirect-get request!
+         * ( in the old codebase i used the same trick of the router... i was
+         *  writing retrieved data to $_POST[] = ... but since this is bad..
+         * we need to change it once more )
+         *
+         *
+         */
+        if($_POST !== array() && isset($_POST["prg_id"])) {
+            $data = serialize($_POST);
+            $token = hash_hmac("SHA256", $data, $sid);
+            $prgHandler->store($token, $_POST);
+            $redirect_url = $prgHandler->getUrl($_POST["prg_id"]);
+
+            $response->setStatusCode(Response::HTTP_FOUND);
+            $response->addHeader("Location: " . $redirect_url);
+            $response->send();
+            die();
+        }
+
+
+
+
+        $pageHandler = $this->injector->createClass(PageHandler::class)->drainTo($this->collector)->unwrap();
+        assert($pageHandler instanceof PageHandler);
+
+
+        // PRG endpoint design: if pageToken === "prg", treat next segment as token and next as real page
+        $pageToken = (string)$current->get($pageKey, $defaultPageToken);
+        if ($pageToken === 'prg') {
+            $this->handlePrgAsPage(
+                urlRewrite: $urlRewrite,
+                request: $request,
+                current: $current,
+                prgTokenKey: $prgTokenKey,
+                prgTokenRegex: $prgTokenRegex,
+                defaultPageToken: $defaultPageToken,
+                remainingSegments: $remainingSegments
+            );
+
+            // after PRG rewrite, update page token
+            $pageToken = (string)$current->get($pageKey, $defaultPageToken);
+        }
+
+        // -------- Resolve Page from DB (supports i18n url tokens) --------
+        $page = $this->resolvePage($pageHandler, $pageToken, $locale);
+        assert($page instanceof Page);
+
+        // -------- Dispatch controller or render template --------
+        $this->dispatchPage($page, $remainingSegments);
+
+        echo "topkek";
     }
+
 
     /**
      * PRG as a routing page:
@@ -276,9 +282,9 @@ final class ContentManager
         string $defaultPageToken,
         array $remainingSegments
     ): void {
-        /** @var PostRedirectGet $prg */
-        $prg = $this->injector->getClass(PostRedirectGet::class)->unwrap();
-        assert($prg instanceof PostRedirectGet);
+        /** @var PrgHandler $prg */
+        $prg = $this->injector->getClass(PrgHandler::class)->unwrap();
+        assert($prg instanceof PrgHandler);
 
         if ($urlRewrite) {
             // Remaining segments begin right after 'prg' was consumed into pageKey.
@@ -367,35 +373,51 @@ final class ContentManager
     /** @param list<string> $remainingSegments */
     private function dispatchPage(Page $page, array $remainingSegments): void
     {
-        // If controller exists, call it. Otherwise, render template (if enabled).
+        // 1) Controller (if configured)
         if ($page->controller) {
             $controller = $this->instantiateControllerForPage($page->fileName);
-            if (is_object($controller) && method_exists($controller, 'init')) {
-                // You can inject $remainingSegments by setter/interface later.
+
+            if ($controller instanceof \AstrX\Controller\Controller) {
+                $r = $controller->handle()->drainTo($this->collector);
+                if (!$r->isOk()) {
+                    // Controller fatal -> force 500 page (or 404, your choice)
+                    http_response_code(500);
+                    // You can resolve an error page here if you want.
+                    return;
+                }
+            } elseif (is_object($controller) && method_exists($controller, 'init')) {
+                // Back-compat legacy controller (temporary)
                 $controller->init();
-                return;
             }
         }
 
+        // 2) Template rendering (if configured)
         if ($page->template) {
             /** @var \AstrX\Template\TemplateEngine $engine */
-            $engine = $this->injector->createClass(\AstrX\Template\TemplateEngine::class)->drainTo($this->collector)->unwrap();
+            $engine = $this->injector
+                ->createClass(\AstrX\Template\TemplateEngine::class)
+                ->drainTo($this->collector)
+                ->unwrap();
             assert($engine instanceof \AstrX\Template\TemplateEngine);
 
-            $templateName = $page->templateFileName !== '' ? $page->templateFileName : (string)$this->config->getConfig('ContentManager', 'default_template', 'test');
-            assert(is_string($templateName));
+            $templateName = $page->templateFileName !== ''
+                ? $page->templateFileName
+                : (string)$this->config->getConfig('ContentManager', 'default_template', 'test');
 
             $tpl = $engine->loadTemplate($templateName);
-            if ($tpl !== null && method_exists($tpl, 'render')) {
-                echo $tpl->render($this->template_args);
+            if ($tpl === null || !method_exists($tpl, 'render')) {
+                http_response_code(500);
                 return;
             }
+
+            echo $tpl->render($this->template_args);
+            return;
         }
 
-        // fall back: nothing to do
+        // 3) No template: controller must have handled output (API/avatar/etc)
+        // If it didn’t, return 204
         http_response_code(http_response_code() ?: 204);
     }
-
     private function instantiateControllerForPage(string $fileName): ?object
     {
         $class = str_replace('_', '', ucwords($fileName, '_')) . 'Controller';

@@ -12,10 +12,9 @@ final class MainController implements Controller
 
     public function handle(): Result
     {
-        // Example content: dump current request params (whatever your Request exposes)
-        $this->cm->templateArgs['main_page'] = ucwords((string)($this->cm->t('WORDING_MAIN_PAGE')));
-        $this->cm->templateArgs['content'] = print_r($_GET, true);
+        $this->cm->template_args['main_page'] = ucwords((string)WORDING_MAIN_PAGE);
+        $this->cm->template_args['content'] = print_r($_GET, true);
 
-        return Result::ok(false);
+        return Result::ok(null);
     }
 }

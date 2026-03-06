@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Session;
 
-final class PostRedirectGet
+final class PrgHandler
 {
     private const PREFIX = 'POST_';
 
