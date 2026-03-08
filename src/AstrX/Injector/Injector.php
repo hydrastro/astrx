@@ -174,7 +174,7 @@ final class Injector
     /** @return Result<object|null> */
     public function createClass(string $className, bool $share = true): Result
     {
-        if (!class_exists($className) && !enum_exists($className)) {
+        if (!class_exists($className)) {
             $d = Diagnostics::of(new ClassNotFoundDiagnostic(
                                      self::ID_CLASS_NOT_FOUND,
                                      self::LVL_CLASS_NOT_FOUND,
@@ -185,23 +185,6 @@ final class Injector
 
         try {
             $rc = new ReflectionClass($className);
-
-            if ($rc->isEnum()) {
-                $enumResult = $this->resolveEnumClass($className);
-
-                if (!$enumResult->isOk()) {
-                    return Result::err(null, $enumResult->diagnostics());
-                }
-
-                $enum = $enumResult->unwrap();
-
-                if ($share) {
-                    $this->classes[$this->getIndexName($className)] = $enum;
-                }
-
-                return Result::ok($enum);
-            }
-
             $dependencies = [];
 
             if ($rc->hasMethod('__construct')) {
@@ -209,13 +192,36 @@ final class Injector
 
                 foreach ($ctor->getParameters() as $parameter) {
                     $argName = $parameter->getName();
-                    $resolved = $this->resolveParameter($className, $parameter);
+                    $arg = $this->getClassArg($className, $argName);
 
-                    if (!$resolved->isOk()) {
-                        return Result::err(null, $resolved->diagnostics());
+                    if ($arg !== null) {
+                        $dependencies[] = $arg;
+                        continue;
                     }
 
-                    $dependencies[] = $resolved->unwrap();
+                    if ($parameter->isOptional()) {
+                        continue;
+                    }
+
+                    $type = $parameter->getType();
+                    if (!($type instanceof ReflectionNamedType)) {
+                        $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
+                                                 self::ID_UNRESOLVABLE_PARAMETER,
+                                                 self::LVL_UNRESOLVABLE_PARAMETER,
+                                                 $className,
+                                                 $argName
+                                             ));
+                        return Result::err(null, $d);
+                    }
+
+                    $depClass = $type->getName();
+                    $depResult = $this->getClass($depClass, true);
+
+                    if (!$depResult->isOk()) {
+                        return Result::err(null, $depResult->diagnostics());
+                    }
+
+                    $dependencies[] = $depResult->unwrap();
                 }
             }
 
@@ -250,7 +256,6 @@ final class Injector
             return Result::err(null, $d);
         }
     }
-
 
     /** @return Result<mixed> */
     public function callClassMethod(string $className, string $method, array $arguments = [], bool $create = false): Result
@@ -293,125 +298,5 @@ final class Injector
         }
 
         return $this->classesArgs[$name][$argName];
-    }
-
-
-    /** @return Result<mixed> */
-    private function resolveParameter(string $className, \ReflectionParameter $parameter): Result
-    {
-        $argName = $parameter->getName();
-        $arg = $this->getClassArg($className, $argName);
-
-        if ($arg !== null) {
-            $type = $parameter->getType();
-
-            if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
-                $typeName = $type->getName();
-
-                if (enum_exists($typeName)) {
-                    return $this->resolveEnumValue($typeName, $arg, $className, $argName);
-                }
-            }
-
-            return Result::ok($arg);
-        }
-
-        if ($parameter->isDefaultValueAvailable()) {
-            return Result::ok($parameter->getDefaultValue());
-        }
-
-        $type = $parameter->getType();
-        if (!($type instanceof ReflectionNamedType) || $type->isBuiltin()) {
-            $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
-                                     self::ID_UNRESOLVABLE_PARAMETER,
-                                     self::LVL_UNRESOLVABLE_PARAMETER,
-                                     $className,
-                                     $argName
-                                 ));
-            return Result::err(null, $d);
-        }
-
-        $typeName = $type->getName();
-
-        if (enum_exists($typeName)) {
-            $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
-                                     self::ID_UNRESOLVABLE_PARAMETER,
-                                     self::LVL_UNRESOLVABLE_PARAMETER,
-                                     $className,
-                                     $argName
-                                 ));
-            return Result::err(null, $d);
-        }
-
-        $depResult = $this->getClass($typeName, true);
-
-        if (!$depResult->isOk()) {
-            return Result::err(null, $depResult->diagnostics());
-        }
-
-        return Result::ok($depResult->unwrap());
-    }
-
-    /** @return Result<object|null> */
-    private function resolveEnumClass(string $enumClass): Result
-    {
-        $value = $this->getClassArg($enumClass, 'value');
-
-        if ($value === null) {
-            $value = $this->getClassArg($enumClass, 'case');
-        }
-
-        if ($value === null) {
-            $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
-                                     self::ID_UNRESOLVABLE_PARAMETER,
-                                     self::LVL_UNRESOLVABLE_PARAMETER,
-                                     $enumClass,
-                                     'value'
-                                 ));
-            return Result::err(null, $d);
-        }
-
-        return $this->resolveEnumValue($enumClass, $value, $enumClass, 'value');
-    }
-
-    /** @return Result<object|null> */
-    private function resolveEnumValue(string $enumClass, mixed $value, string $ownerClass, string $argName): Result
-    {
-        if ($value instanceof $enumClass) {
-            return Result::ok($value);
-        }
-
-        if (is_subclass_of($enumClass, \BackedEnum::class)) {
-            /** @var class-string<\BackedEnum> $enumClass */
-            $enum = $enumClass::tryFrom($value);
-
-            if ($enum !== null) {
-                return Result::ok($enum);
-            }
-
-            $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
-                                     self::ID_UNRESOLVABLE_PARAMETER,
-                                     self::LVL_UNRESOLVABLE_PARAMETER,
-                                     $ownerClass,
-                                     $argName
-                                 ));
-            return Result::err(null, $d);
-        }
-
-        if (is_string($value)) {
-            foreach ($enumClass::cases() as $case) {
-                if ($case->name === $value) {
-                    return Result::ok($case);
-                }
-            }
-        }
-
-        $d = Diagnostics::of(new UnresolvableParameterDiagnostic(
-                                 self::ID_UNRESOLVABLE_PARAMETER,
-                                 self::LVL_UNRESOLVABLE_PARAMETER,
-                                 $ownerClass,
-                                 $argName
-                             ));
-        return Result::err(null, $d);
     }
 }

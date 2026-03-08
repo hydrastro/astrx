@@ -343,7 +343,7 @@ final class ContentManager
                 echo $tpl->render($this->template_args);
             }
         } else {
-            // no template has been set and the controller somehow failed,
+            // no template has been set, and the controller somehow failed,
             // result: we are here!
             http_response_code(http_response_code() ?: 204);
         }
