@@ -1,6 +1,7 @@
 <?php
-namespace AstrX\Result;
+declare(strict_types=1);
 
+namespace AstrX\Result;
 
 trait DiagnosticSinkTrait
 {
@@ -14,7 +15,7 @@ trait DiagnosticSinkTrait
     final protected function emit(DiagnosticInterface $d): void
     {
         if ($this->diagnosticSink === null) {
-            throw new SinkNotFoundDiagnostic();
+            throw new SinkNotFoundDiagnostic(static::class);
         }
         $this->diagnosticSink->emit($d);
     }
@@ -22,7 +23,7 @@ trait DiagnosticSinkTrait
     final protected function emitAll(Diagnostics $d): void
     {
         if ($this->diagnosticSink === null) {
-            throw new SinkNotFoundDiagnostic();
+            throw new SinkNotFoundDiagnostic(static::class);
         }
         $this->diagnosticSink->emitAll($d);
     }

@@ -27,13 +27,14 @@ final class UrlStack
                                   static fn($s) => $s !== ''
                               ));
 
-        // remove basePath prefix segments
         $bp = array_values(array_filter(
                                explode('/', trim($basePath, '/')),
                                static fn($s) => $s !== ''
                            ));
 
-        for ($j = 0; $j < count($bp) && isset($parts[$j]); $j++) {
+        // Cache count() outside the loop — $bp is immutable here.
+        $bpCount = count($bp);
+        for ($j = 0; $j < $bpCount && isset($parts[$j]); $j++) {
             if ($parts[$j] === $bp[$j]) {
                 unset($parts[$j]);
             } else {

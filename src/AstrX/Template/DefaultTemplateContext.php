@@ -20,8 +20,16 @@ use AstrX\Result\DiagnosticsCollector;
  *   3. ContentManager calls finalise() after the controller returns.
  *   4. ContentManager passes all() to the template engine.
  *
- * Controllers should depend on DefaultTemplateContext (or a narrower interface)
- * rather than on ContentManager, to avoid the bidirectional coupling.
+ * Translation key convention (dot-notation, consistent across the whole framework):
+ *   {page_url_id}.title         → page title
+ *   {page_url_id}.description   → meta description
+ *   {page_url_id}.keywords      → meta keywords
+ *   generated_in                → "Generated in:" label
+ *   go_top                      → "Go top" link label
+ *
+ * Language files live in:
+ *   lang/{locale}/DefaultTemplateContext.{locale}.php
+ *   lang/{locale}/{ControllerName}.{locale}.php
  */
 final class DefaultTemplateContext
 {
@@ -68,19 +76,25 @@ final class DefaultTemplateContext
      * Populate base variables from page metadata and config.
      * Called before the controller runs so that controllers can override
      * any of these values by calling set().
+     *
+     * i18n keys use dot-notation: {url_id}.title, {url_id}.description,
+     * {url_id}.keywords. The page's database values serve as fallbacks so
+     * the framework stays functional even when a translation file is absent.
      */
     public function buildBase(Page $page): void
     {
+        $urlId = $page->urlId;
+
         $title = $page->i18n
-            ? $this->t->t($page->urlId . '_PAGE_TITLE', fallback: $page->title)
+            ? $this->t->t($urlId . '.title',       fallback: $page->title)
             : $page->title;
 
         $description = $page->i18n
-            ? $this->t->t($page->urlId . '_PAGE_DESCRIPTION', fallback: $page->description)
+            ? $this->t->t($urlId . '.description', fallback: $page->description)
             : $page->description;
 
         $keywords = $page->i18n
-            ? $this->t->t($page->urlId . '_PAGE_KEYWORDS', fallback: '')
+            ? $this->t->t($urlId . '.keywords',    fallback: '')
             : '';
 
         $cssPath = (string) $this->config->getConfig(
@@ -108,7 +122,7 @@ final class DefaultTemplateContext
             'css'          => $css,
 
             'generated_in' => $this->t->t('generated_in', fallback: 'Generated in:'),
-            'go_top'       => $this->t->t('go_top', fallback: 'Go top'),
+            'go_top'       => $this->t->t('go_top',       fallback: 'Go top'),
 
             'navbar'       => [],
             'got_results'  => false,

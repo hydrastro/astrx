@@ -28,11 +28,10 @@ final class Response
         $this->headers = $headers ?? new HeaderBag();
     }
 
-    public function status(): int { return $this->status; }
-    public function body(): string { return $this->body; }
+    public function status(): int      { return $this->status; }
+    public function body(): string     { return $this->body; }
     public function headers(): HeaderBag { return $this->headers; }
 
-    // Mutable setters kept for controller convenience, but prefer withBody()/withStatus() in pipelines.
     public function setStatus(int $status): void
     {
         if (!HttpStatus::isValid($status)) {
@@ -48,7 +47,6 @@ final class Response
         $this->body = $body;
     }
 
-    /** Returns a new instance with the given body. */
     public function withBody(string $body): self
     {
         $clone       = clone $this;
@@ -56,7 +54,6 @@ final class Response
         return $clone;
     }
 
-    /** Returns a new instance with the given status code. */
     public function withStatus(int $status): self
     {
         if (!HttpStatus::isValid($status)) {
@@ -123,8 +120,11 @@ final class Response
         ?HeaderBag $headers = null,
         int $flags = JSON_THROW_ON_ERROR,
     ): self {
+        // json_encode() returns string|false, but with JSON_THROW_ON_ERROR it
+        // either returns a string or throws — never false. The cast satisfies
+        // static analysis without adding a runtime branch.
         $response = new self(
-            body:    json_encode($data, $flags),
+            body:    (string) json_encode($data, $flags),
             status:  $status,
             headers: $headers,
         );

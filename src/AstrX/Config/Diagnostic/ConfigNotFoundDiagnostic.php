@@ -17,7 +17,6 @@ final class ConfigNotFoundDiagnostic extends AbstractDiagnostic
         parent::__construct($id, $level);
     }
 
-    public function getClassShortName(): string { return
-        $this->classShortName; }
-    public function getConfigName(): string { return $this->configName; }
+    public function getClassShortName(): string { return $this->classShortName; }
+    public function getConfigName(): string     { return $this->configName; }
 }

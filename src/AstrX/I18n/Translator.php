@@ -5,8 +5,9 @@ namespace AstrX\I18n;
 
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticSinkInterface;
-use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
+use AstrX\I18n\Diagnostic\InvalidLanguageArrayDiagnostic;
 use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
+use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
 
 final class Translator
 {
@@ -26,7 +27,7 @@ final class Translator
     public function __construct(?DiagnosticSinkInterface $sink = null)
     {
         $this->locale = 'en';
-        $this->sink = $sink;
+        $this->sink   = $sink;
     }
 
     public function setDiagnosticSink(?DiagnosticSinkInterface $sink): void
@@ -71,19 +72,24 @@ final class Translator
             return;
         }
 
+        // Load all valid entries; skip and report bad ones individually.
+        // This is better than aborting on the first bad entry, which would
+        // silently discard all preceding valid translations.
+        $clean = [];
+
         foreach ($data as $k => $v) {
             if (!is_string($k) || !(is_string($v) || is_callable($v))) {
-                $this->emit(new InvalidLanguageFileDiagnostic(
-                                self::ID_INVALID_LANGUAGE_FILE,
-                                self::LVL_INVALID_LANGUAGE_FILE,
-                                $file
+                $this->emit(new InvalidLanguageArrayDiagnostic(
+                                is_string($k) ? $k : '(non-string key)',
+                                $file,
                             ));
-                return;
+                continue;
             }
+            $clean[$k] = $v;
         }
 
-        /** @var array<string, string|callable(array, Translator): string> $data */
-        $this->catalog = array_merge($this->catalog, $data);
+        /** @var array<string, string|callable(array, Translator): string> $clean */
+        $this->catalog = array_merge($this->catalog, $clean);
     }
 
     /**
@@ -116,17 +122,21 @@ final class Translator
      */
     private function interpolate(string $template, array $vars): string
     {
-        if ($vars === []) return $template;
+        if ($vars === []) {
+            return $template;
+        }
 
         $replace = [];
         foreach ($vars as $k => $v) {
-            if (!is_string($k)) continue;
+            if (!is_string($k)) {
+                continue;
+            }
 
             $replace['{' . $k . '}'] = match (true) {
-                $v === null => '',
-                is_scalar($v) => (string)$v,
-                $v instanceof \Stringable => (string)$v,
-                default => '',
+                $v === null      => '',
+                is_scalar($v)    => (string) $v,
+                $v instanceof \Stringable => (string) $v,
+                default          => '',
             };
         }
 

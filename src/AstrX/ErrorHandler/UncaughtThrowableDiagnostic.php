@@ -17,7 +17,6 @@ final class UncaughtThrowableDiagnostic extends AbstractDiagnostic
         parent::__construct($id, $level);
     }
 
-    public function getThrowableClass(): string { return
-        $this->throwableClass; }
-    public function getMessage(): string { return $this->message; }
+    public function getThrowableClass(): string { return $this->throwableClass; }
+    public function getMessage(): string        { return $this->message; }
 }

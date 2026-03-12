@@ -21,7 +21,8 @@ final class Prelude
 
         $config = new Config($collector);
 
-        // environment setup
+        // Environment setup — must happen before anything else so that PHP error
+        // reporting and assert behaviour are configured for the right environment.
         $env = EnvironmentType::from(
             $config->getConfig(
                 'Prelude',
@@ -39,9 +40,7 @@ final class Prelude
         $injector = new Injector();
 
         // Register helper: load module assets on class creation
-        $injector->addHelper($moduleLoader, 'onClassCreated')->drainTo(
-            $collector
-        );
+        $injector->addHelper($moduleLoader, 'onClassCreated')->drainTo($collector);
 
         // Register shared instances
         $injector->setClass($collector);
@@ -52,10 +51,17 @@ final class Prelude
         $injector->setClass($injector);
         $injector->setClass($this);
 
-        // Create ContentManager and run
-        $cm = $injector->createClass(ContentManager::class)
-            ->drainTo($collector)
-            ->unwrap();
+        // Create ContentManager — guard unwrap() so a missing dependency produces
+        // a clear RuntimeException (caught by ErrorHandler) rather than a generic
+        // "called unwrap() on a failed Result" LogicException with no context.
+        $cmResult = $injector->createClass(ContentManager::class)
+            ->drainTo($collector);
+
+        if (!$cmResult->isOk()) {
+            throw new \RuntimeException('Failed to create ContentManager — check diagnostics.');
+        }
+
+        $cm = $cmResult->unwrap();
         assert($cm instanceof ContentManager);
         $cm->init();
     }
