@@ -111,6 +111,10 @@ final class ContentManager
         $this->translator->setLocale($locale->value);
         $this->moduleLoader->setLocale($locale->value);
 
+        $pagesDomain = $this->config->getConfig('ContentManager', 'pages_lang_domain', 'pages');
+        assert(is_string($pagesDomain));
+        $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $pagesDomain);
+
         $this->initPDO();
 
         $sessionResult = $this->injector->createClass(SecureSessionHandler::class)
@@ -394,7 +398,6 @@ final class ContentManager
             $id   = $pageHandler->getPageIdFromUrlId($pageToken);
             $page = $id !== null ? $pageHandler->getPage($id) : null;
         }
-
         if ($page === null || $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 
@@ -403,7 +406,7 @@ final class ContentManager
             $errorUrlId = $this->config->getConfig(
                 'ContentManager',
                 'error_page_url_id',
-                'error',
+                'WORDING_ERROR',
             );
             assert(is_string($errorUrlId));
 

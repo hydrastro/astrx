@@ -85,21 +85,6 @@ final class Config
 
         $rc = new ReflectionObject($instance);
 
-        foreach ($rc->getProperties() as $prop) {
-            $attrs = $prop->getAttributes(InjectConfig::class);
-            if ($attrs === []) {
-                continue;
-            }
-
-            $key = $attrs[0]->newInstance()->key;
-            if (!array_key_exists($key, $cfg)) {
-                continue;
-            }
-
-            $prop->setAccessible(true);
-            $prop->setValue($instance, $cfg[$key]);
-        }
-
         foreach ($rc->getMethods() as $method) {
             $attrs = $method->getAttributes(InjectConfig::class);
             if ($attrs === []) {
@@ -121,8 +106,6 @@ final class Config
                 continue;
             }
 
-            $method->setAccessible(true);
             $method->invoke($instance, $cfg[$key]);
         }
-    }
-}
+    }}

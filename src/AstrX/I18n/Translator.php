@@ -53,7 +53,7 @@ final class Translator
     {
         $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR
-                . $domain . '.' . $this->locale . '.php';
+                . $domain . '.php';
 
         $this->loadFile($file);
     }
@@ -102,6 +102,7 @@ final class Translator
     public function t(string $key, array $vars = [], ?string $fallback = null): string
     {
         if (!array_key_exists($key, $this->catalog)) {
+            echo "$key \n";
             $this->emit(new MissingTranslationDiagnostic(
                             self::ID_MISSING_TRANSLATION,
                             self::LVL_MISSING_TRANSLATION,

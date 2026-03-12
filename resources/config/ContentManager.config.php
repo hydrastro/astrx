@@ -4,8 +4,9 @@ declare(strict_types = 1);
 
 return [
     'ContentManager' => [
-        'default_template' => 'test',
+        'default_template' => 'default',
         'error_page_id' => 'WORDING_ERROR',
-        'main_page_id' => 'WORDING_MAIN'
+        'main_page_id' => 'WORDING_MAIN',
+        'pages_lang_domain' => 'pages'
     ]
 ];

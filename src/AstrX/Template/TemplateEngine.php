@@ -92,10 +92,12 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
     public function __construct(?DiagnosticSinkInterface $sink = null)
     {
-        $this->sink = $sink ?? new DiagnosticsCollector();
+        $this->sink = $sink??new DiagnosticsCollector();
 
-        $this->templateDir      = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR;
-        $this->templateCacheDir = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+        $this->templateDir = defined('TEMPLATE_DIR') ? TEMPLATE_DIR :
+            __DIR__ . '/../template/';
+        $this->templateCacheDir = defined('TEMPLATE_CACHE_DIR') ?
+            TEMPLATE_CACHE_DIR : __DIR__ . '/../cache/';
     }
 
     // DiagnosticSinkAwareInterface
