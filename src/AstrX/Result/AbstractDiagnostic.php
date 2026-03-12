@@ -20,8 +20,12 @@ abstract class AbstractDiagnostic implements DiagnosticInterface, \Stringable
         return $this->level;
     }
 
+    /**
+     * Include the severity level so log output is immediately actionable:
+     *   [ERROR] astrx.template/template_file_not_found
+     */
     public function __toString(): string
     {
-        return $this->id;
+        return '[' . $this->level->name . '] ' . $this->id;
     }
 }

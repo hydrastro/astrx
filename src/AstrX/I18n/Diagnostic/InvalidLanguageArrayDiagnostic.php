@@ -13,22 +13,21 @@ use AstrX\Result\DiagnosticLevel;
  * Distinct from InvalidLanguageFileDiagnostic (which covers missing files and
  * files that do not return an array at all).
  *
- * Emitted by Translator::loadFile() when it encounters a bad entry.
+ * Diagnostic policy (ID + level) is owned by the emitter (Translator), consistent
+ * with every other diagnostic in the framework.
  */
 final class InvalidLanguageArrayDiagnostic extends AbstractDiagnostic
 {
-    // TODO: set id and lvl OUTSIDE this class! set the in the translator, where you create this
-    public const string ID  = 'astrx.i18n/invalid_language_array';
-    public const DiagnosticLevel LVL = DiagnosticLevel::WARNING;
-
     public function __construct(
+        string $id,
+        DiagnosticLevel $level,
         private readonly string $key,
         private readonly string $file,
     ) {
-        parent::__construct(self::ID, self::LVL);
+        parent::__construct($id, $level);
     }
 
-    /** The offending array key (or a string representation if it was not a string). */
+    /** The offending array key (or a description if it was not a string). */
     public function key(): string  { return $this->key; }
     public function file(): string { return $this->file; }
 }

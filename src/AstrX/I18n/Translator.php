@@ -11,11 +11,15 @@ use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
 
 final class Translator
 {
+    // Diagnostic policy — the emitting class always owns the ID and level.
     public const string ID_MISSING_TRANSLATION = 'astrx.i18n/missing_translation';
     public const DiagnosticLevel LVL_MISSING_TRANSLATION = DiagnosticLevel::NOTICE;
 
     public const string ID_INVALID_LANGUAGE_FILE = 'astrx.i18n/invalid_language_file';
     public const DiagnosticLevel LVL_INVALID_LANGUAGE_FILE = DiagnosticLevel::ERROR;
+
+    public const string ID_INVALID_LANGUAGE_ARRAY = 'astrx.i18n/invalid_language_array';
+    public const DiagnosticLevel LVL_INVALID_LANGUAGE_ARRAY = DiagnosticLevel::WARNING;
 
     private string $locale;
 
@@ -47,7 +51,6 @@ final class Translator
 
     public function loadDomain(string $langDir, string $domain): void
     {
-        // todo: check for annotation / interface and do deterministic loading?
         $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR
                 . $domain . '.' . $this->locale . '.php';
@@ -72,14 +75,15 @@ final class Translator
             return;
         }
 
-        // Load all valid entries; skip and report bad ones individually.
-        // This is better than aborting on the first bad entry, which would
-        // silently discard all preceding valid translations.
+        // Load all valid entries; skip and report bad ones individually so that
+        // valid translations before a bad entry are not silently discarded.
         $clean = [];
 
         foreach ($data as $k => $v) {
             if (!is_string($k) || !(is_string($v) || is_callable($v))) {
                 $this->emit(new InvalidLanguageArrayDiagnostic(
+                                self::ID_INVALID_LANGUAGE_ARRAY,
+                                self::LVL_INVALID_LANGUAGE_ARRAY,
                                 is_string($k) ? $k : '(non-string key)',
                                 $file,
                             ));
@@ -133,10 +137,10 @@ final class Translator
             }
 
             $replace['{' . $k . '}'] = match (true) {
-                $v === null      => '',
-                is_scalar($v)    => (string) $v,
+                $v === null           => '',
+                is_scalar($v)         => (string) $v,
                 $v instanceof \Stringable => (string) $v,
-                default          => '',
+                default               => '',
             };
         }
 
