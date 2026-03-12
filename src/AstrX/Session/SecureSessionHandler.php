@@ -47,17 +47,6 @@ class SecureSessionHandler implements SessionHandlerInterface,
     }
 
     /**
-     * Get Configuration Methods.
-     * Returns the methods that will be called by the injector.
-     * @return array<int, string>
-     */
-    public function getConfigurationMethods()
-    : array
-    {
-        return array("setSidBytes");
-    }
-
-    /**
      * @param int $sid_bytes
      */
     #[InjectConfig('sid_bytes')]
@@ -240,6 +229,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
     : string
     {
         while (true) {
+            // todo: bound this loop with a parametrized variable max_retries
             try {
                 $sid = bin2hex(random_bytes(max(1, $this->sid_bytes)));
             } catch (\Throwable $t) {
@@ -352,6 +342,7 @@ class SecureSessionHandler implements SessionHandlerInterface,
      * @return string
      * @throws Exception
      */
+    // TODO: parametrize cipher algo, hash algo, etc.
     public function encryptSessionData(string $id, string $data)
     : string {
         $cipher_algo = "AES-256-CTR";

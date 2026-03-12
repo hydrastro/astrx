@@ -15,6 +15,8 @@ use AstrX\Template\Diagnostic\TemplateEvaluationDiagnostic;
 use AstrX\Template\Diagnostic\TemplateFileNotFoundDiagnostic;
 use AstrX\Template\Diagnostic\TemplateFileReadFailedDiagnostic;
 use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
+use AstrX\Config\ConfigurableInterface;
+use AstrX\Config\InjectConfig;
 
 final class TemplateEngine implements DiagnosticSinkAwareInterface
 {
@@ -100,16 +102,20 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         $this->globalArgs = array_merge($this->globalArgs, $args);
     }
 
+    #[InjectConfig('parse_mode')]
     public function setParseMode(int $parseMode): void
     {
         $this->parseMode = $parseMode;
     }
 
+    #[InjectConfig('template_dir')]
     public function setTemplateDir(string $dir): void { $this->templateDir = $dir; }
+    #[InjectConfig('template_extension')]
     public function setTemplateExtension(string $ext): void { $this->templateExtension = $ext; }
+    #[InjectConfig('template_cache_dir')]
     public function setTemplateCacheDir(string $dir): void { $this->templateCacheDir = $dir; }
+    #[InjectConfig('cache_templates')]
     public function setCacheTemplates(bool $cache): void { $this->cacheTemplates = $cache; }
-
     public function getTemplateDir(): string { return $this->templateDir; }
     public function getTemplateExtension(): string { return $this->templateExtension; }
     public function getTemplateCacheDir(): string { return $this->templateCacheDir; }
@@ -522,7 +528,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                     array_pop($loopParents);
                     $i--;
                     break;
-
+/*
                 case self::TOKEN_TYPE_PARTIAL:
                     $classVar = str_replace('.', '_', ltrim($valueExpr, self::TOKEN_OPERATOR_DEREFERENCE) . $iteration);
                     $iteration++;
@@ -530,8 +536,24 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                     $code .= '$' . $classVar . '=$this->TemplateEngine->loadTemplate($this->TemplateEngine->resolveValue("'
                              . $valueExpr . '",$args,$parent,$i));if($' . $classVar . '!==null){$buffer.=$'
                              . $classVar . '->render($args,$parent);}';
-                    break;
+                    break;*/
+                case self::TOKEN_TYPE_PARTIAL:
+                    // $val is the token content (e.g. "*include" or "include")
+                    $raw = (string)$val;
 
+                    // stable variable name (no dots, no stars)
+                    $varName = 'p' . $iteration;
+                    $iteration++;
+
+                    // resolve partial name at runtime, then load it
+                    $code .= '$' . $varName . 'Name=$this->TemplateEngine->resolveValue("'
+                             . addslashes($raw)
+                             . '",$args,$parent,$i);'
+                             . 'if(is_string($' . $varName . 'Name) && $' . $varName . 'Name!==""){'
+                             . '$' . $varName . '=$this->TemplateEngine->loadTemplate($' . $varName . 'Name);'
+                             . 'if($' . $varName . '!==null){$buffer.=$' . $varName . '->render($args,$parent);}'
+                             . '}';
+                    break;
                 case self::TOKEN_TYPE_LOOP_END:
                 case self::TOKEN_TYPE_COMMENT:
                 case self::TOKEN_TYPE_CHANGE_TAGS:
