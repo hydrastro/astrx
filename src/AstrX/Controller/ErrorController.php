@@ -3,29 +3,29 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
-use AstrX\ContentManager;
 use AstrX\I18n\Translator;
 use AstrX\Result\Result;
+use AstrX\Template\DefaultTemplateContext;
 
 final class ErrorController implements Controller
 {
     public function __construct(
-        private ContentManager $cm,
-        private Translator $t
+        private readonly DefaultTemplateContext $ctx,
+        private readonly Translator $t,
     ) {}
 
     public function handle(): Result
     {
-        $status = http_response_code();
-        $errorName = ucfirst($this->t->t('WORDING_ERROR', fallback: 'error')) . ' ' . $status;
+        $status    = (int) http_response_code();
+        $errorWord = ucfirst($this->t->t('error', fallback: 'Error'));
+        $errorName = $errorWord . ' ' . $status;
+        $errorMsg  = $this->t->t('http.status.' . $status, fallback: 'An error occurred.');
 
-        $errorMessage = $this->t->t('http.status.' . $status, fallback: 'Error');
-
-        $this->cm->template_args['title'] = $errorName . ' - ' . $errorMessage;
-        $this->cm->template_args['description'] = $errorMessage;
-        $this->cm->template_args['keywords'] = ucwords($errorName);
-        $this->cm->template_args['error_name'] = $errorName;
-        $this->cm->template_args['error_message'] = $errorMessage;
+        $this->ctx->set('title',         $errorName . ' — ' . $errorMsg);
+        $this->ctx->set('description',   $errorMsg);
+        $this->ctx->set('keywords',      ucwords($errorName));
+        $this->ctx->set('error_name',    $errorName);
+        $this->ctx->set('error_message', $errorMsg);
 
         return Result::ok(null);
     }

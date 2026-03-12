@@ -1,7 +1,6 @@
 <?php
 namespace AstrX\Result;
 
-use AstrX\Template\SinkNotFoundDiagnostic;
 
 trait DiagnosticSinkTrait
 {

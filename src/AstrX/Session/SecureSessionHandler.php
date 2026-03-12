@@ -1,366 +1,227 @@
 <?php
+declare(strict_types=1);
 
-/** @noinspection PhpUnused */
-
-declare(strict_types = 1);
 namespace AstrX\Session;
 
+use PDO;
 use SessionHandlerInterface;
 use SessionIdInterface;
 use SessionUpdateTimestampHandlerInterface;
-use PDO;
 use AstrX\Config\InjectConfig;
 
 /**
- * Secure Session Handler Class.
+ * Database-backed, optionally encrypted session handler.
+ *
+ * Encryption scheme: AES-256-CTR with a per-session HMAC-SHA256 authentication
+ * tag prepended to the ciphertext so tampering is detected on read.
+ *
+ * Table schema expected:
+ *   CREATE TABLE `session` (
+ *       `id`        VARCHAR(128) PRIMARY KEY,
+ *       `timestamp` INT UNSIGNED NOT NULL,
+ *       `data`      MEDIUMBLOB   NOT NULL
+ *   );
  */
-class SecureSessionHandler implements SessionHandlerInterface,
-                                      SessionIdInterface,
-                                      SessionUpdateTimestampHandlerInterface
+final class SecureSessionHandler implements
+    SessionHandlerInterface,
+    SessionIdInterface,
+    SessionUpdateTimestampHandlerInterface
 {
-    /**
-     * @var PDO $pdo PDO.
-     */
-    private PDO $pdo;
-    /**
-     * @var int $sid_bytes Session ID bytes.
-     */
-    private int $sid_bytes = 128;
-    /**
-     * @var string $current_session_id Current session ID.
-     */
-    private string $current_session_id;
+    private int $sidBytes = 128;
     private bool $encrypt = true;
+    private int $maxRetries = 10;
+
+    /** Holds the freshly generated SID so validateId() can confirm it in-process. */
+    private ?string $currentSessionId = null;
+
+    public function __construct(private readonly PDO $pdo) {}
+
+    #[InjectConfig('sid_bytes')]
+    public function setSidBytes(int $sidBytes): void
+    {
+        $this->sidBytes = $sidBytes;
+    }
 
     #[InjectConfig('encrypt')]
-    public function setEncrypt(bool $encrypt)
-    : void {
+    public function setEncrypt(bool $encrypt): void
+    {
         $this->encrypt = $encrypt;
     }
 
-    /**
-     * @param PDO $pdo PDO.
-     */
-    public function __construct(PDO $pdo)
+    #[InjectConfig('max_retries')]
+    public function setMaxRetries(int $maxRetries): void
     {
-        $this->pdo = $pdo;
+        $this->maxRetries = max(1, $maxRetries);
     }
 
-    /**
-     * @param int $sid_bytes
-     */
-    #[InjectConfig('sid_bytes')]
-    public function setSidBytes(int $sid_bytes)
-    : void {
-        $this->sid_bytes = $sid_bytes;
-    }
+    // -------------------------------------------------------------------------
+    // SessionHandlerInterface
+    // -------------------------------------------------------------------------
 
-    /**
-     * Open.
-     * Opens a new session.
-     *
-     * @param string $path Session path.
-     * @param string $name Session name.
-     *
-     * @return bool
-     */
-    public function open(string $path, string $name)
-    : bool {
-        return true;
-    }
-
-    /**
-     * Close.
-     * Closes a session.
-     * @return bool
-     */
-    public function close()
-    : bool
+    public function open(string $path, string $name): bool
     {
         return true;
     }
 
-    /**
-     * Destroy.
-     * Destroys a session.
-     *
-     * @param string $id Session id.
-     *
-     * @return bool
-     */
-    public function destroy(string $id)
-    : bool {
-        $database_id = $this->getDatabaseSessionId($id);
-        $stmt = $this->pdo->prepare("DELETE FROM `session` WHERE `id` = :id");
-        $stmt->execute(array("id" => $database_id));
-
+    public function close(): bool
+    {
         return true;
     }
 
-    /**
-     * Get Database Session ID.
-     * Returns the key associated to the session id to be stored in the
-     * database.
-     *
-     * @param string $id
-     *
-     * @return string
-     */
-    public function getDatabaseSessionId(string $id)
-    : string {
-        return hash("SHA512", $id);
-    }
-
-    /**
-     * Garbage Collector.
-     * Cleans up the database.
-     *
-     * @param int $max_lifetime Max lifetime.
-     *
-     * @return int|false
-     */
-    public function gc(int $max_lifetime)
-    : int|false {
-        $max_timestamp = time() - $max_lifetime;
-        $stmt = $this->pdo->prepare(
-            "SELECT COUNT(`id`) AS `count` FROM `session` WHERE `timestamp` < :max_timestamp"
-        );
-        $stmt->execute(array("max_timestamp" => $max_timestamp));
-        $result = $stmt->fetch();
-        $stmt = $this->pdo->prepare(
-            "DELETE FROM `session` WHERE `timestamp` < :max_timestamp"
-        );
-        $stmt->execute(array("max_timestamp" => $max_timestamp));
-        if (!is_array($result)) {
-            return 0;
-        }
-
-        return $result["count"];
-    }
-
-    /**
-     * Read.
-     * Retrieves the session data.
-     *
-     * @param string $id Session id.
-     *
-     * @return string|false
-     */
-    public function read(string $id)
-    : string|false {
-        $database_id = $this->getDatabaseSessionId($id);
-        $data = $this->readDatabaseSession($database_id);
-        if (!$data) {
-            return "";
-        }
-
-        return $this->decryptSessionData($id, $data["data"]);
-    }
-
-    /**
-     * Read Database Session.
-     * Reads the session from the database.
-     *
-     * @param string $id Session id.
-     *
-     * @return array<string, string>|false
-     */
-    public function readDatabaseSession(string $id)
-    : array|false {
-        $query = $this->pdo->prepare(
-            "SELECT `data` FROM `session` WHERE `id` = :id"
-        );
-        $query->execute(array("id" => $id));
-        $result = $query->fetch();
-        if (!is_array($result)) {
-            return false;
-        }
-
-        return $result;
-    }
-
-    /**
-     * Decrypt Session Data.
-     * Decrypts the session data.
-     *
-     * @param string $id
-     * @param string $data
-     *
-     * @return string
-     */
-    public function decryptSessionData(string $id, string $data)
-    : string {
-        $cipher_algo = "AES-256-CTR";
-        $hmac = mb_substr($data, 0, 32, "8bit");
-        $iv = mb_substr($data, 32, 16, "8bit");
-        $ciphertext = mb_substr($data, 48, null, "8bit");
-        $new_hmac = hash_hmac(
-            "SHA256",
-            $iv . $ciphertext,
-            mb_substr($id, 32, null, "8bit"),
-            true
-        );
-
-        // assert(hash_equals($hmac, $new_hmac));
-        if (!hash_equals($hmac, $new_hmac)) {
-            // tampered session: treat as empty session data
-            return "";
-        }
-
-        $decrypted = openssl_decrypt(
-            $ciphertext,
-            $cipher_algo,
-            mb_substr($id, 0, 32, "8bit"),
-            OPENSSL_RAW_DATA,
-            $iv
-        );
-        assert(is_string($decrypted));
-
-        return $decrypted;
-    }
-
-    /**
-     * Create Sid.
-     * Creates database session id.
-     * @return string
-     * @throws Exception
-     */
-    public function create_sid()
-    : string
+    public function destroy(string $id): bool
     {
-        while (true) {
-            // todo: bound this loop with a parametrized variable max_retries
-            try {
-                $sid = bin2hex(random_bytes(max(1, $this->sid_bytes)));
-            } catch (\Throwable $t) {
-                // catastrophic: no randomness available
-                // TODO: custom class for this.
-                throw new \RuntimeException(
-                    'Failed to generate session id',
-                    0,
-                    $t
-                );
-            }
+        $stmt = $this->pdo->prepare('DELETE FROM `session` WHERE `id` = :id');
+        $stmt->execute(['id' => $this->hashId($id)]);
+        return true;
+    }
 
-            $hashed = $this->getDatabaseSessionId($sid);
+    public function gc(int $maxLifetime): int|false
+    {
+        $cutoff = time() - $maxLifetime;
 
+        $count = $this->pdo->prepare(
+            'SELECT COUNT(`id`) AS `n` FROM `session` WHERE `timestamp` < :cutoff'
+        );
+        $count->execute(['cutoff' => $cutoff]);
+        $row = $count->fetch(PDO::FETCH_ASSOC);
+
+        $this->pdo->prepare('DELETE FROM `session` WHERE `timestamp` < :cutoff')
+            ->execute(['cutoff' => $cutoff]);
+
+        return is_array($row) ? (int) $row['n'] : 0;
+    }
+
+    public function read(string $id): string|false
+    {
+        $row = $this->readRow($this->hashId($id));
+        if ($row === false) {
+            return '';
+        }
+
+        if (!$this->encrypt) {
+            return (string) $row['data'];
+        }
+
+        return $this->decrypt($id, (string) $row['data']);
+    }
+
+    public function write(string $id, string $data): bool
+    {
+        $hashedId = $this->hashId($id);
+        $payload  = $this->encrypt ? $this->encrypt($id, $data) : $data;
+        $ts       = time();
+
+        if ($this->readRow($hashedId) !== false) {
             $stmt = $this->pdo->prepare(
-                "SELECT `id` FROM `session` WHERE `id` = :id"
+                'UPDATE `session` SET `data` = :data, `timestamp` = :ts WHERE `id` = :id'
             );
-            $stmt->execute(["id" => $hashed]);
-            $result = $stmt->fetch();
+        } else {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO `session` (`id`, `timestamp`, `data`) VALUES (:id, :ts, :data)'
+            );
+        }
 
-            if ($result === false) {
-                $this->current_session_id = $sid;
+        $stmt->execute(['id' => $hashedId, 'ts' => $ts, 'data' => $payload]);
+        return true;
+    }
 
+    // -------------------------------------------------------------------------
+    // SessionIdInterface
+    // -------------------------------------------------------------------------
+
+    public function create_sid(): string
+    {
+        for ($attempt = 0; $attempt < $this->maxRetries; $attempt++) {
+            $sid    = bin2hex(random_bytes(max(1, $this->sidBytes)));
+            $hashed = $this->hashId($sid);
+
+            $stmt = $this->pdo->prepare('SELECT 1 FROM `session` WHERE `id` = :id');
+            $stmt->execute(['id' => $hashed]);
+
+            if ($stmt->fetch() === false) {
+                $this->currentSessionId = $sid;
                 return $sid;
             }
         }
+
+        throw new \RuntimeException(
+            sprintf('Failed to generate a unique session ID after %d attempts.', $this->maxRetries)
+        );
     }
 
-    /**
-     * Validate ID.
-     * Validates Session ID.
-     *
-     * @param string $id Session ID.
-     *
-     * @return bool
-     */
-    public function validateId(string $id)
-    : bool {
-        if (isset($this->current_session_id) &&
-            $id === $this->current_session_id) {
+    // -------------------------------------------------------------------------
+    // SessionUpdateTimestampHandlerInterface
+    // -------------------------------------------------------------------------
+
+    public function validateId(string $id): bool
+    {
+        if ($this->currentSessionId !== null && $id === $this->currentSessionId) {
             return true;
         }
-        $hashed = $this->getDatabaseSessionId($id);
-        $stmt = $this->pdo->prepare(
-            "SELECT `id` FROM `session` WHERE `id` = :id"
-        );
-        $stmt->execute(array("id" => $hashed));
-        $result = $stmt->fetch();
 
-        return ($result !== false);
+        $stmt = $this->pdo->prepare('SELECT 1 FROM `session` WHERE `id` = :id');
+        $stmt->execute(['id' => $this->hashId($id)]);
+        return $stmt->fetch() !== false;
     }
 
-    /**
-     * Update Timestamp.
-     * Updates a session timestamp.
-     *
-     * @param string $id   Session ID.
-     * @param string $data Session data.
-     *
-     * @return bool
-     * @throws Exception
-     */
-    public function updateTimestamp(string $id, string $data)
-    : bool {
+    public function updateTimestamp(string $id, string $data): bool
+    {
         return $this->write($id, $data);
     }
 
-    /**
-     * Write.
-     * Writes session data into the database.
-     *
-     * @param string $id   Session id.
-     * @param string $data Session data.
-     *
-     * @return bool
-     * @throws Exception
-     */
-    public function write(string $id, string $data)
-    : bool
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    /** @return array<string,mixed>|false */
+    private function readRow(string $hashedId): array|false
     {
-        $database_id = $this->getDatabaseSessionId($id);
-        $payload = $this->encrypt ? $this->encryptSessionData($id, $data) :
-            $data;
+        $stmt = $this->pdo->prepare('SELECT `data` FROM `session` WHERE `id` = :id');
+        $stmt->execute(['id' => $hashedId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : false;
+    }
 
-        // Checking if session exists.
-        if ($this->readDatabaseSession($database_id)) {
-            $query = "UPDATE `session` SET `data` = :data, `timestamp` = :timestamp
-    WHERE `id` = :id";
-        } else {
-            $query
-                = "INSERT INTO `session` (id, timestamp, data) VALUES (:id, :timestamp, :data)";
-        }
-        $stmt = $this->pdo->prepare($query);
-        $stmt->execute(array(
-                           "id" => $database_id,
-                           "timestamp" => time(),
-                           "data" => $payload
-                       ));
-
-        return true;
+    /** Returns the database key for a raw session ID. */
+    private function hashId(string $id): string
+    {
+        return hash('sha512', $id);
     }
 
     /**
-     * Encrypt Session Data.
-     * Encrypts the session data.
-     *
-     * @param string $id
-     * @param string $data
-     *
-     * @return string
-     * @throws Exception
+     * Encrypts $data with AES-256-CTR.
+     * Output layout: [32-byte HMAC][16-byte IV][ciphertext]
      */
-    // TODO: parametrize cipher algo, hash algo, etc.
-    public function encryptSessionData(string $id, string $data)
-    : string {
-        $cipher_algo = "AES-256-CTR";
-        $iv = random_bytes(16);
-        $ciphertext = openssl_encrypt(
-            $data,
-            $cipher_algo,
-            mb_substr($id, 0, 32, "8bit"),
-            OPENSSL_RAW_DATA,
-            $iv
-        );
-        $hmac = hash_hmac(
-            "SHA256",
-            $iv . $ciphertext,
-            mb_substr($id, 32, null, "8bit"),
-            true
-        );
+    private function encrypt(string $id, string $data): string
+    {
+        $iv         = random_bytes(16);
+        $key        = mb_substr($id, 0, 32, '8bit');
+        $macKey     = mb_substr($id, 32, null, '8bit');
+        $ciphertext = (string) openssl_encrypt($data, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
+        $hmac       = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
 
         return $hmac . $iv . $ciphertext;
+    }
+
+    /**
+     * Decrypts and verifies an encrypted session blob.
+     * Returns an empty string (treated as an empty session) if the HMAC fails.
+     */
+    private function decrypt(string $id, string $blob): string
+    {
+        $hmac       = mb_substr($blob, 0, 32, '8bit');
+        $iv         = mb_substr($blob, 32, 16, '8bit');
+        $ciphertext = mb_substr($blob, 48, null, '8bit');
+        $key        = mb_substr($id, 0, 32, '8bit');
+        $macKey     = mb_substr($id, 32, null, '8bit');
+
+        $expectedHmac = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
+        if (!hash_equals($hmac, $expectedHmac)) {
+            // Tampered or corrupted: treat as empty session rather than crashing.
+            return '';
+        }
+
+        $plaintext = openssl_decrypt($ciphertext, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
+        return $plaintext !== false ? $plaintext : '';
     }
 }

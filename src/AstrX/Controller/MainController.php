@@ -3,17 +3,23 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
-use AstrX\ContentManager;
+use AstrX\I18n\Translator;
 use AstrX\Result\Result;
+use AstrX\Template\DefaultTemplateContext;
 
 final class MainController implements Controller
 {
-    public function __construct(private ContentManager $cm) {}
+    public function __construct(
+        private readonly DefaultTemplateContext $ctx,
+        private readonly Translator $t,
+    ) {}
 
     public function handle(): Result
     {
-        $this->cm->template_args['main_page'] = ucwords((string)WORDING_MAIN_PAGE);
-        $this->cm->template_args['content'] = print_r($_GET, true);
+        $this->ctx->set('main_page', ucwords($this->t->t('main_page', fallback: 'Main Page')));
+
+        // TODO: replace with real page content once data layer is wired
+        $this->ctx->set('content', '');
 
         return Result::ok(null);
     }

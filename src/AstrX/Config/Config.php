@@ -15,12 +15,13 @@ final class Config
     /** @var array<string, array<string, mixed>> */
     private array $configuration;
 
-    private DiagnosticSinkInterface $sink;
+    public function __construct(
+        private readonly DiagnosticSinkInterface $sink,
+        ?string $configFile = null,
+    ) {
+        $file = $configFile ?? (defined('CONFIG_DIR') ? CONFIG_DIR . 'config.php' : '');
 
-    public function __construct(DiagnosticSinkInterface $sink)
-    {
-        $this->configuration = require(CONFIG_DIR . "config.php");
-        $this->sink = $sink;
+        $this->configuration = (is_file($file) ? require $file : []);
     }
 
     public function getConfig(string $domain, string $key, mixed $fallback = null): mixed
@@ -34,22 +35,19 @@ final class Config
         }
 
         $this->sink->emit(new ConfigNotFoundDiagnostic(
-                              id: 'astrx.config/get_config.not_found',
-                              level: DiagnosticLevel::WARNING,
+                              id:            'astrx.config/get_config.not_found',
+                              level:         DiagnosticLevel::WARNING,
                               classShortName: $domain,
-                              configName: $key
+                              configName:    $key,
                           ));
 
         return null;
     }
 
-    /**
-     * Loads optional per-module config file: CONFIG_DIR/{Domain}.config.php
-     */
+    /** Loads optional per-module config file: CONFIG_DIR/{Domain}.config.php */
     public function loadModuleConfig(string $domain): void
     {
-        // todo: check for annotation / interface and do deterministic loading?
-        $path = CONFIG_DIR . $domain . ".config.php";
+        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $domain . '.config.php';
         if (!file_exists($path)) {
             return;
         }
@@ -57,9 +55,9 @@ final class Config
         $loaded = require $path;
         if (!is_array($loaded)) {
             $this->sink->emit(new ConfigFileInvalidDiagnostic(
-                                  id: 'astrx.config/config_file.invalid',
+                                  id:    'astrx.config/config_file.invalid',
                                   level: DiagnosticLevel::ERROR,
-                                  file: $path
+                                  file:  $path,
                               ));
             return;
         }
@@ -67,9 +65,7 @@ final class Config
         $this->configuration = array_merge($this->configuration, $loaded);
     }
 
-    /**
-     * Applies the config section for $domain to $instance.
-     */
+    /** Applies the config section for $domain to $instance. */
     public function applyModuleConfig(object $instance, string $domain): void
     {
         $cfg = $this->configuration[$domain] ?? null;
@@ -79,9 +75,7 @@ final class Config
         $this->applyConfigToInstance($instance, $cfg);
     }
 
-    /**
-     * @param array<string, mixed> $cfg
-     */
+    /** @param array<string, mixed> $cfg */
     private function applyConfigToInstance(object $instance, array $cfg): void
     {
         if ($instance instanceof ConfigurableInterface) {
@@ -119,10 +113,10 @@ final class Config
 
             if ($method->getNumberOfParameters() !== 1) {
                 $this->sink->emit(new ConfigSetterInvalidDiagnostic(
-                                      id: 'astrx.config/setter.invalid',
-                                      level: DiagnosticLevel::WARNING,
-                                      className: $rc->getName(),
-                                      methodName: $method->getName()
+                                      id:         'astrx.config/setter.invalid',
+                                      level:      DiagnosticLevel::WARNING,
+                                      className:  $rc->getName(),
+                                      methodName: $method->getName(),
                                   ));
                 continue;
             }

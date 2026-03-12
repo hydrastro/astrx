@@ -13,35 +13,51 @@ final class Result
     /** @var T|object */
     private mixed $valueOrSentinel;
 
-    private mixed $error; // domain-defined (string/enum/object/etc) or null
+    /** Domain-defined error value (string/enum/object/etc.), or the sentinel when ok. */
+    private mixed $error;
+
     private Diagnostics $diagnostics;
 
-    private function __construct(mixed $valueOrSentinel, mixed $error, Diagnostics $diagnostics)
+    /** Tracks ok/err state independently from $error to allow null as a valid error. */
+    private bool $ok;
+
+    private function __construct(mixed $valueOrSentinel, mixed $error, Diagnostics $diagnostics, bool $ok)
     {
         $this->valueOrSentinel = $valueOrSentinel;
-        $this->error = $error;
-        $this->diagnostics = $diagnostics;
+        $this->error           = $error;
+        $this->diagnostics     = $diagnostics;
+        $this->ok              = $ok;
     }
 
     private static function sentinel(): object
     {
-        return self::$SENTINEL ??= new class() {};
+        return self::$SENTINEL ??= new class () {};
     }
 
-    /** @template T @param T $value @return self */
+    /**
+     * @template T
+     * @param T $value
+     * @return self<T>
+     */
     public static function ok(mixed $value, ?Diagnostics $diagnostics = null): self
     {
-        return new self($value, null, $diagnostics ?? Diagnostics::empty());
+        return new self($value, self::sentinel(), $diagnostics ?? Diagnostics::empty(), true);
     }
 
+    /** @return self<never> */
     public static function err(mixed $error, ?Diagnostics $diagnostics = null): self
     {
-        return new self(self::sentinel(), $error, $diagnostics ?? Diagnostics::empty());
+        return new self(self::sentinel(), $error, $diagnostics ?? Diagnostics::empty(), false);
     }
 
     public function isOk(): bool
     {
-        return $this->error === null;
+        return $this->ok;
+    }
+
+    public function isErr(): bool
+    {
+        return !$this->ok;
     }
 
     public function error(): mixed
@@ -54,57 +70,62 @@ final class Result
         return $this->diagnostics;
     }
 
-    /** @return T */
+    /**
+     * @return T
+     * @throws \LogicException if the result is an error
+     */
     public function unwrap(): mixed
     {
-        if ($this->error !== null) {
-            throw new \LogicException('unwrap() on failed Result');
+        if (!$this->ok) {
+            throw new \LogicException('Called unwrap() on a failed Result.');
         }
         return $this->valueOrSentinel;
     }
 
     public function valueOr(mixed $default): mixed
     {
-        return $this->error === null ? $this->valueOrSentinel : $default;
+        return $this->ok ? $this->valueOrSentinel : $default;
     }
 
-    /** Attach more diagnostics (pure). */
+    /** Attach additional diagnostics, returning a new immutable Result. */
     public function withDiagnostics(Diagnostics $more): self
     {
-        $d = $this->diagnostics->concat($more);
-        return $this->isOk() ? self::ok($this->valueOrSentinel, $d) : self::err($this->error, $d);
+        $merged = $this->diagnostics->concat($more);
+        return $this->ok
+            ? self::ok($this->valueOrSentinel, $merged)
+            : self::err($this->error, $merged);
     }
 
     /**
      * @template U
      * @param callable(T): U $f
-     * @return Result
+     * @return self<U>
      */
     public function map(callable $f): self
     {
-        if (!$this->isOk()) {
-            /** @var Result<U> */
+        if (!$this->ok) {
+            /** @var self<U> */
             return self::err($this->error, $this->diagnostics);
         }
 
-        /** @var Result<U> */
+        /** @var self<U> */
         return self::ok($f($this->unwrap()), $this->diagnostics);
     }
 
     /**
      * @template U
-     * @param callable(T): Result $f
-     * @return Result
+     * @param callable(T): self<U> $f
+     * @return self<U>
      */
     public function andThen(callable $f): self
     {
-        if (!$this->isOk()) {
-            /** @var Result<U> */
+        if (!$this->ok) {
+            /** @var self<U> */
             return self::err($this->error, $this->diagnostics);
         }
 
-        /** @var Result<U> $next */
-        $next = $f($this->unwrap());
+        /** @var self<U> $next */
+        $next   = $f($this->unwrap());
         $merged = $this->diagnostics->concat($next->diagnostics());
 
         return $next->isOk()

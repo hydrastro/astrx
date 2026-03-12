@@ -16,9 +16,14 @@ final class ErrorHandler
 
     private DiagnosticSinkInterface $sink;
 
+    /**
+     * Safe default: production mode suppresses debug output.
+     * Call setEnvironment() early in bootstrap to configure correctly.
+     */
+    private EnvironmentType $env = EnvironmentType::PRODUCTION;
+
     public function __construct(?DiagnosticSinkInterface $sink = null)
     {
-        // Clean default: works standalone, but can be shared by passing $sink.
         $this->sink = $sink ?? new DiagnosticsCollector();
 
         set_error_handler([$this, 'errorHandler']);
@@ -31,35 +36,36 @@ final class ErrorHandler
         $this->sink = $sink;
     }
 
-    public function setEnvironment(EnvironmentType $environmentType): void
+    public function setEnvironment(EnvironmentType $env): void
     {
-        $policy = match ($environmentType) {
+        $this->env = $env;
+
+        $policy = match ($env) {
             EnvironmentType::DEVELOPMENT, EnvironmentType::TESTING => [
-                'display_errors' => '1',
+                'display_errors'         => '1',
                 'display_startup_errors' => '1',
-                'error_reporting' => E_ALL,
-                'assert_active' => 1,
+                'error_reporting'        => E_ALL,
+                'assert_active'          => 1,
             ],
             EnvironmentType::STAGING => [
-                'display_errors' => '0',
+                'display_errors'         => '0',
                 'display_startup_errors' => '0',
-                'error_reporting' => E_ALL,
-                'assert_active' => 0,
+                'error_reporting'        => E_ALL,
+                'assert_active'          => 0,
             ],
             EnvironmentType::PRODUCTION => [
-                'display_errors' => '0',
+                'display_errors'         => '0',
                 'display_startup_errors' => '0',
-                'error_reporting' => E_ALL & ~E_NOTICE,
-                'assert_active' => 0,
+                'error_reporting'        => E_ALL & ~E_NOTICE,
+                'assert_active'          => 0,
             ],
         };
 
         ini_set('display_errors', $policy['display_errors']);
         ini_set('display_startup_errors', $policy['display_startup_errors']);
         error_reporting($policy['error_reporting']);
-        // assert_options(ASSERT_ACTIVE, $policy['assert_active']);
 
-        if ($environmentType === EnvironmentType::DEVELOPMENT || $environmentType === EnvironmentType::TESTING) {
+        if ($env === EnvironmentType::DEVELOPMENT || $env === EnvironmentType::TESTING) {
             ini_set('assert.exception', '1');
         }
     }
@@ -68,10 +74,10 @@ final class ErrorHandler
     {
         $this->exceptions[] = $e;
         $this->sink->emit(new UncaughtThrowableDiagnostic(
-                              id: 'astrx.error_handler/uncaught_throwable',
-                              level: DiagnosticLevel::EMERGENCY,
+                              id:             'astrx.error_handler/uncaught_throwable',
+                              level:          DiagnosticLevel::EMERGENCY,
                               throwableClass: $e::class,
-                              message: $e->getMessage(),
+                              message:        $e->getMessage(),
                           ));
     }
 
@@ -82,14 +88,14 @@ final class ErrorHandler
             return false;
         }
 
-        $ex = new ErrorException($errstr, 0, $errno, $errfile, $errline);
+        $ex                = new ErrorException($errstr, 0, $errno, $errfile, $errline);
         $this->exceptions[] = $ex;
 
         $this->sink->emit(new UncaughtThrowableDiagnostic(
-                              id: 'astrx.error_handler/php_error',
-                              level: DiagnosticLevel::ERROR,
+                              id:             'astrx.error_handler/php_error',
+                              level:          DiagnosticLevel::ERROR,
                               throwableClass: $ex::class,
-                              message: $errstr . " @ $errfile:$errline",
+                              message:        $errstr . " @ $errfile:$errline",
                           ));
 
         return true;
@@ -101,14 +107,14 @@ final class ErrorHandler
         if ($last !== null) {
             $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
             if (in_array($last['type'], $fatalTypes, true)) {
-                $ex = new ErrorException($last['message'], 0, $last['type'], $last['file'], $last['line']);
+                $ex                = new ErrorException($last['message'], 0, $last['type'], $last['file'], $last['line']);
                 $this->exceptions[] = $ex;
 
                 $this->sink->emit(new UncaughtThrowableDiagnostic(
-                                      id: 'astrx.error_handler/fatal_error',
-                                      level: DiagnosticLevel::EMERGENCY,
+                                      id:             'astrx.error_handler/fatal_error',
+                                      level:          DiagnosticLevel::EMERGENCY,
                                       throwableClass: $ex::class,
-                                      message: $last['message'] . " @ {$last['file']}:{$last['line']}",
+                                      message:        $last['message'] . " @ {$last['file']}:{$last['line']}",
                                   ));
             }
         }
@@ -120,22 +126,27 @@ final class ErrorHandler
         http_response_code(500);
 
         $failsafe = defined('TEMPLATE_DIR') ? (TEMPLATE_DIR . 'failsafe.html') : null;
-        $exceptions = $this->exceptions;
 
         if ($failsafe !== null && file_exists($failsafe)) {
             require $failsafe;
             return;
         }
 
-        echo "<h1>Error</h1><pre>";
-        print_r($exceptions);
+        // Only show raw debug output in dev/test environments.
+        // In production/staging, render a generic error page or fail silently.
+        if ($this->env->isDevLike()) {
+            echo "<h1>Error</h1><pre>";
+            print_r($this->exceptions);
 
-        echo "\n\nDiagnostics (sink):\n";
-        // best-effort: not all sinks will be collectors
-        if ($this->sink instanceof DiagnosticsCollector) {
-            print_r($this->sink->diagnostics()->toArray());
+            echo "\n\nDiagnostics (sink):\n";
+            if ($this->sink instanceof DiagnosticsCollector) {
+                print_r($this->sink->diagnostics()->toArray());
+            }
+
+            echo "</pre>";
+        } else {
+            echo "<h1>Internal Server Error</h1>";
+            echo "<p>An unexpected error occurred. Please try again later.</p>";
         }
-
-        echo "</pre>";
     }
 }

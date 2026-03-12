@@ -1,15 +1,14 @@
 <?php
-/* @noinspection PhpUnused */
+declare(strict_types=1);
 
 namespace AstrX\ErrorHandler;
 
-enum EnvironmentType : int
-
+enum EnvironmentType: int
 {
     case DEVELOPMENT = 0;
-    case PRODUCTION = 1;
-    case TESTING = 2;
-    case STAGING = 3;
+    case PRODUCTION  = 1;
+    case TESTING     = 2;
+    case STAGING     = 3;
 
     public function isDevLike(): bool
     {

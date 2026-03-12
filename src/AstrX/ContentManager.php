@@ -21,28 +21,25 @@ use AstrX\Routing\UrlStack;
 use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
 use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
+use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
 
 final class ContentManager
 {
-    /** @var array<string,mixed> */
-    public array $template_args = [];
     // ContentManager-owned diagnostic policy (IDs + levels live here, per your rule)
     public const string ID_INVALID_PRG_ID = 'astrx.session/invalid_prg_id';
     public const DiagnosticLevel LVL_INVALID_PRG_ID = DiagnosticLevel::WARNING;
 
     public function __construct(
-        private Injector $injector,
-        private Config $config,
-        private DiagnosticsCollector $collector,
-        private ModuleLoader $moduleLoader,
-        private Translator $translator,
-    ) {
-    }
+        private readonly Injector $injector,
+        private readonly Config $config,
+        private readonly DiagnosticsCollector $collector,
+        private readonly ModuleLoader $moduleLoader,
+        private readonly Translator $translator,
+    ) {}
 
-    public function init()
-    : void
+    public function init(): void
     {
         // --- load configs for modules that are not necessarily created early ---
         $this->config->loadModuleConfig('Routing');
@@ -66,71 +63,38 @@ final class ContentManager
         $pageKey = $this->config->getConfig('Routing', 'page_key', 'page');
         assert(is_string($pageKey));
 
-        $defaultPageToken = $this->config->getConfig(
-            'Routing',
-            'default_page',
-            'main'
-        );
+        $defaultPageToken = $this->config->getConfig('Routing', 'default_page', 'main');
         assert(is_string($defaultPageToken));
 
         // --- locale config ---
-        $availableLocales = $this->config->getConfig(
-            'Prelude',
-            'available_languages',
-            ['en']
-        );
+        $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
         assert(is_array($availableLocales));
 
-        $defaultLocaleStr = $this->config->getConfig(
-            'Prelude',
-            'default_language',
-            'en'
-        );
+        $defaultLocaleStr = $this->config->getConfig('Prelude', 'default_language', 'en');
         assert(is_string($defaultLocaleStr));
 
-        $defaultLocale = Locale::fromStringOrDefault(
-            $defaultLocaleStr,
-            Locale::EN
-        );
+        $defaultLocale = Locale::fromStringOrDefault($defaultLocaleStr, Locale::EN);
         if (!$defaultLocale->isAllowed($availableLocales)) {
-            // if config is inconsistent, fall back safely
             $defaultLocale = Locale::EN;
         }
 
         // --- session config ---
-        $sessionUseCookies = $this->config->getConfig(
-            'Session',
-            'use_cookies',
-            true
-        );
+        $sessionUseCookies = $this->config->getConfig('Session', 'use_cookies', true);
         assert(is_bool($sessionUseCookies));
 
-        $sessionIdRegex = $this->config->getConfig(
-            'Session',
-            'session_id_regex',
-            '/^[\da-fA-F]{256}$/'
-        );
+        $sessionIdRegex = $this->config->getConfig('Session', 'session_id_regex', '/^[\da-fA-F]{256}$/');
         assert(is_string($sessionIdRegex));
         assert(@preg_match($sessionIdRegex, '') !== false);
 
-        $prgTokenKey = $this->config->getConfig(
-            'Session',
-            'prg_token_key',
-            'prg'
-        );
+        $prgTokenKey = $this->config->getConfig('Session', 'prg_token_key', 'prg');
         assert(is_string($prgTokenKey));
 
-        $prgTokenRegex = $this->config->getConfig(
-            'Session',
-            'prg_token_regex',
-            '/^[\da-fA-F]{64}$/'
-        );
+        $prgTokenRegex = $this->config->getConfig('Session', 'prg_token_regex', '/^[\da-fA-F]{64}$/');
         assert(is_string($prgTokenRegex));
         assert(@preg_match($prgTokenRegex, '') !== false);
 
         // --- request ---
         $request = Request::fromGlobals();
-        assert($request instanceof Request);
         $this->injector->setClass($request);
 
         // --- canonical route bag ---
@@ -149,7 +113,7 @@ final class ContentManager
             sessionKey:        $sessionKey,
             pageKey:           $pageKey,
             defaultPageToken:  $defaultPageToken,
-            current:           $current
+            current:           $current,
         );
 
         // locale is now known: set translator + module loader once
@@ -160,9 +124,16 @@ final class ContentManager
         $this->initPDO();
 
         // --- session handler ---
-        $sessionHandler = $this->injector->createClass(
-                SecureSessionHandler::class
-            )->drainTo($this->collector)->unwrap();
+        $sessionResult = $this->injector->createClass(SecureSessionHandler::class)
+            ->drainTo($this->collector);
+
+        if (!$sessionResult->isOk()) {
+            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            return;
+        }
+
+        /** @var SecureSessionHandler $sessionHandler */
+        $sessionHandler = $sessionResult->unwrap();
         assert($sessionHandler instanceof SecureSessionHandler);
 
         session_set_save_handler($sessionHandler, true);
@@ -171,18 +142,15 @@ final class ContentManager
         if (!$sessionUseCookies && $sidCandidate !== null) {
             if ($sessionHandler->validateId($sidCandidate)) {
                 session_id($sidCandidate);
-            } else {
-                // fixation attempt: do nothing; new session will be created
-                // you can add a diagnostic later if you want
-                assert(true);
             }
+            // fixation attempt: silently ignore and let PHP generate a new session
         }
 
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
 
-        $sid = (string)session_id();
+        $sid = (string) session_id();
         $current->set($sessionKey, $sid);
         $request->query()->set($sessionKey, $sid);
 
@@ -191,24 +159,26 @@ final class ContentManager
         $current->set($pageKey, $pageToken);
         $request->query()->set($pageKey, $pageToken);
 
-        // --- PRG handling (you said PrgHandler is fine; just avoid throw) ---
+        // --- PRG handling ---
+        $prgResult = $this->injector->getClass(PrgHandler::class);
+        if (!$prgResult->isOk()) {
+            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            return;
+        }
+
         /** @var PrgHandler $prgHandler */
-        $prgHandler = $this->injector->getClass(PrgHandler::class)->unwrap();
-        assert($prgHandler instanceof PrgHandler);
+        $prgHandler = $prgResult->unwrap();
 
         if ($request->body()->all() !== [] && $request->body()->has('prg_id')) {
             $prgId = $request->body()->getString('prg_id');
 
             if ($prgId === null || !$prgHandler->hasTarget($prgId)) {
-                $this->collector->emit(
-                    new InvalidPrgIdDiagnostic(
-                        self::ID_INVALID_PRG_ID,
-                        self::LVL_INVALID_PRG_ID,
-                        $prgId
-                    )
-                );
-                http_response_code(HttpStatus::BAD_REQUEST);
-
+                $this->collector->emit(new InvalidPrgIdDiagnostic(
+                                           self::ID_INVALID_PRG_ID,
+                                           self::LVL_INVALID_PRG_ID,
+                                           $prgId,
+                                       ));
+                http_response_code(HttpStatus::BAD_REQUEST->value);
                 return;
             }
 
@@ -218,70 +188,97 @@ final class ContentManager
         }
 
         // --- page resolve ---
+        $pageHandlerResult = $this->injector->createClass(PageHandler::class)
+            ->drainTo($this->collector);
+
+        if (!$pageHandlerResult->isOk()) {
+            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            return;
+        }
+
         /** @var PageHandler $pageHandler */
-        $pageHandler = $this->injector->createClass(PageHandler::class)
-            ->drainTo($this->collector)
-            ->unwrap();
-        assert($pageHandler instanceof PageHandler);
+        $pageHandler = $pageHandlerResult->unwrap();
 
         $page = $this->resolvePage($pageHandler, $pageToken);
-        assert($page instanceof Page);
         $this->injector->setClass($page);
+
+        // --- template context (built before controller so controller can override) ---
+        $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
+            ->drainTo($this->collector);
+
+        if (!$ctxResult->isOk()) {
+            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            return;
+        }
+
+        /** @var DefaultTemplateContext $ctx */
+        $ctx = $ctxResult->unwrap();
+        $ctx->buildBase($page);
 
         // --- controller (optional) ---
         if ($page->controller) {
-            $short = str_replace('_', '', ucwords($page->fileName, '_')) .
-                     'Controller';
-            $fqcn = 'AstrX\\Controller\\' . $short;
+            $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';
+            $fqcn  = 'AstrX\\Controller\\' . $short;
 
             if (class_exists($fqcn)) {
-                $controller = $this->injector->createClass($fqcn)->drainTo(
-                        $this->collector
-                    )->unwrap();
+                $controllerResult = $this->injector->createClass($fqcn)
+                    ->drainTo($this->collector);
 
+                if (!$controllerResult->isOk()) {
+                    http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                    return;
+                }
+
+                $controller = $controllerResult->unwrap();
                 if ($controller instanceof Controller) {
                     $r = $controller->handle()->drainTo($this->collector);
                     if (!$r->isOk()) {
-                        http_response_code(HttpStatus::INTERNAL_SERVER_ERROR);
+                        http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
                         // fall through to template if enabled
                     }
                 }
             } else {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR);
-                // (optional) emit ControllerNotFound diagnostic later
+                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
             }
         }
 
         // --- template (optional) ---
         if ($page->template) {
-            /** @var TemplateEngine $engine */
-            $engine = $this->injector->createClass(TemplateEngine::class)
-                ->drainTo($this->collector)
-                ->unwrap();
-            assert($engine instanceof TemplateEngine);
+            $engineResult = $this->injector->createClass(TemplateEngine::class)
+                ->drainTo($this->collector);
 
-            $templateName = $page->templateFileName !== '' ?
-                $page->templateFileName :
-                (string)$this->config->getConfig(
-                    'ContentManager',
-                    'default_template',
-                    'default'
-                );
-
-            $tpl = $engine->loadTemplate($templateName);
-            if ($tpl === null || !method_exists($tpl, 'render')) {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR);
-
+            if (!$engineResult->isOk()) {
+                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
                 return;
             }
 
-            echo $tpl->render($this->template_args);
+            /** @var TemplateEngine $engine */
+            $engine = $engineResult->unwrap();
 
+            $templateName = $page->templateFileName !== ''
+                ? $page->templateFileName
+                : (string) $this->config->getConfig('ContentManager', 'default_template', 'default');
+
+            // Finalise context (add response time, diagnostics) before rendering.
+            $ctx->finalise();
+
+            $renderResult = $engine->renderTemplate($templateName, $ctx->all())
+                ->drainTo($this->collector);
+
+            if (!$renderResult->isOk()) {
+                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                return;
+            }
+
+            echo $renderResult->unwrap();
             return;
         }
 
-        // no template: controller might have written output; otherwise 204/whatever already set
-        http_response_code(http_response_code() ?: HttpStatus::NO_CONTENT);
+        // no template: controller might have written output; otherwise set 204
+        $currentCode = http_response_code();
+        if ($currentCode === false || $currentCode === 200) {
+            http_response_code(HttpStatus::NO_CONTENT->value);
+        }
     }
 
     /**
@@ -299,42 +296,41 @@ final class ContentManager
         string $sessionKey,
         string $pageKey,
         string $defaultPageToken,
-        CurrentUrl $current
-    )
-    : array {
+        CurrentUrl $current,
+    ): array {
         $sidCandidate = null;
 
         if ($urlRewrite) {
-            $requestUri = (string)($_SERVER['REQUEST_URI']??'/');
-            $stack = UrlStack::fromRequest($requestUri, $basePath);
+            $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+            $stack      = UrlStack::fromRequest($requestUri, $basePath);
 
             $a = $stack->pop(); // maybe locale OR sid OR page
             $b = $stack->pop(); // maybe sid OR page
 
-            // locale
-            $locale = ($a !== null && in_array($a, $availableLocales, true)) ?
-                Locale::fromStringOrDefault($a, $defaultLocale) :
-                $defaultLocale;
+            $localeFromUrl = ($a !== null && in_array($a, $availableLocales, true));
+            $locale        = $localeFromUrl
+                ? Locale::fromStringOrDefault($a, $defaultLocale)
+                : $defaultLocale;
 
-            // if $a wasn't locale, treat it as next token
-            if (!($a !== null && in_array($a, $availableLocales, true))) {
+            // If $a wasn't a locale, treat it as the next token
+            if (!$localeFromUrl) {
                 $b = $a;
             }
 
             $current->set($localeKey, $locale->value);
             $request->query()->set($localeKey, $locale->value);
 
-            // sid/page discrimination
-            if (!$sessionUseCookies &&
-                $b !== null &&
-                preg_match($sessionIdRegex, $b) === 1) {
+            if (
+                !$sessionUseCookies
+                && $b !== null
+                && preg_match($sessionIdRegex, $b) === 1
+            ) {
                 $sidCandidate = $b;
                 $current->set($sessionKey, $sidCandidate);
                 $request->query()->set($sessionKey, $sidCandidate);
-
-                $pageToken = $stack->pop()??$defaultPageToken;
+                $pageToken = $stack->pop() ?? $defaultPageToken;
             } else {
-                $pageToken = $b??$defaultPageToken;
+                $pageToken = $b ?? $defaultPageToken;
             }
 
             $current->set($pageKey, $pageToken);
@@ -345,9 +341,9 @@ final class ContentManager
 
         // query mode
         $rawLocale = $request->query()->get($localeKey);
-        $locale = Locale::fromStringOrDefault(
+        $locale    = Locale::fromStringOrDefault(
             is_string($rawLocale) ? $rawLocale : null,
-            $defaultLocale
+            $defaultLocale,
         );
         if (!$locale->isAllowed($availableLocales)) {
             $locale = $defaultLocale;
@@ -358,17 +354,15 @@ final class ContentManager
 
         if (!$sessionUseCookies) {
             $rawSid = $request->query()->get($sessionKey);
-            if (is_string($rawSid) &&
-                preg_match($sessionIdRegex, $rawSid) === 1) {
+            if (is_string($rawSid) && preg_match($sessionIdRegex, $rawSid) === 1) {
                 $sidCandidate = $rawSid;
                 $current->set($sessionKey, $sidCandidate);
                 $request->query()->set($sessionKey, $sidCandidate);
             }
         }
 
-        $rawPage = $request->query()->get($pageKey);
-        $pageToken = (is_string($rawPage) && $rawPage !== '') ? $rawPage :
-            $defaultPageToken;
+        $rawPage   = $request->query()->get($pageKey);
+        $pageToken = (is_string($rawPage) && $rawPage !== '') ? $rawPage : $defaultPageToken;
 
         $current->set($pageKey, $pageToken);
         $request->query()->set($pageKey, $pageToken);
@@ -376,58 +370,51 @@ final class ContentManager
         return [$locale, $sidCandidate, $pageToken];
     }
 
-    private function initPDO()
-    : void
+    private function initPDO(): void
     {
-        $dsn = $this->config->getConfig("PDO", "db_type", "mysql");
-        assert(is_string($dsn));
-        $host = $this->config->getConfig("PDO", "db_host", "mysql");
+        // Note: 'db_type' holds the PDO driver name (e.g. "mysql"), not a full DSN.
+        $driver  = $this->config->getConfig('PDO', 'db_type', 'mysql');
+        assert(is_string($driver));
+        $host    = $this->config->getConfig('PDO', 'db_host', 'localhost');
         assert(is_string($host));
-        $dbname = $this->config->getConfig("PDO", "db_name", "content_manager");
+        $dbname  = $this->config->getConfig('PDO', 'db_name', 'content_manager');
         assert(is_string($dbname));
-        $username = $this->config->getConfig("PDO", "db_username", "user");
+        $username = $this->config->getConfig('PDO', 'db_username', 'user');
         assert(is_string($username));
-        $passwd = $this->config->getConfig("PDO", "db_password", "password");
+        $passwd  = $this->config->getConfig('PDO', 'db_password', 'password');
         assert(is_string($passwd));
 
-        $pdo = new PDO(
-            $dsn . ":host=" . $host . ";dbname=" . $dbname . ";",
-            $username,
-            $passwd
-        );
+        // charset=utf8mb4 prevents data corruption and SQL injection via charset tricks.
+        $dsn = $driver . ':host=' . $host . ';dbname=' . $dbname . ';charset=utf8mb4';
+        $pdo = new PDO($dsn, $username, $passwd);
 
-        $emulate = $this->config->getConfig('PDO', 'emulate_prepares', false);
+        $emulate   = $this->config->getConfig('PDO', 'emulate_prepares', false);
         assert(is_bool($emulate));
-        $errExc = $this->config->getConfig('PDO', 'errmode_exception', true);
+        $errExc    = $this->config->getConfig('PDO', 'errmode_exception', true);
         assert(is_bool($errExc));
-        $fetchAssoc = $this->config->getConfig(
-            'PDO',
-            'default_fetch_assoc',
-            true
-        );
+        $fetchAssoc = $this->config->getConfig('PDO', 'default_fetch_assoc', true);
         assert(is_bool($fetchAssoc));
 
         $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulate);
         $pdo->setAttribute(
             PDO::ATTR_ERRMODE,
-            $errExc ? PDO::ERRMODE_EXCEPTION :
-                PDO::ERRMODE_SILENT
+            $errExc ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT,
         );
         $pdo->setAttribute(
             PDO::ATTR_DEFAULT_FETCH_MODE,
-            $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH
+            $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH,
         );
 
         $this->injector->setClass($pdo);
     }
 
-    private function resolvePage(PageHandler $pageHandler, string $pageToken)
-    : Page {
+    private function resolvePage(PageHandler $pageHandler, string $pageToken): Page
+    {
         // i18n map first
         $map = [];
         foreach ($pageHandler->getInternationalizedPageIds() as $row) {
-            $urlId = (string)$row['url_id'];
-            $pid = (int)$row['id'];
+            $urlId   = (string) $row['url_id'];
+            $pid     = (int) $row['id'];
             $resolved = $this->translator->t($urlId);
             $map[$resolved] = $pid;
         }
@@ -439,22 +426,21 @@ final class ContentManager
         }
 
         if ($page === null) {
-            $id = $pageHandler->getPageIdFromUrlId($pageToken);
+            $id   = $pageHandler->getPageIdFromUrlId($pageToken);
             $page = $id !== null ? $pageHandler->getPage($id) : null;
         }
 
         if ($page === null || $page->hidden) {
-            http_response_code(404);
+            http_response_code(HttpStatus::NOT_FOUND->value);
 
-            // NOTE: you had a key mismatch before; use the config you actually have:
             $errorUrlId = $this->config->getConfig(
                 'ContentManager',
                 'error_page_url_id',
-                'WORDING_ERROR'
+                'WORDING_ERROR',
             );
             assert(is_string($errorUrlId));
 
-            $eid = $pageHandler->getPageIdFromUrlId($errorUrlId);
+            $eid  = $pageHandler->getPageIdFromUrlId($errorUrlId);
             $page = $eid !== null ? $pageHandler->getPage($eid) : null;
 
             if ($page === null) {
