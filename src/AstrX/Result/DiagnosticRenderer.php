@@ -45,6 +45,14 @@ final class DiagnosticRenderer
      */
     private array $catalog = [];
 
+    /**
+     * Translated level labels, keyed by DiagnosticLevel::name.
+     * Populated from 'level_labels' key in the Diagnostics lang file.
+     *
+     * @var array<string, string>
+     */
+    private array $levelLabels = [];
+
     public function __construct(private readonly Translator $translator) {}
 
     // -------------------------------------------------------------------------
@@ -71,6 +79,16 @@ final class DiagnosticRenderer
 
         if (!is_array($data)) {
             return;
+        }
+
+        // Extract level label map if present (array<string, string>)
+        if (isset($data['level_labels']) && is_array($data['level_labels'])) {
+            foreach ($data['level_labels'] as $name => $label) {
+                if (is_string($name) && is_string($label)) {
+                    $this->levelLabels[$name] = $label;
+                }
+            }
+            unset($data['level_labels']);
         }
 
         foreach ($data as $id => $entry) {
@@ -132,11 +150,31 @@ final class DiagnosticRenderer
                 continue;
             }
             $out[] = [
-                'message' => $this->render($d),
-                'level'   => $d->level(),
+                'message'     => $this->render($d),
+                'level'       => $d->level(),
+                'level_label' => $this->renderLevelLabel($d->level()),
             ];
         }
         return $out;
+    }
+
+    // -------------------------------------------------------------------------
+    // Level label
+    // -------------------------------------------------------------------------
+
+    /**
+     * Resolve the translated label for a DiagnosticLevel.
+     *
+     * Looks up 'level.{LEVEL_NAME}' in the catalog (e.g. 'level.NOTICE').
+     * Falls back to the raw enum name if no entry is registered.
+     *
+     * These entries live in the Diagnostics lang file alongside the message
+     * callables, so adding a new locale automatically covers both messages
+     * and level labels in one file.
+     */
+    public function renderLevelLabel(DiagnosticLevel $level): string
+    {
+        return $this->levelLabels[$level->name] ?? $level->name;
     }
 
     // -------------------------------------------------------------------------

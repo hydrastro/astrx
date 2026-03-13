@@ -205,9 +205,10 @@ final class DefaultTemplateContext
             foreach ($filtered as $entry) {
                 $levelName = $entry['level']->name;
                 $results[] = [
-                    'message'  => $entry['message'],
-                    'level'    => $levelName,
-                    'css_class' => (string) ($levelClasses[$levelName] ?? 'diag-unknown'),
+                    'message'     => $entry['message'],
+                    'level'       => $levelName,
+                    'level_label' => $entry['level_label'],
+                    'css_class'   => (string) ($levelClasses[$levelName] ?? 'diag-unknown'),
                 ];
             }
             $this->vars['got_results'] = true;

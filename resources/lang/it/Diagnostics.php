@@ -212,6 +212,30 @@ return [
         },
 
 
+
+    // -------------------------------------------------------------------------
+    // Csrf
+    // -------------------------------------------------------------------------
+
+    'astrx.csrf/token_missing' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenMissingDiagnostic);
+            return "Token CSRF mancante per il modulo \"{$d->formId()}\".";
+        },
+
+    'astrx.csrf/token_mismatch' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenMismatchDiagnostic);
+            return "Token CSRF non corrispondente per il modulo \"{$d->formId()}\".";
+        },
+
+    'astrx.csrf/token_expired' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenExpiredDiagnostic);
+            return "Token CSRF scaduto per il modulo \"{$d->formId()}\""
+                   . " (scaduto alle " . date('H:i:s', $d->expiredAt()) . ").";
+        },
+
     // -------------------------------------------------------------------------
     // Etichette di livello
     // -------------------------------------------------------------------------

@@ -43,6 +43,30 @@ use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
  * That tells you exactly which callable to add and which vars are available.
  */
 return [
+
+    // -------------------------------------------------------------------------
+    // Csrf
+    // -------------------------------------------------------------------------
+
+    'astrx.csrf/token_missing' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenMissingDiagnostic);
+            return "CSRF token missing for form \"{$d->formId()}\".";
+        },
+
+    'astrx.csrf/token_mismatch' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenMismatchDiagnostic);
+            return "CSRF token mismatch for form \"{$d->formId()}\".";
+        },
+
+    'astrx.csrf/token_expired' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Csrf\Diagnostic\CsrfTokenExpiredDiagnostic);
+            return "CSRF token expired for form \"{$d->formId()}\""
+                   . " (expired at " . date('H:i:s', $d->expiredAt()) . ").";
+        },
+
     // -------------------------------------------------------------------------
     // Level labels — plain strings, keyed by DiagnosticLevel::name.
     // Loaded into DiagnosticRenderer::$levelLabels, not the callable catalog.
