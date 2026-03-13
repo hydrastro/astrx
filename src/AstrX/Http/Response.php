@@ -3,11 +3,18 @@ declare(strict_types=1);
 
 namespace AstrX\Http;
 
+use AstrX\Http\Diagnostic\HeadersAlreadySentDiagnostic;
+use AstrX\Result\DiagnosticLevel;
+use AstrX\Result\Diagnostics;
+use AstrX\Result\Result;
 use InvalidArgumentException;
 use JsonException;
 
 final class Response
 {
+    public const string ID_HEADERS_ALREADY_SENT = 'astrx.http/headers_already_sent';
+    public const DiagnosticLevel LVL_HEADERS_ALREADY_SENT = DiagnosticLevel::ERROR;
+
     private int $status;
     private string $body;
     private HeaderBag $headers;
@@ -66,12 +73,18 @@ final class Response
         return $clone;
     }
 
-    public function send(): void
+    /** @return Result<bool> */
+    public function send(): Result
     {
         if (headers_sent($file, $line)) {
-            throw new \RuntimeException(
-                sprintf('Cannot send response: headers already sent in %s on line %d.', $file, $line)
-            );
+            return Result::err(false, Diagnostics::of(
+                new HeadersAlreadySentDiagnostic(
+                    self::ID_HEADERS_ALREADY_SENT,
+                    self::LVL_HEADERS_ALREADY_SENT,
+                    (string) $file,
+                    (int) $line,
+                )
+            ));
         }
 
         http_response_code($this->status);
@@ -85,6 +98,8 @@ final class Response
         }
 
         echo $this->body;
+
+        return Result::ok(true);
     }
 
     // -------------------------------------------------------------------------

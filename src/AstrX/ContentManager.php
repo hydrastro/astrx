@@ -88,7 +88,8 @@ final class ContentManager
         assert(is_string($prgTokenRegex));
         assert(@preg_match($prgTokenRegex, '') !== false);
 
-        $request = Request::fromGlobals();
+        $requestResult = Request::fromGlobals()->drainTo($this->collector);
+        $request = $requestResult->unwrap(); // always ok — fromGlobals never returns err
         $this->injector->setClass($request);
 
         $current = new CurrentUrl();
@@ -159,7 +160,8 @@ final class ContentManager
         $prgHandler = $prgResult->unwrap();
 
         if ($request->body()->all() !== [] && $request->body()->has('prg_id')) {
-            $prgId = $request->body()->getString('prg_id');
+            $prgIdResult = $request->body()->getString('prg_id')->drainTo($this->collector);
+            $prgId = $prgIdResult->valueOr(null);
 
             if ($prgId === null || !$prgHandler->hasTarget($prgId)) {
                 $this->collector->emit(new InvalidPrgIdDiagnostic(
@@ -172,7 +174,12 @@ final class ContentManager
             }
 
             $token = $prgHandler->storeFromPayload($request->body()->all());
-            Response::redirect($prgHandler->getUrl($prgId, $token))->send();
+            $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
+                ->drainTo($this->collector);
+            if (!$sendResult->isOk()) {
+                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                return;
+            }
             exit;
         }
 

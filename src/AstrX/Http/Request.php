@@ -18,21 +18,33 @@ final class Request
     ) {
     }
 
-    public static function fromGlobals(): self
+    /** @return \AstrX\Result\Result<self> */
+    public static function fromGlobals(): \AstrX\Result\Result
     {
         $server = $_SERVER;
 
-        return new self(
-            method: RequestMethod::fromString((string) ($server['REQUEST_METHOD'] ?? 'GET')),
-            uri: self::buildUriFromServer($server),
-            headers: new HeaderBag(self::extractHeadersFromServer($server)),
-            query: new ParameterBag($_GET),
-            body: new ParameterBag($_POST),
-            cookies: new ParameterBag($_COOKIE),
-            server: new ParameterBag($server),
+        $methodResult = RequestMethod::fromString((string) ($server['REQUEST_METHOD'] ?? 'GET'));
+
+        // An unknown method is not fatal — fall back to GET and carry the diagnostic forward.
+        $method = $methodResult->isOk()
+            ? $methodResult->unwrap()
+            : RequestMethod::Get;
+
+        $request = new self(
+            method:     $method,
+            uri:        self::buildUriFromServer($server),
+            headers:    new HeaderBag(self::extractHeadersFromServer($server)),
+            query:      new ParameterBag($_GET),
+            body:       new ParameterBag($_POST),
+            cookies:    new ParameterBag($_COOKIE),
+            server:     new ParameterBag($server),
             attributes: new ParameterBag(),
-            files: new FileBag(self::normalizeFiles($_FILES)),
+            files:      new FileBag(self::normalizeFiles($_FILES)),
         );
+
+        // Always ok — method fallback means we never hard-fail here.
+        // Unknown-method diagnostic is attached so callers can inspect it.
+        return \AstrX\Result\Result::ok($request, $methodResult->diagnostics());
     }
 
     public function method(): RequestMethod
