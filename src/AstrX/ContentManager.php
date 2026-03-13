@@ -363,6 +363,10 @@ final class ContentManager
             $current->set($pageKey, $pageToken);
             $request->query()->set($pageKey, $pageToken);
 
+            // Store remaining path segments for controllers to consume as
+            // page-specific sub-params (e.g. page number, sort order).
+            $current->setTail($stack->remaining());
+
             return [$locale, $sidCandidate, $pageToken];
         }
 

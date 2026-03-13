@@ -1,30 +1,32 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 /**
  * Translations for the main page — en locale.
- * Covers everything needed by this page and its controller (MainController).
- * Loaded by ContentManager immediately after the page is resolved.
+ * Loaded by ContentManager via ucfirst($page->fileName) = 'Main'.
+ *
  * Key convention:
  *   WORDING_MAIN.title       — <title> tag
  *   WORDING_MAIN.description — <meta name="description">
- *   WORDING_MAIN_PAGE        — keyword (keyword.i18n = 1 in DB)
- *   main_page                — string used by MainController
+ *   news.*                   — strings used by MainController / main.html
  */
 return [
-    // ---- meta ---------------------------------------------------------------
-    'WORDING_MAIN.title' => 'Home',
+    // Page meta
+    'WORDING_MAIN.title'       => 'Home',
     'WORDING_MAIN.description' => 'Welcome to the website.',
 
-    // ---- controller strings -------------------------------------------------
-    'main_page' => 'main page',
+    // News listing
+    'news.heading'         => 'News',
+    'news.date'            => 'Date',
+    'news.empty'           => 'There are no news yet.',
+    'news.prev'            => '← Previous',
+    'news.next'            => 'Next →',
+    'news.page'            => 'Page',
 
-    'news.heading' => 'News',
-    'news.title' => 'Title',
-    'news.date' => 'Date',
-    'news.empty' => 'No news yet.',
-    'news.prev' => '← Previous',
-    'news.next' => 'Next →',
-    'news.page' => 'Page',
+    // Filter form
+    'news.filter.show'     => 'Items per page',
+    'news.filter.order'    => 'Order',
+    'news.filter.desc'     => 'Newest first',
+    'news.filter.asc'      => 'Oldest first',
+    'news.filter.submit'   => 'Apply',
 ];

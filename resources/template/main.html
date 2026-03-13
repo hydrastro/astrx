@@ -1,5 +1,15 @@
 <h2>{{news_heading}}</h2>
 {{#has_news}}
+<form id="news_filter" method="GET" action="{{news_form_action}}">
+    <label>{{news_filter_show}}: <input class="input" type="number" name="show" value="{{per_page}}" min="1" max="100" style="width:4em"></label>
+    <label>{{news_filter_order}}:
+        <select class="input" name="order">
+            <option value="desc"{{#news_desc_selected}} selected{{/news_desc_selected}}>{{news_filter_desc}}</option>
+            <option value="asc"{{#news_asc_selected}} selected{{/news_asc_selected}}>{{news_filter_asc}}</option>
+        </select>
+    </label>
+    <input class="input" type="submit" value="{{news_filter_submit}}">
+</form>
 <div id="news_list">
     {{#news}}
     <div class="news_entry">

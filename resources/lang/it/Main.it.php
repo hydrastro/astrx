@@ -1,17 +1,26 @@
 <?php
+declare(strict_types=1);
 
-declare(strict_types = 1);
-
+/**
+ * Traduzioni per la pagina principale — localizzazione italiana.
+ */
 return [
-    'WORDING_MAIN.title' => 'Home',
+    // Meta pagina
+    'WORDING_MAIN.title'       => 'Home',
     'WORDING_MAIN.description' => 'Benvenuto nel sito.',
 
-    'main_page' => 'pagina principale',
-    'news.heading' => 'Notizie',
-    'news.title' => 'Titolo',
-    'news.date'  => 'Data',
-    'news.empty' => 'Nessuna notizia.',
-    'news.prev'  => '← Precedente',
-    'news.next'  => 'Successivo →',
-    'news.page'  => 'Pagina',
+    // Lista notizie
+    'news.heading'         => 'Notizie',
+    'news.date'            => 'Data',
+    'news.empty'           => 'Non ci sono ancora notizie.',
+    'news.prev'            => '← Precedente',
+    'news.next'            => 'Successivo →',
+    'news.page'            => 'Pagina',
+
+    // Form di filtraggio
+    'news.filter.show'     => 'Elementi per pagina',
+    'news.filter.order'    => 'Ordine',
+    'news.filter.desc'     => 'Più recenti prima',
+    'news.filter.asc'      => 'Meno recenti prima',
+    'news.filter.submit'   => 'Applica',
 ];
