@@ -7,7 +7,7 @@ USE content_manager;
 CREATE TABLE `page`
 (
     `id`         INT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `url_id`     VARCHAR(64) NOT NULL UNIQUE,   -- public URL token; a Translator key when i18n=1
+    `url_id`     VARCHAR(64) NOT NULL UNIQUE,    -- public URL token; a Translator key when i18n=1
     `i18n`       TINYINT     NOT NULL DEFAULT 0, -- 1 = url_id resolved through Translator
     `file_name`  VARCHAR(64) NOT NULL,           -- physical file under page/ dir (no extension)
     `template`   TINYINT     NOT NULL DEFAULT 1, -- 1 = render via TemplateEngine
@@ -81,37 +81,71 @@ CREATE TABLE `page_template`
 
 -- ============================================================
 -- NAVIGATION BAR
--- navigation_bar_ids is a shared sequence so internal and external entries never collide.
+--
+-- Design:
+--   navbar           — one row per navbar (public, user, admin, ...)
+--   navbar_pin       — ordered sections within a navbar; each pin has its own sort mode
+--   navbar_entry_ids — shared sequence so internal and external entries never collide
+--   navbar_entry     — one row per link; belongs to a pin
+--   navbar_internal  — subtype: link to an internal page
+--   navbar_external  — subtype: link to an external URL
+--
+-- sort_mode on navbar_pin: 0 = alphabetical (entry.sort_order ignored)
+--                          1 = custom       (entry.sort_order used)
+--
+-- The application config maps navbar names to their IDs:
+--   public navbar id=1, user navbar id=2, admin navbar id=3
 -- ============================================================
 
-CREATE TABLE `navigation_bar_ids`
+CREATE TABLE `navbar`
+(
+    `id`   INT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(64) NOT NULL
+);
+
+CREATE TABLE `navbar_pin`
+(
+    `id`         INT     NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `navbar_id`  INT     NOT NULL,
+    `sort_order` INT     NOT NULL DEFAULT 0,  -- position of this pin within its navbar
+    `sort_mode`  TINYINT NOT NULL DEFAULT 0,  -- 0=alphabetical  1=custom
+    FOREIGN KEY (navbar_id) REFERENCES navbar (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    INDEX idx_navbar (navbar_id)
+);
+
+-- Shared sequence: guarantees a single id space across internal and external entries.
+CREATE TABLE `navbar_entry_ids`
 (
     `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY
 );
 
-CREATE TABLE `navigation_bar_entry`
+CREATE TABLE `navbar_entry`
 (
-    `id`       INT         NOT NULL PRIMARY KEY,
-    `internal` TINYINT     NOT NULL,              -- 1 = links to an internal page, 0 = external URL
-    `name`     VARCHAR(64) NOT NULL,              -- display label; Translator key when i18n=1
-    `i18n`     TINYINT     NOT NULL DEFAULT 0,
-    `active`   TINYINT     NOT NULL DEFAULT 1,    -- 0 = hidden from rendered navbar
-    FOREIGN KEY (id) REFERENCES navigation_bar_ids (id) ON UPDATE CASCADE ON DELETE CASCADE
+    `id`         INT         NOT NULL PRIMARY KEY,
+    `pin_id`     INT         NOT NULL,
+    `internal`   TINYINT     NOT NULL,              -- 1 = internal page, 0 = external URL
+    `name`       VARCHAR(64) NOT NULL,              -- display label; Translator key when i18n=1
+    `i18n`       TINYINT     NOT NULL DEFAULT 0,
+    `active`     TINYINT     NOT NULL DEFAULT 1,    -- 0 = hidden from rendered navbar
+    `sort_order` INT         NULL,                  -- only meaningful when pin.sort_mode=1
+    FOREIGN KEY (id)     REFERENCES navbar_entry_ids (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (pin_id) REFERENCES navbar_pin       (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    INDEX idx_pin (pin_id)
 );
 
-CREATE TABLE `navigation_bar_internal`
+CREATE TABLE `navbar_internal`
 (
     `id`      INT NOT NULL PRIMARY KEY,
     `page_id` INT NOT NULL,
-    FOREIGN KEY (id)      REFERENCES navigation_bar_entry (id) ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (page_id) REFERENCES page                 (id) ON UPDATE CASCADE ON DELETE CASCADE
+    FOREIGN KEY (id)      REFERENCES navbar_entry (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (page_id) REFERENCES page         (id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE `navigation_bar_external`
+CREATE TABLE `navbar_external`
 (
     `id`  INT           NOT NULL PRIMARY KEY,
     `url` VARCHAR(2083) NOT NULL,
-    FOREIGN KEY (id) REFERENCES navigation_bar_entry (id) ON UPDATE CASCADE ON DELETE CASCADE
+    FOREIGN KEY (id) REFERENCES navbar_entry (id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 
@@ -154,23 +188,30 @@ FROM `page` p
          LEFT JOIN `page_template` pt ON pt.page_id   = p.id
          LEFT JOIN `template`      t  ON t.id          = pt.template_id;
 
--- Note: navigation_bar_external is joined ON e.id (not on internal.id — that was a bug in the
--- original draft). Exactly one of (page_id / url_id) or (url) will be non-NULL per row.
-CREATE VIEW resolved_navigation_bar AS
+-- Returns all navbar entries with their pin and navbar context.
+-- Filter by navbar_id in the application.
+-- Ordering: ORDER BY pin_sort_order, then either entry.name (alpha) or entry.sort_order (custom)
+-- depending on pin_sort_mode — this branching belongs in the query layer, not the view.
+CREATE VIEW resolved_navbar AS
 SELECT e.id,
        e.internal,
        e.name,
        e.i18n,
        e.active,
+       e.sort_order  AS entry_sort_order,
+       np.id         AS pin_id,
+       np.sort_order AS pin_sort_order,
+       np.sort_mode  AS pin_sort_mode,
+       np.navbar_id,
        ni.page_id,
        ne.url,
        p.url_id,
-       p.i18n AS page_i18n
-FROM `navigation_bar_entry` e
-         LEFT JOIN `navigation_bar_internal` ni ON ni.id    = e.id
-         LEFT JOIN `navigation_bar_external` ne ON ne.id    = e.id  -- fixed: was wrongly ne ON ni.id
-         LEFT JOIN `page`                    p  ON p.id     = ni.page_id
-ORDER BY e.id;
+       p.i18n        AS page_i18n
+FROM `navbar_entry` e
+         JOIN      `navbar_pin`      np ON np.id    = e.pin_id
+         LEFT JOIN `navbar_internal` ni ON ni.id    = e.id
+         LEFT JOIN `navbar_external` ne ON ne.id    = e.id
+         LEFT JOIN `page`            p  ON p.id     = ni.page_id;
 
 
 -- ============================================================
@@ -186,9 +227,9 @@ CREATE TABLE `user`
 (
     `id`               BINARY(16)   NOT NULL PRIMARY KEY,
     `username`         VARCHAR(64)  NULL UNIQUE,
-    `password`         VARCHAR(255) NULL,              -- argon2id via password_hash(); never md5/sha1
-    `mailbox`          VARCHAR(320) NULL UNIQUE,       -- login identifier (local-part of address)
-    `email`            VARCHAR(320) NULL UNIQUE,       -- recovery / verification address
+    `password`         VARCHAR(255) NULL,               -- argon2id via password_hash(); never md5/sha1
+    `mailbox`          VARCHAR(320) NULL UNIQUE,        -- login identifier (local-part of address)
+    `email`            VARCHAR(320) NULL UNIQUE,        -- recovery / verification address
     `display_name`     VARCHAR(64)  NULL,
     `type`             TINYINT      NOT NULL DEFAULT 0, -- 0=user 1=admin 2=mod 3=guest
     `birth`            DATE         NULL,
@@ -198,7 +239,7 @@ CREATE TABLE `user`
     `verified`         TINYINT      NOT NULL DEFAULT 0,
     `avatar`           TINYINT      NOT NULL DEFAULT 0, -- 1 = custom avatar file on disk
     `deleted`          TINYINT      NOT NULL DEFAULT 0,
-    -- Single active token slot (type determines meaning)
+    -- Single active token slot (token_type determines meaning)
     `token_hash`       VARCHAR(255) NULL,               -- password_hash() of the raw token
     `token_type`       TINYINT      NULL,               -- 0=recover 1=email_change 2=verify 3=delete
     `token_used`       TINYINT      NOT NULL DEFAULT 0, -- 1 = token already consumed
@@ -227,22 +268,22 @@ CREATE TABLE `news`
 -- ============================================================
 -- CONTENT: COMMENTS
 -- ip: packed binary via inet_pton() — 4 bytes for IPv4, 16 for IPv6.
--- reply_to: SET NULL (not CASCADE) so child comments survive parent deletion.
+-- reply_to: SET NULL on delete so child comments survive parent removal.
 -- ============================================================
 
 CREATE TABLE `comment`
 (
-    `id`          INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `page_id`     INT           NOT NULL,
-    `user_id`     BINARY(16)    NULL,                  -- NULL for anonymous commenters
-    `name`        VARCHAR(64)   NULL,                  -- anonymous display name
-    `email`       VARCHAR(320)  NULL,                  -- optional anonymous contact
-    `content`     TEXT          NOT NULL,
-    `reply_to`    INT           NULL,
-    `ip`          VARBINARY(16) NULL,                  -- packed IPv4 (4 B) or IPv6 (16 B)
-    `hidden`      TINYINT       NOT NULL DEFAULT 0,
-    `flagged`     TINYINT       NOT NULL DEFAULT 0,
-    `created_at`  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `page_id`    INT           NOT NULL,
+    `user_id`    BINARY(16)    NULL,                  -- NULL for anonymous commenters
+    `name`       VARCHAR(64)   NULL,                  -- anonymous display name
+    `email`      VARCHAR(320)  NULL,                  -- optional anonymous contact
+    `content`    TEXT          NOT NULL,
+    `reply_to`   INT           NULL,
+    `ip`         VARBINARY(16) NULL,                  -- packed IPv4 (4 B) or IPv6 (16 B)
+    `hidden`     TINYINT       NOT NULL DEFAULT 0,
+    `flagged`    TINYINT       NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (page_id)  REFERENCES page    (id) ON UPDATE CASCADE ON DELETE CASCADE,
     FOREIGN KEY (user_id)  REFERENCES user    (id) ON UPDATE CASCADE ON DELETE SET NULL,
     FOREIGN KEY (reply_to) REFERENCES comment (id) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -251,11 +292,28 @@ CREATE TABLE `comment`
     INDEX idx_created (created_at)
 );
 
+-- Mutes belong to a user or IP, not to a specific comment.
+-- Either user_id or ip must be non-NULL (enforced at the service layer).
+-- page_id = NULL means site-wide mute; non-NULL scopes it to a single page.
+CREATE TABLE `mute`
+(
+    `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`    BINARY(16)    NULL,
+    `ip`         VARBINARY(16) NULL,
+    `page_id`    INT           NULL,                  -- NULL = site-wide
+    `expires_at` TIMESTAMP     NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES user (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY (page_id) REFERENCES page (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    INDEX idx_user    (user_id),
+    INDEX idx_ip      (ip),
+    INDEX idx_expires (expires_at)
+);
+
 
 -- ============================================================
 -- SECURITY: CAPTCHA
 -- id: bin2hex(random_bytes(16)) — 32 hex chars.
--- Expired rows should be purged periodically (e.g. via a cron or on-request).
+-- Expired rows should be purged periodically (lazy purge on request or via cron).
 -- ============================================================
 
 CREATE TABLE `captcha`
@@ -271,7 +329,7 @@ CREATE TABLE `captcha`
 -- SECURITY: BANLIST
 -- Multi-tier, progressive ban system.
 -- ban_route: 0=permanent  1=bad_comment  2=failed_login
--- penalty_round escalates per infraction cycle; tries counts within check_time window.
+-- penalty_round escalates per infraction cycle; tries counts within the check_time window.
 -- ============================================================
 
 CREATE TABLE `banlist`
@@ -355,7 +413,7 @@ CREATE TABLE `banlist_ipv6`
 --   │   ├── profile        (6)
 --   │   ├── user_settings  (7)
 --   │   └── user_home      (8)
---   ├── avatar    (10) raw output, no template
+--   ├── avatar    (10) raw output — no template
 --   └── admin     (18) section root
 --       ├── admin_banlist   (11)
 --       ├── admin_comments  (12)
@@ -369,20 +427,20 @@ CREATE TABLE `banlist_ipv6`
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES
 -- Framework defaults
-('WORDING_MAIN',  1, 'main',  1, 1, 0, 1),  -- id=1  (comments enabled on the main page)
-('WORDING_ERROR', 1, 'error', 1, 1, 1, 0),  -- id=2
+('WORDING_MAIN',   1, 'main',  1, 1, 0, 1),  -- id=1  (comments enabled on main)
+('WORDING_ERROR',  1, 'error', 1, 1, 1, 0),  -- id=2
 
--- User-facing pages
-('login',         1, 'login',         1, 1, 0, 0),  -- id=3
-('register',      1, 'register',      1, 1, 0, 0),  -- id=4
-('recover',       1, 'recover',       1, 1, 0, 0),  -- id=5
-('profile',       1, 'profile',       1, 1, 0, 0),  -- id=6
-('settings',      1, 'user_settings', 1, 1, 0, 0),  -- id=7
-('home',          1, 'user_home',     1, 1, 0, 0),  -- id=8
-('user',          1, 'user',          1, 1, 0, 0),  -- id=9  section root
+-- User-facing pages (i18n=1: URL token is locale-dependent)
+('login',          1, 'login',         1, 1, 0, 0),  -- id=3
+('register',       1, 'register',      1, 1, 0, 0),  -- id=4
+('recover',        1, 'recover',       1, 1, 0, 0),  -- id=5
+('profile',        1, 'profile',       1, 1, 0, 0),  -- id=6
+('settings',       1, 'user_settings', 1, 1, 0, 0),  -- id=7
+('home',           1, 'user_home',     1, 1, 0, 0),  -- id=8
+('user',           1, 'user',          1, 1, 0, 0),  -- id=9  section root
 
 -- Special: raw image binary output, no template wrapping
-('avatar',        0, 'avatar',        0, 1, 0, 0),  -- id=10
+('avatar',         0, 'avatar',        0, 1, 0, 0),  -- id=10
 
 -- Admin pages (i18n=0: admin URLs are not locale-dependent)
 ('admin_banlist',  0, 'admin_banlist',  1, 1, 0, 0), -- id=11
@@ -427,29 +485,28 @@ VALUES
 
 INSERT INTO `page_meta` (page_id, title, description)
 VALUES
-    (1,  'My Website',            'This is my awesome website!'),
-    (2,  'Error',                 'An error occurred.'),
-    (3,  'Login',                 'Log in to your account.'),
-    (4,  'Register',              'Create a new account.'),
-    (5,  'Recover',               'Recover your account password.'),
-    (6,  'User Profile',          'View a user profile.'),
-    (7,  'Settings',              'Manage your account settings.'),
-    (8,  'Home',                  'Welcome to your home page.'),
-    (9,  'User Area',             'Log in or create your account.'),
-    (10, '',                      ''),
-    (11, 'Admin — Banlist',       'Manage the banlist.'),
-    (12, 'Admin — Comments',      'Moderate site comments.'),
-    (13, 'Admin — Navbar',        'Edit the navigation bar.'),
-    (14, 'Admin — News',          'Manage news posts.'),
-    (15, 'Admin — Notes',         'Personal admin notes.'),
-    (16, 'Admin — Pages',         'Manage site pages.'),
-    (17, 'Admin — Users',         'Manage user accounts.'),
-    (18, 'Administration',        'Administration area.');
+    (1,  'My Website',         'This is my awesome website!'),
+    (2,  'Error',              'An error occurred.'),
+    (3,  'Login',              'Log in to your account.'),
+    (4,  'Register',           'Create a new account.'),
+    (5,  'Recover',            'Recover your account password.'),
+    (6,  'User Profile',       'View a user profile.'),
+    (7,  'Settings',           'Manage your account settings.'),
+    (8,  'Home',               'Welcome to your home page.'),
+    (9,  'User Area',          'Log in or create your account.'),
+    (10, '',                   ''),
+    (11, 'Admin — Banlist',    'Manage the banlist.'),
+    (12, 'Admin — Comments',   'Moderate site comments.'),
+    (13, 'Admin — Navbar',     'Edit the navigation bar.'),
+    (14, 'Admin — News',       'Manage news posts.'),
+    (15, 'Admin — Notes',      'Personal admin notes.'),
+    (16, 'Admin — Pages',      'Manage site pages.'),
+    (17, 'Admin — Users',      'Manage user accounts.'),
+    (18, 'Administration',     'Administration area.');
 
 
 -- ----------------------------------------------------------
 -- Page closure  (all ancestor–descendant pairs, self-refs at depth=0)
--- This is a flat two-level hierarchy, so no transitive rows beyond depth=1 are needed.
 -- ----------------------------------------------------------
 
 INSERT INTO `page_closure` (ancestor, descendant)
@@ -458,22 +515,20 @@ VALUES
 (1,1),(2,2),(3,3),(4,4),(5,5),(6,6),(7,7),
 (8,8),(9,9),(10,10),(11,11),(12,12),(13,13),
 (14,14),(15,15),(16,16),(17,17),(18,18),
-
 -- user section (9) → children
 (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),
-
 -- admin section (18) → children
 (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17);
 
 
 -- ----------------------------------------------------------
--- Keywords  (same 21 entries as old schema, IDs preserved)
+-- Keywords
 -- ----------------------------------------------------------
 
 INSERT INTO `keyword` (keyword, i18n)
 VALUES
-    ('WORDING_MAIN_PAGE',   1),  -- id=1  (was 'Main' — now a Translator key)
-    ('WORDING_INDEX',       1),  -- id=2  (was 'Index')
+    ('WORDING_MAIN_PAGE',   1),  -- id=1
+    ('WORDING_INDEX',       1),  -- id=2
     ('User',                0),  -- id=3
     ('Profile',             0),  -- id=4
     ('Login',               0),  -- id=5
@@ -496,73 +551,94 @@ VALUES
 
 
 -- ----------------------------------------------------------
--- Page keywords  (old string page_id → new integer page_id)
+-- Page keywords
 -- ----------------------------------------------------------
 
 INSERT INTO `page_keyword` (page_id, keyword_id)
 VALUES
--- main (1)
-(1,1),(1,2),(1,7),
--- login (3)
-(3,5),(3,3),
--- register (4)
-(4,6),(4,3),(4,8),(4,9),
--- recover (5)
-(5,10),(5,11),(5,3),(5,1),
--- profile (6)
-(6,3),(6,4),
--- user_settings (7)
-(7,3),(7,8),(7,14),
--- user section root (9)
-(9,3),(9,8),
--- admin section root (18)
-(18,12),(18,13),(18,14),
--- admin_banlist (11)
-(11,12),(11,13),(11,14),(11,15),
--- admin_comments (12)
-(12,12),(12,13),(12,14),(12,16),
--- admin_navbar (13)
-(13,12),(13,13),(13,14),(13,17),
--- admin_news (14)
-(14,12),(14,13),(14,14),(14,18),
--- admin_notes (15)
-(15,12),(15,13),(15,14),(15,19),
--- admin_pages (16)
-(16,12),(16,13),(16,14),(16,20),
--- admin_users (17)
-(17,12),(17,13),(17,14),(17,21);
+    (1,1),(1,2),(1,7),
+    (3,5),(3,3),
+    (4,6),(4,3),(4,8),(4,9),
+    (5,10),(5,11),(5,3),(5,1),
+    (6,3),(6,4),
+    (7,3),(7,8),(7,14),
+    (9,3),(9,8),
+    (18,12),(18,13),(18,14),
+    (11,12),(11,13),(11,14),(11,15),
+    (12,12),(12,13),(12,14),(12,16),
+    (13,12),(13,13),(13,14),(13,17),
+    (14,12),(14,13),(14,14),(14,18),
+    (15,12),(15,13),(15,14),(15,19),
+    (16,12),(16,13),(16,14),(16,20),
+    (17,12),(17,13),(17,14),(17,21);
 
 
 -- ----------------------------------------------------------
--- Navigation bar
--- Mirrors the old schema: Home→main, User→user, plus two inactive external entries.
+-- Navbars
+-- Application config maps IDs to roles:
+--   id=1 → public (editorial, admin-managed)
+--   id=2 → user   (shown when logged in)
+--   id=3 → admin  (shown in admin panel)
 -- ----------------------------------------------------------
 
-INSERT INTO `navigation_bar_ids` ()
-VALUES (),(),(),();
+INSERT INTO `navbar` (name)
+VALUES ('public'), ('user'), ('admin');
 
-INSERT INTO `navigation_bar_entry` (id, internal, name, i18n, active)
+
+-- ----------------------------------------------------------
+-- Navbar pins
+-- Each navbar starts with one default pin.
+-- The admin can add more pins and reorder them freely.
+--
+-- pin id map:
+--   1 = public default pin  (custom ordered)
+--   2 = user default pin    (alphabetical)
+--   3 = admin default pin   (alphabetical)
+-- ----------------------------------------------------------
+
+INSERT INTO `navbar_pin` (navbar_id, sort_order, sort_mode)
 VALUES
-    (1, 1, 'WORDING_HOME', 1, 1),  -- Home → main (active)
-    (2, 1, 'WORDING_USER', 1, 1),  -- User → user section (active)
-    (3, 0, 'Test',         0, 0),  -- external test link (inactive)
-    (4, 0, 'Ext',          0, 0);  -- external link (inactive)
+    (1, 0, 1),  -- id=1  public — custom
+    (2, 0, 0),  -- id=2  user   — alphabetical
+    (3, 0, 0);  -- id=3  admin  — alphabetical
 
-INSERT INTO `navigation_bar_internal` (id, page_id)
+
+-- ----------------------------------------------------------
+-- Navbar entries
+-- Public navbar seeded with Home + User + two inactive external links.
+-- User and admin navbars start empty; populated by the setup wizard.
+--
+-- entry id map:
+--   1 = Home (internal → main)
+--   2 = User (internal → user section)
+--   3 = Test (external, inactive)
+--   4 = Ext  (external, inactive)
+-- ----------------------------------------------------------
+
+INSERT INTO `navbar_entry_ids` () VALUES (),(),(),();
+
+INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
-    (1, 1),   -- Home → main (id=1)
-    (2, 9);   -- User → user section (id=9)
+    (1, 1, 1, 'WORDING_HOME', 1, 1, 0),  -- Home → main        (active, first)
+    (2, 1, 1, 'WORDING_USER', 1, 1, 1),  -- User → user section (active, second)
+    (3, 1, 0, 'Test',         0, 0, 2),  -- external test link  (inactive)
+    (4, 1, 0, 'Ext',          0, 0, 3);  -- external link       (inactive)
 
-INSERT INTO `navigation_bar_external` (id, url)
+INSERT INTO `navbar_internal` (id, page_id)
+VALUES
+    (1, 1),  -- Home → main (id=1)
+    (2, 9);  -- User → user section (id=9)
+
+INSERT INTO `navbar_external` (id, url)
 VALUES
     (3, 'http://www.example.com'),
-    (4, 'http://blackhost.xyz');
+    (4, 'http://invalidurl.com');
 
 
 -- ----------------------------------------------------------
 -- Default admin user
--- The empty password string is intentionally unusable — no argon2id hash will ever
--- verify against ''. A proper setup wizard must call password_hash() before use.
+-- Empty password is intentionally unusable — no argon2id hash ever verifies against ''.
+-- A setup wizard must call password_hash(..., PASSWORD_ARGON2ID) before first use.
 -- ----------------------------------------------------------
 
 INSERT INTO `user` (id, username, type, verified, deleted)
