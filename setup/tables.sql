@@ -195,7 +195,7 @@ VALUES (1, 1),
 
 INSERT INTO `keyword`(keyword, i18n)
 VALUES ('WORDING_MAIN_PAGE', 1),
-       ('WORDING_ERROR', 2);
+       ('WORDING_ERROR', 1);
 
 INSERT INTO `page_keyword`(page_id, keyword_id)
 VALUES (1, 1),

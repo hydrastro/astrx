@@ -93,16 +93,32 @@ final class DefaultTemplateContext
             ? $this->t->t($urlId . '.description', fallback: $page->description)
             : $page->description;
 
-        $keywords = $page->i18n
-            ? $this->t->t($urlId . '.keywords',    fallback: '')
-            : '';
+        $keywordParts = [];
+        foreach ($page->keywords as $kw) {
+            $k              = $kw['keyword'];
+            $keywordParts[] = (bool) $kw['i18n'] ? $this->t->t($k, fallback: $k) : $k;
+        }
+        $keywords = implode(', ', $keywordParts);
 
         $cssPath = (string) $this->config->getConfig(
-            'TemplateEngine',
+            'ContentManager',   // ← correct: loaded at the very top of init()
             'css_file',
             defined('TEMPLATE_DIR') ? TEMPLATE_DIR . 'style.css' : '',
         );
-        $css = ($cssPath !== '' && is_file($cssPath)) ? (string) file_get_contents($cssPath) : '';
+        $css = ($cssPath !== '' && is_file($cssPath)) ? (string)
+        str_replace(
+            array("\r\n", "\r", "\n", "\t", '  ', '    ', '    '),
+            '',
+            str_replace(
+                ': ',
+                ':',
+                preg_replace(
+                    '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
+                    '',
+                    file_get_contents($cssPath)
+                )
+            )
+        ) : '';
 
         $this->vars = [
             'lang'         => $this->t->getLocale(),

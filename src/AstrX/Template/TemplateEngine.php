@@ -160,7 +160,8 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                 return Result::err('', $collector->diagnostics());
             }
 
-            $mergedArgs = array_merge($args, $this->globalArgs);
+            // local args win over global
+            $mergedArgs = array_merge($this->globalArgs, $args);
             return Result::ok((string) $tpl->render($mergedArgs, []), $collector->diagnostics());
         } finally {
             $this->sink = $prevSink;

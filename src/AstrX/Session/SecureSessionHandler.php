@@ -79,16 +79,12 @@ final class SecureSessionHandler implements
     {
         $cutoff = time() - $maxLifetime;
 
-        $count = $this->pdo->prepare(
-            'SELECT COUNT(`id`) AS `n` FROM `session` WHERE `timestamp` < :cutoff'
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM `session` WHERE `timestamp` < :cutoff'
         );
-        $count->execute(['cutoff' => $cutoff]);
-        $row = $count->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute(['cutoff' => $cutoff]);
 
-        $this->pdo->prepare('DELETE FROM `session` WHERE `timestamp` < :cutoff')
-            ->execute(['cutoff' => $cutoff]);
-
-        return is_array($row) ? (int) $row['n'] : 0;
+        return $stmt->rowCount(); // PDO::rowCount() after DELETE is reliable on MySQL/MariaDB
     }
 
     public function read(string $id): string|false

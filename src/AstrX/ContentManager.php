@@ -60,7 +60,7 @@ final class ContentManager
         $pageKey = $this->config->getConfig('Routing', 'page_key', 'page');
         assert(is_string($pageKey));
 
-        $defaultPageToken = $this->config->getConfig('Routing', 'default_page', 'main');
+        $defaultPageToken = $this->config->getConfig('Routing', 'default_page', 'WORDING_MAIN');
         assert(is_string($defaultPageToken));
 
         $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
@@ -189,6 +189,12 @@ final class ContentManager
 
         $page = $this->resolvePage($pageHandler, $pageToken);
         $this->injector->setClass($page);
+
+        // Load the page-specific lang file (e.g. lang/en/Main.php for fileName='main').
+        // This must happen before DefaultTemplateContext::buildBase() runs so that
+        // title, description, and keyword translations are already in the catalog.
+        $langDir = defined('LANG_DIR') ? LANG_DIR : '';
+        $this->translator->loadDomain($langDir, ucfirst($page->fileName));
 
         $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
             ->drainTo($this->collector);
