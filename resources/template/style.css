@@ -142,7 +142,7 @@ tbody, th, tr, td {
     border: 1px solid #fff;
     border-collapse: collapse;
 }
-#news{
+#status_bar {
     color: #000;
     border: solid #fff;
     border-right-width: 4px;
@@ -150,12 +150,24 @@ tbody, th, tr, td {
     border-left-width: 4px;
     background: #fff;
 }
-#news p {
+#status_bar p {
     margin: 0;
+    padding: 2px 6px;
 }
-#news a{
+#status_bar a {
     color: black;
 }
+
+/* Diagnostic level classes — map to ContentManager.config.php status_bar_level_classes */
+.diag-debug     { background: #0d0; color: #000; }
+.diag-info      { background: #0cf; color: #000; }
+.diag-notice    { background: #48f; color: #000; }
+.diag-warning   { background: #ff0; color: #000; }
+.diag-error     { background: #f44; color: #000; font-weight: bold; }
+.diag-critical  { background: #f0f; color: #000; font-weight: bold; }
+.diag-alert     { background: #fa0; color: #000; font-weight: bold; }
+.diag-emergency { background: #f00; color: #000; font-weight: bold; }
+.diag-unknown   { background: #888; color: #000; }
 #main {
     word-wrap: break-word;
     color: #fff;

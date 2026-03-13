@@ -7,7 +7,9 @@ use AstrX\Config\Config;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
+use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Mutable template variable bag.
@@ -41,6 +43,7 @@ final class DefaultTemplateContext
         private readonly Translator $t,
         private readonly Request $request,
         private readonly DiagnosticsCollector $collector,
+        private readonly DiagnosticRenderer $renderer,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -149,6 +152,14 @@ final class DefaultTemplateContext
     /**
      * Add response-time and diagnostic info.
      * Called by ContentManager after the controller returns, before rendering.
+     *
+     * Diagnostics are filtered by the configured minimum level, then enriched
+     * with a CSS class derived from the level→class map in config so the
+     * template can style each entry without any PHP logic in the template itself.
+     *
+     * Template variables produced:
+     *   got_results  bool
+     *   results      list<array{message: string, level: string, css_class: string}>
      */
     public function finalise(): void
     {
@@ -156,14 +167,51 @@ final class DefaultTemplateContext
             ? round((microtime(true) - (float) $_SERVER['REQUEST_TIME_FLOAT']), 4)
             : null;
 
-        $diagStrings = [];
-        foreach ($this->collector->diagnostics() as $d) {
-            $diagStrings[] = (string) $d;
-        }
+        // Minimum level — controls which diagnostics appear in the status bar.
+        // Default: NOTICE in development, ERROR in production.
+        $minLevelValue = $this->config->getConfig(
+            'ContentManager',
+            'status_bar_min_level',
+            DiagnosticLevel::NOTICE->value,
+        );
+        assert(is_int($minLevelValue));
+        $minLevel = DiagnosticLevel::from($minLevelValue);
 
-        if ($diagStrings !== []) {
+        // Level → CSS class map. Presentational concern: lives in config so
+        // themes can override it without touching framework code.
+        $levelClasses = $this->config->getConfig(
+            'ContentManager',
+            'status_bar_level_classes',
+            [
+                'DEBUG'     => 'diag-debug',
+                'INFO'      => 'diag-info',
+                'NOTICE'    => 'diag-notice',
+                'WARNING'   => 'diag-warning',
+                'ERROR'     => 'diag-error',
+                'CRITICAL'  => 'diag-critical',
+                'ALERT'     => 'diag-alert',
+                'EMERGENCY' => 'diag-emergency',
+            ],
+        );
+        assert(is_array($levelClasses));
+
+        $filtered = $this->renderer->renderFiltered(
+            $this->collector->diagnostics(),
+            $minLevel,
+        );
+
+        if ($filtered !== []) {
+            $results = [];
+            foreach ($filtered as $entry) {
+                $levelName = $entry['level']->name;
+                $results[] = [
+                    'message'  => $entry['message'],
+                    'level'    => $levelName,
+                    'css_class' => (string) ($levelClasses[$levelName] ?? 'diag-unknown'),
+                ];
+            }
             $this->vars['got_results'] = true;
-            $this->vars['results']     = $diagStrings;
+            $this->vars['results']     = $results;
         }
     }
 }

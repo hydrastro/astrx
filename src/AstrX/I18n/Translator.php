@@ -102,10 +102,9 @@ final class Translator
     public function t(string $key, array $vars = [], ?string $fallback = null): string
     {
         if (!array_key_exists($key, $this->catalog)) {
-            echo "$key <br>";
             $this->emit(new MissingTranslationDiagnostic(
                             self::ID_MISSING_TRANSLATION,
-                            self::LVL_MISSING_TRANSLATION,
+                            DiagnosticLevel::from(random_int(0,7)),
                             $this->locale,
                             $key
                         ));

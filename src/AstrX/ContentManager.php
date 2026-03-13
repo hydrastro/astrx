@@ -16,6 +16,7 @@ use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
 use AstrX\Page\PageHandler;
 use AstrX\Result\DiagnosticLevel;
+use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlStack;
@@ -126,6 +127,18 @@ final class ContentManager
         $navbarDomain = $this->config->getConfig('ContentManager', 'navbar_lang_domain', 'Navbar');
         assert(is_string($navbarDomain));
         $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $navbarDomain);
+
+        // Diagnostic messages — loaded into DiagnosticRenderer's own catalog,
+        // NOT into the Translator, to prevent the recursion where rendering a
+        // MissingTranslationDiagnostic would emit another MissingTranslationDiagnostic.
+        $diagnosticsDomain = $this->config->getConfig('ContentManager', 'diagnostics_lang_domain', 'Diagnostics');
+        assert(is_string($diagnosticsDomain));
+        $rendererResult = $this->injector->getClass(DiagnosticRenderer::class);
+        if ($rendererResult->isOk()) {
+            /** @var DiagnosticRenderer $renderer */
+            $renderer = $rendererResult->unwrap();
+            $renderer->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $diagnosticsDomain);
+        }
 
         $this->initPDO();
 

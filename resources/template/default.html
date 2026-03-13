@@ -30,14 +30,11 @@
         <h1 id="title"><a href="{{title_url}}">{{website_name}}</a></h1>
     </div>
     <div id="top_nav">
-        <ul id="nav" class="nav">
-            {{#navbar}}
-            <li><a href="{{url}}"{{#highlight}}
-                   class="active"{{/highlight}}>{{name}}</a></li>{{/navbar}}
+        <ul id="nav" class="nav">{{#navbar}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/navbar}}
         </ul>
     </div>
     {{#got_results}}
-    <div id="news">{{#results}}<p>{{.}}</p>{{/results}}
+    <div id="status_bar">{{#results}}<p class="{{css_class}}">[{{level}}] {{message}}</p>{{/results}}
     </div>{{/got_results}}
     <div id="main">
         {{>*include}}

@@ -18,6 +18,7 @@ final class MainController implements Controller
     {
         $this->ctx->set('main_page', ucwords($this->t->t('main_page', fallback: 'Main Page')));
 
+$x=        $this->t->t("asd");
         // TODO: replace with real page content once data layer is wired
         $this->ctx->set('content', 'test');
 
