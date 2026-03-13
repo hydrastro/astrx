@@ -17,9 +17,14 @@ return [
     'WORDING_MAIN.title' => 'Home',
     'WORDING_MAIN.description' => 'Welcome to the website.',
 
-    // ---- keywords -----------------------------------------------------------
-    'WORDING_MAIN_PAGE' => 'home',
-
     // ---- controller strings -------------------------------------------------
     'main_page' => 'main page',
+
+    'news.heading' => 'News',
+    'news.title' => 'Title',
+    'news.date' => 'Date',
+    'news.empty' => 'No news yet.',
+    'news.prev' => '← Previous',
+    'news.next' => 'Next →',
+    'news.page' => 'Page',
 ];

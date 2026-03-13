@@ -15,7 +15,7 @@ return [
     'WORDING_USER_HOME' => 'area-personale',
     'WORDING_USER'      => 'utente',
 
-    // Keyword labels (keyword.i18n=1)
+    // Keyword labels
     'WORDING_MAIN_PAGE' => 'Pagina Principale',
     'WORDING_INDEX'     => 'Indice',
 ];

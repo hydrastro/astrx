@@ -13,30 +13,29 @@ use AstrX\I18n\Translator;
  * MissingTranslationDiagnostic would emit another MissingTranslationDiagnostic.
  *
  * Catalog entries are ALWAYS callables:
- *
  *   callable(DiagnosticInterface $d, Translator $t): string
  *
  * The callable receives the fully typed diagnostic and the main Translator
- * (for sub-translations, pluralization, etc.). It is responsible for casting
- * $d to the concrete class and accessing its typed getters.
+ * (for sub-translations, pluralization, etc.).
  *
- * Example:
- *   'astrx.i18n/missing_translation' =>
- *       function (DiagnosticInterface $d, Translator $t): string {
- *           assert($d instanceof MissingTranslationDiagnostic);
- *           return "Missing key \"{$d->key()}\" for locale \"{$d->locale()}\".";
- *       },
- *
- * Fallback behaviour (when no catalog entry exists for a diagnostic ID):
- *   AbstractDiagnostic::vars() is used to dump all available context, and the
- *   result is visually stamped as a fallback so you immediately know:
- *     a) a callable needs to be written for this ID, and
- *     b) exactly which vars are available to write it with.
- *
- *   Format: [FALLBACK:LEVEL] id {key=value, key=value}
+ * Fallback (no catalog entry for a given ID):
+ *   AbstractDiagnostic::vars() is dumped with a [FALLBACK:LEVEL] stamp so you
+ *   immediately know which callable to write and which vars are available:
+ *     [FALLBACK:NOTICE] astrx.i18n/missing_translation {locale=en, key=foo}
  *
  * Lang file convention:
- *   resources/lang/{locale}/Diagnostics.php  → returns array<string, callable>
+ *   Single file:   resources/lang/{locale}/Diagnostics.php
+ *   Directory:     resources/lang/{locale}/Diagnostics/
+ *                    Core.php, Csrf.php, News.php, …
+ *
+ * When loadDomain() is called with a name that resolves to a directory, every
+ * .php file inside it is loaded in alphabetical order. This allows splitting the
+ * catalog by module without changing call sites in ContentManager.
+ *
+ * Level labels:
+ *   The special key 'level_labels' in any loaded file must be array<string,string>
+ *   and is stored separately from the callable catalog.
+ *   Example: 'level_labels' => ['NOTICE' => 'Avviso', 'ERROR' => 'Errore', ...]
  */
 final class DiagnosticRenderer
 {
@@ -47,7 +46,6 @@ final class DiagnosticRenderer
 
     /**
      * Translated level labels, keyed by DiagnosticLevel::name.
-     * Populated from 'level_labels' key in the Diagnostics lang file.
      *
      * @var array<string, string>
      */
@@ -60,42 +58,65 @@ final class DiagnosticRenderer
     // -------------------------------------------------------------------------
 
     /**
-     * Load a Diagnostics lang file into the catalog.
-     * The file must return array<string, callable>.
-     * Non-callable entries are silently skipped.
-     * Later calls for the same key overwrite earlier ones (locale layering).
+     * Load diagnostic callables from a lang file, directory, or split files.
+     *
+     * Resolution order (all matching sources are loaded, in order):
+     *
+     *   1. {langDir}/{locale}/{domain}.{locale}.php   — preferred single file
+     *      (falls back to {domain}.php if the suffixed form is absent)
+     *
+     *   2. {langDir}/{locale}/{domain}/               — subdirectory: every
+     *      *.php file inside is loaded alphabetically.
+     *
+     *   3. {langDir}/{locale}/{domain}.*.{locale}.php — split flat files,
+     *      e.g. Diagnostics.core.en.php, Diagnostics.csrf.en.php.
+     *      Loaded alphabetically after the main file.
+     *      (falls back to {domain}.*.php if no suffixed variants exist)
+     *
+     * Sources 1/2 and 3 are independent: if both a main file and split files
+     * exist, all are loaded. Split files can add or override entries.
+     * Later calls for the same key always overwrite earlier ones.
      */
     public function loadDomain(string $langDir, string $domain): void
     {
-        $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
-                . $this->translator->getLocale() . DIRECTORY_SEPARATOR
-                . $domain . '.php';
+        $locale = $this->translator->getLocale();
+        $dir    = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR;
+        $base   = $dir . $domain;
 
-        if (!is_file($file)) {
-            return;
+        // --- 1. Main file (locale-suffixed preferred) -------------------------
+        $mainSuffixed = $base . '.' . $locale . '.php';
+        $mainPlain    = $base . '.php';
+
+        if (is_file($mainSuffixed)) {
+            $this->loadFile($mainSuffixed);
+        } elseif (is_file($mainPlain)) {
+            $this->loadFile($mainPlain);
         }
 
-        $data = require $file;
-
-        if (!is_array($data)) {
-            return;
-        }
-
-        // Extract level label map if present (array<string, string>)
-        if (isset($data['level_labels']) && is_array($data['level_labels'])) {
-            foreach ($data['level_labels'] as $name => $label) {
-                if (is_string($name) && is_string($label)) {
-                    $this->levelLabels[$name] = $label;
-                }
+        // --- 2. Subdirectory --------------------------------------------------
+        if (is_dir($base)) {
+            $files = glob($base . DIRECTORY_SEPARATOR . '*.php') ?: [];
+            sort($files);
+            foreach ($files as $file) {
+                $this->loadFile($file);
             }
-            unset($data['level_labels']);
         }
 
-        foreach ($data as $id => $entry) {
-            if (!is_string($id) || !is_callable($entry)) {
-                continue;
-            }
-            $this->catalog[$id] = $entry;
+        // --- 3. Split flat files (locale-suffixed preferred) ------------------
+        $splitSuffixed = glob($base . '.*.' . $locale . '.php') ?: [];
+        $splitPlain    = glob($base . '.*.php') ?: [];
+
+        // Use suffixed variants when any exist; otherwise fall back to plain.
+        // Filter out the main file itself to avoid loading it twice.
+        $splits = $splitSuffixed !== []
+            ? $splitSuffixed
+            : array_filter($splitPlain, static fn(string $f): bool =>
+                $f !== $mainPlain && $f !== $mainSuffixed
+            );
+
+        sort($splits);
+        foreach ($splits as $file) {
+            $this->loadFile($file);
         }
     }
 
@@ -135,15 +156,12 @@ final class DiagnosticRenderer
     }
 
     /**
-     * Render all diagnostics at or above $minLevel, returning each entry
-     * paired with its DiagnosticLevel for use by the template layer.
+     * Render all diagnostics at or above $minLevel, paired with their level.
      *
-     * @return list<array{message: string, level: DiagnosticLevel}>
+     * @return list<array{message:string, level:DiagnosticLevel, level_label:string}>
      */
-    public function renderFiltered(
-        Diagnostics    $diagnostics,
-        DiagnosticLevel $minLevel,
-    ): array {
+    public function renderFiltered(Diagnostics $diagnostics, DiagnosticLevel $minLevel): array
+    {
         $out = [];
         foreach ($diagnostics as $d) {
             if ($d->level()->value < $minLevel->value) {
@@ -164,13 +182,7 @@ final class DiagnosticRenderer
 
     /**
      * Resolve the translated label for a DiagnosticLevel.
-     *
-     * Looks up 'level.{LEVEL_NAME}' in the catalog (e.g. 'level.NOTICE').
      * Falls back to the raw enum name if no entry is registered.
-     *
-     * These entries live in the Diagnostics lang file alongside the message
-     * callables, so adding a new locale automatically covers both messages
-     * and level labels in one file.
      */
     public function renderLevelLabel(DiagnosticLevel $level): string
     {
@@ -178,20 +190,40 @@ final class DiagnosticRenderer
     }
 
     // -------------------------------------------------------------------------
-    // Fallback
+    // Internals
     // -------------------------------------------------------------------------
+
+    private function loadFile(string $file): void
+    {
+        $data = require $file;
+
+        if (!is_array($data)) {
+            return;
+        }
+
+        // Extract level_labels map — stored separately, not in the callable catalog
+        if (isset($data['level_labels']) && is_array($data['level_labels'])) {
+            foreach ($data['level_labels'] as $name => $label) {
+                if (is_string($name) && is_string($label)) {
+                    $this->levelLabels[$name] = $label;
+                }
+            }
+            unset($data['level_labels']);
+        }
+
+        foreach ($data as $id => $entry) {
+            if (!is_string($id) || !is_callable($entry)) {
+                continue;
+            }
+            $this->catalog[$id] = $entry;
+        }
+    }
 
     /**
      * Produce a clearly marked fallback string when no catalog entry exists.
      *
      * Format:  [FALLBACK:LEVEL] id {key=value, key=value}
-     *
-     * This tells you at a glance:
-     *   - which diagnostic ID needs a callable in the Diagnostics lang file
-     *   - which vars() keys are available to use inside that callable
-     *
-     * If vars() is empty the vars block is omitted:
-     *   [FALLBACK:ERROR] astrx.injector/class_not_found
+     * Example: [FALLBACK:NOTICE] astrx.i18n/missing_translation {locale=en, key=foo}
      */
     private function fallback(DiagnosticInterface $diagnostic): string
     {

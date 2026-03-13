@@ -1,0 +1,16 @@
+<h2>{{news_heading}}</h2>
+{{#has_news}}
+<div id="news_list">
+    {{#news}}
+    <div class="news_entry">
+        <h3>{{title}}</h3>
+        <p class="news_date">{{created_at}}</p>
+        {{#content}}<p class="news_content">{{content}}</p>{{/content}}
+    </div>
+    {{/news}}
+</div>
+<p class="news_nav">{{#has_prev}}<a href="{{prev_url}}">{{news_prev}}</a> {{/has_prev}}{{news_page}} {{page}} / {{page_count}}{{#has_next}} <a href="{{next_url}}">{{news_next}}</a>{{/has_next}}</p>
+{{/has_news}}
+{{^has_news}}
+<p>{{news_empty}}</p>
+{{/has_news}}

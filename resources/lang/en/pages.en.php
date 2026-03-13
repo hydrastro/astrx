@@ -1,6 +1,18 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Page URL slugs — en locale.
+ *
+ * Every WORDING_ key corresponds to a page row with i18n=1.
+ * The value is the public URL slug for this locale.
+ *
+ * Convention:
+ *   WORDING_ prefix + i18n=1 → translated slug (this file)
+ *   No prefix   + i18n=0    → raw literal slug, not translated
+ *
+ * Admin and developer docs use English slugs as stable canonical references.
+ */
 return [
     // Framework pages
     'WORDING_MAIN'      => 'main',
@@ -15,7 +27,7 @@ return [
     'WORDING_USER_HOME' => 'home',
     'WORDING_USER'      => 'user',
 
-    // Keyword labels (keyword.i18n=1)
+    // Keyword labels
     'WORDING_MAIN_PAGE' => 'Main Page',
     'WORDING_INDEX'     => 'Index',
 ];
