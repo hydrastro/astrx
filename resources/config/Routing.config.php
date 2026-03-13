@@ -20,7 +20,7 @@ return [
         'page_key'    => 'page',
 
         // page default if empty URL: / or ?page=
-        'default_page' => 'main',
+        'default_page' => 'WORDING_MAIN',
 
         // this is something i'll work on later
         'default_keys' => [

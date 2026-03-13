@@ -12,6 +12,7 @@ use AstrX\I18n\Locale;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
+use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
 use AstrX\Page\PageHandler;
 use AstrX\Result\DiagnosticLevel;
@@ -109,12 +110,22 @@ final class ContentManager
             current:           $current,
         );
 
+        // Register the now-populated CurrentUrl so that injectable services
+        // (e.g. NavbarHandler) can receive the current locale, session id, etc.
+        $this->injector->setClass($current);
+
         $this->translator->setLocale($locale->value);
         $this->moduleLoader->setLocale($locale->value);
 
         $pagesDomain = $this->config->getConfig('ContentManager', 'pages_lang_domain', 'pages');
         assert(is_string($pagesDomain));
         $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $pagesDomain);
+
+        // Navbar display labels — loaded globally so NavbarHandler can resolve
+        // WORDING_ entry names regardless of which page is being rendered.
+        $navbarDomain = $this->config->getConfig('ContentManager', 'navbar_lang_domain', 'Navbar');
+        assert(is_string($navbarDomain));
+        $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $navbarDomain);
 
         $this->initPDO();
 
@@ -214,6 +225,17 @@ final class ContentManager
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
         $ctx->buildBase($page);
+
+        // Populate navbar. Failure is non-fatal — the template renders with an
+        // empty navbar rather than taking down the whole page.
+        $navbarId = (int) $this->config->getConfig('ContentManager', 'public_navbar_id', 1);
+        $navbarResult = $this->injector->createClass(NavbarHandler::class)
+            ->drainTo($this->collector);
+        if ($navbarResult->isOk()) {
+            /** @var NavbarHandler $navbarHandler */
+            $navbarHandler = $navbarResult->unwrap();
+            $ctx->set('navbar', $navbarHandler->getNavbarEntries($navbarId, $page->ancestors));
+        }
 
         if ($page->controller) {
             $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';

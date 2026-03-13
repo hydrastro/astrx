@@ -426,31 +426,33 @@ CREATE TABLE `banlist_ipv6`
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES
--- Framework defaults
-('WORDING_MAIN',   1, 'main',  1, 1, 0, 1),  -- id=1  (comments enabled on main)
-('WORDING_ERROR',  1, 'error', 1, 1, 1, 0),  -- id=2
+-- Framework pages
+('WORDING_MAIN',         1, 'main',          1, 1, 0, 1),  -- id=1  (comments enabled on main)
+('WORDING_ERROR',        1, 'error',          1, 1, 1, 0),  -- id=2
 
--- User-facing pages (i18n=1: URL token is locale-dependent)
-('login',          1, 'login',         1, 1, 0, 0),  -- id=3
-('register',       1, 'register',      1, 1, 0, 0),  -- id=4
-('recover',        1, 'recover',       1, 1, 0, 0),  -- id=5
-('profile',        1, 'profile',       1, 1, 0, 0),  -- id=6
-('settings',       1, 'user_settings', 1, 1, 0, 0),  -- id=7
-('home',           1, 'user_home',     1, 1, 0, 0),  -- id=8
-('user',           1, 'user',          1, 1, 0, 0),  -- id=9  section root
+-- User-facing pages (all i18n=1: every public URL is translatable per locale.
+-- Admins and developers use the English slug as the stable canonical reference.)
+('WORDING_LOGIN',        1, 'login',          1, 1, 0, 0),  -- id=3
+('WORDING_REGISTER',     1, 'register',       1, 1, 0, 0),  -- id=4
+('WORDING_RECOVER',      1, 'recover',        1, 1, 0, 0),  -- id=5
+('WORDING_PROFILE',      1, 'profile',        1, 1, 0, 0),  -- id=6
+('WORDING_SETTINGS',     1, 'user_settings',  1, 1, 0, 0),  -- id=7
+('WORDING_USER_HOME',    1, 'user_home',      1, 1, 0, 0),  -- id=8
+('WORDING_USER',         1, 'user',           1, 1, 0, 0),  -- id=9  section root
 
--- Special: raw image binary output, no template wrapping
-('avatar',         0, 'avatar',        0, 1, 0, 0),  -- id=10
+-- Special: raw image binary output, no template wrapping (i18n=0: not a routable page)
+('avatar',               0, 'avatar',         0, 1, 0, 0),  -- id=10
 
--- Admin pages (i18n=0: admin URLs are not locale-dependent)
-('admin_banlist',  0, 'admin_banlist',  1, 1, 0, 0), -- id=11
-('admin_comments', 0, 'admin_comments', 1, 1, 0, 0), -- id=12
-('admin_navbar',   0, 'admin_navbar',   1, 1, 0, 0), -- id=13
-('admin_news',     0, 'admin_news',     1, 1, 0, 0), -- id=14
-('admin_notes',    0, 'admin_notes',    1, 1, 0, 0), -- id=15
-('admin_pages',    0, 'admin_pages',    1, 1, 0, 0), -- id=16
-('admin_users',    0, 'admin_users',    1, 1, 0, 0), -- id=17
-('admin',          0, 'admin',          1, 1, 0, 0); -- id=18
+-- Admin pages (i18n=0: admin URLs are intentionally not locale-dependent —
+-- stable endpoints that developers always access in English)
+('admin_banlist',        0, 'admin_banlist',  1, 1, 0, 0), -- id=11
+('admin_comments',       0, 'admin_comments', 1, 1, 0, 0), -- id=12
+('admin_navbar',         0, 'admin_navbar',   1, 1, 0, 0), -- id=13
+('admin_news',           0, 'admin_news',     1, 1, 0, 0), -- id=14
+('admin_notes',          0, 'admin_notes',    1, 1, 0, 0), -- id=15
+('admin_pages',          0, 'admin_pages',    1, 1, 0, 0), -- id=16
+('admin_users',          0, 'admin_users',    1, 1, 0, 0), -- id=17
+('admin',                0, 'admin',          1, 1, 0, 0); -- id=18
 
 
 -- ----------------------------------------------------------
@@ -632,7 +634,7 @@ VALUES
 INSERT INTO `navbar_external` (id, url)
 VALUES
     (3, 'http://www.example.com'),
-    (4, 'http://invalidurl.com');
+    (4, 'http://blackhost.xyz');
 
 
 -- ----------------------------------------------------------
