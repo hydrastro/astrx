@@ -33,45 +33,66 @@ final class MainController extends AbstractController
 
     public function handle(): Result
     {
-        $defaultPerPage    = (int)  $this->config->getConfig('News', 'per_page',   20);
-        $defaultDescending = (bool) $this->config->getConfig('News', 'descending', true);
-        $defaultOrder      = $defaultDescending ? 'desc' : 'asc';
+        // --- Config ----------------------------------------------------------
+        $defaultPerPage    = (int)  $this->config->getConfig('News', 'per_page',    20);
+        $defaultDescending = (bool) $this->config->getConfig('News', 'descending',  true);
+        $pageWindow        = (int)  $this->config->getConfig('News', 'page_window', 3);
+        $pnKey             = (string) $this->config->getConfig('News', 'pn_key',    'pn');
+        $showKey           = (string) $this->config->getConfig('News', 'show_key',  'show');
+        $orderKey          = (string) $this->config->getConfig('News', 'order_key', 'order');
 
-        // --- URL sub-param parsing -------------------------------------------
-        //
-        // Rewrite mode: remaining path segments after locale + page token are
-        // stored in CurrentUrl::tail() by ContentManager.
-        //   /en/main/3/asc/10 → tail = ['3', 'asc', '10']
-        //
-        // Query mode: the browser sends named params directly, e.g.:
-        //   ?pn=3&order=asc&show=10
-        //
-        // In both cases we write the resolved values into Request::query()
-        // under the keys Pagination::fromRequest() reads, so the same
-        // fromRequest() call works regardless of routing mode.
-        //
-        // The GET filter form always submits 'order' and 'show' as query
-        // params regardless of routing mode — both of which Pagination reads
-        // directly from Request::query(), no tail mapping needed.
+        // --- Translatable order words ----------------------------------------
+        $wordAsc  = $this->t->t('news.order.asc',  fallback: 'asc');
+        $wordDesc = $this->t->t('news.order.desc', fallback: 'desc');
+        $defaultOrder = $defaultDescending ? $wordDesc : $wordAsc;
 
+        // --- Tail segment parsing (rewrite mode) -----------------------------
         $tail = $this->currentUrl->tail();
 
-        // Positional mapping: [0] = page number, [1] = order, [2] = show
         if (isset($tail[0]) && ctype_digit($tail[0])) {
-            $this->request->query()->set('pn', $tail[0]);
+            $this->request->query()->set($pnKey, $tail[0]);
         }
-        if (isset($tail[1]) && in_array(strtolower($tail[1]), ['asc', 'desc'], true)) {
-            $this->request->query()->set('order', strtolower($tail[1]));
+        if (isset($tail[1])) {
+            $segment  = strtolower($tail[1]);
+            $canonical = match (true) {
+                $segment === strtolower($wordAsc)  => 'asc',
+                $segment === strtolower($wordDesc) => 'desc',
+                default                            => null,
+            };
+            if ($canonical !== null) {
+                $this->request->query()->set($orderKey, $canonical);
+            }
         }
         if (isset($tail[2]) && ctype_digit($tail[2])) {
-            $this->request->query()->set('show', $tail[2]);
+            $this->request->query()->set($showKey, $tail[2]);
         }
 
-        // Build pagination from request (reads pn/order/show).
-        $pagination = Pagination::fromRequest($this->request, $defaultPerPage, $defaultDescending);
+        // Normalise the order query param regardless of routing mode.
+        // The form submits locale words (e.g. 'ascendente') directly as query
+        // params. Pagination::fromRequest only recognises canonical 'asc'/'desc',
+        // so any locale word must be translated to canonical before that call.
+        // This also re-normalises values already written above from tail segments,
+        // which is harmless (canonical → canonical is a no-op in the match).
+        $rawOrderParam = $this->request->query()->get($orderKey);
+        if (is_string($rawOrderParam)) {
+            $normalised = match (strtolower($rawOrderParam)) {
+                strtolower($wordAsc)  => 'asc',
+                strtolower($wordDesc) => 'desc',
+                default               => null,
+            };
+            if ($normalised !== null) {
+                $this->request->query()->set($orderKey, $normalised);
+            }
+        }
+
+        // --- Build Pagination ------------------------------------------------
+        $pagination = Pagination::fromRequest(
+            $this->request, $defaultPerPage, $defaultDescending,
+            $pnKey, $showKey, $orderKey,
+        );
 
         // --- Data fetching ---------------------------------------------------
-        $pageResult = $this->news->fetchPage($pagination);
+        $pageResult  = $this->news->fetchPage($pagination);
         $pageResult->drainTo($this->collector);
         $items = $pageResult->isOk() ? ($pageResult->unwrap() ?? []) : [];
 
@@ -81,28 +102,24 @@ final class MainController extends AbstractController
         $pagination = $pagination->withTotal($total);
 
         // --- URL generation --------------------------------------------------
-        // Resolve current page slug for link building.
         $resolvedUrlId = $this->page->i18n
             ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
             : $this->page->urlId;
 
-        // Closure passed to toTemplateVars: builds the URL for a given page
-        // number, carrying current order and perPage through each link.
-        $order   = $pagination->order;
-        $perPage = $pagination->perPage;
+        $localizedOrder   = $pagination->descending ? $wordDesc : $wordAsc;
+        $perPage          = $pagination->perPage;
+
         $urlForPage = fn(int $p): string => $this->urlGenerator->toSubPage(
-            resolvedUrlId:   $resolvedUrlId,
-            page:            $p,
-            order:           $order,
-            perPage:         $perPage,
-            defaultPage:     1,
-            defaultOrder:    $defaultOrder,
-            defaultPerPage:  $defaultPerPage,
+            resolvedUrlId:  $resolvedUrlId,
+            page:           $p,
+            order:          $localizedOrder,
+            perPage:        $perPage,
+            defaultPage:    1,
+            defaultOrder:   $defaultOrder,
+            defaultPerPage: $defaultPerPage,
         );
 
-        // Form action — bare page URL, no sub-params.
-        // The GET form appends 'order' and 'show' as query params directly.
-        // Submitting resets to page 1 (correct: filter change → back to start).
+        // Form action: bare page URL. Browser appends order/show as query params.
         $formAction = $this->urlGenerator->toPage($resolvedUrlId);
 
         // --- Template vars ---------------------------------------------------
@@ -111,22 +128,27 @@ final class MainController extends AbstractController
         $this->ctx->set('news_empty',        $this->t->t('news.empty'));
         $this->ctx->set('news_prev',         $this->t->t('news.prev'));
         $this->ctx->set('news_next',         $this->t->t('news.next'));
-        $this->ctx->set('news_page',         $this->t->t('news.page'));
+        $this->ctx->set('news_older',        $this->t->t('news.older'));
         $this->ctx->set('news_filter_show',  $this->t->t('news.filter.show'));
         $this->ctx->set('news_filter_order', $this->t->t('news.filter.order'));
         $this->ctx->set('news_filter_desc',  $this->t->t('news.filter.desc'));
         $this->ctx->set('news_filter_asc',   $this->t->t('news.filter.asc'));
         $this->ctx->set('news_filter_submit',$this->t->t('news.filter.submit'));
+        $this->ctx->set('news_first',         $this->t->t('news.first'));
+        $this->ctx->set('news_last',          $this->t->t('news.last'));
 
-        $this->ctx->set('news_form_action',  $formAction);
-        $this->ctx->set('news_order',        $order);
-        $this->ctx->set('news_desc_selected',$pagination->descending);
-        $this->ctx->set('news_asc_selected', !$pagination->descending);
+        $this->ctx->set('news_order_key',     $orderKey);
+        $this->ctx->set('news_show_key',      $showKey);
+        $this->ctx->set('news_word_asc',      $wordAsc);
+        $this->ctx->set('news_word_desc',     $wordDesc);
+        $this->ctx->set('news_form_action',   $formAction);
+        $this->ctx->set('news_desc_selected', $pagination->descending);
+        $this->ctx->set('news_asc_selected',  !$pagination->descending);
 
-        $this->ctx->set('news',     $items);
-        $this->ctx->set('has_news', $items !== []);
+        $this->ctx->set('news',          $items);
+        $this->ctx->set('has_news',      $items !== []);
 
-        foreach ($pagination->toTemplateVars($urlForPage) as $k => $v) {
+        foreach ($pagination->toTemplateVars($urlForPage, $pageWindow) as $k => $v) {
             $this->ctx->set($k, $v);
         }
 
