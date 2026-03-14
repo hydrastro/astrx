@@ -51,7 +51,8 @@ final class ModuleLoader
     public function onClassCreated(object $instance, string $fqcn): void
     {
         try {
-            $domain = (new ReflectionClass($fqcn))->getShortName();
+            $ref    = new ReflectionClass($fqcn);
+            $domain = $ref->getShortName();
         } catch (ReflectionException) {
             // If reflection fails (should never happen for a just-created class),
             // skip silently — we have no diagnostic sink here.
@@ -59,6 +60,26 @@ final class ModuleLoader
         }
 
         $this->config->loadModuleConfig($domain);
+
+        // If no dedicated {ClassName}.config.php exists, fall back to a shared
+        // config file named after the immediate parent namespace segment.
+        // Example: AstrX\Captcha\CaptchaRenderer → try Captcha.config.php
+        // This allows grouping related classes (CaptchaRenderer, CaptchaService)
+        // under a single config file without touching ContentManager or adding
+        // per-class annotations.
+        $configDir = defined('CONFIG_DIR') ? CONFIG_DIR : '';
+        if (!file_exists($configDir . $domain . '.config.php')) {
+            $namespaceParts = explode('\\', $fqcn);
+            // [0]=AstrX [1]=Captcha [2]=CaptchaRenderer → parent = 'Captcha'
+            $parentCount = count($namespaceParts);
+            if ($parentCount >= 3) {
+                $parentDomain = $namespaceParts[$parentCount - 2];
+                if ($parentDomain !== $domain) {
+                    $this->config->loadModuleConfig($parentDomain);
+                }
+            }
+        }
+
         $this->config->applyModuleConfig($instance, $domain);
 
         // Wire translator if the instance opts in via TranslatorAwareInterface.

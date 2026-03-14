@@ -623,8 +623,8 @@ INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order
 VALUES
     (1, 1, 1, 'WORDING_HOME', 1, 1, 0),  -- Home → main        (active, first)
     (2, 1, 1, 'WORDING_USER', 1, 1, 1),  -- User → user section (active, second)
-    (3, 1, 0, 'Test',         0, 0, 2),  -- external test link  (inactive)
-    (4, 1, 0, 'Ext',          0, 0, 3);  -- external link       (inactive)
+    (3, 1, 0, 'Test',         0, 1, 2),  -- external test link  (inactive)
+    (4, 1, 0, 'Ext',          0, 1, 3);  -- external link       (inactive)
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
@@ -645,3 +645,18 @@ VALUES
 
 INSERT INTO `user` (id, username, type, verified, deleted)
 VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator', 1, 1, 0);
+
+
+-- ============================================================
+-- CAPTCHA TEST PAGE  (temporary — delete before production)
+-- Accessible at: /en/captcha-test
+-- Not in any navbar, hidden=1 so it won't appear in sitemaps
+-- or be resolved as an i18n page, but is directly accessible.
+-- ============================================================
+
+INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
+
+-- Self-reference in closure table (required for ancestor resolution)
+INSERT INTO `page_closure` (ancestor, descendant)
+VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());

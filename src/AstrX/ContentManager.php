@@ -450,7 +450,7 @@ final class ContentManager
             $id   = $pageHandler->getPageIdFromUrlId($pageToken);
             $page = $id !== null ? $pageHandler->getPage($id) : null;
         }
-        if ($page === null || $page->hidden) {
+        if ($page === null){//} || $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 
             // Default is 'error' — the url_id of the error page in the database.
