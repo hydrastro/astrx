@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX;
 
+use AstrX\Auth\Gate;
+use AstrX\Auth\GateBootstrapper;
 use AstrX\Config\Config;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
@@ -50,6 +52,22 @@ final class Prelude
         $injector->setClass($moduleLoader);
         $injector->setClass($injector);
         $injector->setClass($this);
+
+        // Bootstrap PBAC Gate — register all policies once at startup.
+        // The Gate itself is auto-wired by the Injector when first requested.
+        // We create it explicitly here so policies are registered before any
+        // controller runs. Failure is non-fatal (Gate falls back to deny-all).
+        $gateResult = $injector->createClass(Gate::class)->drainTo($collector);
+        if ($gateResult->isOk()) {
+            $gate = $gateResult->unwrap();
+            assert($gate instanceof Gate);
+            $bootstrapResult = $injector->createClass(GateBootstrapper::class)
+                ->drainTo($collector);
+            if ($bootstrapResult->isOk()) {
+                $bootstrapResult->unwrap()->registerAll($gate);
+            }
+            $injector->setClass($gate);
+        }
 
         // Create ContentManager — guard unwrap() so a missing dependency produces
         // a clear RuntimeException (caught by ErrorHandler) rather than a generic

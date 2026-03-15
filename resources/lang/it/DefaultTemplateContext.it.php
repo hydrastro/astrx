@@ -10,7 +10,7 @@ return [
     'user.nav.profile'  => 'Profilo',
     'user.nav.settings' => 'Impostazioni',
     'user.nav.logout'   => 'Esci',
-]
+
     // Admin nav
     'admin.nav.home'     => 'Dashboard',
     'admin.nav.news'     => 'Notizie',

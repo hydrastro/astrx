@@ -21,7 +21,7 @@ return [
     'user.nav.profile'  => 'Profile',
     'user.nav.settings' => 'Settings',
     'user.nav.logout'   => 'Logout',
-]
+
     // Admin nav — shown when the user is an admin
     'admin.nav.home'     => 'Dashboard',
     'admin.nav.news'     => 'News',

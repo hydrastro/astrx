@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\Template;
 
+use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
@@ -53,6 +55,7 @@ final class DefaultTemplateContext
         private readonly UserSession $userSession,
         private readonly UrlGenerator $urlGenerator,
         private readonly FlashBag    $flashBag,
+        private readonly Gate        $gate,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -230,6 +233,31 @@ final class DefaultTemplateContext
             ];
         } else {
             $this->vars['user_nav'] = [];
+        }
+
+        // ---- Admin nav --------------------------------------------------------
+        // Provides is_admin and admin_nav to every template.
+        // admin_nav entries use raw url_id slugs (i18n=0 pages) for URLs
+        // and their translated label keys for display names.
+        $isAdmin = $this->gate->can(Permission::ADMIN_ACCESS);
+        $this->vars['is_admin'] = $isAdmin;
+
+        if ($isAdmin) {
+            $adminIds   = $this->ancestorUrlIds;
+            $adminPages = \AstrX\Admin\AdminService::NAV_PAGES;
+            $adminNav   = [];
+            foreach ($adminPages as $slug => $labelKey) {
+                $wording   = 'WORDING_' . strtoupper($slug);
+                $pageSlug  = $this->t->t($wording, fallback: $slug);
+                $adminNav[] = [
+                    'name'      => $this->t->t($labelKey, fallback: $slug),
+                    'url'       => $this->urlGenerator->toPage($pageSlug),
+                    'highlight' => in_array($wording, $adminIds, true),
+                ];
+            }
+            $this->vars['admin_nav'] = $adminNav;
+        } else {
+            $this->vars['admin_nav'] = [];
         }
 
         // ---- Flash messages ---------------------------------------------------
