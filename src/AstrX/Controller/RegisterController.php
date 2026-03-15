@@ -11,6 +11,7 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserService;
@@ -33,6 +34,7 @@ final class RegisterController extends AbstractController
         private readonly CaptchaService        $captchaService,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
+        private readonly FlashBag              $flash,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
@@ -115,6 +117,8 @@ final class RegisterController extends AbstractController
             //     $mailer->send($email, $link);
             // }
         }
+
+        $this->flash->set('success', $this->t->t('user.register.success'));
 
         // Redirect to login with success message via PRG
         Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))

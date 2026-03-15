@@ -452,7 +452,8 @@ VALUES
 ('admin_notes',          0, 'admin_notes',    1, 1, 0, 0), -- id=15
 ('admin_pages',          0, 'admin_pages',    1, 1, 0, 0), -- id=16
 ('admin_users',          0, 'admin_users',    1, 1, 0, 0), -- id=17
-('admin',                0, 'admin',          1, 1, 0, 0); -- id=18
+('admin',                0, 'admin',          1, 1, 0, 0), -- id=18
+('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0); -- id=19
 
 
 -- ----------------------------------------------------------
@@ -478,7 +479,8 @@ VALUES
     (15, 0, 0),  -- admin_notes
     (16, 0, 0),  -- admin_pages
     (17, 0, 0),  -- admin_users
-    (18, 0, 0);  -- admin
+    (18, 0, 0),  -- admin
+    (19, 0, 0);  -- logout         — noindex
 
 
 -- ----------------------------------------------------------
@@ -504,7 +506,8 @@ VALUES
     (15, 'Admin — Notes',      'Personal admin notes.'),
     (16, 'Admin — Pages',      'Manage site pages.'),
     (17, 'Admin — Users',      'Manage user accounts.'),
-    (18, 'Administration',     'Administration area.');
+    (18, 'Administration',     'Administration area.'),
+    (19, 'Logout',             '');
 
 
 -- ----------------------------------------------------------
@@ -518,7 +521,8 @@ VALUES
 (8,8),(9,9),(10,10),(11,11),(12,12),(13,13),
 (14,14),(15,15),(16,16),(17,17),(18,18),
 -- user section (9) → children
-(9,3),(9,4),(9,5),(9,6),(9,7),(9,8),
+(9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),
+(19,19),  -- logout self-reference
 -- admin section (18) → children
 (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17);
 
@@ -623,8 +627,8 @@ INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order
 VALUES
     (1, 1, 1, 'WORDING_HOME', 1, 1, 0),  -- Home → main        (active, first)
     (2, 1, 1, 'WORDING_USER', 1, 1, 1),  -- User → user section (active, second)
-    (3, 1, 0, 'Test',         0, 1, 2),  -- external test link  (inactive)
-    (4, 1, 0, 'Ext',          0, 1, 3);  -- external link       (inactive)
+    (3, 1, 0, 'Test',         0, 0, 2),  -- external test link  (inactive)
+    (4, 1, 0, 'Ext',          0, 0, 3);  -- external link       (inactive)
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES

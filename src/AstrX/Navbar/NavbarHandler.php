@@ -122,7 +122,13 @@ final class NavbarHandler
     private function resolveName(array $row): string
     {
         $name = (string) $row['name'];
-        return ((bool) $row['i18n']) ? $this->translator->t($name, fallback: $name) : $name;
+        if (!(bool) $row['i18n']) {
+            return $name;
+        }
+        // Try {name}.label first (display text, from Navbar lang file).
+        // Fall back to the plain key so existing setups without .label keys still work.
+        $label = $this->translator->t($name . '.label', fallback: '');
+        return $label !== '' ? $label : $this->translator->t($name, fallback: $name);
     }
 
     /**

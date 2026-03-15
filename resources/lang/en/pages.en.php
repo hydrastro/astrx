@@ -26,6 +26,7 @@ return [
     'WORDING_SETTINGS'  => 'settings',
     'WORDING_USER_HOME' => 'home',
     'WORDING_USER'      => 'user',
+    'WORDING_LOGOUT'    => 'logout',
 
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Main Page',

@@ -33,6 +33,9 @@ return [
     'WORDING_USER_HOME.title'     => 'Home',
     'WORDING_USER_HOME.description'=> 'Your personal home page.',
 
+    'WORDING_LOGOUT.title'         => 'Logout',
+    'WORDING_LOGOUT.description'   => 'Sign out of your account.',
+
     'WORDING_USER.title'          => 'User Area',
     'WORDING_USER.description'    => 'Log in or create your account.',
 
@@ -43,7 +46,7 @@ return [
     'user.field.password'        => 'Password',
     'user.field.old_password'    => 'Current password',
     'user.field.repeat'          => 'Repeat password',
-    'user.field.mailbox'         => 'Login address',
+    'user.field.mailbox'         => 'Login email',
     'user.field.email'           => 'Recovery email',
     'user.field.display_name'    => 'Display name',
     'user.field.birth_date'      => 'Date of birth',
@@ -113,4 +116,19 @@ return [
     'user.settings.verify_desc'       => 'Your recovery email is not yet verified. Send a verification link.',
     'user.settings.delete'            => 'Delete account',
     'user.settings.delete_confirm'    => 'This action is irreversible. Enter your password to confirm.',
+
+    // -------------------------------------------------------------------------
+    // User nav labels (used in DefaultTemplateContext::finalise() user_nav)
+    // -------------------------------------------------------------------------
+    'user.nav.guest'    => 'Login',
+    'user.nav.home'     => 'Home',
+    'user.nav.profile'  => 'Profile',
+    'user.nav.settings' => 'Settings',
+    'user.nav.logout'   => 'Logout',
+
+    // -------------------------------------------------------------------------
+    // Success / info messages
+    // -------------------------------------------------------------------------
+    'user.register.success' => 'Registration successful! You can now log in.',
+    'user.recover.sent'     => 'If an account with that username or email exists, a reset link has been sent.',
 ];

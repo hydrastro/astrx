@@ -4,6 +4,9 @@ declare(strict_types=1);
 namespace AstrX\Template;
 
 use AstrX\Config\Config;
+use AstrX\Routing\UrlGenerator;
+use AstrX\Session\FlashBag;
+use AstrX\User\UserSession;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
@@ -39,11 +42,14 @@ final class DefaultTemplateContext
     private array $vars = [];
 
     public function __construct(
-        private readonly Config $config,
-        private readonly Translator $t,
-        private readonly Request $request,
+        private readonly Config      $config,
+        private readonly Translator  $t,
+        private readonly Request     $request,
         private readonly DiagnosticsCollector $collector,
-        private readonly DiagnosticRenderer $renderer,
+        private readonly DiagnosticRenderer   $renderer,
+        private readonly UserSession $userSession,
+        private readonly UrlGenerator $urlGenerator,
+        private readonly FlashBag    $flashBag,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -164,6 +170,51 @@ final class DefaultTemplateContext
      */
     public function finalise(): void
     {
+        // ---- User session nav -------------------------------------------------
+        // Provides user_logged_in, user_nav (array of nav entries) and user_username
+        // to every template. Controllers can override individual entries.
+        $this->vars['user_logged_in'] = $this->userSession->isLoggedIn();
+        $this->vars['user_username']  = $this->userSession->username();
+
+        // Guest nav label / user page URL (shown when not logged in)
+        $this->vars['user_page_url']       = $this->urlGenerator->toPage(
+            $this->t->t('WORDING_USER', fallback: 'user')
+        );
+        $this->vars['user_nav_guest_label'] = $this->t->t('user.nav.guest', fallback: 'Login');
+
+        if ($this->userSession->isLoggedIn()) {
+            $this->vars['user_nav'] = [
+                [
+                    'name' => $this->t->t('user.nav.home',     fallback: 'Home'),
+                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_USER_HOME', fallback: 'home')),
+                ],
+                [
+                    'name' => $this->t->t('user.nav.profile',  fallback: 'Profile'),
+                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_PROFILE',   fallback: 'profile')),
+                ],
+                [
+                    'name' => $this->t->t('user.nav.settings', fallback: 'Settings'),
+                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_SETTINGS',  fallback: 'settings')),
+                ],
+                [
+                    'name' => $this->t->t('user.nav.logout',   fallback: 'Logout'),
+                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_LOGOUT',    fallback: 'logout')),
+                ],
+            ];
+        } else {
+            $this->vars['user_nav'] = [];
+        }
+
+        // ---- Flash messages ---------------------------------------------------
+        $flash = $this->flashBag->pull();
+        if ($flash !== []) {
+            $this->vars['flash_messages']     = $flash;
+            $this->vars['has_flash_messages'] = true;
+        } else {
+            $this->vars['flash_messages']     = [];
+            $this->vars['has_flash_messages'] = false;
+        }
+
         $this->vars['time'] = isset($_SERVER['REQUEST_TIME_FLOAT'])
             ? round((microtime(true) - (float) $_SERVER['REQUEST_TIME_FLOAT']), 4)
             : null;

@@ -29,6 +29,9 @@ return [
     'WORDING_USER_HOME.title'      => 'Home',
     'WORDING_USER_HOME.description'=> 'La tua pagina personale.',
 
+    'WORDING_LOGOUT.title'         => 'Esci',
+    'WORDING_LOGOUT.description'   => 'Disconnettiti dal tuo account.',
+
     'WORDING_USER.title'           => 'Area utente',
     'WORDING_USER.description'     => 'Accedi o crea il tuo account.',
 
@@ -39,7 +42,7 @@ return [
     'user.field.password'        => 'Password',
     'user.field.old_password'    => 'Password attuale',
     'user.field.repeat'          => 'Ripeti password',
-    'user.field.mailbox'         => 'Indirizzo di accesso',
+    'user.field.mailbox'         => 'Email di accesso',
     'user.field.email'           => 'Email di recupero',
     'user.field.display_name'    => 'Nome visualizzato',
     'user.field.birth_date'      => 'Data di nascita',
@@ -109,4 +112,19 @@ return [
     'user.settings.verify_desc'       => 'La tua email di recupero non è ancora verificata. Invia un link di verifica.',
     'user.settings.delete'            => 'Elimina account',
     'user.settings.delete_confirm'    => 'Questa azione è irreversibile. Inserisci la tua password per confermare.',
+
+    // -------------------------------------------------------------------------
+    // Voci di navigazione utente
+    // -------------------------------------------------------------------------
+    'user.nav.guest'    => 'Accedi',
+    'user.nav.home'     => 'Home',
+    'user.nav.profile'  => 'Profilo',
+    'user.nav.settings' => 'Impostazioni',
+    'user.nav.logout'   => 'Esci',
+
+    // -------------------------------------------------------------------------
+    // Messaggi di successo / info
+    // -------------------------------------------------------------------------
+    'user.register.success' => 'Registrazione completata! Ora puoi accedere.',
+    'user.recover.sent'     => 'Se esiste un account con quel nome utente o email, ti abbiamo inviato un link.',
 ];

@@ -1,8 +1,7 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 return [
-    'WORDING_HOME' => 'Pagina Principale',
-    'WORDING_USER' => 'Utente',
+    'WORDING_HOME.label' => 'Home',
+    'WORDING_USER.label' => 'Utente',
 ];

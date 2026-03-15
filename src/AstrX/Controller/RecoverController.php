@@ -11,6 +11,7 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserService;
@@ -33,6 +34,7 @@ final class RecoverController extends AbstractController
         private readonly CaptchaService        $captchaService,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
+        private readonly FlashBag              $flash,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
@@ -112,6 +114,9 @@ final class RecoverController extends AbstractController
             // (remove / replace with real email sending before production)
             // $this->emitMailerNotice($link); — placeholder
         }
+
+        // Always show the same message regardless of whether the user exists (prevents enumeration)
+        $this->flash->set('info', $this->t->t('user.recover.sent'));
 
         Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))
             ->send()->drainTo($this->collector);

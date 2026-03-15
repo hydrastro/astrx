@@ -14,6 +14,7 @@ return [
     'WORDING_SETTINGS'  => 'impostazioni',
     'WORDING_USER_HOME' => 'area-personale',
     'WORDING_USER'      => 'utente',
+    'WORDING_LOGOUT'    => 'esci',
 
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Pagina Principale',
