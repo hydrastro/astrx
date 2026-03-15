@@ -159,4 +159,16 @@ return [
     // ---- Notes --------------------------------------------------------------
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
+
+    'admin.banlist.updated'   => 'Ban updated.',
+
+    'admin.banlist.permanent' => 'permanent',
+
+    'admin.banlist.round'     => 'Round',
+
+    'admin.banlist.penalty'   => 'Penalty',
+
+    'admin.banlist.max_tries' => 'Max tries',
+
+    'admin.banlist.check_win' => 'Check window',
 ];

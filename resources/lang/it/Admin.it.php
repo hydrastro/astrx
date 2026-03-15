@@ -142,4 +142,16 @@ return [
 
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',
     'admin.notes.saved' => 'Note salvate.',
+
+    'admin.banlist.updated'   => 'Ban aggiornato.',
+
+    'admin.banlist.permanent' => 'permanente',
+
+    'admin.banlist.round'     => 'Round',
+
+    'admin.banlist.penalty'   => 'Penalità',
+
+    'admin.banlist.max_tries' => 'Max tentativi',
+
+    'admin.banlist.check_win' => 'Finestra controllo',
 ];

@@ -290,6 +290,46 @@ final class BanlistRepository
         }
     }
 
+    /** @return Result<array<string,mixed>|null> */
+    public function findById(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT b.id, b.ban_route, b.reason, b.start, b.end, b.active,
+                        bu.user_id, be.email,
+                        CONCAT(INET6_NTOA(bi.network),'/',bi.prefix_len) AS cidr
+                   FROM banlist b
+                   LEFT JOIN banlist_user  bu ON bu.ban_id = b.id
+                   LEFT JOIN banlist_email be ON be.ban_id = b.id
+                   LEFT JOIN banlist_ip    bi ON bi.ban_id = b.id
+                  WHERE b.id = :id LIMIT 1"
+            );
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return Result::ok($row !== false ? $row : null);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Update an existing ban's editable fields: reason, route, end, active.
+     * @return Result<true>
+     */
+    public function updateBan(int $id, string $reason, int $route, ?string $end, bool $active): Result
+    {
+        try {
+            $this->pdo->prepare(
+                'UPDATE banlist SET reason = :reason, ban_route = :route, end = :end, active = :active
+                  WHERE id = :id'
+            )->execute([':reason' => $reason, ':route' => $route,
+                        ':end' => $end, ':active' => (int) $active, ':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
     /** @return Result<true> */
     public function setActive(int $id, bool $active): Result
     {
@@ -336,3 +376,4 @@ final class BanlistRepository
                                                  )));
     }
 }
+
