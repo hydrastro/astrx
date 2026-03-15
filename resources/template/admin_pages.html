@@ -42,44 +42,43 @@
 {{/has_editing}}
 
 {{! Add page form }}
-<details>
-    <summary><strong>+ {{btn_add}} {{label_actions}}</strong></summary>
-    <form method="POST" style="padding:8px;border:1px solid #ccc">
-        <input type="hidden" name="prg_id"  value="{{prg_id}}">
-        <input type="hidden" name="_csrf"   value="{{csrf_token}}">
-        <input type="hidden" name="action"  value="add">
-        <p style="color:#c00"><strong>⚠ {{pages_routing_warning}}</strong></p>
-        <table>
-            <tr><th>{{label_url_id}} *</th>
-                <td><input type="text" name="url_id" class="input" required></td></tr>
-            <tr><th>{{label_file_name}} *</th>
-                <td><input type="text" name="file_name" class="input" required></td></tr>
-            <tr><th>{{label_title}}</th>
-                <td><input type="text" name="title" class="input"></td></tr>
-            <tr><th>{{label_description}}</th>
-                <td><textarea name="description" rows="2" class="input"></textarea></td></tr>
-            <tr><th>{{label_parent}}</th>
-                <td><select name="parent_id" class="input">
-                    <option value="0">— (top-level)</option>
-                    {{#page_list}}<option value="{{id}}">{{id}} — {{url_id}}{{#title}} ({{title}}){{/title}}</option>{{/page_list}}
-                </select></td></tr>
-            <tr><th>{{label_i18n}}</th>
-                <td><input type="checkbox" name="i18n" value="1" checked></td></tr>
-            <tr><th>{{label_template}}</th>
-                <td><input type="checkbox" name="template" value="1" checked></td></tr>
-            <tr><th>{{label_controller}}</th>
-                <td><input type="checkbox" name="controller" value="1" checked></td></tr>
-            <tr><th>{{label_hidden}}</th>
-                <td><input type="checkbox" name="hidden" value="1"></td></tr>
-            <tr><th>{{label_comments}}</th>
-                <td><input type="checkbox" name="comments" value="1"></td></tr>
-            <tr><th>{{label_index}}</th>
-                <td><input type="checkbox" name="index_flag" value="1" checked></td></tr>
-            <tr><th>{{label_follow}}</th>
-                <td><input type="checkbox" name="follow_flag" value="1" checked></td></tr>
-        </table>
-        <p><input type="submit" value="{{btn_add}}" class="input"></p>
-    </form>
+<h3>{{btn_add}} page</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="action"  value="add">
+    <p style="color:#c00"><strong>⚠ {{pages_routing_warning}}</strong></p>
+    <table>
+        <tr><th>{{label_url_id}} *</th>
+            <td><input type="text" name="url_id" class="input" required></td></tr>
+        <tr><th>{{label_file_name}} *</th>
+            <td><input type="text" name="file_name" class="input" required></td></tr>
+        <tr><th>{{label_title}}</th>
+            <td><input type="text" name="title" class="input"></td></tr>
+        <tr><th>{{label_description}}</th>
+            <td><textarea name="description" rows="2" class="input"></textarea></td></tr>
+        <tr><th>{{label_parent}}</th>
+            <td><select name="parent_id" class="input">
+                <option value="0">— (top-level)</option>
+                {{#page_list}}<option value="{{id}}">{{id}} — {{url_id}}{{#title}} ({{title}}){{/title}}</option>{{/page_list}}
+            </select></td></tr>
+        <tr><th>{{label_i18n}}</th>
+            <td><input type="checkbox" name="i18n" value="1" checked></td></tr>
+        <tr><th>{{label_template}}</th>
+            <td><input type="checkbox" name="template" value="1" checked></td></tr>
+        <tr><th>{{label_controller}}</th>
+            <td><input type="checkbox" name="controller" value="1" checked></td></tr>
+        <tr><th>{{label_hidden}}</th>
+            <td><input type="checkbox" name="hidden" value="1"></td></tr>
+        <tr><th>{{label_comments}}</th>
+            <td><input type="checkbox" name="comments" value="1"></td></tr>
+        <tr><th>{{label_index}}</th>
+            <td><input type="checkbox" name="index_flag" value="1" checked></td></tr>
+        <tr><th>{{label_follow}}</th>
+            <td><input type="checkbox" name="follow_flag" value="1" checked></td></tr>
+    </table>
+    <p><input type="submit" value="{{btn_add}}" class="input"></p>
+</form>
 </details>
 <hr>
 

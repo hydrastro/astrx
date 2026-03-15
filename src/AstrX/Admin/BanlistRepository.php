@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Admin;
 
 use AstrX\Admin\Diagnostic\AdminDbDiagnostic;
+use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use PDO;
@@ -25,6 +26,33 @@ final class BanlistRepository
     public const int ROUTE_PERMANENT    = 0;
     public const int ROUTE_BAD_COMMENT  = 1;
     public const int ROUTE_FAILED_LOGIN = 2;
+
+    /** @var array<int,list<array{penalty:int,max_tries:int,check_time:int,enabled:bool}>> */
+    private array $routes = [];
+
+    /**
+     * @param array<int,list<array{penalty:int,max_tries:int,check_time:int,enabled:bool}>> $routes
+     */
+    #[InjectConfig('routes')]
+    public function setRoutes(array $routes): void
+    {
+        $this->routes = $routes;
+    }
+
+    public function getRoutes(): array
+    {
+        return $this->routes;
+    }
+
+    /** @return array<int,string> */
+    public static function routeNames(): array
+    {
+        return [
+            self::ROUTE_PERMANENT    => 'Permanent',
+            self::ROUTE_BAD_COMMENT  => 'Bad comment',
+            self::ROUTE_FAILED_LOGIN => 'Failed login',
+        ];
+    }
 
     public function __construct(private readonly PDO $pdo) {}
 
@@ -196,9 +224,9 @@ final class BanlistRepository
         $parsed = self::parseCidr($cidr);
         if ($parsed === null) {
             return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(
-                AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL,
-                "Invalid IP/CIDR: {$cidr}"
-            )));
+                                                         AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL,
+                                                         "Invalid IP/CIDR: {$cidr}"
+                                                     )));
         }
 
         $coreResult = $this->insertCore($reason, $route, $end);
@@ -212,10 +240,10 @@ final class BanlistRepository
                 'INSERT INTO banlist_ip (ban_id, network, prefix_len) VALUES (:id, :net, :prefix)'
             );
             $stmt->execute([
-                ':id'     => $banId,
-                ':net'    => $parsed['network'],
-                ':prefix' => $parsed['prefix'],
-            ]);
+                               ':id'     => $banId,
+                               ':net'    => $parsed['network'],
+                               ':prefix' => $parsed['prefix'],
+                           ]);
             return Result::ok($banId);
         } catch (PDOException $e) {
             return $this->err($e);
@@ -304,7 +332,7 @@ final class BanlistRepository
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(
-            AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, $e->getMessage()
-        )));
+                                                     AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, $e->getMessage()
+                                                 )));
     }
 }

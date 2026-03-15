@@ -1,4 +1,6 @@
 <h2>{{admin_banlist_heading}}</h2>
+
+<h3>{{label_actions}}</h3>
 <form method="POST">
     <input type="hidden" name="prg_id" value="{{prg_id}}">
     <input type="hidden" name="_csrf"  value="{{csrf_token}}">
@@ -22,11 +24,35 @@
             </select>
         </label><br>
         <label for="ban_end">{{label_end}}: </label>
-        <input type="text" name="end" id="ban_end" class="input"><br>
+        <input type="text" name="end" id="ban_end" class="input" placeholder="YYYY-MM-DD HH:MM:SS"><br>
         <input type="submit" value="{{btn_ban}}" class="input">
     </p>
 </form>
 <hr>
+
+<h3>Routes &amp; penalty schedules</h3>
+{{#ban_routes}}
+<h4>{{label}} (route {{value}})</h4>
+{{#rounds}}
+<table style="margin-bottom:4px">
+    <thead><tr>
+        <th>Round</th><th>Penalty</th><th>Max tries</th><th>Check window</th>
+    </tr></thead>
+    <tbody>
+    <tr>
+        <td>#{{round}}</td>
+        <td>{{penalty}}</td>
+        <td>{{max_tries}}</td>
+        <td>{{check_time}}</td>
+    </tr>
+    </tbody>
+</table>
+{{/rounds}}
+{{^rounds}}<p><em>No rounds configured.</em></p>{{/rounds}}
+{{/ban_routes}}
+<hr>
+
+<h3>Active bans</h3>
 <table>
     <thead><tr>
         <th>{{label_id}}</th>
@@ -61,10 +87,12 @@
                 <input type="hidden" name="_csrf"   value="{{csrf_token}}">
                 <input type="hidden" name="ban_id"  value="{{id}}">
                 <input type="hidden" name="action"  value="delete">
-                <input type="submit" value="{{btn_delete}}" class="input">
+                <input type="submit" value="{{btn_delete}}" class="input"
+                       onclick="return confirm('Remove this ban?')">
             </form>
         </td>
     </tr>
     {{/ban_list}}
+    {{^ban_list}}<tr><td colspan="7"><em>No bans.</em></td></tr>{{/ban_list}}
     </tbody>
 </table>

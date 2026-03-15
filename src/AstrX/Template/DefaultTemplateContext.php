@@ -197,14 +197,62 @@ final class DefaultTemplateContext
         // When logged in, use the DB entries. When logged out, use an empty list
         // so the template falls through to the guest link branch.
         $dbUserNav = $this->vars['db_user_nav'] ?? [];
-        $this->vars['user_nav'] = $this->userSession->isLoggedIn() ? $dbUserNav : [];
+
+        if ($this->userSession->isLoggedIn() && $dbUserNav !== []) {
+            // If on the user section root with no child entry highlighted,
+            // force-highlight the first nav entry (User Home).
+            $anyUserChildHighlighted = false;
+            foreach ($dbUserNav as $i => $e) {
+                if ($i > 0 && $e['highlight']) {
+                    $anyUserChildHighlighted = true;
+                    break;
+                }
+            }
+            $onUserRoot = in_array('WORDING_USER', $this->ancestorUrlIds, true)
+                          && !$anyUserChildHighlighted;
+            $processedUserNav = [];
+            foreach ($dbUserNav as $i => $e) {
+                if ($i === 0 && $onUserRoot) {
+                    $e['highlight'] = true;
+                }
+                $processedUserNav[] = $e;
+            }
+            $this->vars['user_nav'] = $processedUserNav;
+        } else {
+            $this->vars['user_nav'] = [];
+        }
 
         // ---- Admin nav --------------------------------------------------------
         // DB-driven: ContentManager pre-loads navbar id=3 entries into db_admin_nav.
         // The Gate check still controls visibility.
         $isAdmin = $this->gate->can(Permission::ADMIN_ACCESS);
-        $this->vars['is_admin']   = $isAdmin;
-        $this->vars['admin_nav']  = $isAdmin ? ($this->vars['db_admin_nav'] ?? []) : [];
+        $this->vars['is_admin'] = $isAdmin;
+
+        if ($isAdmin) {
+            $rawAdminNav = $this->vars['db_admin_nav'] ?? [];
+            // Dashboard (admin root, page_id=18) is an ancestor of every admin page,
+            // so NavbarHandler always marks it highlighted. Override: highlight Dashboard
+            // only when no other admin nav entry is also highlighted (i.e. we are
+            // actually on the root itself, not a child page).
+            $anyChildHighlighted = false;
+            foreach ($rawAdminNav as $i => $entry) {
+                if ($i > 0 && $entry['highlight']) {
+                    $anyChildHighlighted = true;
+                    break;
+                }
+            }
+            $adminNav = [];
+            foreach ($rawAdminNav as $i => $entry) {
+                if ($i === 0) {
+                    // First entry is always Dashboard
+                    $entry['highlight'] = $entry['highlight'] && !$anyChildHighlighted;
+                }
+                $adminNav[] = $entry;
+            }
+            $this->vars['admin_nav'] = $adminNav;
+        } else {
+            $this->vars['admin_nav'] = [];
+        }
 
         // ---- Flash messages ---------------------------------------------------
         $flash = $this->flashBag->pull();

@@ -316,6 +316,9 @@ final class ContentManager
         // Dispatch the comment controller if comments are enabled on this page.
         // This runs AFTER the main controller so it can see any vars already set.
         if ($page->comments) {
+            // Load Comment lang domain explicitly — ModuleLoader's onClassCreated
+            // would look for 'CommentController.en.php', not 'Comment.en.php'.
+            $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', 'Comment');
             $commentFqcn   = 'AstrX\\Controller\\CommentController';
             if (class_exists($commentFqcn)) {
                 $commentResult = $this->injector->createClass($commentFqcn)

@@ -132,6 +132,22 @@ final class AdminNavbarController extends AbstractController
         $this->ctx->set('available_pages', $pages);
         $this->ctx->set('base_url',       $this->request->uri()->path());
 
+        // Decorate navbars with active flag, navbar_id on pins, navbar_id+pin_id on entries
+        foreach ($navbars as &$nb) {
+            $nb['active'] = ($nb['id'] === $activeNavbar);
+            foreach ($nb['pins'] as &$pin) {
+                $pin['navbar_id'] = $nb['id'];
+                foreach ($pin['entries'] as &$entry) {
+                    $entry['navbar_id'] = $nb['id'];
+                    $entry['pin_id']    = $pin['id'];
+                }
+                unset($entry);
+            }
+            unset($pin);
+        }
+        unset($nb);
+        $this->ctx->set('navbars', $navbars);
+
         // Navbar tab labels
         $this->ctx->set('nb_public', $this->t->t('admin.navbar.nb_public'));
         $this->ctx->set('nb_user',   $this->t->t('admin.navbar.nb_user'));

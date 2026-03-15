@@ -52,11 +52,28 @@ final class AdminBanlistController extends AbstractController
         $listResult = $this->banlist->listAll();
         $listResult->drainTo($this->collector);
 
-        $routes = [
-            ['value' => BanlistRepository::ROUTE_PERMANENT,    'label' => $this->t->t('admin.banlist.route_permanent')],
-            ['value' => BanlistRepository::ROUTE_BAD_COMMENT,  'label' => $this->t->t('admin.banlist.route_bad_comment')],
-            ['value' => BanlistRepository::ROUTE_FAILED_LOGIN, 'label' => $this->t->t('admin.banlist.route_failed_login')],
-        ];
+        // Build route list with penalty rounds from config
+        $rawRoutes = $this->banlist->getRoutes();
+        $routes = [];
+        foreach (BanlistRepository::routeNames() as $routeId => $routeName) {
+            $label = match ($routeId) {
+                BanlistRepository::ROUTE_PERMANENT    => $this->t->t('admin.banlist.route_permanent'),
+                BanlistRepository::ROUTE_BAD_COMMENT  => $this->t->t('admin.banlist.route_bad_comment'),
+                BanlistRepository::ROUTE_FAILED_LOGIN => $this->t->t('admin.banlist.route_failed_login'),
+                default => $routeName,
+            };
+            $rounds = [];
+            foreach ($rawRoutes[$routeId] ?? [] as $round => $cfg) {
+                if (empty($cfg['enabled'])) { continue; }
+                $rounds[] = [
+                    'round'      => $round,
+                    'penalty'    => $cfg['penalty'] === 0 ? 'permanent' : $this->formatSeconds((int) $cfg['penalty']),
+                    'max_tries'  => (int) $cfg['max_tries'],
+                    'check_time' => $cfg['check_time'] === 0 ? '—' : $this->formatSeconds((int) $cfg['check_time']),
+                ];
+            }
+            $routes[] = ['value' => $routeId, 'label' => $label, 'rounds' => $rounds];
+        }
 
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($this->request->uri()->path());
@@ -67,6 +84,16 @@ final class AdminBanlistController extends AbstractController
         $this->ctx->set('ban_routes',  $routes);
         $this->setI18n();
         return $this->ok();
+    }
+
+    private function formatSeconds(int $s): string
+    {
+        if ($s === 0) { return 'permanent'; }
+        $out = []; $r = $s;
+        foreach ([['y',31536000],['mo',2592000],['w',604800],['d',86400],['h',3600],['m',60],['s',1]] as [$u,$d]) {
+            if ($r >= $d) { $v = intdiv($r,$d); $out[] = $v.$u; $r -= $v*$d; }
+        }
+        return implode(' ', array_slice($out, 0, 2));
     }
 
     private function processForm(string $prgToken): void
