@@ -456,8 +456,7 @@ VALUES
 ('WORDING_ADMIN_PAGES',    1, 'admin_pages',    1, 1, 0, 0), -- id=16
 ('WORDING_ADMIN_USERS',    1, 'admin_users',    1, 1, 0, 0), -- id=17
 ('WORDING_ADMIN',          1, 'admin',          1, 1, 0, 0), -- id=18
-('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0), -- id=19
-('WORDING_COMMENTS_TEST',1, 'comments_test',  1, 1, 0, 1); -- id=20
+('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0); -- id=19
 
 
 -- ----------------------------------------------------------
@@ -484,8 +483,7 @@ VALUES
     (16, 0, 0),  -- admin_pages
     (17, 0, 0),  -- admin_users
     (18, 0, 0),  -- admin
-    (19, 0, 0),  -- logout         — noindex
-    (20, 1, 1);  -- comments_test  — index, follow
+    (19, 0, 0);  -- logout         — noindex
 
 
 -- ----------------------------------------------------------
@@ -512,8 +510,7 @@ VALUES
     (16, 'Admin — Pages',      'Manage site pages.'),
     (17, 'Admin — Users',      'Manage user accounts.'),
     (18, 'Administration',     'Administration area.'),
-    (19, 'Logout',             ''),
-    (20, 'Comments Test',      'A page for testing the comment system.');
+    (19, 'Logout',             '');
 
 
 -- ----------------------------------------------------------
@@ -529,7 +526,6 @@ VALUES
 -- user section (9) → children
 (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),
 (19,19),  -- logout self-reference
-(20,20),  -- comments_test self-reference (top-level page)
 -- admin section (18) → children
 (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17);
 
@@ -611,9 +607,17 @@ VALUES ('public'), ('user'), ('admin');
 
 INSERT INTO `navbar_pin` (navbar_id, sort_order, sort_mode)
 VALUES
-    (1, 0, 1),  -- id=1  public — custom
-    (2, 0, 0),  -- id=2  user   — alphabetical
-    (3, 0, 0);  -- id=3  admin  — alphabetical
+    -- Public navbar (id=1): one custom-ordered pin
+    (1, 0, 1),  -- id=1  public default — custom order
+
+    -- User navbar (id=2): three pins for pinned-first, alpha-middle, pinned-last
+    (2, 0, 1),  -- id=2  user — first pin  (custom: User Home)
+    (2, 1, 0),  -- id=3  user — middle pin (alpha: Profile, Settings)
+    (2, 2, 1),  -- id=4  user — last pin   (custom: Logout)
+
+    -- Admin navbar (id=3): two pins for pinned-first, then alpha rest
+    (3, 0, 1),  -- id=5  admin — first pin (custom: Dashboard)
+    (3, 1, 0);  -- id=6  admin — middle pin (alpha: all other admin pages)
 
 
 -- ----------------------------------------------------------
@@ -628,19 +632,53 @@ VALUES
 --   4 = Ext  (external, inactive)
 -- ----------------------------------------------------------
 
-INSERT INTO `navbar_entry_ids` () VALUES (),(),(),();
+INSERT INTO `navbar_entry_ids` () VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
-    (1, 1, 1, 'WORDING_HOME', 1, 1, 0),  -- Home → main        (active, first)
-    (2, 1, 1, 'WORDING_USER', 1, 1, 1),  -- User → user section (active, second)
-    (3, 1, 0, 'Test',         0, 0, 2),  -- external test link  (inactive)
-    (4, 1, 0, 'Ext',          0, 0, 3);  -- external link       (inactive)
+    -- Public navbar entries (pin_id=1, custom order)
+    (1, 1, 1, 'WORDING_HOME', 1, 1, 0),   -- Home → main         (first)
+    (2, 1, 1, 'WORDING_USER', 1, 1, 1),   -- User → user section (second)
+    (3, 1, 0, 'Test',         0, 0, 2),   -- external test link  (inactive)
+    (4, 1, 0, 'Ext',          0, 0, 3),   -- external link       (inactive)
+
+    -- User navbar entries
+    (5,  2, 1, 'WORDING_USER_HOME', 1, 1, 0),  -- User Home (pin=2, first, custom)
+    (6,  3, 1, 'WORDING_PROFILE',   1, 1, 0),  -- Profile   (pin=3, alpha)
+    (7,  3, 1, 'WORDING_SETTINGS',  1, 1, 0),  -- Settings  (pin=3, alpha)
+    (8,  4, 1, 'WORDING_LOGOUT',    1, 1, 0),  -- Logout    (pin=4, last, custom)
+
+    -- Admin navbar entries
+    (9,  5, 1, 'WORDING_ADMIN',          1, 1, 0),  -- Dashboard   (pin=5, first, custom)
+    (10, 6, 1, 'WORDING_ADMIN_NEWS',     1, 1, 0),  -- News        (pin=6, alpha)
+    (11, 6, 1, 'WORDING_ADMIN_COMMENTS', 1, 1, 0),  -- Comments    (pin=6, alpha)
+    (12, 6, 1, 'WORDING_ADMIN_USERS',    1, 1, 0),  -- Users       (pin=6, alpha)
+    (13, 6, 1, 'WORDING_ADMIN_BANLIST',  1, 1, 0),  -- Banlist     (pin=6, alpha)
+    (14, 6, 1, 'WORDING_ADMIN_NAVBAR',   1, 1, 0),  -- Navbar      (pin=6, alpha)
+    (15, 6, 1, 'WORDING_ADMIN_PAGES',    1, 1, 0),  -- Pages       (pin=6, alpha)
+    (16, 6, 1, 'WORDING_ADMIN_NOTES',    1, 1, 0);  -- Notes       (pin=6, alpha)
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
-    (1, 1),  -- Home → main (id=1)
-    (2, 9);  -- User → user section (id=9)
+    -- Public navbar
+    (1, 1),   -- Home       → main (page id=1)
+    (2, 9),   -- User       → user section (page id=9)
+
+    -- User navbar
+    (5,  8),  -- User Home  → user_home (page id=8)
+    (6,  6),  -- Profile    → profile (page id=6)
+    (7,  7),  -- Settings   → user_settings (page id=7)
+    (8,  19), -- Logout     → logout (page id=19)
+
+    -- Admin navbar
+    (9,  18), -- Dashboard  → admin (page id=18)
+    (10, 14), -- News       → admin_news (page id=14)
+    (11, 12), -- Comments   → admin_comments (page id=12)
+    (12, 17), -- Users      → admin_users (page id=17)
+    (13, 11), -- Banlist    → admin_banlist (page id=11)
+    (14, 13), -- Navbar     → admin_navbar (page id=13)
+    (15, 16), -- Pages      → admin_pages (page id=16)
+    (16, 15); -- Notes      → admin_notes (page id=15)
 
 INSERT INTO `navbar_external` (id, url)
 VALUES

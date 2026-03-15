@@ -180,100 +180,31 @@ final class DefaultTemplateContext
     public function finalise(): void
     {
         // ---- User session nav -------------------------------------------------
-        // Provides user_logged_in, user_nav (array of nav entries) and user_username
-        // to every template. Controllers can override individual entries.
+        // user_nav comes from navbar id=2 (DB-driven, managed via admin navbar editor).
+        // When logged out, we show a single guest link instead.
         $this->vars['user_logged_in'] = $this->userSession->isLoggedIn();
         $this->vars['user_username']  = $this->userSession->username();
 
-        // Guest nav label / user page URL (shown when not logged in)
-        $this->vars['user_page_url']       = $this->urlGenerator->toPage(
+        // Guest link — shown when not logged in
+        $this->vars['user_page_url']            = $this->urlGenerator->toPage(
             $this->t->t('WORDING_USER', fallback: 'user')
         );
-        $this->vars['user_nav_guest_label']     = $this->t->t('user.nav.guest', fallback: 'Login');
+        $this->vars['user_nav_guest_label']      = $this->t->t('user.nav.guest', fallback: 'Login');
         $this->vars['user_nav_guest_highlight']  = in_array('WORDING_USER',  $this->ancestorUrlIds, true)
                                                    || in_array('WORDING_LOGIN', $this->ancestorUrlIds, true);
 
-        if ($this->userSession->isLoggedIn()) {
-            $ids = $this->ancestorUrlIds;
-            $this->vars['user_nav'] = [
-                [
-                    'name'      => $this->t->t('user.nav.home',     fallback: 'Home'),
-                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_USER_HOME', fallback: 'home')),
-                    // Highlight Home when on user_home, or when on the user
-                    // section root itself (no more-specific child page is active).
-                    'highlight' => in_array('WORDING_USER_HOME', $ids, true)
-                                   || (
-                                       in_array('WORDING_USER', $ids, true)
-                                       && !array_intersect($ids, [
-                                           'WORDING_LOGIN', 'WORDING_REGISTER',
-                                           'WORDING_RECOVER', 'WORDING_PROFILE',
-                                           'WORDING_SETTINGS', 'WORDING_USER_HOME',
-                                           'WORDING_LOGOUT',
-                                       ])
-                                   ),
-                ],
-                [
-                    'name'      => $this->t->t('user.nav.profile',  fallback: 'Profile'),
-                    'url'       => $this->urlGenerator->toPage(
-                        $this->t->t('WORDING_PROFILE', fallback: 'profile'),
-                        ['uid' => $this->userSession->userId()]
-                    ),
-                    'highlight' => in_array('WORDING_PROFILE', $ids, true),
-                ],
-                [
-                    'name'      => $this->t->t('user.nav.settings', fallback: 'Settings'),
-                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_SETTINGS',  fallback: 'settings')),
-                    'highlight' => in_array('WORDING_SETTINGS', $ids, true),
-                ],
-                [
-                    'name'      => $this->t->t('user.nav.logout',   fallback: 'Logout'),
-                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_LOGOUT',    fallback: 'logout')),
-                    'highlight' => false,
-                ],
-            ];
-        } else {
-            $this->vars['user_nav'] = [];
-        }
+        // DB-driven user nav (populated by ContentManager from navbar id=2).
+        // When logged in, use the DB entries. When logged out, use an empty list
+        // so the template falls through to the guest link branch.
+        $dbUserNav = $this->vars['db_user_nav'] ?? [];
+        $this->vars['user_nav'] = $this->userSession->isLoggedIn() ? $dbUserNav : [];
 
         // ---- Admin nav --------------------------------------------------------
-        // Provides is_admin and admin_nav to every template.
-        // admin_nav entries use raw url_id slugs (i18n=0 pages) for URLs
-        // and their translated label keys for display names.
+        // DB-driven: ContentManager pre-loads navbar id=3 entries into db_admin_nav.
+        // The Gate check still controls visibility.
         $isAdmin = $this->gate->can(Permission::ADMIN_ACCESS);
-        $this->vars['is_admin'] = $isAdmin;
-
-        if ($isAdmin) {
-            $adminIds   = $this->ancestorUrlIds;
-            $adminPages = \AstrX\Admin\AdminService::NAV_PAGES;
-            $adminNav   = [];
-            // Collect the WORDING_ keys of all admin child pages (everything except the root)
-            $adminChildWordings = [];
-            foreach ($adminPages as $slug => $labelKey) {
-                if ($slug !== 'admin') {
-                    $adminChildWordings[] = 'WORDING_' . strtoupper($slug);
-                }
-            }
-            foreach ($adminPages as $slug => $labelKey) {
-                $wording  = 'WORDING_' . strtoupper($slug);
-                $pageSlug = $this->t->t($wording, fallback: $slug);
-                // Dashboard (admin root): highlight ONLY when on the root itself,
-                // not when on any child page.
-                if ($slug === 'admin') {
-                    $highlight = in_array('WORDING_ADMIN', $adminIds, true)
-                                 && !array_intersect($adminIds, $adminChildWordings);
-                } else {
-                    $highlight = in_array($wording, $adminIds, true);
-                }
-                $adminNav[] = [
-                    'name'      => $this->t->t($labelKey, fallback: $slug),
-                    'url'       => $this->urlGenerator->toPage($pageSlug),
-                    'highlight' => (bool) $highlight,
-                ];
-            }
-            $this->vars['admin_nav'] = $adminNav;
-        } else {
-            $this->vars['admin_nav'] = [];
-        }
+        $this->vars['is_admin']   = $isAdmin;
+        $this->vars['admin_nav']  = $isAdmin ? ($this->vars['db_admin_nav'] ?? []) : [];
 
         // ---- Flash messages ---------------------------------------------------
         $flash = $this->flashBag->pull();

@@ -1,21 +1,39 @@
 <h2>{{admin_pages_heading}}</h2>
-<p><em>{{pages_note}}</em></p>
 
 {{#has_editing}}
 <hr>
-<h3>{{btn_edit}} page #{{editing_id}} — <code>{{editing_url_id}}</code> ({{editing_file_name}})</h3>
+<p style="color:#c00;background:#fee;padding:8px"><strong>⚠ {{pages_routing_warning}}</strong></p>
+<h3>{{btn_edit}} page #{{e_id}}</h3>
 <form method="POST">
     <input type="hidden" name="prg_id"   value="{{prg_id}}">
     <input type="hidden" name="_csrf"    value="{{csrf_token}}">
     <input type="hidden" name="action"   value="update">
-    <input type="hidden" name="page_id"  value="{{editing_id}}">
+    <input type="hidden" name="page_id"  value="{{e_id}}">
+    <table>
+        <tr><th>{{label_url_id}}</th>
+            <td><input type="text" name="url_id" class="input" value="{{e_url_id}}"></td></tr>
+        <tr><th>{{label_file_name}}</th>
+            <td><input type="text" name="file_name" class="input" value="{{e_file_name}}"></td></tr>
+        <tr><th>{{label_title}}</th>
+            <td><input type="text" name="title" class="input" value="{{e_title}}"></td></tr>
+        <tr><th>{{label_description}}</th>
+            <td><textarea name="description" rows="3" class="input">{{e_description}}</textarea></td></tr>
+        <tr><th>{{label_i18n}}</th>
+            <td><input type="checkbox" name="i18n" value="1"{{#e_i18n}} checked{{/e_i18n}}></td></tr>
+        <tr><th>{{label_template}}</th>
+            <td><input type="checkbox" name="template" value="1"{{#e_template}} checked{{/e_template}}></td></tr>
+        <tr><th>{{label_controller}}</th>
+            <td><input type="checkbox" name="controller" value="1"{{#e_controller}} checked{{/e_controller}}></td></tr>
+        <tr><th>{{label_hidden}}</th>
+            <td><input type="checkbox" name="hidden" value="1"{{#e_hidden}} checked{{/e_hidden}}></td></tr>
+        <tr><th>{{label_comments}}</th>
+            <td><input type="checkbox" name="comments" value="1"{{#e_comments}} checked{{/e_comments}}></td></tr>
+        <tr><th>{{label_index}}</th>
+            <td><input type="checkbox" name="index_flag" value="1"></td></tr>
+        <tr><th>{{label_follow}}</th>
+            <td><input type="checkbox" name="follow_flag" value="1"></td></tr>
+    </table>
     <p>
-        <label for="edit_title">{{label_title}}: </label>
-        <input type="text" name="title" id="edit_title" class="input" value="{{editing_title}}"><br>
-        <label for="edit_description">{{label_description}}: </label>
-        <textarea name="description" id="edit_description" rows="3" class="input">{{editing_description}}</textarea><br>
-        <label><input type="checkbox" name="hidden"   value="1"{{#editing_hidden}}   checked{{/editing_hidden}}> {{label_hidden}}</label>
-        <label><input type="checkbox" name="comments" value="1"{{#editing_comments}} checked{{/editing_comments}}> {{label_comments}}</label><br>
         <input type="submit" value="{{btn_update}}" class="input">
         <a href="?">{{btn_cancel}}</a>
     </p>
@@ -23,25 +41,71 @@
 <hr>
 {{/has_editing}}
 
+{{! Add page form }}
+<details>
+    <summary><strong>+ {{btn_add}} {{label_actions}}</strong></summary>
+    <form method="POST" style="padding:8px;border:1px solid #ccc">
+        <input type="hidden" name="prg_id"  value="{{prg_id}}">
+        <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+        <input type="hidden" name="action"  value="add">
+        <p style="color:#c00"><strong>⚠ {{pages_routing_warning}}</strong></p>
+        <table>
+            <tr><th>{{label_url_id}} *</th>
+                <td><input type="text" name="url_id" class="input" required></td></tr>
+            <tr><th>{{label_file_name}} *</th>
+                <td><input type="text" name="file_name" class="input" required></td></tr>
+            <tr><th>{{label_title}}</th>
+                <td><input type="text" name="title" class="input"></td></tr>
+            <tr><th>{{label_description}}</th>
+                <td><textarea name="description" rows="2" class="input"></textarea></td></tr>
+            <tr><th>{{label_parent}}</th>
+                <td><select name="parent_id" class="input">
+                    <option value="0">— (top-level)</option>
+                    {{#page_list}}<option value="{{id}}">{{id}} — {{url_id}}{{#title}} ({{title}}){{/title}}</option>{{/page_list}}
+                </select></td></tr>
+            <tr><th>{{label_i18n}}</th>
+                <td><input type="checkbox" name="i18n" value="1" checked></td></tr>
+            <tr><th>{{label_template}}</th>
+                <td><input type="checkbox" name="template" value="1" checked></td></tr>
+            <tr><th>{{label_controller}}</th>
+                <td><input type="checkbox" name="controller" value="1" checked></td></tr>
+            <tr><th>{{label_hidden}}</th>
+                <td><input type="checkbox" name="hidden" value="1"></td></tr>
+            <tr><th>{{label_comments}}</th>
+                <td><input type="checkbox" name="comments" value="1"></td></tr>
+            <tr><th>{{label_index}}</th>
+                <td><input type="checkbox" name="index_flag" value="1" checked></td></tr>
+            <tr><th>{{label_follow}}</th>
+                <td><input type="checkbox" name="follow_flag" value="1" checked></td></tr>
+        </table>
+        <p><input type="submit" value="{{btn_add}}" class="input"></p>
+    </form>
+</details>
+<hr>
+
 <table>
     <thead><tr>
-        <th>{{label_id}}</th>
+        <th>ID</th>
         <th>{{label_url_id}}</th>
         <th>{{label_file_name}}</th>
         <th>{{label_title}}</th>
-        <th>{{label_i18n}}</th>
+        <th>i18n</th>
+        <th>tpl</th>
+        <th>ctrl</th>
         <th>{{label_hidden}}</th>
         <th>{{label_comments}}</th>
         <th>{{label_actions}}</th>
     </tr></thead>
     <tbody>
     {{#page_list}}
-    <tr{{#hidden}} style="opacity:0.5"{{/hidden}}>
+    <tr{{#hidden}} style="opacity:0.55"{{/hidden}}>
     <td>{{id}}</td>
     <td><code>{{url_id}}</code></td>
     <td>{{file_name}}</td>
     <td>{{title}}</td>
     <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
+    <td><input type="checkbox" disabled {{#template}}checked{{/template}}></td>
+    <td><input type="checkbox" disabled {{#controller}}checked{{/controller}}></td>
     <td>
         <form method="POST" style="display:inline">
             <input type="hidden" name="prg_id"  value="{{prg_id}}">
@@ -64,6 +128,14 @@
     </td>
     <td>
         <a href="?edit={{id}}" class="input">{{btn_edit}}</a>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="delete">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{btn_delete}}" class="input"
+                   onclick="return confirm('Delete page {{id}} ({{url_id}})? This cannot be undone.')">
+        </form>
     </td>
     </tr>
     {{/page_list}}

@@ -13,6 +13,7 @@ final class Page
         public readonly bool $template,
         public readonly bool $controller,
         public readonly bool $hidden,
+        public readonly bool $comments = false,
         /** @var list<array{id:int,url_id:string,i18n:bool}> */
         public readonly array $ancestors = [],
         public readonly bool $index = false,

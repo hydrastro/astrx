@@ -223,15 +223,8 @@ final class ContentManager
 
         $page = $this->resolvePage($pageHandler, $pageToken);
         $this->injector->setClass($page);
-
-        // Admins may view hidden pages; bypass the 404 and show a notice.
-        $adminViewingHidden = $page->hidden
-                              && $this->gate->can(Permission::ADMIN_ACCESS);
-        if ($adminViewingHidden) {
-            // Re-resolve without hidden filter by overriding page back to itself.
-            // The page object is already resolved; just allow rendering.
-        } elseif ($page->hidden) {
-            // Non-admin: redirect to error page
+        $adminViewingHidden = $page->hidden && $this->gate->can(Permission::ADMIN_ACCESS);
+        if (!$adminViewingHidden && $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
             $errorUrlId = $this->config->getConfig('ContentManager','error_page_url_id','WORDING_ERROR');
             assert(is_string($errorUrlId));
@@ -274,10 +267,7 @@ final class ContentManager
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
         $ctx->buildBase($page);
-        // Let admins know they are viewing a hidden page
-        if ($adminViewingHidden) {
-            $ctx->set('admin_hidden_page_notice', true);
-        }
+        if ($adminViewingHidden) { $ctx->set('admin_hidden_page_notice', true); }
 
         // Populate navbar. Failure is non-fatal — the template renders with an
         // empty navbar rather than taking down the whole page.
@@ -288,6 +278,14 @@ final class ContentManager
             /** @var NavbarHandler $navbarHandler */
             $navbarHandler = $navbarResult->unwrap();
             $ctx->set('navbar', $navbarHandler->getNavbarEntries($navbarId, $page->ancestors));
+
+            // User navbar (id=2) and admin navbar (id=3) are also DB-driven.
+            // DefaultTemplateContext::finalise() reads these from ctx vars instead of
+            // hardcoding the entries, so the admin can manage them via the navbar editor.
+            $userNavbarId  = (int) $this->config->getConfig('ContentManager', 'user_navbar_id',  2);
+            $adminNavbarId = (int) $this->config->getConfig('ContentManager', 'admin_navbar_id', 3);
+            $ctx->set('db_user_nav',  $navbarHandler->getNavbarEntries($userNavbarId,  $page->ancestors));
+            $ctx->set('db_admin_nav', $navbarHandler->getNavbarEntries($adminNavbarId, $page->ancestors));
         }
 
         if ($page->controller) {
@@ -312,6 +310,22 @@ final class ContentManager
                 }
             } else {
                 http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            }
+        }
+
+        // Dispatch the comment controller if comments are enabled on this page.
+        // This runs AFTER the main controller so it can see any vars already set.
+        if ($page->comments) {
+            $commentFqcn   = 'AstrX\\Controller\\CommentController';
+            if (class_exists($commentFqcn)) {
+                $commentResult = $this->injector->createClass($commentFqcn)
+                    ->drainTo($this->collector);
+                if ($commentResult->isOk()) {
+                    $commentController = $commentResult->unwrap();
+                    if ($commentController instanceof Controller) {
+                        $commentController->handle()->drainTo($this->collector);
+                    }
+                }
             }
         }
 
@@ -530,7 +544,6 @@ final class ContentManager
             }
         }
 
-        // Note: hidden-page handling is done in init() so admins can view hidden pages.
         if ($page === null) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 

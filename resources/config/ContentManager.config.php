@@ -12,6 +12,8 @@ return [
         'diagnostics_lang_domain'  => 'Diagnostics',
 
         'public_navbar_id'  => 1,
+        'user_navbar_id'    => 2,
+        'admin_navbar_id'   => 3,
 
         // Lang domains loaded globally (on every page load) before the page-specific domain.
         // Useful for shared string sets like all user pages sharing one 'User' lang file.
