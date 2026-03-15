@@ -132,6 +132,7 @@ final class DefaultTemplateContext
             'index'        => $page->index,
             'follow'       => $page->follow,
             'include'      => $page->fileName,
+            'captcha'      => 'captcha',  // partial name — {{> captcha}} resolves to captcha.html
 
             'website_name' => (string) $this->config->getConfig('ContentManager', 'website_name', 'AstrX'),
             'title_url'    => (string) $this->config->getConfig('ContentManager', 'title_url', '/'),

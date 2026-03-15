@@ -1,0 +1,8 @@
+{{#show_captcha}}
+<div class="captcha-block">
+  <img src="data:image/png;base64,{{&captcha_image}}" alt="captcha" class="captcha-image">
+  <label for="captcha_text">{{captcha_label}}</label>
+  <input type="text" name="captcha_text" id="captcha_text" class="input captcha-input" autocomplete="off" spellcheck="false">
+  <input type="hidden" name="captcha_id" value="{{captcha_id}}">
+</div>
+{{/show_captcha}}

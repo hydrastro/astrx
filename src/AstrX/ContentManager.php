@@ -128,6 +128,19 @@ final class ContentManager
         assert(is_string($navbarDomain));
         $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $navbarDomain);
 
+        // Optional extra lang domains — loaded globally before any page-specific domain.
+        // Use this to share strings across multiple pages (e.g. all user pages share 'User').
+        // Config: 'extra_lang_domains' => ['User', 'Admin', ...]
+        $extraDomains = $this->config->getConfig('ContentManager', 'extra_lang_domains', []);
+        if (is_array($extraDomains)) {
+            $langDirGlobal = defined('LANG_DIR') ? LANG_DIR : '';
+            foreach ($extraDomains as $extraDomain) {
+                if (is_string($extraDomain)) {
+                    $this->translator->loadDomain($langDirGlobal, $extraDomain);
+                }
+            }
+        }
+
         // Diagnostic messages — loaded into DiagnosticRenderer's own catalog,
         // NOT into the Translator, to prevent the recursion where rendering a
         // MissingTranslationDiagnostic would emit another MissingTranslationDiagnostic.
@@ -450,7 +463,7 @@ final class ContentManager
             $id   = $pageHandler->getPageIdFromUrlId($pageToken);
             $page = $id !== null ? $pageHandler->getPage($id) : null;
         }
-        if ($page === null){//} || $page->hidden) {
+        if ($page === null || $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 
             // Default is 'error' — the url_id of the error page in the database.
