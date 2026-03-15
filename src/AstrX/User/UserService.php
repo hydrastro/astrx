@@ -277,10 +277,11 @@ final class UserService
             return $this->opErr('empty_fields');
         }
 
-        // Mailbox (local email address part)
+        // Mailbox — now validated as a full email address.
+        // Stored in the DB as the login identifier; distinct from the recovery email.
         if ($this->requireEmail) {
             $mailbox = $mailbox ?? '';
-            if ($mailbox === '' || !filter_var($mailbox . '@example.com', FILTER_VALIDATE_EMAIL)) {
+            if ($mailbox === '' || !filter_var($mailbox, FILTER_VALIDATE_EMAIL)) {
                 return $this->opErr('invalid_mailbox');
             }
             $mbResult = $this->repo->isMailboxAvailable($mailbox);

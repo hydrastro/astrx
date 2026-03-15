@@ -24,9 +24,6 @@ return [
     'WORDING_RECOVER.title'       => 'Recover account',
     'WORDING_RECOVER.description' => 'Reset your password.',
 
-    'WORDING_PROFILE.title'       => 'Profile',
-    'WORDING_PROFILE.description' => 'View a user profile.',
-
     'WORDING_SETTINGS.title'      => 'Settings',
     'WORDING_SETTINGS.description'=> 'Manage your account settings.',
 
@@ -117,18 +114,34 @@ return [
     'user.settings.delete'            => 'Delete account',
     'user.settings.delete_confirm'    => 'This action is irreversible. Enter your password to confirm.',
 
-    // -------------------------------------------------------------------------
-    // User nav labels (used in DefaultTemplateContext::finalise() user_nav)
-    // -------------------------------------------------------------------------
-    'user.nav.guest'    => 'Login',
-    'user.nav.home'     => 'Home',
-    'user.nav.profile'  => 'Profile',
-    'user.nav.settings' => 'Settings',
-    'user.nav.logout'   => 'Logout',
 
     // -------------------------------------------------------------------------
     // Success / info messages
     // -------------------------------------------------------------------------
     'user.register.success' => 'Registration successful! You can now log in.',
     'user.recover.sent'     => 'If an account with that username or email exists, a reset link has been sent.',
+
+    // -------------------------------------------------------------------------
+    // Profile page
+    // -------------------------------------------------------------------------
+    'user.profile.heading'      => 'Profile',
+    'user.profile.not_found'    => 'User not found.',
+    'user.profile.joined'       => 'Member since',
+    'user.profile.group'        => 'Role',
+    'user.profile.verified'     => 'Verified',
+    'user.profile.settings_link'=> 'Edit your settings',
+
+    // -------------------------------------------------------------------------
+    // User group labels
+    // -------------------------------------------------------------------------
+    'user.group.admin'  => 'Administrator',
+    'user.group.mod'    => 'Moderator',
+    'user.group.user'   => 'Member',
+    'user.group.guest'  => 'Guest',
+
+    // -------------------------------------------------------------------------
+    // Page meta
+    // -------------------------------------------------------------------------
+    'WORDING_PROFILE.title'        => 'Profile',
+    'WORDING_PROFILE.description'  => 'View a user profile.',
 ];

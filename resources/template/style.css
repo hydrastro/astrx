@@ -168,6 +168,25 @@ tbody, th, tr, td {
 .diag-alert     { background: #fa0; color: #000; font-weight: bold; }
 .diag-emergency { background: #f00; color: #000; font-weight: bold; }
 .diag-unknown   { background: #888; color: #000; }
+#flash_bar {
+    color: #000;
+    border: solid #fff;
+    border-right-width: 4px;
+    border-bottom-width: 0;
+    border-left-width: 4px;
+    background: #fff;
+}
+#flash_bar p {
+    margin: 0;
+    padding: 2px 6px;
+}
+
+/* Flash type classes — match flash->set('type', ...) values */
+.flash-success  { background: #0d0; color: #000; }
+.flash-info     { background: #0cf; color: #000; }
+.flash-warning  { background: #ff0; color: #000; }
+.flash-error    { background: #f44; color: #000; font-weight: bold; }
+
 #main {
     word-wrap: break-word;
     color: #fff;

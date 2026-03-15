@@ -33,6 +33,23 @@
         <ul id="nav" class="nav">{{#navbar}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/navbar}}
         </ul>
     </div>
+    {{#user_logged_in}}
+    <div id="user_top_nav">
+        <ul id="user_nav" class="user_nav">
+            {{#user_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/user_nav}}
+        </ul>
+    </div>
+    {{/user_logged_in}}
+    {{^user_logged_in}}
+    <div id="user_top_nav">
+        <ul id="user_nav" class="user_nav">
+            <li><a href="{{user_page_url}}"{{#user_nav_guest_highlight}} class="active"{{/user_nav_guest_highlight}}>{{user_nav_guest_label}}</a></li>
+        </ul>
+    </div>
+    {{/user_logged_in}}
+    {{#has_flash_messages}}
+    <div id="flash_bar">{{#flash_messages}}<p class="flash flash-{{type}}">{{text}}</p>{{/flash_messages}}</div>
+    {{/has_flash_messages}}
     {{#got_results}}
     <div id="status_bar">{{#results}}<p class="{{css_class}}">[{{level_label}}] {{message}}</p>{{/results}}
     </div>{{/got_results}}

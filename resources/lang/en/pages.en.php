@@ -24,7 +24,7 @@ return [
     'WORDING_RECOVER'   => 'recover',
     'WORDING_PROFILE'   => 'profile',
     'WORDING_SETTINGS'  => 'settings',
-    'WORDING_USER_HOME' => 'home',
+    'WORDING_USER_HOME' => 'user-home',
     'WORDING_USER'      => 'user',
     'WORDING_LOGOUT'    => 'logout',
 

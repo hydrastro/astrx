@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\User;
 
@@ -10,8 +9,8 @@ namespace AstrX\User;
  */
 enum UserGroup: int
 {
-    case USER = 0;
+    case USER  = 0;
     case ADMIN = 1;
-    case MOD = 2;
+    case MOD   = 2;
     case GUEST = 3;
 }

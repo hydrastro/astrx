@@ -128,19 +128,6 @@ final class ContentManager
         assert(is_string($navbarDomain));
         $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $navbarDomain);
 
-        // Optional extra lang domains — loaded globally before any page-specific domain.
-        // Use this to share strings across multiple pages (e.g. all user pages share 'User').
-        // Config: 'extra_lang_domains' => ['User', 'Admin', ...]
-        $extraDomains = $this->config->getConfig('ContentManager', 'extra_lang_domains', []);
-        if (is_array($extraDomains)) {
-            $langDirGlobal = defined('LANG_DIR') ? LANG_DIR : '';
-            foreach ($extraDomains as $extraDomain) {
-                if (is_string($extraDomain)) {
-                    $this->translator->loadDomain($langDirGlobal, $extraDomain);
-                }
-            }
-        }
-
         // Diagnostic messages — loaded into DiagnosticRenderer's own catalog,
         // NOT into the Translator, to prevent the recursion where rendering a
         // MissingTranslationDiagnostic would emit another MissingTranslationDiagnostic.
@@ -234,10 +221,27 @@ final class ContentManager
         $page = $this->resolvePage($pageHandler, $pageToken);
         $this->injector->setClass($page);
 
-        // Load the page-specific lang file (e.g. lang/en/Main.php for fileName='main').
-        // This must happen before DefaultTemplateContext::buildBase() runs so that
-        // title, description, and keyword translations are already in the catalog.
+        // Load lang files for the current page and all its ancestors (bottom-up order,
+        // so more-specific pages override ancestor values where keys overlap).
+        // This replaces the old 'extra_lang_domains' config list — just add pages to the
+        // hierarchy in the DB and their lang files are loaded automatically.
+        // e.g. login → ancestor 'user' → loads User.en.php automatically.
+        // Must happen before DefaultTemplateContext::buildBase() so that title/description
+        // and keyword translations are already in the catalog.
         $langDir = defined('LANG_DIR') ? LANG_DIR : '';
+
+        // Ancestors first (most general → most specific), then the page itself last
+        // so the page's own domain wins on any key conflict.
+        $ancestorFileNames = [];
+        foreach ($page->ancestors as $ancestor) {
+            $fn = (string) ($ancestor['file_name'] ?? '');
+            if ($fn !== '' && $fn !== $page->fileName) {
+                $ancestorFileNames[] = ucfirst($fn);
+            }
+        }
+        foreach (array_unique($ancestorFileNames) as $ancestorDomain) {
+            $this->translator->loadDomain($langDir, $ancestorDomain);
+        }
         $this->translator->loadDomain($langDir, ucfirst($page->fileName));
 
         $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
@@ -463,6 +467,46 @@ final class ContentManager
             $id   = $pageHandler->getPageIdFromUrlId($pageToken);
             $page = $id !== null ? $pageHandler->getPage($id) : null;
         }
+
+        // Sub-path routing: /en/user/login → pageToken='user', tail[0]='login'
+        // If the primary page resolved successfully and there is a tail segment,
+        // try to find a direct child page matching that slug. This lets /en/user/login
+        // work as an alias for /en/login without any extra DB rows or config.
+        if ($page !== null && !$page->hidden) {
+            $current  = $this->injector->getClass(CurrentUrl::class);
+            if ($current->isOk()) {
+                /** @var CurrentUrl $currentUrl */
+                $currentUrl = $current->unwrap();
+                $tailSlug   = $currentUrl->tailSegment(0);
+                if ($tailSlug !== null && $tailSlug !== '') {
+                    // Resolve tail slug → candidate page, then confirm it is a
+                    // direct child of the current page so /en/user/main cannot
+                    // accidentally route to the unrelated main page.
+                    $childPage = null;
+                    $translatedTail = $map[$tailSlug] ?? null;
+                    if ($translatedTail !== null) {
+                        // Slug matched an i18n page — verify it is a child.
+                        $candidate = $pageHandler->getPage($translatedTail);
+                        if ($candidate !== null && !$candidate->hidden) {
+                            $ancestorIds = array_column($candidate->ancestors, 'id');
+                            if (in_array($page->id, $ancestorIds, true)) {
+                                $childPage = $candidate;
+                            }
+                        }
+                    }
+                    if ($childPage === null) {
+                        // Fallback: raw url_id match restricted to children by SQL.
+                        $childPage = $pageHandler->getChildPageBySlug($page->id, $tailSlug);
+                    }
+                    if ($childPage !== null && !$childPage->hidden) {
+                        $page = $childPage;
+                        // Consume the tail segment so controllers don't see it.
+                        $currentUrl->setTail(array_slice($currentUrl->tail(), 1));
+                    }
+                }
+            }
+        }
+
         if ($page === null || $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 

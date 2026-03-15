@@ -4,21 +4,23 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Http\Response;
+use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\User\UserSession;
 
 /**
- * Immediately destroys the user session and redirects to the main page.
- * Logout is a GET action — no CSRF needed (logging out is not destructive).
+ * Destroys the session and redirects to the main page.
+ * Logout is GET — no CSRF needed (losing session is not destructive).
  */
 final class LogoutController extends AbstractController
 {
     public function __construct(
         DiagnosticsCollector        $collector,
-        private readonly UserSession $session,
+        private readonly UserSession  $session,
         private readonly UrlGenerator $urlGen,
+        private readonly Translator   $t,
     ) {
         parent::__construct($collector);
     }

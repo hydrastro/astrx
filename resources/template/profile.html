@@ -1,0 +1,22 @@
+{{#profile_not_found}}
+<p class="error">{{profile_not_found_msg}}</p>
+{{/profile_not_found}}
+{{^profile_not_found}}
+<div class="profile">
+  {{#profile_has_avatar}}
+  <img src="{{&profile_avatar_src}}" alt="{{profile_username}}" class="profile-avatar">
+  {{/profile_has_avatar}}
+  <h2 class="profile-name">{{profile_display_name}}</h2>
+  <p class="profile-username">@{{profile_username}}</p>
+  <table class="profile-table">
+    <tr><th>{{profile_label_group}}</th><td>{{profile_group}}</td></tr>
+    <tr><th>{{profile_label_joined}}</th><td>{{profile_joined}}</td></tr>
+    {{#profile_verified}}
+    <tr><th>{{profile_label_verified}}</th><td>✓</td></tr>
+    {{/profile_verified}}
+  </table>
+  {{#profile_is_own}}
+  <p><a href="{{profile_settings_url}}">{{profile_label_settings}}</a></p>
+  {{/profile_is_own}}
+</div>
+{{/profile_not_found}}

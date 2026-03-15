@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\User;
 
@@ -12,64 +11,53 @@ use AstrX\User\Diagnostic\UserDiagnostic;
 
 /**
  * Filesystem avatar operations.
+ *
  * Avatars are stored as PNG files in a configurable directory.
  * Path pattern: {avatar_dir}/{hex_user_id}.png
+ *
  * When a user has no custom avatar and identicons are enabled,
  * callers should use IdenticonRenderer::render($hexId) for display.
  */
 final class AvatarService
 {
-    private string $avatarDir = '';
-    private int $maxSize = 1048576; // 1 MB
-    private bool $useIdenticons = false;
+    private string $avatarDir   = '';
+    private int    $maxSize     = 1048576; // 1 MB
+    private bool   $useIdenticons = false;
 
     #[InjectConfig('avatar_dir')]
-    public function setAvatarDir(string $v)
-    : void {
+    public function setAvatarDir(string $v): void
+    {
         $this->avatarDir = rtrim($v, '/\\');
     }
 
     #[InjectConfig('avatar_file_size')]
-    public function setMaxSize(int $v)
-    : void {
-        $this->maxSize = max(1024, $v);
-    }
+    public function setMaxSize(int $v): void { $this->maxSize = max(1024, $v); }
 
     #[InjectConfig('use_identicons')]
-    public function setUseIdenticons(bool $v)
-    : void {
-        $this->useIdenticons = $v;
-    }
+    public function setUseIdenticons(bool $v): void { $this->useIdenticons = $v; }
 
-    public function useIdenticons()
-    : bool
-    {
-        return $this->useIdenticons;
-    }
+    public function useIdenticons(): bool { return $this->useIdenticons; }
 
     // -------------------------------------------------------------------------
 
-    public function __construct(private readonly UserRepository $repo)
-    {
-    }
+    public function __construct(private readonly UserRepository $repo) {}
 
     /**
      * Upload and store a new avatar for the given user.
+     *
      * @return Result<true>
      */
-    public function setAvatar(string $hexId, UploadedFile $file)
-    : Result {
+    public function setAvatar(string $hexId, UploadedFile $file): Result
+    {
         if ($file->hasError()) {
-            return $this->opErr('avatar_upload_error', (string)$file->error());
+            return $this->opErr('avatar_upload_error', (string) $file->error());
         }
 
         if ($file->size() > $this->maxSize) {
-            return $this->opErr('avatar_size', (string)$this->maxSize);
+            return $this->opErr('avatar_size', (string) $this->maxSize);
         }
 
-        $ext = strtolower(
-            pathinfo($file->clientFilename(), PATHINFO_EXTENSION)
-        );
+        $ext = strtolower(pathinfo($file->clientFilename(), PATHINFO_EXTENSION));
         if (!in_array($ext, ['gif', 'png', 'jpeg', 'jpg', 'webp'], true)) {
             return $this->opErr('avatar_extension', $ext);
         }
@@ -81,9 +69,7 @@ final class AvatarService
         }
 
         // Re-encode as PNG to strip any metadata / malicious payloads
-        $srcImage = imagecreatefromstring(
-            (string)file_get_contents($file->tempPath())
-        );
+        $srcImage = imagecreatefromstring((string) file_get_contents($file->tempPath()));
         if ($srcImage === false) {
             return $this->opErr('avatar_invalid');
         }
@@ -91,7 +77,6 @@ final class AvatarService
         $destPath = $this->pathFor($hexId);
         if (!imagepng($srcImage, $destPath)) {
             imagedestroy($srcImage);
-
             return $this->opErr('avatar_move_failed', $destPath);
         }
         imagedestroy($srcImage);
@@ -101,45 +86,43 @@ final class AvatarService
 
     /**
      * Remove the custom avatar file and update the DB flag.
+     *
      * @return Result<true>
      */
-    public function removeAvatar(string $hexId)
-    : Result {
+    public function removeAvatar(string $hexId): Result
+    {
         $path = $this->pathFor($hexId);
         if (file_exists($path)) {
             @unlink($path);
         }
-
         return $this->repo->setAvatar($hexId, false);
     }
 
     /**
      * Full filesystem path for a user's avatar PNG.
      */
-    public function pathFor(string $hexId)
-    : string {
+    public function pathFor(string $hexId): string
+    {
         return $this->avatarDir . '/' . $hexId . '.png';
     }
 
     /**
      * Whether the avatar file exists on disk.
      */
-    public function exists(string $hexId)
-    : bool {
+    public function exists(string $hexId): bool
+    {
         return file_exists($this->pathFor($hexId));
     }
 
     // -------------------------------------------------------------------------
 
-    private function opErr(string $op, string $detail = '')
-    : Result {
-        return Result::err(
-            false,
-            Diagnostics::of(
-                new UserDiagnostic(
-                    UserDiagnostic::ID, UserDiagnostic::LEVEL, $op, $detail,
-                )
-            )
-        );
+    private function opErr(string $op, string $detail = ''): Result
+    {
+        return Result::err(false, Diagnostics::of(new UserDiagnostic(
+                                                      UserDiagnostic::ID,
+                                                      UserDiagnostic::LEVEL,
+                                                      $op,
+                                                      $detail,
+                                                  )));
     }
 }

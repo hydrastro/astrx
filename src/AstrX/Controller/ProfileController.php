@@ -1,0 +1,214 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace AstrX\Controller;
+
+use AstrX\Http\HttpStatus;
+use AstrX\Http\Request;
+use AstrX\I18n\Translator;
+use AstrX\Identicon\IdenticonRenderer;
+use AstrX\Result\DiagnosticsCollector;
+use AstrX\Result\Result;
+use AstrX\Routing\CurrentUrl;
+use AstrX\Template\DefaultTemplateContext;
+use AstrX\User\AvatarService;
+use AstrX\User\UserGroup;
+use AstrX\User\UserRepository;
+use AstrX\User\UserSession;
+
+/**
+ * Public user profile page.
+ * URL resolution (in priority order):
+ *   1. Rewrite tail:  /en/profile/username   → tail[0] = 'username'
+ *   2. Query param:   ?uid=<hexId>            → look up by id
+ *   3. Logged-in:     no param               → show own profile
+ * The profile URL for the "my profile" link in the user nav is generated
+ * in DefaultTemplateContext using the logged-in user's hex ID as a query param:
+ *   /en/profile?uid=<hexId>
+ * This makes profile URLs predictable and shareable:
+ *   /en/profile/alice  — public profile for user 'alice'
+ *   /en/profile?uid=<hexId>  — same but by ID (used internally)
+ */
+final class ProfileController extends AbstractController
+{
+    public function __construct(
+        DiagnosticsCollector $collector,
+        private readonly DefaultTemplateContext $ctx,
+        private readonly Request $request,
+        private readonly CurrentUrl $currentUrl,
+        private readonly UserRepository $userRepo,
+        private readonly AvatarService $avatarService,
+        private readonly IdenticonRenderer $identicon,
+        private readonly UserSession $session,
+        private readonly Translator $t,
+    ) {
+        parent::__construct($collector);
+    }
+
+    public function handle()
+    : Result
+    {
+        $userData = $this->resolveUser();
+
+        if ($userData === null) {
+            http_response_code(HttpStatus::NOT_FOUND->value);
+            $this->ctx->set('profile_not_found', true);
+            $this->ctx->set(
+                'profile_not_found_msg',
+                $this->t->t('user.profile.not_found')
+            );
+            $this->setI18n();
+
+            return $this->ok();
+        }
+
+        $hexId = (string)$userData['id'];
+        $hasAvatar = (bool)$userData['avatar'];
+        $avatarSrc = $this->resolveAvatarSrc($hexId, $hasAvatar);
+
+        $groupLabel = $this->resolveGroupLabel((int)$userData['type']);
+        $isOwnProfile = $this->session->isLoggedIn() &&
+                        $this->session->userId() === $hexId;
+
+        $this->ctx->set('profile_not_found', false);
+        $this->ctx->set('profile_id', $hexId);
+        $this->ctx->set('profile_username', (string)$userData['username']);
+        $this->ctx->set(
+            'profile_display_name',
+            (string)($userData['display_name']
+                     ??
+                     $userData['username'])
+        );
+        $this->ctx->set('profile_group', $groupLabel);
+        $this->ctx->set('profile_verified', (bool)$userData['verified']);
+        $this->ctx->set('profile_avatar_src', $avatarSrc);
+        $this->ctx->set('profile_has_avatar', $avatarSrc !== '');
+        $this->ctx->set(
+            'profile_joined',
+            (string)($userData['created_at']??'')
+        );
+        $this->ctx->set('profile_is_own', $isOwnProfile);
+
+        if ($isOwnProfile) {
+            $this->ctx->set(
+                'profile_settings_url',
+                $this->t->t('WORDING_SETTINGS', fallback: 'settings')
+            );
+        }
+
+        $this->setI18n();
+
+        return $this->ok();
+    }
+
+    // -------------------------------------------------------------------------
+
+    /**
+     * Try to identify the target user from (in order):
+     *   1. URL tail segment (username)
+     *   2. ?uid= query param (hex id)
+     *   3. Logged-in user's own session
+     * @return array<string,mixed>|null
+     */
+    private function resolveUser()
+    : ?array
+    {
+        // 1. Rewrite tail: /en/profile/alice
+        $tailUsername = $this->currentUrl->tailSegment(0);
+        if ($tailUsername !== null && $tailUsername !== '') {
+            $result = $this->userRepo->findPublicByUsername($tailUsername);
+            $result->drainTo($this->collector);
+
+            return $result->isOk() ? $result->unwrap() : null;
+        }
+
+        // 2. ?uid=<hexId>
+        $uid = $this->request->query()->get('uid');
+        if (is_string($uid) &&
+            $uid !== '' &&
+            ctype_xdigit($uid) &&
+            strlen($uid) === 32) {
+            $result = $this->userRepo->findPublicById($uid);
+            $result->drainTo($this->collector);
+
+            return $result->isOk() ? $result->unwrap() : null;
+        }
+
+        // 3. Own profile (must be logged in)
+        if ($this->session->isLoggedIn()) {
+            $result = $this->userRepo->findPublicById($this->session->userId());
+            $result->drainTo($this->collector);
+
+            return $result->isOk() ? $result->unwrap() : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Build the avatar img src: data URI for on-disk avatar,
+     * base64 identicon, or empty string (template hides it).
+     */
+    private function resolveAvatarSrc(string $hexId, bool $hasAvatar)
+    : string {
+        if ($hasAvatar && $this->avatarService->exists($hexId)) {
+            $path = $this->avatarService->pathFor($hexId);
+            $data = base64_encode((string)file_get_contents($path));
+
+            return 'data:image/png;base64,' . $data;
+        }
+
+        if ($this->avatarService->useIdenticons()) {
+            return 'data:image/png;base64,' . $this->identicon->render($hexId);
+        }
+
+        return '';
+    }
+
+    private function resolveGroupLabel(int $type)
+    : string {
+        $group = UserGroup::tryFrom($type)??UserGroup::GUEST;
+
+        return match ($group) {
+            UserGroup::ADMIN => $this->t->t(
+                          'user.group.admin',
+                fallback: 'Admin'
+            ),
+            UserGroup::MOD => $this->t->t(
+                          'user.group.mod',
+                fallback: 'Moderator'
+            ),
+            UserGroup::USER => $this->t->t(
+                          'user.group.user',
+                fallback: 'Member'
+            ),
+            UserGroup::GUEST => $this->t->t(
+                          'user.group.guest',
+                fallback: 'Guest'
+            ),
+        };
+    }
+
+    private function setI18n()
+    : void
+    {
+        $this->ctx->set('profile_heading', $this->t->t('user.profile.heading'));
+        $this->ctx->set(
+            'profile_label_joined',
+            $this->t->t('user.profile.joined')
+        );
+        $this->ctx->set(
+            'profile_label_group',
+            $this->t->t('user.profile.group')
+        );
+        $this->ctx->set(
+            'profile_label_verified',
+            $this->t->t('user.profile.verified')
+        );
+        $this->ctx->set(
+            'profile_label_settings',
+            $this->t->t('user.profile.settings_link')
+        );
+    }
+}

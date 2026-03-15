@@ -41,6 +41,9 @@ final class DefaultTemplateContext
     /** @var array<string, mixed> */
     private array $vars = [];
 
+    /** @var list<string> url_ids of the current page and all its ancestors */
+    private array $ancestorUrlIds = [];
+
     public function __construct(
         private readonly Config      $config,
         private readonly Translator  $t,
@@ -154,6 +157,9 @@ final class DefaultTemplateContext
             'got_results'  => false,
             'results'      => [],
         ];
+
+        // Collect url_ids of this page + all its ancestors for highlight computation
+        $this->ancestorUrlIds = array_column($page->ancestors, 'url_id');
     }
 
     /**
@@ -180,25 +186,46 @@ final class DefaultTemplateContext
         $this->vars['user_page_url']       = $this->urlGenerator->toPage(
             $this->t->t('WORDING_USER', fallback: 'user')
         );
-        $this->vars['user_nav_guest_label'] = $this->t->t('user.nav.guest', fallback: 'Login');
+        $this->vars['user_nav_guest_label']     = $this->t->t('user.nav.guest', fallback: 'Login');
+        $this->vars['user_nav_guest_highlight']  = in_array('WORDING_USER',  $this->ancestorUrlIds, true)
+                                                   || in_array('WORDING_LOGIN', $this->ancestorUrlIds, true);
 
         if ($this->userSession->isLoggedIn()) {
+            $ids = $this->ancestorUrlIds;
             $this->vars['user_nav'] = [
                 [
-                    'name' => $this->t->t('user.nav.home',     fallback: 'Home'),
-                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_USER_HOME', fallback: 'home')),
+                    'name'      => $this->t->t('user.nav.home',     fallback: 'Home'),
+                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_USER_HOME', fallback: 'home')),
+                    // Highlight Home when on user_home, or when on the user
+                    // section root itself (no more-specific child page is active).
+                    'highlight' => in_array('WORDING_USER_HOME', $ids, true)
+                                   || (
+                                       in_array('WORDING_USER', $ids, true)
+                                       && !array_intersect($ids, [
+                                           'WORDING_LOGIN', 'WORDING_REGISTER',
+                                           'WORDING_RECOVER', 'WORDING_PROFILE',
+                                           'WORDING_SETTINGS', 'WORDING_USER_HOME',
+                                           'WORDING_LOGOUT',
+                                       ])
+                                   ),
                 ],
                 [
-                    'name' => $this->t->t('user.nav.profile',  fallback: 'Profile'),
-                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_PROFILE',   fallback: 'profile')),
+                    'name'      => $this->t->t('user.nav.profile',  fallback: 'Profile'),
+                    'url'       => $this->urlGenerator->toPage(
+                        $this->t->t('WORDING_PROFILE', fallback: 'profile'),
+                        ['uid' => $this->userSession->userId()]
+                    ),
+                    'highlight' => in_array('WORDING_PROFILE', $ids, true),
                 ],
                 [
-                    'name' => $this->t->t('user.nav.settings', fallback: 'Settings'),
-                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_SETTINGS',  fallback: 'settings')),
+                    'name'      => $this->t->t('user.nav.settings', fallback: 'Settings'),
+                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_SETTINGS',  fallback: 'settings')),
+                    'highlight' => in_array('WORDING_SETTINGS', $ids, true),
                 ],
                 [
-                    'name' => $this->t->t('user.nav.logout',   fallback: 'Logout'),
-                    'url'  => $this->urlGenerator->toPage($this->t->t('WORDING_LOGOUT',    fallback: 'logout')),
+                    'name'      => $this->t->t('user.nav.logout',   fallback: 'Logout'),
+                    'url'       => $this->urlGenerator->toPage($this->t->t('WORDING_LOGOUT',    fallback: 'logout')),
+                    'highlight' => false,
                 ],
             ];
         } else {

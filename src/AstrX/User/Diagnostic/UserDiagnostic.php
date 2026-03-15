@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\User\Diagnostic;
 
@@ -9,9 +8,11 @@ use AstrX\Result\DiagnosticLevel;
 
 /**
  * Business-logic failure from the user subsystem.
+ *
  * The `operation` field is a machine-readable slug used by the lang file
  * to render a locale-specific message. This keeps the diagnostic class count
  * low while still producing rich, translatable user-facing output.
+ *
  * Known operation slugs:
  *   login_failed           — wrong username or password (intentionally vague)
  *   login_restricted       — user group not allowed to log in
@@ -39,7 +40,7 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class UserDiagnostic extends AbstractDiagnostic
 {
-    public const string ID = 'astrx.user/operation';
+    public const string ID    = 'astrx.user/operation';
     public const DiagnosticLevel LEVEL = DiagnosticLevel::NOTICE;
 
     public function __construct(
@@ -51,20 +52,10 @@ final class UserDiagnostic extends AbstractDiagnostic
         parent::__construct($id, $level);
     }
 
-    public function operation()
-    : string
-    {
-        return $this->operation;
-    }
+    public function operation(): string { return $this->operation; }
+    public function detail(): string    { return $this->detail; }
 
-    public function detail()
-    : string
-    {
-        return $this->detail;
-    }
-
-    public function vars()
-    : array
+    public function vars(): array
     {
         return ['operation' => $this->operation, 'detail' => $this->detail];
     }

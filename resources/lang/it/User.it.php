@@ -20,9 +20,6 @@ return [
     'WORDING_RECOVER.title'        => 'Recupero account',
     'WORDING_RECOVER.description'  => 'Reimposta la tua password.',
 
-    'WORDING_PROFILE.title'        => 'Profilo',
-    'WORDING_PROFILE.description'  => 'Visualizza un profilo utente.',
-
     'WORDING_SETTINGS.title'       => 'Impostazioni',
     'WORDING_SETTINGS.description' => 'Gestisci le impostazioni del tuo account.',
 
@@ -113,18 +110,34 @@ return [
     'user.settings.delete'            => 'Elimina account',
     'user.settings.delete_confirm'    => 'Questa azione è irreversibile. Inserisci la tua password per confermare.',
 
-    // -------------------------------------------------------------------------
-    // Voci di navigazione utente
-    // -------------------------------------------------------------------------
-    'user.nav.guest'    => 'Accedi',
-    'user.nav.home'     => 'Home',
-    'user.nav.profile'  => 'Profilo',
-    'user.nav.settings' => 'Impostazioni',
-    'user.nav.logout'   => 'Esci',
 
     // -------------------------------------------------------------------------
     // Messaggi di successo / info
     // -------------------------------------------------------------------------
     'user.register.success' => 'Registrazione completata! Ora puoi accedere.',
     'user.recover.sent'     => 'Se esiste un account con quel nome utente o email, ti abbiamo inviato un link.',
+
+    // -------------------------------------------------------------------------
+    // Pagina profilo
+    // -------------------------------------------------------------------------
+    'user.profile.heading'      => 'Profilo',
+    'user.profile.not_found'    => 'Utente non trovato.',
+    'user.profile.joined'       => 'Membro dal',
+    'user.profile.group'        => 'Ruolo',
+    'user.profile.verified'     => 'Verificato',
+    'user.profile.settings_link'=> 'Modifica le tue impostazioni',
+
+    // -------------------------------------------------------------------------
+    // Etichette gruppo
+    // -------------------------------------------------------------------------
+    'user.group.admin'  => 'Amministratore',
+    'user.group.mod'    => 'Moderatore',
+    'user.group.user'   => 'Membro',
+    'user.group.guest'  => 'Ospite',
+
+    // -------------------------------------------------------------------------
+    // Meta pagina
+    // -------------------------------------------------------------------------
+    'WORDING_PROFILE.title'        => 'Profilo',
+    'WORDING_PROFILE.description'  => 'Visualizza un profilo utente.',
 ];

@@ -26,7 +26,41 @@ final class UserRepository
     // -------------------------------------------------------------------------
     // Queries
     // -------------------------------------------------------------------------
-
+    /**
+     * Fetch public profile data for a given hex user ID.
+     * Returns only columns safe to display publicly.
+     * Returns null if user does not exist or is deleted.
+     *
+     * @return Result<array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,created_at:string}|null>
+     */
+    public function findPublicById(string $hexId): Result
+    {
+        return $this->fetchOne(
+                "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
+                    `type`, `verified`, `avatar`,
+                    DATE_FORMAT(`created_at`, '%Y-%m-%d') AS created_at
+               FROM `user`
+              WHERE `id` = UNHEX(:id) AND `deleted` = 0",
+            [':id' => $hexId],
+        );
+    }
+    /**
+     * Fetch public profile data by username (case-insensitive).
+     *
+     * @return Result<array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,created_at:string}|null>
+     */
+    public function findPublicByUsername(string $username): Result
+    {
+        return $this->fetchOne(
+                "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
+                    `type`, `verified`, `avatar`,
+                    DATE_FORMAT(`created_at`, '%Y-%m-%d') AS created_at
+               FROM `user`
+              WHERE LOWER(`username`) = LOWER(:u) AND `deleted` = 0",
+            [':u' => $username],
+        );
+    }
+    
     /**
      * Find an active (not deleted) user by username (case-insensitive).
      * @return Result<array<string,mixed>|null>

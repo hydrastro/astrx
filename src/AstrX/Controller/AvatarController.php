@@ -1,6 +1,5 @@
 <?php
-
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace AstrX\Controller;
 
@@ -14,20 +13,23 @@ use AstrX\User\UserRepository;
 
 /**
  * Raw avatar image endpoint — no template wrapping.
+ *
  * URL: /avatar?uid=<hexUserId>  (query mode)
  *      /avatar/<hexUserId>      (rewrite mode via URL tail)
+ *
  * Serves:
  *   - Custom PNG if user has uploaded one.
  *   - Identicon (generated from user ID) if use_identicons=true.
  *   - 404 otherwise.
+ *
  * Calls exit after outputting so ContentManager does not try to
  * set a 204 response code over an already-output image.
  */
 final class AvatarController extends AbstractController
 {
     public function __construct(
-        DiagnosticsCollector $collector,
-        private readonly Request $request,
+        DiagnosticsCollector        $collector,
+        private readonly Request    $request,
         private readonly CurrentUrl $currentUrl,
         private readonly AvatarService $avatarService,
         private readonly IdenticonRenderer $identicon,
@@ -36,13 +38,11 @@ final class AvatarController extends AbstractController
         parent::__construct($collector);
     }
 
-    public function handle()
-    : Result
+    public function handle(): Result
     {
         // Resolve user ID from tail (rewrite) or query (query mode)
         $hexId = $this->currentUrl->tailSegment(0)
-                 ??
-                 (string)($this->request->query()->get('uid')??'');
+                 ?? (string) ($this->request->query()->get('uid') ?? '');
 
         if ($hexId === '' || !ctype_xdigit($hexId) || strlen($hexId) !== 32) {
             http_response_code(404);
