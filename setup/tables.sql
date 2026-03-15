@@ -364,22 +364,25 @@ CREATE TABLE `banlist_email`
 );
 
 -- IPv4: stored as unsigned INT; use INET_ATON() / INET_NTOA() in queries.
-CREATE TABLE `banlist_ipv4`
-(
-    `ban_id`     INT          NOT NULL PRIMARY KEY,
-    `ipv4_start` INT UNSIGNED NOT NULL,
-    `ipv4_end`   INT UNSIGNED NOT NULL,
-    FOREIGN KEY (ban_id) REFERENCES banlist (id) ON UPDATE CASCADE ON DELETE CASCADE,
-    INDEX idx_range (ipv4_start, ipv4_end)
-);
-
--- IPv6: stored as raw 16-byte binary; use INET6_ATON() / INET6_NTOA() in queries.
-CREATE TABLE `banlist_ipv6`
+-- Unified IP ban table: CIDR notation, IPv4-mapped-IPv6 for uniform storage.
+CREATE TABLE `banlist_ip`
 (
     `ban_id`     INT        NOT NULL PRIMARY KEY,
-    `ipv6_start` BINARY(16) NOT NULL,
-    `ipv6_end`   BINARY(16) NOT NULL,
-    FOREIGN KEY (ban_id) REFERENCES banlist (id) ON UPDATE CASCADE ON DELETE CASCADE
+    `network`    BINARY(16) NOT NULL,
+    `prefix_len` TINYINT    NOT NULL,
+    FOREIGN KEY (ban_id) REFERENCES banlist (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    INDEX idx_network (network)
+);
+
+
+-- ============================================================
+-- SITE CONFIG
+-- ============================================================
+
+CREATE TABLE `site_config`
+(
+    `key`   VARCHAR(64) NOT NULL PRIMARY KEY,
+    `value` TEXT        NOT NULL DEFAULT ''
 );
 
 
@@ -445,14 +448,14 @@ VALUES
 
 -- Admin pages (i18n=0: admin URLs are intentionally not locale-dependent —
 -- stable endpoints that developers always access in English)
-('admin_banlist',        0, 'admin_banlist',  1, 1, 0, 0), -- id=11
-('admin_comments',       0, 'admin_comments', 1, 1, 0, 0), -- id=12
-('admin_navbar',         0, 'admin_navbar',   1, 1, 0, 0), -- id=13
-('admin_news',           0, 'admin_news',     1, 1, 0, 0), -- id=14
-('admin_notes',          0, 'admin_notes',    1, 1, 0, 0), -- id=15
-('admin_pages',          0, 'admin_pages',    1, 1, 0, 0), -- id=16
-('admin_users',          0, 'admin_users',    1, 1, 0, 0), -- id=17
-('admin',                0, 'admin',          1, 1, 0, 0), -- id=18
+('WORDING_ADMIN_BANLIST',  1, 'admin_banlist',  1, 1, 0, 0), -- id=11
+('WORDING_ADMIN_COMMENTS', 1, 'admin_comments', 1, 1, 0, 0), -- id=12
+('WORDING_ADMIN_NAVBAR',   1, 'admin_navbar',   1, 1, 0, 0), -- id=13
+('WORDING_ADMIN_NEWS',     1, 'admin_news',     1, 1, 0, 0), -- id=14
+('WORDING_ADMIN_NOTES',    1, 'admin_notes',    1, 1, 0, 0), -- id=15
+('WORDING_ADMIN_PAGES',    1, 'admin_pages',    1, 1, 0, 0), -- id=16
+('WORDING_ADMIN_USERS',    1, 'admin_users',    1, 1, 0, 0), -- id=17
+('WORDING_ADMIN',          1, 'admin',          1, 1, 0, 0), -- id=18
 ('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0); -- id=19
 
 

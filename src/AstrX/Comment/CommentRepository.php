@@ -1,0 +1,245 @@
+<?php
+declare(strict_types=1);
+
+namespace AstrX\Comment;
+
+use AstrX\Comment\Diagnostic\CommentDbDiagnostic;
+use AstrX\Result\Diagnostics;
+use AstrX\Result\Result;
+use PDO;
+use PDOException;
+
+/**
+ * Pure data-access for the `comment` table.
+ *
+ * IDs: comment.id is INT AUTO_INCREMENT.
+ * User IDs: BINARY(16) — use UNHEX() / LOWER(HEX()) in queries.
+ * IP: VARBINARY(16) — stored with inet_pton(), read with inet_ntop().
+ */
+final class CommentRepository
+{
+    public function __construct(private readonly PDO $pdo) {}
+
+    // -------------------------------------------------------------------------
+    // Read
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch visible comments for a page, ordered by date.
+     * Returns flat list; CommentService handles tree assembly.
+     *
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function fetchForPage(int $pageId, bool $descending = false, int $limit = 0, int $offset = 0): Result
+    {
+        $order = $descending ? 'DESC' : 'ASC';
+        try {
+            if ($limit > 0) {
+                $stmt = $this->pdo->prepare(
+                    "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
+                            name, email, content, reply_to, flagged, hidden,
+                            created_at
+                       FROM comment
+                      WHERE page_id = :pid AND hidden = 0
+                      ORDER BY created_at {$order}
+                      LIMIT :lim OFFSET :off"
+                );
+                $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
+                $stmt->bindValue(':lim', $limit,  PDO::PARAM_INT);
+                $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+            } else {
+                $stmt = $this->pdo->prepare(
+                    "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
+                            name, email, content, reply_to, flagged, hidden,
+                            created_at
+                       FROM comment
+                      WHERE page_id = :pid AND hidden = 0
+                      ORDER BY created_at {$order}"
+                );
+                $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<int> total visible comment count for a page */
+    public function countForPage(int $pageId): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT COUNT(id) FROM comment WHERE page_id = :pid AND hidden = 0'
+            );
+            $stmt->execute([':pid' => $pageId]);
+            return Result::ok((int) $stmt->fetchColumn());
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<array<string,mixed>|null> */
+    public function findById(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
+                        name, email, content, reply_to, flagged, hidden, created_at
+                   FROM comment WHERE id = :id'
+            );
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return Result::ok($row !== false ? $row : null);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Admin: fetch all comments with optional filters.
+     * @param array<string,mixed> $filters  e.g. ['page_id' => 1, 'flagged' => 1]
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function fetchAll(array $filters = [], bool $descending = true): Result
+    {
+        $order  = $descending ? 'DESC' : 'ASC';
+        $where  = [];
+        $params = [];
+        $allowed = ['page_id', 'user_id', 'hidden', 'flagged'];
+        foreach ($filters as $col => $val) {
+            if (!in_array($col, $allowed, true)) {
+                continue;
+            }
+            $where[]       = "{$col} = :{$col}";
+            $params[":{$col}"] = $val;
+        }
+        $sql = "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
+                       name, email, content, reply_to, flagged, hidden, created_at
+                  FROM comment"
+             . ($where !== [] ? ' WHERE ' . implode(' AND ', $where) : '')
+             . " ORDER BY created_at {$order}";
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Write
+    // -------------------------------------------------------------------------
+
+    /**
+     * Insert a new comment. Returns the new auto-increment id.
+     * $ip is a packed binary string from inet_pton() or null.
+     *
+     * @return Result<int>
+     */
+    public function create(
+        int     $pageId,
+        ?string $hexUserId,
+        ?string $name,
+        ?string $email,
+        string  $content,
+        ?int    $replyTo,
+        ?string $ip,    // raw output of inet_pton()
+    ): Result {
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO comment
+                    (page_id, user_id, name, email, content, reply_to, ip)
+                 VALUES
+                    (:page, UNHEX(:uid), :name, :email, :content, :reply, :ip)'
+            );
+            $stmt->execute([
+                ':page'    => $pageId,
+                ':uid'     => $hexUserId,
+                ':name'    => $name,
+                ':email'   => $email,
+                ':content' => $content,
+                ':reply'   => $replyTo,
+                ':ip'      => $ip,
+            ]);
+            return Result::ok((int) $this->pdo->lastInsertId());
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<true> */
+    public function setHidden(int $id, bool $hidden): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE comment SET hidden = :h WHERE id = :id'
+            );
+            $stmt->execute([':h' => (int) $hidden, ':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<true> */
+    public function setFlagged(int $id, bool $flagged): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE comment SET flagged = :f WHERE id = :id'
+            );
+            $stmt->execute([':f' => (int) $flagged, ':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<true> */
+    public function delete(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare('DELETE FROM comment WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<int> rows affected */
+    public function bulkSetHidden(array $filters, bool $hidden): Result
+    {
+        if ($filters === []) {
+            return Result::ok(0);
+        }
+        $where  = [];
+        $params = [':h' => (int) $hidden];
+        foreach ($filters as $col => $val) {
+            $where[]       = "{$col} = :{$col}";
+            $params[":{$col}"] = $val;
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE comment SET hidden = :h WHERE ' . implode(' AND ', $where)
+            );
+            $stmt->execute($params);
+            return Result::ok($stmt->rowCount());
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
+    private function err(PDOException $e): Result
+    {
+        return Result::err(null, Diagnostics::of(new CommentDbDiagnostic(
+            CommentDbDiagnostic::ID,
+            CommentDbDiagnostic::LEVEL,
+            $e->getMessage(),
+        )));
+    }
+}

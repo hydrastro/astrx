@@ -1,0 +1,24 @@
+<?php
+declare(strict_types=1);
+
+return [
+    'CommentService' => [
+        'comments_per_page'   => 20,
+        'allow_replies'       => true,
+        'require_email'       => false,   // anonymous commenters: require email?
+        'minimum_flood_secs'  => 10,      // minimum seconds between posts
+        'antispam_time_secs'  => 30,      // mute window if antispam triggered
+        'antispam_regex'      => [
+            1 => [
+                'regex'   => '/(.+\n){10,}/',
+                'enabled' => true,
+                'message' => 'Comment contains too many line breaks.',
+            ],
+            2 => [
+                'regex'   => '/(?s).{3000,}/',
+                'enabled' => true,
+                'message' => 'Comment is too long (max 3000 characters).',
+            ],
+        ],
+    ],
+];

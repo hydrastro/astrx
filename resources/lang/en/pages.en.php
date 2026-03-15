@@ -28,6 +28,16 @@ return [
     'WORDING_USER'      => 'user',
     'WORDING_LOGOUT'    => 'logout',
 
+    // Admin pages
+    'WORDING_ADMIN'          => 'admin',
+    'WORDING_ADMIN_NEWS'     => 'admin-news',
+    'WORDING_ADMIN_COMMENTS' => 'admin-comments',
+    'WORDING_ADMIN_USERS'    => 'admin-users',
+    'WORDING_ADMIN_BANLIST'  => 'admin-banlist',
+    'WORDING_ADMIN_NAVBAR'   => 'admin-navbar',
+    'WORDING_ADMIN_PAGES'    => 'admin-pages',
+    'WORDING_ADMIN_NOTES'    => 'admin-notes',
+
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Main Page',
     'WORDING_INDEX'     => 'Index',

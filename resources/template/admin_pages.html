@@ -1,0 +1,27 @@
+<h2>{{admin_pages_heading}}</h2>
+<p><em>{{pages_note}}</em></p>
+<hr>
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_url_id}}</th>
+        <th>{{label_file_name}}</th>
+        <th>{{label_title}}</th>
+        <th>{{label_i18n}}</th>
+        <th>{{label_hidden}}</th>
+        <th>{{label_comments}}</th>
+    </tr></thead>
+    <tbody>
+    {{#page_list}}
+    <tr>
+        <td>{{id}}</td>
+        <td><code>{{url_id}}</code></td>
+        <td>{{file_name}}</td>
+        <td>{{title}}</td>
+        <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
+        <td><input type="checkbox" disabled {{#hidden}}checked{{/hidden}}></td>
+        <td><input type="checkbox" disabled {{#comments}}checked{{/comments}}></td>
+    </tr>
+    {{/page_list}}
+    </tbody>
+</table>

@@ -16,6 +16,16 @@ return [
     'WORDING_USER'      => 'utente',
     'WORDING_LOGOUT'    => 'esci',
 
+    // Pagine admin
+    'WORDING_ADMIN'          => 'admin',
+    'WORDING_ADMIN_NEWS'     => 'admin-notizie',
+    'WORDING_ADMIN_COMMENTS' => 'admin-commenti',
+    'WORDING_ADMIN_USERS'    => 'admin-utenti',
+    'WORDING_ADMIN_BANLIST'  => 'admin-banlist',
+    'WORDING_ADMIN_NAVBAR'   => 'admin-navigazione',
+    'WORDING_ADMIN_PAGES'    => 'admin-pagine',
+    'WORDING_ADMIN_NOTES'    => 'admin-note',
+
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Pagina Principale',
     'WORDING_INDEX'     => 'Indice',

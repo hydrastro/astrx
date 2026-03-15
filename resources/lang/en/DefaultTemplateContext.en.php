@@ -21,4 +21,14 @@ return [
     'user.nav.profile'  => 'Profile',
     'user.nav.settings' => 'Settings',
     'user.nav.logout'   => 'Logout',
+]
+    // Admin nav — shown when the user is an admin
+    'admin.nav.home'     => 'Dashboard',
+    'admin.nav.news'     => 'News',
+    'admin.nav.comments' => 'Comments',
+    'admin.nav.users'    => 'Users',
+    'admin.nav.banlist'  => 'Banlist',
+    'admin.nav.navbar'   => 'Navbar',
+    'admin.nav.pages'    => 'Pages',
+    'admin.nav.notes'    => 'Notes',
 ];

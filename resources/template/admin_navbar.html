@@ -1,0 +1,67 @@
+<h2>{{admin_navbar_heading}}</h2>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="add">
+    <p>
+        <label for="entry_name">{{label_name}}: </label>
+        <input type="text" name="name" id="entry_name" class="input"><br>
+        <label>{{label_type}}:
+            <select name="type" id="entry_type" class="input">
+                <option value="internal">{{type_internal}}</option>
+                <option value="external">{{type_external}}</option>
+            </select>
+        </label><br>
+        <label for="entry_url">{{label_url}}: </label>
+        <input type="text" name="url" id="entry_url" class="input"><br>
+        <label for="entry_page">{{label_page}} ID: </label>
+        <select name="page_id" id="entry_page" class="input">
+            <option value="0">—</option>
+            {{#available_pages}}<option value="{{id}}">{{url_id}} ({{file_name}})</option>{{/available_pages}}
+        </select><br>
+        <label for="entry_sort">{{label_sort}}: </label>
+        <input type="number" name="sort_order" id="entry_sort" class="input" value="0" style="width:4em"><br>
+        <label><input type="checkbox" name="active" value="1" checked> {{label_active}}</label><br>
+        <input type="submit" value="{{btn_add}}" class="input">
+    </p>
+</form>
+<hr>
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_name}}</th>
+        <th>{{label_type}}</th>
+        <th>URL / Page</th>
+        <th>{{label_sort}}</th>
+        <th>{{label_active}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+    {{#navbar_entries}}
+    <tr>
+        <td>{{id}}</td>
+        <td>{{name}}</td>
+        <td>{{#internal}}internal{{/internal}}{{^internal}}external{{/internal}}</td>
+        <td>{{#internal}}page {{page_id}}{{/internal}}{{^internal}}{{url}}{{/internal}}</td>
+        <td>{{sort_order}}</td>
+        <td><input type="checkbox" disabled {{#active}}checked{{/active}}></td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"   value="{{prg_id}}">
+                <input type="hidden" name="_csrf"    value="{{csrf_token}}">
+                <input type="hidden" name="action"   value="toggle">
+                <input type="hidden" name="entry_id" value="{{id}}">
+                <input type="submit" value="{{btn_toggle}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"   value="{{prg_id}}">
+                <input type="hidden" name="_csrf"    value="{{csrf_token}}">
+                <input type="hidden" name="action"   value="delete">
+                <input type="hidden" name="entry_id" value="{{id}}">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/navbar_entries}}
+    </tbody>
+</table>

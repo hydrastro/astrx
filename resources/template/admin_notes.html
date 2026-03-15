@@ -1,0 +1,14 @@
+<h2>{{admin_notes_heading}}</h2>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="notes">{{label_notes}}:</label><br>
+        <textarea name="notes" id="notes" rows="20" class="input">{{&notes}}</textarea><br>
+        <input type="hidden" name="action" value="save">
+        <input type="submit" value="{{btn_save}}" class="input">
+        <input type="submit" name="action" value="clear"
+               onclick="this.form.elements['action'].value='clear'" class="input">
+        {{btn_clear}}
+    </p>
+</form>

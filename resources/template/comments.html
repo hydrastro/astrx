@@ -1,0 +1,54 @@
+<div id="comments_area">
+<hr>
+<h2>{{comments_heading}}</h2>
+{{#comments_pages}}
+<div class="comments-pagination">
+    {{#comments_pages}}<a href="{{url}}"{{#is_current}} class="active"{{/is_current}}>{{number}}</a> {{/comments_pages}}
+</div>
+{{/comments_pages}}
+{{^comments}}
+<p>{{comments_none}}</p>
+{{/comments}}
+{{#comments}}
+<div class="comment" style="{{indent_style}}">
+    {{#avatar_src}}<img src="{{avatar_src}}" alt="avatar" class="comment-avatar">{{/avatar_src}}
+    <strong>{{display_name}}</strong>
+    <span class="comment-date">{{created_at}}</span>
+    {{#has_children}}<span class="comment-thread-indicator">▾</span>{{/has_children}}
+    <blockquote>{{content}}</blockquote>
+    {{#comments_allow_replies}}
+    <form method="POST" style="display:inline">
+        <input type="hidden" name="prg_id"   value="{{comments_prg_id}}">
+        <input type="hidden" name="_csrf"     value="{{comments_csrf}}">
+        <input type="hidden" name="reply_to"  value="{{id}}">
+        <input type="hidden" name="content"   value="">
+        <button type="button" class="input comment-reply-btn"
+                onclick="document.getElementById('comment_reply_to').value='{{id}}';
+                         document.getElementById('comment_form').scrollIntoView();">
+            {{comment_btn_reply}}
+        </button>
+    </form>
+    {{/comments_allow_replies}}
+</div>
+{{/comments}}
+<hr>
+<h3 id="comment_form">{{comments_submit_heading}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"   value="{{comments_prg_id}}">
+    <input type="hidden" name="_csrf"     value="{{comments_csrf}}">
+    <input type="hidden" name="reply_to"  id="comment_reply_to" value="">
+    <p>
+        {{^comments_logged_in}}
+        <label for="comment_name">{{comment_label_name}}: </label>
+        <input type="text" name="name" id="comment_name" class="input"><br>
+        {{#comments_require_email}}
+        <label for="comment_email">{{comment_label_email}}: </label>
+        <input type="email" name="email" id="comment_email" class="input"><br>
+        {{/comments_require_email}}
+        {{/comments_logged_in}}
+        <label for="comment_content">{{comment_label_content}}: </label><br>
+        <textarea name="content" id="comment_content" rows="6" class="input"></textarea><br>
+        <input type="submit" value="{{comment_btn_submit}}" class="input">
+    </p>
+</form>
+</div>

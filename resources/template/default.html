@@ -47,6 +47,13 @@
         </ul>
     </div>
     {{/user_logged_in}}
+    {{#is_admin}}
+    <div id="admin_top_nav">
+        <ul id="admin_nav" class="admin_nav">
+            {{#admin_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/admin_nav}}
+        </ul>
+    </div>
+    {{/is_admin}}
     {{#has_flash_messages}}
     <div id="flash_bar">{{#flash_messages}}<p class="flash flash-{{type}}">{{text}}</p>{{/flash_messages}}</div>
     {{/has_flash_messages}}

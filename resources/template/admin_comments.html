@@ -1,0 +1,54 @@
+<h2>{{admin_comments_heading}}</h2>
+<form method="GET">
+    <p>
+        <label>{{label_filter}} by page ID:
+            <input type="number" name="page_id" class="input" value="{{filter_page_id}}" style="width:5em">
+        </label>
+        <label><input type="checkbox" name="flagged" value="1" {{#filter_flagged}}checked{{/filter_flagged}}> {{label_flagged}} only</label>
+        <input type="submit" value="{{btn_filter}}" class="input">
+    </p>
+</form>
+<hr>
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_page}}</th>
+        <th>{{label_user}}</th>
+        <th>{{label_content}}</th>
+        <th>{{label_date}}</th>
+        <th>{{label_hidden}}</th>
+        <th>{{label_flagged}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+    {{#comment_list}}
+    <tr>
+        <td>{{id}}</td>
+        <td>{{page_id}}</td>
+        <td>{{user_id}}</td>
+        <td>{{content}}</td>
+        <td>{{created_at}}</td>
+        <td><input type="checkbox" disabled {{#hidden}}checked{{/hidden}}></td>
+        <td><input type="checkbox" disabled {{#flagged}}checked{{/flagged}}></td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="id"     value="{{id}}">
+                {{^hidden}}<input type="hidden" name="action" value="hide">
+                <input type="submit" value="{{btn_hide}}" class="input">{{/hidden}}
+                {{#hidden}}<input type="hidden" name="action" value="unhide">
+                <input type="submit" value="{{btn_unhide}}" class="input">{{/hidden}}
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="id"     value="{{id}}">
+                <input type="hidden" name="action" value="delete">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/comment_list}}
+    </tbody>
+</table>

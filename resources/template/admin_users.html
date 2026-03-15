@@ -1,0 +1,55 @@
+<h2>{{admin_users_heading}}</h2>
+{{#editing}}
+<hr>
+<h3>Edit user: {{editing.username}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="action"  value="promote">
+    <input type="hidden" name="user_id" value="{{editing.id}}">
+    <p>
+        <label for="user_type">{{label_type}}: </label>
+        <select name="type" id="user_type" class="input">
+            {{#user_groups}}
+            <option value="{{value}}" {{#selected}}selected{{/selected}}>{{name}}</option>
+            {{/user_groups}}
+        </select>
+        <input type="submit" value="{{btn_promote}}" class="input">
+        <a href="?">Cancel</a>
+    </p>
+</form>
+{{/editing}}
+<hr>
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_username}}</th>
+        <th>{{label_type}}</th>
+        <th>{{label_verified}}</th>
+        <th>{{label_deleted}}</th>
+        <th>{{label_created_at}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+    {{#user_list}}
+    <tr>
+        <td><code>{{id}}</code></td>
+        <td>{{username}}</td>
+        <td>{{type}}</td>
+        <td><input type="checkbox" disabled {{#verified}}checked{{/verified}}></td>
+        <td><input type="checkbox" disabled {{#deleted}}checked{{/deleted}}></td>
+        <td>{{created_at}}</td>
+        <td>
+            <a href="?edit={{id}}" class="input">{{btn_edit}}</a>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"  value="{{prg_id}}">
+                <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+                <input type="hidden" name="action"  value="delete">
+                <input type="hidden" name="user_id" value="{{id}}">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/user_list}}
+    </tbody>
+</table>

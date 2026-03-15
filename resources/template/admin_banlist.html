@@ -1,0 +1,70 @@
+<h2>{{admin_banlist_heading}}</h2>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="ban">
+    <p>
+        <label>{{label_type}}:
+            <select name="type" class="input">
+                <option value="ip">{{type_ip}}</option>
+                <option value="email">{{type_email}}</option>
+                <option value="user">{{type_user}}</option>
+            </select>
+        </label><br>
+        <label for="ban_value">{{label_value}}: </label>
+        <input type="text" name="value" id="ban_value" class="input"><br>
+        <small>{{label_ip_hint}}</small><br>
+        <label for="ban_reason">{{label_reason}}: </label>
+        <input type="text" name="reason" id="ban_reason" class="input"><br>
+        <label>{{label_route}}:
+            <select name="route" class="input">
+                {{#ban_routes}}<option value="{{value}}">{{label}}</option>{{/ban_routes}}
+            </select>
+        </label><br>
+        <label for="ban_end">{{label_end}}: </label>
+        <input type="text" name="end" id="ban_end" class="input"><br>
+        <input type="submit" value="{{btn_ban}}" class="input">
+    </p>
+</form>
+<hr>
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_type}}</th>
+        <th>{{label_value}}</th>
+        <th>{{label_reason}}</th>
+        <th>{{label_end}}</th>
+        <th>{{label_active}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+    {{#ban_list}}
+    <tr>
+        <td>{{id}}</td>
+        <td>{{type}}</td>
+        <td>{{value}}</td>
+        <td>{{reason}}</td>
+        <td>{{end}}</td>
+        <td><input type="checkbox" disabled {{#active}}checked{{/active}}></td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"  value="{{prg_id}}">
+                <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+                <input type="hidden" name="ban_id"  value="{{id}}">
+                {{#active}}<input type="hidden" name="action" value="deactivate">
+                <input type="submit" value="{{btn_deactivate}}" class="input">{{/active}}
+                {{^active}}<input type="hidden" name="action" value="activate">
+                <input type="submit" value="{{btn_activate}}" class="input">{{/active}}
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"  value="{{prg_id}}">
+                <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+                <input type="hidden" name="ban_id"  value="{{id}}">
+                <input type="hidden" name="action"  value="delete">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/ban_list}}
+    </tbody>
+</table>
