@@ -53,6 +53,7 @@ return [
     'admin.field.user'     => 'Utente',
     'admin.field.verified' => 'Verificato',
     'admin.field.deleted'  => 'Eliminato',
+    'admin.field.username'   => 'Nome utente',
     'admin.field.flagged'  => 'Segnalato',
 
     'admin.btn.create'     => 'Crea',
@@ -67,6 +68,7 @@ return [
     'admin.btn.activate'   => 'Attiva',
     'admin.btn.deactivate' => 'Disattiva',
     'admin.btn.promote'    => 'Aggiorna ruolo',
+    'admin.btn.cancel'        => 'Annulla',
     'admin.btn.save'       => 'Salva',
     'admin.btn.clear'      => 'Cancella',
     'admin.btn.toggle'     => 'Attiva/disattiva',
@@ -81,6 +83,7 @@ return [
     'admin.comments.deleted'  => 'Commento eliminato.',
     'admin.comments.filter'   => 'Filtra',
 
+    'admin.users.edit_heading' => 'Modifica utente',
     'admin.users.updated'          => 'Utente aggiornato.',
     'admin.users.deleted'          => 'Utente eliminato.',
     'admin.users.permission_denied'=> 'Non puoi modificare questo account.',
@@ -98,6 +101,7 @@ return [
     'admin.banlist.type_email'         => 'Email',
     'admin.banlist.type_user'          => 'ID Utente',
 
+    'admin.navbar.updated'    => 'Voce aggiornata.',
     'admin.navbar.added'         => 'Voce aggiunta.',
     'admin.navbar.deleted'       => 'Voce rimossa.',
     'admin.navbar.url'           => 'URL',
@@ -109,6 +113,7 @@ return [
     'admin.pages.file_name' => 'Nome file',
     'admin.pages.i18n'      => 'i18n',
     'admin.pages.comments'  => 'Commenti',
+    'admin.pages.description' => 'Descrizione',
     'admin.pages.note'      => 'Le pagine sono in sola lettura qui. Modifica direttamente nel database.',
 
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',

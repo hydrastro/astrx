@@ -26,6 +26,9 @@ return [
     'WORDING_ADMIN_PAGES'    => 'admin-pagine',
     'WORDING_ADMIN_NOTES'    => 'admin-note',
 
+    // Pagina test commenti
+    'WORDING_COMMENTS_TEST' => 'commenti-test',
+
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Pagina Principale',
     'WORDING_INDEX'     => 'Indice',

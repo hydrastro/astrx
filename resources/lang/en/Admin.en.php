@@ -65,6 +65,7 @@ return [
     'admin.field.user'     => 'User',
     'admin.field.verified' => 'Verified',
     'admin.field.deleted'  => 'Deleted',
+    'admin.field.username'   => 'Username',
     'admin.field.flagged'  => 'Flagged',
 
     // ---- Buttons ------------------------------------------------------------
@@ -80,6 +81,7 @@ return [
     'admin.btn.activate'   => 'Activate',
     'admin.btn.deactivate' => 'Deactivate',
     'admin.btn.promote'    => 'Update role',
+    'admin.btn.cancel'        => 'Cancel',
     'admin.btn.save'       => 'Save',
     'admin.btn.clear'      => 'Clear',
     'admin.btn.toggle'     => 'Toggle',
@@ -97,6 +99,7 @@ return [
     'admin.comments.filter'   => 'Filter',
 
     // ---- Users --------------------------------------------------------------
+    'admin.users.edit_heading' => 'Edit user',
     'admin.users.updated'          => 'User updated.',
     'admin.users.deleted'          => 'User deleted.',
     'admin.users.permission_denied'=> 'You cannot modify this account.',
@@ -116,6 +119,7 @@ return [
     'admin.banlist.type_user'        => 'User ID',
 
     // ---- Navbar -------------------------------------------------------------
+    'admin.navbar.updated'    => 'Entry updated.',
     'admin.navbar.added'         => 'Entry added.',
     'admin.navbar.deleted'       => 'Entry removed.',
     'admin.navbar.url'           => 'URL',
@@ -128,6 +132,7 @@ return [
     'admin.pages.file_name' => 'File name',
     'admin.pages.i18n'      => 'i18n',
     'admin.pages.comments'  => 'Comments',
+    'admin.pages.description' => 'Description',
     'admin.pages.note'      => 'Pages are read-only here. Edit directly in the database.',
 
     // ---- Notes --------------------------------------------------------------

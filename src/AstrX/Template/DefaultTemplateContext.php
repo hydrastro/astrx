@@ -246,13 +246,28 @@ final class DefaultTemplateContext
             $adminIds   = $this->ancestorUrlIds;
             $adminPages = \AstrX\Admin\AdminService::NAV_PAGES;
             $adminNav   = [];
+            // Collect the WORDING_ keys of all admin child pages (everything except the root)
+            $adminChildWordings = [];
             foreach ($adminPages as $slug => $labelKey) {
-                $wording   = 'WORDING_' . strtoupper($slug);
-                $pageSlug  = $this->t->t($wording, fallback: $slug);
+                if ($slug !== 'admin') {
+                    $adminChildWordings[] = 'WORDING_' . strtoupper($slug);
+                }
+            }
+            foreach ($adminPages as $slug => $labelKey) {
+                $wording  = 'WORDING_' . strtoupper($slug);
+                $pageSlug = $this->t->t($wording, fallback: $slug);
+                // Dashboard (admin root): highlight ONLY when on the root itself,
+                // not when on any child page.
+                if ($slug === 'admin') {
+                    $highlight = in_array('WORDING_ADMIN', $adminIds, true)
+                                 && !array_intersect($adminIds, $adminChildWordings);
+                } else {
+                    $highlight = in_array($wording, $adminIds, true);
+                }
                 $adminNav[] = [
                     'name'      => $this->t->t($labelKey, fallback: $slug),
                     'url'       => $this->urlGenerator->toPage($pageSlug),
-                    'highlight' => in_array($wording, $adminIds, true),
+                    'highlight' => (bool) $highlight,
                 ];
             }
             $this->vars['admin_nav'] = $adminNav;

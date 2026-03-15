@@ -1,6 +1,28 @@
 <h2>{{admin_pages_heading}}</h2>
 <p><em>{{pages_note}}</em></p>
+
+{{#has_editing}}
 <hr>
+<h3>{{btn_edit}} page #{{editing_id}} — <code>{{editing_url_id}}</code> ({{editing_file_name}})</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"   value="{{prg_id}}">
+    <input type="hidden" name="_csrf"    value="{{csrf_token}}">
+    <input type="hidden" name="action"   value="update">
+    <input type="hidden" name="page_id"  value="{{editing_id}}">
+    <p>
+        <label for="edit_title">{{label_title}}: </label>
+        <input type="text" name="title" id="edit_title" class="input" value="{{editing_title}}"><br>
+        <label for="edit_description">{{label_description}}: </label>
+        <textarea name="description" id="edit_description" rows="3" class="input">{{editing_description}}</textarea><br>
+        <label><input type="checkbox" name="hidden"   value="1"{{#editing_hidden}}   checked{{/editing_hidden}}> {{label_hidden}}</label>
+        <label><input type="checkbox" name="comments" value="1"{{#editing_comments}} checked{{/editing_comments}}> {{label_comments}}</label><br>
+        <input type="submit" value="{{btn_update}}" class="input">
+        <a href="?">{{btn_cancel}}</a>
+    </p>
+</form>
+<hr>
+{{/has_editing}}
+
 <table>
     <thead><tr>
         <th>{{label_id}}</th>
@@ -10,17 +32,39 @@
         <th>{{label_i18n}}</th>
         <th>{{label_hidden}}</th>
         <th>{{label_comments}}</th>
+        <th>{{label_actions}}</th>
     </tr></thead>
     <tbody>
     {{#page_list}}
-    <tr>
-        <td>{{id}}</td>
-        <td><code>{{url_id}}</code></td>
-        <td>{{file_name}}</td>
-        <td>{{title}}</td>
-        <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
-        <td><input type="checkbox" disabled {{#hidden}}checked{{/hidden}}></td>
-        <td><input type="checkbox" disabled {{#comments}}checked{{/comments}}></td>
+    <tr{{#hidden}} style="opacity:0.5"{{/hidden}}>
+    <td>{{id}}</td>
+    <td><code>{{url_id}}</code></td>
+    <td>{{file_name}}</td>
+    <td>{{title}}</td>
+    <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
+    <td>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="toggle_hidden">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{#hidden}}✓{{/hidden}}{{^hidden}}—{{/hidden}}" class="input"
+                   title="{{btn_toggle}} hidden">
+        </form>
+    </td>
+    <td>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="toggle_comments">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{#comments}}✓{{/comments}}{{^comments}}—{{/comments}}" class="input"
+                   title="{{btn_toggle}} comments">
+        </form>
+    </td>
+    <td>
+        <a href="?edit={{id}}" class="input">{{btn_edit}}</a>
+    </td>
     </tr>
     {{/page_list}}
     </tbody>

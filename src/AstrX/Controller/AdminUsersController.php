@@ -52,53 +52,68 @@ final class AdminUsersController extends AbstractController
             exit;
         }
 
-        $editId = (string) ($this->request->query()->get('edit') ?? '');
-        $editing = null;
+        $editId  = (string) ($this->request->query()->get('edit') ?? '');
+        $editing = false;
+        $editingTypeVal = -1;
+
         if ($editId !== '') {
             $r = $this->userRepo->findById($editId);
             $r->drainTo($this->collector);
-            $editing = $r->isOk() ? $r->unwrap() : null;
+            if ($r->isOk() && $r->unwrap() !== null) {
+                $row = $r->unwrap();
+                // Flatten into individual vars — Mustache {{#section}} over an
+                // assoc array iterates once per key (count = num keys), not once
+                // as a single object. Using flat vars avoids that entirely.
+                $editing        = true;
+                $editingTypeVal = (int) $row['type'];
+                $this->ctx->set('editing_id',           $row['id']);
+                $this->ctx->set('editing_username',     $row['username']);
+                $this->ctx->set('editing_display_name', $row['display_name'] ?? '');
+                $this->ctx->set('editing_type',         $editingTypeVal);
+            }
         }
 
         $listResult = $this->userRepo->listAll();
         $listResult->drainTo($this->collector);
 
-        $groups = array_map(fn(UserGroup $g) => ['value' => $g->value, 'name' => $g->name],
-                            UserGroup::cases());
+        $groups = array_map(
+            fn(UserGroup $g) => [
+                'value'    => $g->value,
+                'name'     => $g->name,
+                'selected' => $editing && $g->value === $editingTypeVal,
+            ],
+            UserGroup::cases()
+        );
 
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($this->request->uri()->path());
 
-        $this->ctx->set('csrf_token',  $csrfToken);
-        $this->ctx->set('prg_id',      $prgId);
-        $this->ctx->set('user_list',   $listResult->isOk() ? $listResult->unwrap() : []);
-        $this->ctx->set('editing',     $editing);
-        $this->ctx->set('user_groups', $groups);
+        $this->ctx->set('has_editing',  $editing);
+        $this->ctx->set('csrf_token',   $csrfToken);
+        $this->ctx->set('prg_id',       $prgId);
+        $this->ctx->set('user_list',    $listResult->isOk() ? $listResult->unwrap() : []);
+        $this->ctx->set('user_groups',  $groups);
         $this->setI18n();
         return $this->ok();
     }
 
     private function processForm(string $prgToken): void
     {
-        $posted = $this->prg->pull($prgToken) ?? [];
+        $posted     = $this->prg->pull($prgToken) ?? [];
         $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $action = (string) ($posted['action'] ?? '');
+        $action = (string) ($posted['action']  ?? '');
         $hexId  = (string) ($posted['user_id'] ?? '');
 
-        // Policy: cannot change other admins unless you're also admin
         $target = null;
         if ($hexId !== '') {
             $r = $this->userRepo->findById($hexId);
-            if ($r->isOk()) {
-                $row = $r->unwrap();
-                if ($row !== null) {
-                    $target = (object) $row;
-                }
+            if ($r->isOk() && $r->unwrap() !== null) {
+                $target = (object) $r->unwrap();
             }
         }
 
@@ -109,8 +124,7 @@ final class AdminUsersController extends AbstractController
 
         switch ($action) {
             case 'promote':
-                $newType = (int) ($posted['type'] ?? 0);
-                $r = $this->userRepo->updateType($hexId, $newType);
+                $r = $this->userRepo->updateType($hexId, (int) ($posted['type'] ?? 0));
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('admin.users.updated'));
@@ -130,7 +144,7 @@ final class AdminUsersController extends AbstractController
     {
         $this->ctx->set('admin_users_heading', $this->t->t('admin.nav.users'));
         $this->ctx->set('label_id',         $this->t->t('admin.field.id'));
-        $this->ctx->set('label_username',   $this->t->t('user.field.username'));
+        $this->ctx->set('label_username',   $this->t->t('admin.field.username'));
         $this->ctx->set('label_type',       $this->t->t('admin.field.type'));
         $this->ctx->set('label_verified',   $this->t->t('admin.field.verified'));
         $this->ctx->set('label_deleted',    $this->t->t('admin.field.deleted'));
@@ -139,5 +153,7 @@ final class AdminUsersController extends AbstractController
         $this->ctx->set('btn_promote',      $this->t->t('admin.btn.promote'));
         $this->ctx->set('btn_delete',       $this->t->t('admin.btn.delete'));
         $this->ctx->set('btn_edit',         $this->t->t('admin.btn.edit'));
+        $this->ctx->set('label_edit_user',  $this->t->t('admin.users.edit_heading'));
+        $this->ctx->set('btn_cancel',       $this->t->t('admin.btn.cancel'));
     }
 }

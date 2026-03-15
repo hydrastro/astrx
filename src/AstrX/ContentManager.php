@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX;
 
+use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Controller\Controller;
 use AstrX\Http\HttpStatus;
@@ -38,6 +40,7 @@ final class ContentManager
         private readonly DiagnosticsCollector $collector,
         private readonly ModuleLoader $moduleLoader,
         private readonly Translator $translator,
+        private readonly Gate $gate,
     ) {}
 
     public function init(): void
@@ -221,6 +224,22 @@ final class ContentManager
         $page = $this->resolvePage($pageHandler, $pageToken);
         $this->injector->setClass($page);
 
+        // Admins may view hidden pages; bypass the 404 and show a notice.
+        $adminViewingHidden = $page->hidden
+                              && $this->gate->can(Permission::ADMIN_ACCESS);
+        if ($adminViewingHidden) {
+            // Re-resolve without hidden filter by overriding page back to itself.
+            // The page object is already resolved; just allow rendering.
+        } elseif ($page->hidden) {
+            // Non-admin: redirect to error page
+            http_response_code(HttpStatus::NOT_FOUND->value);
+            $errorUrlId = $this->config->getConfig('ContentManager','error_page_url_id','WORDING_ERROR');
+            assert(is_string($errorUrlId));
+            $eid  = $pageHandler->getPageIdFromUrlId($errorUrlId);
+            $page = ($eid !== null ? $pageHandler->getPage($eid) : null) ?? $page;
+            $this->injector->setClass($page);
+        }
+
         // Load lang files for the current page and all its ancestors (bottom-up order,
         // so more-specific pages override ancestor values where keys overlap).
         // This replaces the old 'extra_lang_domains' config list — just add pages to the
@@ -255,6 +274,10 @@ final class ContentManager
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
         $ctx->buildBase($page);
+        // Let admins know they are viewing a hidden page
+        if ($adminViewingHidden) {
+            $ctx->set('admin_hidden_page_notice', true);
+        }
 
         // Populate navbar. Failure is non-fatal — the template renders with an
         // empty navbar rather than taking down the whole page.
@@ -507,7 +530,8 @@ final class ContentManager
             }
         }
 
-        if ($page === null || $page->hidden) {
+        // Note: hidden-page handling is done in init() so admins can view hidden pages.
+        if ($page === null) {
             http_response_code(HttpStatus::NOT_FOUND->value);
 
             // Default is 'error' — the url_id of the error page in the database.

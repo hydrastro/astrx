@@ -38,6 +38,9 @@ return [
     'WORDING_ADMIN_PAGES'    => 'admin-pages',
     'WORDING_ADMIN_NOTES'    => 'admin-notes',
 
+    // Comments test page
+    'WORDING_COMMENTS_TEST' => 'comments-test',
+
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Main Page',
     'WORDING_INDEX'     => 'Index',

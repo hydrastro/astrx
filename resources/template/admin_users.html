@@ -1,24 +1,24 @@
 <h2>{{admin_users_heading}}</h2>
-{{#editing}}
+{{#has_editing}}
 <hr>
-<h3>Edit user: {{editing.username}}</h3>
+<h3>{{label_edit_user}}: {{editing_username}}</h3>
 <form method="POST">
     <input type="hidden" name="prg_id"  value="{{prg_id}}">
     <input type="hidden" name="_csrf"   value="{{csrf_token}}">
     <input type="hidden" name="action"  value="promote">
-    <input type="hidden" name="user_id" value="{{editing.id}}">
+    <input type="hidden" name="user_id" value="{{editing_id}}">
     <p>
         <label for="user_type">{{label_type}}: </label>
         <select name="type" id="user_type" class="input">
             {{#user_groups}}
-            <option value="{{value}}" {{#selected}}selected{{/selected}}>{{name}}</option>
+            <option value="{{value}}"{{#selected}} selected{{/selected}}>{{name}}</option>
             {{/user_groups}}
         </select>
         <input type="submit" value="{{btn_promote}}" class="input">
-        <a href="?">Cancel</a>
+        <a href="?">{{btn_cancel}}</a>
     </p>
 </form>
-{{/editing}}
+{{/has_editing}}
 <hr>
 <table>
     <thead><tr>
@@ -46,7 +46,8 @@
                 <input type="hidden" name="_csrf"   value="{{csrf_token}}">
                 <input type="hidden" name="action"  value="delete">
                 <input type="hidden" name="user_id" value="{{id}}">
-                <input type="submit" value="{{btn_delete}}" class="input">
+                <input type="submit" value="{{btn_delete}}" class="input"
+                       onclick="return confirm('Delete this user?')">
             </form>
         </td>
     </tr>

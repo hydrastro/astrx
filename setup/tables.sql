@@ -456,7 +456,8 @@ VALUES
 ('WORDING_ADMIN_PAGES',    1, 'admin_pages',    1, 1, 0, 0), -- id=16
 ('WORDING_ADMIN_USERS',    1, 'admin_users',    1, 1, 0, 0), -- id=17
 ('WORDING_ADMIN',          1, 'admin',          1, 1, 0, 0), -- id=18
-('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0); -- id=19
+('WORDING_LOGOUT',       1, 'logout',         0, 1, 0, 0), -- id=19
+('WORDING_COMMENTS_TEST',1, 'comments_test',  1, 1, 0, 1); -- id=20
 
 
 -- ----------------------------------------------------------
@@ -483,7 +484,8 @@ VALUES
     (16, 0, 0),  -- admin_pages
     (17, 0, 0),  -- admin_users
     (18, 0, 0),  -- admin
-    (19, 0, 0);  -- logout         — noindex
+    (19, 0, 0),  -- logout         — noindex
+    (20, 1, 1);  -- comments_test  — index, follow
 
 
 -- ----------------------------------------------------------
@@ -510,7 +512,8 @@ VALUES
     (16, 'Admin — Pages',      'Manage site pages.'),
     (17, 'Admin — Users',      'Manage user accounts.'),
     (18, 'Administration',     'Administration area.'),
-    (19, 'Logout',             '');
+    (19, 'Logout',             ''),
+    (20, 'Comments Test',      'A page for testing the comment system.');
 
 
 -- ----------------------------------------------------------
@@ -526,6 +529,7 @@ VALUES
 -- user section (9) → children
 (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),
 (19,19),  -- logout self-reference
+(20,20),  -- comments_test self-reference (top-level page)
 -- admin section (18) → children
 (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17);
 
@@ -650,8 +654,8 @@ VALUES
 -- A setup wizard must call password_hash(..., PASSWORD_ARGON2ID) before first use.
 -- ----------------------------------------------------------
 
-INSERT INTO `user` (id, username, type, verified, deleted)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator', 1, 1, 0);
+INSERT INTO `user` (id, username, password, type, verified, deleted)
+VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator', '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE', 1, 1, 0);
 
 
 -- ============================================================

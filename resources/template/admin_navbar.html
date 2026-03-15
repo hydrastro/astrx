@@ -1,26 +1,73 @@
 <h2>{{admin_navbar_heading}}</h2>
+
+{{#has_editing}}
+<h3>{{btn_edit}} entry #{{editing_id}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"   value="{{prg_id}}">
+    <input type="hidden" name="_csrf"    value="{{csrf_token}}">
+    <input type="hidden" name="action"   value="update">
+    <input type="hidden" name="entry_id" value="{{editing_id}}">
+    <p>
+        <label for="edit_name">{{label_name}}: </label>
+        <input type="text" name="name" id="edit_name" class="input" value="{{editing_name}}"><br>
+        <label>{{label_type}}:
+            <select name="type" id="edit_type" class="input"
+                    onchange="document.getElementById('edit_url_row').style.display=this.value==='external'?'':'none';
+                              document.getElementById('edit_page_row').style.display=this.value==='internal'?'':'none';">
+                <option value="external"{{^editing_internal}} selected{{/editing_internal}}>{{type_external}}</option>
+                <option value="internal"{{#editing_internal}} selected{{/editing_internal}}>{{type_internal}}</option>
+            </select>
+        </label><br>
+        <span id="edit_url_row"{{#editing_internal}} style="display:none"{{/editing_internal}}>
+        <label for="edit_url">{{label_url}}: </label>
+        <input type="text" name="url" id="edit_url" class="input" value="{{editing_url}}"><br>
+        </span>
+        <span id="edit_page_row"{{^editing_internal}} style="display:none"{{/editing_internal}}>
+        <label for="edit_page_id">{{label_page}}: </label>
+        <select name="page_id" id="edit_page_id" class="input">
+            <option value="0">—</option>
+            {{#available_pages}}<option value="{{id}}"{{#selected}} selected{{/selected}}>{{url_id}} ({{file_name}})</option>{{/available_pages}}
+        </select><br>
+        </span>
+        <label for="edit_sort">{{label_sort}}: </label>
+        <input type="number" name="sort_order" id="edit_sort" class="input" value="{{editing_sort}}" style="width:4em"><br>
+        <label><input type="checkbox" name="active" value="1"{{#editing_active}} checked{{/editing_active}}> {{label_active}}</label><br>
+        <input type="submit" value="{{btn_update}}" class="input">
+        <a href="?">{{btn_cancel}}</a>
+    </p>
+</form>
+<hr>
+{{/has_editing}}
+
+<h3>{{btn_add}}</h3>
 <form method="POST">
     <input type="hidden" name="prg_id" value="{{prg_id}}">
     <input type="hidden" name="_csrf"  value="{{csrf_token}}">
     <input type="hidden" name="action" value="add">
     <p>
-        <label for="entry_name">{{label_name}}: </label>
-        <input type="text" name="name" id="entry_name" class="input"><br>
+        <label for="add_name">{{label_name}}: </label>
+        <input type="text" name="name" id="add_name" class="input"><br>
         <label>{{label_type}}:
-            <select name="type" id="entry_type" class="input">
-                <option value="internal">{{type_internal}}</option>
+            <select name="type" id="add_type" class="input"
+                    onchange="document.getElementById('add_url_row').style.display=this.value==='external'?'':'none';
+                              document.getElementById('add_page_row').style.display=this.value==='internal'?'':'none';">
                 <option value="external">{{type_external}}</option>
+                <option value="internal">{{type_internal}}</option>
             </select>
         </label><br>
-        <label for="entry_url">{{label_url}}: </label>
-        <input type="text" name="url" id="entry_url" class="input"><br>
-        <label for="entry_page">{{label_page}} ID: </label>
-        <select name="page_id" id="entry_page" class="input">
-            <option value="0">—</option>
-            {{#available_pages}}<option value="{{id}}">{{url_id}} ({{file_name}})</option>{{/available_pages}}
-        </select><br>
-        <label for="entry_sort">{{label_sort}}: </label>
-        <input type="number" name="sort_order" id="entry_sort" class="input" value="0" style="width:4em"><br>
+        <span id="add_url_row">
+            <label for="add_url">{{label_url}}: </label>
+            <input type="text" name="url" id="add_url" class="input"><br>
+        </span>
+        <span id="add_page_row" style="display:none">
+            <label for="add_page_id">{{label_page}}: </label>
+            <select name="page_id" id="add_page_id" class="input">
+                <option value="0">—</option>
+                {{#available_pages}}<option value="{{id}}">{{url_id}} ({{file_name}})</option>{{/available_pages}}
+            </select><br>
+        </span>
+        <label for="add_sort">{{label_sort}}: </label>
+        <input type="number" name="sort_order" id="add_sort" class="input" value="0" style="width:4em"><br>
         <label><input type="checkbox" name="active" value="1" checked> {{label_active}}</label><br>
         <input type="submit" value="{{btn_add}}" class="input">
     </p>
@@ -41,11 +88,12 @@
     <tr>
         <td>{{id}}</td>
         <td>{{name}}</td>
-        <td>{{#internal}}internal{{/internal}}{{^internal}}external{{/internal}}</td>
-        <td>{{#internal}}page {{page_id}}{{/internal}}{{^internal}}{{url}}{{/internal}}</td>
+        <td>{{#internal}}{{type_internal}}{{/internal}}{{^internal}}{{type_external}}{{/internal}}</td>
+        <td>{{#internal}}page #{{page_id}}{{/internal}}{{^internal}}{{url}}{{/internal}}</td>
         <td>{{sort_order}}</td>
         <td><input type="checkbox" disabled {{#active}}checked{{/active}}></td>
         <td>
+            <a href="?edit={{id}}" class="input">{{btn_edit}}</a>
             <form method="POST" style="display:inline">
                 <input type="hidden" name="prg_id"   value="{{prg_id}}">
                 <input type="hidden" name="_csrf"    value="{{csrf_token}}">
@@ -58,7 +106,8 @@
                 <input type="hidden" name="_csrf"    value="{{csrf_token}}">
                 <input type="hidden" name="action"   value="delete">
                 <input type="hidden" name="entry_id" value="{{id}}">
-                <input type="submit" value="{{btn_delete}}" class="input">
+                <input type="submit" value="{{btn_delete}}" class="input"
+                       onclick="return confirm('Delete this entry?')">
             </form>
         </td>
     </tr>
