@@ -11,7 +11,6 @@ use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
-use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
@@ -31,7 +30,6 @@ final class AdminUsersController extends AbstractController
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
-        private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -52,50 +50,41 @@ final class AdminUsersController extends AbstractController
             exit;
         }
 
-        $editId  = (string) ($this->request->query()->get('edit') ?? '');
-        $editing = false;
-        $editingTypeVal = -1;
-
-        if ($editId !== '') {
-            $r = $this->userRepo->findById($editId);
-            $r->drainTo($this->collector);
-            if ($r->isOk() && $r->unwrap() !== null) {
-                $row = $r->unwrap();
-                // Flatten into individual vars — Mustache {{#section}} over an
-                // assoc array iterates once per key (count = num keys), not once
-                // as a single object. Using flat vars avoids that entirely.
-                $editing        = true;
-                $editingTypeVal = (int) $row['type'];
-                $this->ctx->set('editing_id',           $row['id']);
-                $this->ctx->set('editing_username',     $row['username']);
-                $this->ctx->set('editing_display_name', $row['display_name'] ?? '');
-                $this->ctx->set('editing_type',         $editingTypeVal);
-            }
-        }
-
+        $editId     = (string) ($this->request->query()->get('edit') ?? '');
         $listResult = $this->userRepo->listAll();
         $listResult->drainTo($this->collector);
 
-        $groups = array_map(
-            fn(UserGroup $g) => [
-                'value'    => $g->value,
-                'name'     => $g->name,
-                'selected' => $editing && $g->value === $editingTypeVal,
-            ],
-            UserGroup::cases()
-        );
+        $rawList  = $listResult->isOk() ? $listResult->unwrap() : [];
+        $userList = [];
+        foreach ($rawList as $row) {
+            $isEditing = ($editId !== '' && $row['id'] === $editId);
+            $row['editing'] = $isEditing;
+
+            if ($isEditing) {
+                // Load full data for the edit row
+                $full = $this->userRepo->adminFindById($editId);
+                $full->drainTo($this->collector);
+                if ($full->isOk() && $full->unwrap() !== null) {
+                    $fd = $full->unwrap();
+                    $row = array_merge($row, $fd); // full data overrides list data
+                }
+                $row['type_options'] = $this->buildTypeOptions((int) $row['type']);
+            }
+            $userList[] = $row;
+        }
 
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($this->request->uri()->path());
 
-        $this->ctx->set('has_editing',  $editing);
-        $this->ctx->set('csrf_token',   $csrfToken);
-        $this->ctx->set('prg_id',       $prgId);
-        $this->ctx->set('user_list',    $listResult->isOk() ? $listResult->unwrap() : []);
-        $this->ctx->set('user_groups',  $groups);
+        $this->ctx->set('csrf_token',  $csrfToken);
+        $this->ctx->set('prg_id',      $prgId);
+        $this->ctx->set('user_list',   $userList);
+        $this->ctx->set('base_url',    $this->request->uri()->path());
         $this->setI18n();
         return $this->ok();
     }
+
+    // =========================================================================
 
     private function processForm(string $prgToken): void
     {
@@ -108,28 +97,42 @@ final class AdminUsersController extends AbstractController
 
         $action = (string) ($posted['action']  ?? '');
         $hexId  = (string) ($posted['user_id'] ?? '');
+        if ($hexId === '') { return; }
 
-        $target = null;
-        if ($hexId !== '') {
-            $r = $this->userRepo->findById($hexId);
-            if ($r->isOk() && $r->unwrap() !== null) {
-                $target = (object) $r->unwrap();
+        // Gate check — even admins can't escalate above their own level (policy)
+        $targetResult = $this->userRepo->findById($hexId);
+        if ($targetResult->isOk() && $targetResult->unwrap() !== null) {
+            $target = (object) $targetResult->unwrap();
+            if ($this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
+                $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
+                return;
             }
         }
 
-        if ($target !== null && $this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
-            $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
-            return;
-        }
-
         switch ($action) {
-            case 'promote':
-                $r = $this->userRepo->updateType($hexId, (int) ($posted['type'] ?? 0));
+            case 'update':
+                $password     = trim((string) ($posted['password']      ?? ''));
+                $username     = trim((string) ($posted['username']      ?? ''));
+                $mailbox      = ($posted['mailbox']      ?? '') !== '' ? trim((string) $posted['mailbox'])      : null;
+                $email        = ($posted['email']        ?? '') !== '' ? trim((string) $posted['email'])        : null;
+                $displayName  = ($posted['display_name'] ?? '') !== '' ? trim((string) $posted['display_name']) : null;
+                $type         = (int)    ($posted['type']           ?? 0);
+                $birth        = ($posted['birth']        ?? '') !== '' ? trim((string) $posted['birth'])        : null;
+                $loginAttempts= (int)    ($posted['login_attempts'] ?? 0);
+                $verified     = !empty($posted['verified']);
+                $deleted      = !empty($posted['deleted']);
+
+                $r = $this->userRepo->adminUpdate(
+                    $hexId, $username, $password !== '' ? $password : null,
+                    $mailbox, $email, $displayName, $type,
+                    $birth, $loginAttempts, $verified, $deleted
+                );
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('admin.users.updated'));
                 }
                 break;
+
             case 'delete':
                 $r = $this->userRepo->softDelete($hexId);
                 $r->drainTo($this->collector);
@@ -140,20 +143,46 @@ final class AdminUsersController extends AbstractController
         }
     }
 
+    // =========================================================================
+
+    /** @return list<array{value:int,name:string,selected:bool}> */
+    private function buildTypeOptions(int $current): array
+    {
+        return array_map(
+            fn(UserGroup $g) => [
+                'value'    => $g->value,
+                'name'     => $g->name,
+                'selected' => $g->value === $current,
+            ],
+            UserGroup::cases()
+        );
+    }
+
     private function setI18n(): void
     {
-        $this->ctx->set('admin_users_heading', $this->t->t('admin.nav.users'));
-        $this->ctx->set('label_id',         $this->t->t('admin.field.id'));
-        $this->ctx->set('label_username',   $this->t->t('admin.field.username'));
-        $this->ctx->set('label_type',       $this->t->t('admin.field.type'));
-        $this->ctx->set('label_verified',   $this->t->t('admin.field.verified'));
-        $this->ctx->set('label_deleted',    $this->t->t('admin.field.deleted'));
-        $this->ctx->set('label_created_at', $this->t->t('admin.field.date'));
-        $this->ctx->set('label_actions',    $this->t->t('admin.field.actions'));
-        $this->ctx->set('btn_promote',      $this->t->t('admin.btn.promote'));
-        $this->ctx->set('btn_delete',       $this->t->t('admin.btn.delete'));
-        $this->ctx->set('btn_edit',         $this->t->t('admin.btn.edit'));
-        $this->ctx->set('label_edit_user',  $this->t->t('admin.users.edit_heading'));
-        $this->ctx->set('btn_cancel',       $this->t->t('admin.btn.cancel'));
+        $this->ctx->set('admin_users_heading',  $this->t->t('admin.nav.users'));
+        $this->ctx->set('label_id',             $this->t->t('admin.field.id'));
+        $this->ctx->set('label_username',       $this->t->t('admin.field.username'));
+        $this->ctx->set('label_display_name',   $this->t->t('admin.users.display_name'));
+        $this->ctx->set('label_mailbox',        $this->t->t('admin.users.mailbox'));
+        $this->ctx->set('label_email',          $this->t->t('admin.users.email'));
+        $this->ctx->set('label_password',       $this->t->t('admin.users.password'));
+        $this->ctx->set('label_password_hint',  $this->t->t('admin.users.password_hint'));
+        $this->ctx->set('label_birth',          $this->t->t('admin.users.birth'));
+        $this->ctx->set('label_type',           $this->t->t('admin.field.type'));
+        $this->ctx->set('label_verified',       $this->t->t('admin.field.verified'));
+        $this->ctx->set('label_deleted',        $this->t->t('admin.field.deleted'));
+        $this->ctx->set('label_login_attempts', $this->t->t('admin.users.login_attempts'));
+        $this->ctx->set('label_last_access',    $this->t->t('admin.users.last_access'));
+        $this->ctx->set('label_created_at',     $this->t->t('admin.field.date'));
+        $this->ctx->set('label_token_hash',     $this->t->t('admin.users.token_hash'));
+        $this->ctx->set('label_token_type',     $this->t->t('admin.users.token_type'));
+        $this->ctx->set('label_token_used',     $this->t->t('admin.users.token_used'));
+        $this->ctx->set('label_token_expires',  $this->t->t('admin.users.token_expires'));
+        $this->ctx->set('label_actions',        $this->t->t('admin.field.actions'));
+        $this->ctx->set('btn_update',           $this->t->t('admin.btn.update'));
+        $this->ctx->set('btn_delete',           $this->t->t('admin.btn.delete'));
+        $this->ctx->set('btn_edit',             $this->t->t('admin.btn.edit'));
+        $this->ctx->set('btn_cancel',           $this->t->t('admin.btn.cancel'));
     }
 }

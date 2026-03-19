@@ -68,9 +68,11 @@ final class UserRepository
     public function listAll(): Result
     {
         return $this->fetchAll(
-                "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`, `type`,
-                    `verified`, `avatar`, `deleted`,
-                    DATE_FORMAT(`created_at`, '%Y-%m-%d') AS created_at
+            "SELECT LOWER(HEX(`id`)) AS id, `username`, `mailbox`, `email`,
+                    `display_name`, `type`, `verified`, `avatar`, `deleted`,
+                    `login_attempts`,
+                    DATE_FORMAT(`created_at`, '%Y-%m-%d %H:%i:%s') AS created_at,
+                    DATE_FORMAT(`last_access`, '%Y-%m-%d %H:%i:%s') AS last_access
                FROM `user`
               ORDER BY `created_at` DESC"
         );
@@ -95,7 +97,7 @@ final class UserRepository
     public function findPublicById(string $hexId): Result
     {
         return $this->fetchOne(
-                "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
+            "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
                     `type`, `verified`, `avatar`,
                     DATE_FORMAT(`created_at`, '%Y-%m-%d') AS created_at
                FROM `user`
@@ -112,7 +114,7 @@ final class UserRepository
     public function findPublicByUsername(string $username): Result
     {
         return $this->fetchOne(
-                "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
+            "SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`,
                     `type`, `verified`, `avatar`,
                     DATE_FORMAT(`created_at`, '%Y-%m-%d') AS created_at
                FROM `user`
@@ -326,6 +328,77 @@ final class UserRepository
     }
 
     /** @return Result<true> */
+    /**
+     * Full admin view — every column including sensitive fields.
+     * @return Result<array<string,mixed>|null>
+     */
+    public function adminFindById(string $hexId): Result
+    {
+        return $this->fetchOne(
+            'SELECT LOWER(HEX(`id`)) AS id,
+                    `username`, `password`, `mailbox`, `email`,
+                    `display_name`, `type`, `birth`,
+                    DATE_FORMAT(`created_at`, \'%Y-%m-%d %H:%i:%s\') AS created_at,
+                    DATE_FORMAT(`last_access`, \'%Y-%m-%d %H:%i:%s\') AS last_access,
+                    `login_attempts`, `verified`, `avatar`, `deleted`,
+                    `token_hash`, `token_type`, `token_used`,
+                    DATE_FORMAT(`token_expires_at`, \'%Y-%m-%d %H:%i:%s\') AS token_expires_at
+               FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId]
+        );
+    }
+
+    /**
+     * Admin full update — every editable column in one shot.
+     * Password hash is stored as-is (admin responsibility to supply valid argon2id).
+     * Pass null to leave email/birth/password unchanged.
+     * @return Result<true>
+     */
+    public function adminUpdate(
+        string  $hexId,
+        string  $username,
+        ?string $password,
+        ?string $mailbox,
+        ?string $email,
+        ?string $displayName,
+        int     $type,
+        ?string $birth,
+        int     $loginAttempts,
+        bool    $verified,
+        bool    $deleted,
+    ): Result {
+        try {
+            $sets  = [];
+            $params = [':id' => $hexId];
+
+            $fields = [
+                'username'       => $username,
+                'mailbox'        => $mailbox,
+                'email'          => $email,
+                'display_name'   => $displayName,
+                'type'           => $type,
+                'birth'          => $birth,
+                'login_attempts' => $loginAttempts,
+                'verified'       => (int) $verified,
+                'deleted'        => (int) $deleted,
+            ];
+            if ($password !== null && $password !== '') {
+                $fields['password'] = $password;
+            }
+            foreach ($fields as $col => $val) {
+                $sets[]           = "`{$col}` = :{$col}";
+                $params[":{$col}"] = $val;
+            }
+
+            $this->pdo->prepare(
+                'UPDATE `user` SET ' . implode(', ', $sets) . ' WHERE `id` = UNHEX(:id)'
+            )->execute($params);
+            return Result::ok(true);
+        } catch (\PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
     public function softDelete(string $hexId): Result
     {
         return $this->exec(

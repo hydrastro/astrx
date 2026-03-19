@@ -6,7 +6,7 @@ declare(strict_types = 1);
 return [
     // Domain name "Routing" is fine; you can also call it "UrlHandler" for legacy familiarity.
     'Routing' => [
-        'url_rewrite' => true,
+        'url_rewrite' => false,
 
         // where the app is mounted (reverse proxy etc.)
         'base_path'   => '/',
