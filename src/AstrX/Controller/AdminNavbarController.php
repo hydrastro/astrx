@@ -123,23 +123,41 @@ final class AdminNavbarController extends AbstractController
         $prgId     = $this->prg->createId($this->request->uri()->path());
         $pages     = $this->loadPages();
 
+        // Mark the selected page for the entry currently being edited
+        if ($activeEntry > 0) {
+            $editEntryRow  = $this->loadEntry($activeEntry);
+            $editingPageId = (int) ($editEntryRow !== null ? ($editEntryRow['page_id'] ?? 0) : 0);
+            foreach ($pages as &$pg) {
+                $pg['selected'] = ((int) $pg['id'] === $editingPageId);
+            }
+            unset($pg);
+        }
+
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
         $this->ctx->set('active_navbar',  $activeNavbar);
         $this->ctx->set('active_pin',     $activePin);
-        $this->ctx->set('has_edit_pin',   $editingPin);
-        $this->ctx->set('has_edit_entry', $editingEntry);
+        // Edit state is now inline per-row; top-level forms no longer needed
+        $this->ctx->set('has_edit_pin',   false);
+        $this->ctx->set('has_edit_entry', false);
         $this->ctx->set('available_pages', $pages);
         $this->ctx->set('base_url',       $this->request->uri()->path());
 
-        // Decorate navbars with active flag, navbar_id on pins, navbar_id+pin_id on entries
+        // Decorate navbars: active flag, navbar_id, pin_id, editing flags
         foreach ($navbars as &$nb) {
             $nb['active'] = ($nb['id'] === $activeNavbar);
             foreach ($nb['pins'] as &$pin) {
                 $pin['navbar_id'] = $nb['id'];
+                $pin['editing']   = ($pin['id'] === $activePin && $nb['id'] === $activeNavbar);
                 foreach ($pin['entries'] as &$entry) {
                     $entry['navbar_id'] = $nb['id'];
                     $entry['pin_id']    = $pin['id'];
+                    $entry['editing']   = ($entry['id'] === $activeEntry);
+                    // Pre-mark selected page for internal entries
+                    if ((bool) $entry['internal']) {
+                        $epid = (int) ($entry['page_id'] ?? 0);
+                        $entry['page_id_val'] = $epid;
+                    }
                 }
                 unset($entry);
             }

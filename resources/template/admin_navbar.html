@@ -1,113 +1,17 @@
 <h2>{{admin_navbar_heading}}</h2>
 
-{{! ── Pin edit form — shown when ?nb=N&pin=P ────────────────────────── }}
-{{#has_edit_pin}}
-<h3>{{btn_edit}} group #{{ep_id}}</h3>
-<form method="POST">
-    <input type="hidden" name="prg_id"    value="{{prg_id}}">
-    <input type="hidden" name="_csrf"     value="{{csrf_token}}">
-    <input type="hidden" name="action"    value="update_pin">
-    <input type="hidden" name="pin_id"    value="{{ep_id}}">
-    <input type="hidden" name="navbar_id" value="{{active_navbar}}">
-    <p>
-        <label>{{label_sort_mode}}:
-            <select name="sort_mode" class="input">
-                <option value="0"{{#ep_alpha}} selected{{/ep_alpha}}>{{sort_alpha}}</option>
-                <option value="1"{{#ep_custom}} selected{{/ep_custom}}>{{sort_custom}}</option>
-            </select>
-        </label>
-        <label>{{label_sort}}: <input type="number" name="sort_order" class="input" value="{{ep_sort_order}}" style="width:4em"></label>
-        <input type="submit" value="{{btn_update}}" class="input">
-        <a href="{{base_url}}">{{btn_cancel}}</a>
-    </p>
-</form>
-<hr>
-{{/has_edit_pin}}
-
-{{! ── Entry edit form — shown when ?nb=N&pin=P&entry=E ───────────────── }}
-{{#has_edit_entry}}
-<h3>{{btn_edit}} entry #{{ee_id}}</h3>
-<form method="POST">
-    <input type="hidden" name="prg_id"    value="{{prg_id}}">
-    <input type="hidden" name="_csrf"     value="{{csrf_token}}">
-    <input type="hidden" name="action"    value="update_entry">
-    <input type="hidden" name="entry_id"  value="{{ee_id}}">
-    <input type="hidden" name="navbar_id" value="{{active_navbar}}">
-    <input type="hidden" name="pin_id"    value="{{ee_pin_id}}">
-    <table>
-        <tr>
-            <th>{{label_name}}</th>
-            <td><input type="text" name="name" class="input" value="{{ee_name}}"></td>
-            <td><label><input type="checkbox" name="i18n" value="1"{{#ee_i18n}} checked{{/ee_i18n}}> {{label_i18n}}</label></td>
-        </tr>
-        <tr>
-            <th>{{label_type}}</th>
-            <td colspan="2">
-                <select name="type" class="input">
-                    <option value="external"{{#ee_external}} selected{{/ee_external}}>{{type_external}}</option>
-                    <option value="internal"{{#ee_internal}} selected{{/ee_internal}}>{{type_internal}}</option>
-                </select>
-            </td>
-        </tr>
-        <tr>
-            <th>{{label_url}}</th>
-            <td colspan="2"><input type="text" name="url" class="input" value="{{ee_url}}"></td>
-        </tr>
-        <tr>
-            <th>{{label_page}}</th>
-            <td colspan="2">
-                <select name="page_id" class="input">
-                    <option value="0">—</option>
-                    {{#available_pages}}<option value="{{id}}"{{#selected}} selected{{/selected}}>{{url_id}}{{#title}} — {{title}}{{/title}}</option>{{/available_pages}}
-                </select>
-            </td>
-        </tr>
-        <tr>
-            <th>{{label_sort}}</th>
-            <td><input type="number" name="sort_order" class="input" value="{{ee_sort_order}}" style="width:5em"></td>
-            <td><label><input type="checkbox" name="active" value="1"{{#ee_active}} checked{{/ee_active}}> {{label_active}}</label></td>
-        </tr>
-    </table>
-    <p>
-        <input type="submit" value="{{btn_update}}" class="input">
-        <a href="{{base_url}}?nb={{active_navbar}}&pin={{ee_pin_id}}">{{btn_cancel}}</a>
-    </p>
-</form>
-<hr>
-{{/has_edit_entry}}
-
-{{! ── All three navbars, always visible ──────────────────────────────── }}
 {{#navbars}}
 <h2>{{name}}</h2>
-
-<h3>{{btn_add_pin}}</h3>
-<form method="POST">
-    <input type="hidden" name="prg_id"    value="{{prg_id}}">
-    <input type="hidden" name="_csrf"     value="{{csrf_token}}">
-    <input type="hidden" name="action"    value="add_pin">
-    <input type="hidden" name="navbar_id" value="{{id}}">
-    <table>
-        <tr>
-            <th>{{label_sort_mode}}</th>
-            <td>
-                <select name="sort_mode" class="input">
-                    <option value="0">{{sort_alpha}}</option>
-                    <option value="1">{{sort_custom}}</option>
-                </select>
-            </td>
-            <th>{{label_sort}}</th>
-            <td><input type="number" name="sort_order" class="input" value="0" style="width:5em"></td>
-            <td><input type="submit" value="+ {{btn_add_pin}}" class="input"></td>
-        </tr>
-    </table>
-</form>
 
 {{#pins}}
 <fieldset style="margin:10px 0">
     <legend>
+        {{! ── Pin header: read-only or editable ────────────────────────── }}
+        {{^editing}}
         <strong>Group #{{id}}</strong>
-        &mdash; {{#alpha}}{{sort_alpha}}{{/alpha}}{{#custom}}{{sort_custom}}{{/custom}}
-        (position {{sort_order}})
+        &mdash;
+        {{#alpha}}{{sort_alpha}}{{/alpha}}{{#custom}}{{sort_custom}}{{/custom}},
+        {{label_sort}} {{sort_order}}
         &nbsp;
         <a href="{{base_url}}?nb={{navbar_id}}&pin={{id}}" class="input">{{btn_edit}}</a>
         &nbsp;
@@ -120,6 +24,28 @@
             <input type="submit" value="{{btn_delete}} group" class="input"
                    onclick="return confirm('Delete group #{{id}} and all its entries?')">
         </form>
+        {{/editing}}
+        {{#editing}}
+        <strong>Group #{{id}}</strong>
+        &mdash;
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"    value="{{prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+            <input type="hidden" name="action"    value="update_pin">
+            <input type="hidden" name="pin_id"    value="{{id}}">
+            <input type="hidden" name="navbar_id" value="{{navbar_id}}">
+            {{label_sort_mode}}
+            <select name="sort_mode" class="input">
+                <option value="0"{{#alpha}} selected{{/alpha}}>{{sort_alpha}}</option>
+                <option value="1"{{#custom}} selected{{/custom}}>{{sort_custom}}</option>
+            </select>
+            {{label_sort}}:
+            <input type="number" name="sort_order" class="input" value="{{sort_order}}" style="width:5em">
+            <input type="submit" value="{{btn_update}}" class="input">
+        </form>
+        &nbsp;
+        <a href="{{base_url}}?nb={{navbar_id}}" class="input">{{btn_cancel}}</a>
+        {{/editing}}
     </legend>
 
     <table>
@@ -134,7 +60,10 @@
             <th>{{label_actions}}</th>
         </tr></thead>
         <tbody>
+
         {{#entries}}
+        {{! ── Entry row: read-only ───────────────────────────────────────── }}
+        {{^editing}}
         <tr{{^active}} style="opacity:0.5"{{/active}}>
         <td>{{id}}</td>
         <td>{{name}}</td>
@@ -165,61 +94,109 @@
                 <input type="hidden" name="navbar_id" value="{{navbar_id}}">
                 <input type="hidden" name="pin_id"    value="{{pin_id}}">
                 <input type="submit" value="{{btn_delete}}" class="input"
-                       onclick="return confirm('Delete entry {{name}}?')">
+                       onclick="return confirm('Delete {{name}}?')">
             </form>
         </td>
         </tr>
-        {{/entries}}
-        {{^entries}}<tr><td colspan="8"><em>No entries in this group.</em></td></tr>{{/entries}}
-        </tbody>
-    </table>
+        {{/editing}}
 
-    <h4>{{btn_add_entry}}</h4>
-    <form method="POST">
-        <input type="hidden" name="prg_id"    value="{{prg_id}}">
-        <input type="hidden" name="_csrf"     value="{{csrf_token}}">
-        <input type="hidden" name="action"    value="add_entry">
-        <input type="hidden" name="pin_id"    value="{{id}}">
-        <input type="hidden" name="navbar_id" value="{{navbar_id}}">
-        <table>
-            <tr>
-                <th>{{label_name}}</th>
-                <td><input type="text" name="name" class="input"></td>
-                <td><label><input type="checkbox" name="i18n" value="1"> {{label_i18n}}</label></td>
-            </tr>
-            <tr>
-                <th>{{label_type}}</th>
-                <td colspan="2">
+        {{! ── Entry row: editable ────────────────────────────────────────── }}
+        {{#editing}}
+        <tr>
+            <form method="POST">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="update_entry">
+                <input type="hidden" name="entry_id"  value="{{id}}">
+                <input type="hidden" name="navbar_id" value="{{navbar_id}}">
+                <input type="hidden" name="pin_id"    value="{{pin_id}}">
+                <td>{{id}}</td>
+                <td>
+                    <input type="text" name="name" class="input" value="{{name}}"><br>
+                    <label style="font-size:0.85em">
+                        <input type="checkbox" name="i18n" value="1"{{#i18n}} checked{{/i18n}}> {{label_i18n}}
+                    </label>
+                </td>
+                <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
+                <td>
+                    <select name="type" class="input">
+                        <option value="external"{{#external}} selected{{/external}}>{{type_external}}</option>
+                        <option value="internal"{{#internal}} selected{{/internal}}>{{type_internal}}</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="text" name="url" class="input" value="{{url}}" placeholder="{{type_external}}"><br>
+                    <select name="page_id" class="input">
+                        <option value="0">— {{type_internal}} —</option>
+                        {{#available_pages}}<option value="{{id}}"{{#selected}} selected{{/selected}}>{{url_id}}{{#title}} ({{title}}){{/title}}</option>{{/available_pages}}
+                    </select>
+                </td>
+                <td><input type="number" name="sort_order" class="input" value="{{sort_order}}" style="width:5em"></td>
+                <td><input type="checkbox" name="active" value="1"{{#active}} checked{{/active}}></td>
+                <td>
+                    <input type="submit" value="{{btn_update}}" class="input">
+                    <a href="{{base_url}}?nb={{navbar_id}}&pin={{pin_id}}" class="input">{{btn_cancel}}</a>
+                </td>
+            </form>
+        </tr>
+        {{/editing}}
+        {{/entries}}
+
+        {{! ── Add entry row (always at bottom) ──────────────────────────── }}
+        <tr>
+            <form method="POST">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="add_entry">
+                <input type="hidden" name="pin_id"    value="{{id}}">
+                <input type="hidden" name="navbar_id" value="{{navbar_id}}">
+                <td><em>new</em></td>
+                <td>
+                    <input type="text" name="name" class="input" placeholder="{{label_name}}"><br>
+                    <label style="font-size:0.85em">
+                        <input type="checkbox" name="i18n" value="1"> {{label_i18n}}
+                    </label>
+                </td>
+                <td></td>
+                <td>
                     <select name="type" class="input">
                         <option value="external">{{type_external}}</option>
                         <option value="internal">{{type_internal}}</option>
                     </select>
                 </td>
-            </tr>
-            <tr>
-                <th>{{label_url}}</th>
-                <td colspan="2"><input type="text" name="url" class="input"></td>
-            </tr>
-            <tr>
-                <th>{{label_page}}</th>
-                <td colspan="2">
+                <td>
+                    <input type="text" name="url" class="input" placeholder="{{type_external}}"><br>
                     <select name="page_id" class="input">
-                        <option value="0">—</option>
-                        {{#available_pages}}<option value="{{id}}">{{url_id}}{{#title}} — {{title}}{{/title}}</option>{{/available_pages}}
+                        <option value="0">— {{type_internal}} —</option>
+                        {{#available_pages}}<option value="{{id}}">{{url_id}}{{#title}} ({{title}}){{/title}}</option>{{/available_pages}}
                     </select>
                 </td>
-            </tr>
-            <tr>
-                <th>{{label_sort}}</th>
                 <td><input type="number" name="sort_order" class="input" value="0" style="width:5em"></td>
-                <td><label><input type="checkbox" name="active" value="1" checked> {{label_active}}</label></td>
-            </tr>
-        </table>
-        <p><input type="submit" value="{{btn_add}}" class="input"></p>
-    </form>
+                <td><input type="checkbox" name="active" value="1" checked></td>
+                <td><input type="submit" value="{{btn_add_entry}}" class="input"></td>
+            </form>
+        </tr>
+
+        </tbody>
+    </table>
 </fieldset>
 {{/pins}}
 {{^pins}}<p><em>No groups yet.</em></p>{{/pins}}
 
+{{! ── Add group ──────────────────────────────────────────────────────── }}
+<form method="POST">
+    <input type="hidden" name="prg_id"    value="{{prg_id}}">
+    <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+    <input type="hidden" name="action"    value="add_pin">
+    <input type="hidden" name="navbar_id" value="{{id}}">
+    {{label_sort_mode}}
+    <select name="sort_mode" class="input">
+        <option value="0">{{sort_alpha}}</option>
+        <option value="1">{{sort_custom}}</option>
+    </select>
+    {{label_sort}}:
+    <input type="number" name="sort_order" class="input" value="0" style="width:5em">
+    <input type="submit" value="+ {{btn_add_pin}}" class="input">
+</form>
 <hr>
 {{/navbars}}
