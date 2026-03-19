@@ -77,10 +77,12 @@ final class CommentService
         int  $pageNum     = 1,
         bool $descending  = false,
         ?int $itemId      = null,
+        ?int $perPage     = null,  // null = use config default
     ): Result {
-        $offset = ($pageNum - 1) * $this->commentsPerPage;
+        $limit  = $perPage ?? $this->commentsPerPage;
+        $offset = ($pageNum - 1) * $limit;
         $result = $this->repo->fetchForPage(
-            $pageId, $descending, $this->commentsPerPage, $offset, $itemId
+            $pageId, $descending, $limit, $offset, $itemId
         );
         if (!$result->isOk()) {
             return $result;

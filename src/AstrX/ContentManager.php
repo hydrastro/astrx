@@ -23,6 +23,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlStack;
 use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
+use AstrX\Session\CommentPrgHandler;
 use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
 use AstrX\Template\DefaultTemplateContext;
@@ -190,19 +191,39 @@ final class ContentManager
             $prgIdResult = $request->body()->getString('prg_id')->drainTo($this->collector);
             $prgId = $prgIdResult->valueOr(null);
 
-            if ($prgId === null || !$prgHandler->hasTarget($prgId)) {
-                $this->collector->emit(new InvalidPrgIdDiagnostic(
-                                           self::ID_INVALID_PRG_ID,
-                                           self::LVL_INVALID_PRG_ID,
-                                           $prgId,
-                                       ));
-                http_response_code(HttpStatus::BAD_REQUEST->value);
-                return;
-            }
+            // Comment forms include '_comment=1' in their body — route them through
+            // CommentPrgHandler (separate session namespace + _cp query key) so that
+            // other page controllers cannot steal the token before CommentController runs.
+            $isCommentForm = $request->body()->has('_comment');
 
-            $token = $prgHandler->storeFromPayload($request->body()->all());
-            $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
-                ->drainTo($this->collector);
+            if ($isCommentForm) {
+                $commentPrg = new \AstrX\Session\CommentPrgHandler();
+                if ($prgId === null || !$commentPrg->hasTarget($prgId)) {
+                    $this->collector->emit(new InvalidPrgIdDiagnostic(
+                                               self::ID_INVALID_PRG_ID,
+                                               self::LVL_INVALID_PRG_ID,
+                                               $prgId,
+                                           ));
+                    http_response_code(HttpStatus::BAD_REQUEST->value);
+                    return;
+                }
+                $token = $commentPrg->storeFromPayload($request->body()->all());
+                $sendResult = Response::redirect($commentPrg->getUrl($prgId, $token))->send()
+                    ->drainTo($this->collector);
+            } else {
+                if ($prgId === null || !$prgHandler->hasTarget($prgId)) {
+                    $this->collector->emit(new InvalidPrgIdDiagnostic(
+                                               self::ID_INVALID_PRG_ID,
+                                               self::LVL_INVALID_PRG_ID,
+                                               $prgId,
+                                           ));
+                    http_response_code(HttpStatus::BAD_REQUEST->value);
+                    return;
+                }
+                $token = $prgHandler->storeFromPayload($request->body()->all());
+                $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
+                    ->drainTo($this->collector);
+            }
             if (!$sendResult->isOk()) {
                 http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
                 return;

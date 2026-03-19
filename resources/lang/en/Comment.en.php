@@ -2,18 +2,34 @@
 declare(strict_types=1);
 
 return [
+    // ── Headings ─────────────────────────────────────────────────────────────
     'comment.heading'        => 'Comments',
     'comment.none'           => 'No comments yet. Be the first!',
     'comment.submit_heading' => 'Leave a comment',
-    'comment.label.name'     => 'Name',
-    'comment.label.email'    => 'Email',
-    'comment.label.content'  => 'Comment',
-    'comment.label.reply'    => 'Replying to',
-    'comment.btn.submit'     => 'Post comment',
-    'comment.btn.reply'      => 'Reply',
-    'comment.btn.hide'   => 'Hide',
-    'comment.btn.unhide' => 'Show',
-    'comment.btn.delete' => 'Delete',
-    'comment.label.captcha'    => 'Enter the code shown',
-    'comment.btn.cancel_reply' => 'Cancel reply',
+
+    // ── Form labels ──────────────────────────────────────────────────────────
+    'comment.label.name'         => 'Name',
+    'comment.label.email'        => 'Email',
+    'comment.label.content'      => 'Comment',
+    'comment.label.reply'        => 'Replying to',
+    'comment.label.captcha'      => 'Enter the code shown',
+    'comment.label.show'         => 'Show',
+    'comment.label.order'        => 'Ordered by date',
+    'comment.label.order_asc'    => 'Ascending',
+    'comment.label.order_desc'   => 'Descending',
+    'comment.label.indent'       => 'Grouping',
+    'comment.label.indent_nest'  => 'Nested',
+    'comment.label.indent_flat'  => 'Flat',
+
+    // ── Buttons ───────────────────────────────────────────────────────────────
+    'comment.btn.submit'        => 'Post comment',
+    'comment.btn.filter'        => 'Apply',
+    'comment.btn.reply'         => 'Reply',
+    'comment.btn.cancel_reply'  => 'Cancel reply',
+    'comment.btn.hide'          => 'Hide',
+    'comment.btn.unhide'        => 'Show',
+    'comment.btn.delete'        => 'Delete',
+
+    // ── Words ─────────────────────────────────────────────────────────────────
+    'comment.word.older'  => 'Comments:',
 ];

@@ -2,11 +2,27 @@
     <hr>
     <h2>{{comments_heading}}</h2>
 
-    {{#has_pagination}}
-    <div class="comments-pagination">
-        {{#comments_pages}}<a href="{{url}}"{{#is_current}} class="active"{{/is_current}}>{{number}}</a> {{/comments_pages}}
-    </div>
-    {{/has_pagination}}
+    {{#comments_any}}
+    <form method="GET" action="{{comments_filter_action}}">
+        {{&comments_base_query_inputs}}
+        <p>
+            <label>{{comment_label_show}}: <input type="number" name="cs" class="input" size="4" value="{{comments_per_page_val}}" min="0"></label>
+            <label>{{comment_label_order}}:
+                <select name="co" class="input">
+                    <option value="asc"{{#comments_order_asc}} selected{{/comments_order_asc}}>{{comment_label_order_asc}}</option>
+                    <option value="desc"{{#comments_order_desc}} selected{{/comments_order_desc}}>{{comment_label_order_desc}}</option>
+                </select>
+            </label>
+            <label>{{comment_label_indent}}:
+                <select name="ci" class="input">
+                    <option value="1"{{#comments_indent_on}} selected{{/comments_indent_on}}>{{comment_label_indent_nest}}</option>
+                    <option value="0"{{#comments_indent_off}} selected{{/comments_indent_off}}>{{comment_label_indent_flat}}</option>
+                </select>
+            </label>
+            <input type="submit" value="{{comment_btn_filter}}" class="input">
+        </p>
+    </form>
+    {{/comments_any}}
 
     {{^comments_any}}
     <p>{{comments_none}}</p>
@@ -16,36 +32,31 @@
     <div class="comment" id="comment-{{id}}" style="border:1px solid white;padding:10px 10px 0 10px;height:auto;overflow:auto;margin-bottom:10px;{{row_opacity}}">
         <div style="overflow:auto;margin-bottom:10px">
 
-            {{! Registered user avatar with profile link }}
             {{#avatar_profile_section}}
-            <a href="{{profile_url}}">
-                <img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;">
-            </a>
+            <a href="{{profile_url}}"><img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;"></a>
             {{/avatar_profile_section}}
 
-            {{! Guest avatar (identicon) — no link }}
             {{#avatar_plain_section}}
             <img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;">
             {{/avatar_plain_section}}
 
-            {{! Registered user name — link to profile }}
             {{#name_profile_section}}
             <p style="margin:0;float:left"><strong><a href="{{profile_url}}">{{display_name}}</a></strong></p>
             {{/name_profile_section}}
 
-            {{! Guest name — plain text }}
             {{#name_plain_section}}
             <p style="margin:0;float:left"><strong>{{display_name}}</strong></p>
             {{/name_plain_section}}
 
             <div class="right">
                 {{#reply_section}}
-                <a href="?reply_to={{id}}#comment_form" class="input" style="display:inline-block">{{comment_btn_reply}}</a>
+                <a href="{{reply_url}}" class="input" style="display:inline-block">{{comment_btn_reply}}</a>
                 {{/reply_section}}
                 {{#admin_hide_section}}
                 <form method="POST" style="display:inline">
                     <input type="hidden" name="prg_id" value="{{comments_prg_id}}">
                     <input type="hidden" name="_csrf"   value="{{comments_csrf}}">
+                    <input type="hidden" name="_comment" value="1">
                     <input type="hidden" name="id"      value="{{id}}">
                     <input type="hidden" name="action"  value="hide">
                     <input type="submit" value="{{comment_btn_hide}}" class="input">
@@ -55,6 +66,7 @@
                 <form method="POST" style="display:inline">
                     <input type="hidden" name="prg_id" value="{{comments_prg_id}}">
                     <input type="hidden" name="_csrf"   value="{{comments_csrf}}">
+                    <input type="hidden" name="_comment" value="1">
                     <input type="hidden" name="id"      value="{{id}}">
                     <input type="hidden" name="action"  value="unhide">
                     <input type="submit" value="{{comment_btn_unhide}}" class="input">
@@ -64,6 +76,7 @@
                 <form method="POST" style="display:inline">
                     <input type="hidden" name="prg_id" value="{{comments_prg_id}}">
                     <input type="hidden" name="_csrf"   value="{{comments_csrf}}">
+                    <input type="hidden" name="_comment" value="1">
                     <input type="hidden" name="id"      value="{{id}}">
                     <input type="hidden" name="action"  value="delete">
                     <input type="submit" value="{{comment_btn_delete}}" class="input">
@@ -88,16 +101,26 @@
         {{&close_divs_html}}
         {{/comments}}
 
+        {{#has_pagination}}
+        <p class="comments_nav"><small>
+            {{comment_word_older}}
+            {{#comments_has_prev}}<a href="{{comments_prev_url}}">&#8592;</a>{{/comments_has_prev}}
+            {{#comments_pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/comments_pages}}
+            {{#comments_has_next}}<a href="{{comments_next_url}}">&#8594;</a>{{/comments_has_next}}
+        </small></p>
+        {{/has_pagination}}
+
         <hr>
         <h3 id="comment_form">{{comments_submit_heading}}</h3>
         <form method="POST">
-            <input type="hidden" name="prg_id"   value="{{comments_prg_id}}">
+            <input type="hidden" name="prg_id"    value="{{comments_prg_id}}">
             <input type="hidden" name="_csrf"     value="{{comments_csrf}}">
-            <input type="hidden" name="reply_to" value="{{comments_reply_to}}">
+            <input type="hidden" name="_comment"  value="1">
+            <input type="hidden" name="reply_to"  value="{{comments_reply_to}}">
             <p>
                 {{#comments_reply_to}}
                 <em>{{comment_label_reply}}: #{{comments_reply_to}}</em>
-                &mdash; <a href="?#comment_form">{{comment_btn_cancel_reply}}</a><br>
+                &mdash; <a href="{{comments_cancel_reply_url}}">{{comment_btn_cancel_reply}}</a><br>
                 {{/comments_reply_to}}
                 {{^comments_logged_in}}
                 <label for="comment_name">{{comment_label_name}}: </label>
