@@ -58,17 +58,21 @@ final class AdminUsersController extends AbstractController
         $userList = [];
         foreach ($rawList as $row) {
             $isEditing = ($editId !== '' && $row['id'] === $editId);
-            $row['editing'] = $isEditing;
 
             if ($isEditing) {
-                // Load full data for the edit row
+                // Load every column for the edit context.
+                // IMPORTANT: row['editing'] must be an ARRAY (not bool) so the
+                // Mustache engine sets $parent = that array inside {{#editing}}.
+                // A bool true would replace $parent with `true`, losing all context.
                 $full = $this->userRepo->adminFindById($editId);
                 $full->drainTo($this->collector);
-                if ($full->isOk() && $full->unwrap() !== null) {
-                    $fd = $full->unwrap();
-                    $row = array_merge($row, $fd); // full data overrides list data
-                }
-                $row['type_options'] = $this->buildTypeOptions((int) $row['type']);
+                $fd = ($full->isOk() && $full->unwrap() !== null)
+                    ? $full->unwrap()
+                    : $row; // fallback to list data
+                $fd['type_options'] = $this->buildTypeOptions((int) $fd['type']);
+                $row['editing'] = [$fd]; // nested array → Mustache context inside {{#editing}}
+            } else {
+                $row['editing'] = false; // falsy → {{#editing}} section skipped
             }
             $userList[] = $row;
         }
@@ -111,26 +115,32 @@ final class AdminUsersController extends AbstractController
 
         switch ($action) {
             case 'update':
-                $password     = trim((string) ($posted['password']      ?? ''));
-                $username     = trim((string) ($posted['username']      ?? ''));
-                $mailbox      = ($posted['mailbox']      ?? '') !== '' ? trim((string) $posted['mailbox'])      : null;
-                $email        = ($posted['email']        ?? '') !== '' ? trim((string) $posted['email'])        : null;
-                $displayName  = ($posted['display_name'] ?? '') !== '' ? trim((string) $posted['display_name']) : null;
-                $type         = (int)    ($posted['type']           ?? 0);
-                $birth        = ($posted['birth']        ?? '') !== '' ? trim((string) $posted['birth'])        : null;
-                $loginAttempts= (int)    ($posted['login_attempts'] ?? 0);
-                $verified     = !empty($posted['verified']);
-                $deleted      = !empty($posted['deleted']);
-
+                $rawPassword  = trim((string) ($posted['password']      ?? ''));
+                $hashIt       = !empty($posted['hash_password']);
+                if ($rawPassword !== '') {
+                    $password = $hashIt
+                        ? password_hash($rawPassword, PASSWORD_ARGON2ID)
+                        : $rawPassword;
+                } else {
+                    $password = null;
+                }
+                $username      = trim((string) ($posted['username']      ?? ''));
+                $mailbox       = ($posted['mailbox']      ?? '') !== '' ? trim((string) $posted['mailbox'])      : null;
+                $email         = ($posted['email']        ?? '') !== '' ? trim((string) $posted['email'])        : null;
+                $displayName   = ($posted['display_name'] ?? '') !== '' ? trim((string) $posted['display_name']) : null;
+                $type          = (int) ($posted['type']           ?? 0);
+                $birth         = ($posted['birth']        ?? '') !== '' ? trim((string) $posted['birth'])        : null;
+                $loginAttempts = (int) ($posted['login_attempts'] ?? 0);
+                $verified      = !empty($posted['verified']);
+                $deleted       = !empty($posted['deleted']);
+                $createdAt     = ($posted['created_at']   ?? '') !== '' ? trim((string) $posted['created_at'])   : null;
+                $lastAccess    = ($posted['last_access']  ?? '') !== '' ? trim((string) $posted['last_access'])  : null;
                 $r = $this->userRepo->adminUpdate(
-                    $hexId, $username, $password !== '' ? $password : null,
-                    $mailbox, $email, $displayName, $type,
-                    $birth, $loginAttempts, $verified, $deleted
+                    $hexId, $username, $password, $mailbox, $email, $displayName,
+                    $type, $birth, $loginAttempts, $verified, $deleted, $createdAt, $lastAccess
                 );
                 $r->drainTo($this->collector);
-                if ($r->isOk()) {
-                    $this->flash->set('success', $this->t->t('admin.users.updated'));
-                }
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.updated')); }
                 break;
 
             case 'delete':
@@ -167,6 +177,7 @@ final class AdminUsersController extends AbstractController
         $this->ctx->set('label_mailbox',        $this->t->t('admin.users.mailbox'));
         $this->ctx->set('label_email',          $this->t->t('admin.users.email'));
         $this->ctx->set('label_password',       $this->t->t('admin.users.password'));
+        $this->ctx->set('label_hash_password',  $this->t->t('admin.users.hash_password'));
         $this->ctx->set('label_password_hint',  $this->t->t('admin.users.password_hint'));
         $this->ctx->set('label_birth',          $this->t->t('admin.users.birth'));
         $this->ctx->set('label_type',           $this->t->t('admin.field.type'));

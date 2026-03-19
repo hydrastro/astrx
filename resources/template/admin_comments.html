@@ -1,19 +1,23 @@
 <h2>{{admin_comments_heading}}</h2>
+
 <form method="GET">
     <p>
-        <label>{{label_filter}} by page ID:
+        <label>{{label_filter}} page ID:
             <input type="number" name="page_id" class="input" value="{{filter_page_id}}" style="width:5em">
         </label>
-        <label><input type="checkbox" name="flagged" value="1" {{#filter_flagged}}checked{{/filter_flagged}}> {{label_flagged}} only</label>
+        <label><input type="checkbox" name="flagged" value="1"{{#filter_flagged}} checked{{/filter_flagged}}> {{label_flagged}} only</label>
+        <label><input type="checkbox" name="show_hidden" value="1"> {{label_show_hidden}}</label>
         <input type="submit" value="{{btn_filter}}" class="input">
     </p>
 </form>
-<hr>
+
 <table>
     <thead><tr>
         <th>{{label_id}}</th>
         <th>{{label_page}}</th>
         <th>{{label_user}}</th>
+        <th>{{label_name}}</th>
+        <th>{{label_reply_to}}</th>
         <th>{{label_content}}</th>
         <th>{{label_date}}</th>
         <th>{{label_hidden}}</th>
@@ -21,34 +25,80 @@
         <th>{{label_actions}}</th>
     </tr></thead>
     <tbody>
+
     {{#comment_list}}
-    <tr>
-        <td>{{id}}</td>
-        <td>{{page_id}}</td>
-        <td>{{user_id}}</td>
-        <td>{{content}}</td>
-        <td>{{created_at}}</td>
-        <td><input type="checkbox" disabled {{#hidden}}checked{{/hidden}}></td>
-        <td><input type="checkbox" disabled {{#flagged}}checked{{/flagged}}></td>
-        <td>
-            <form method="POST" style="display:inline">
-                <input type="hidden" name="prg_id" value="{{prg_id}}">
-                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
-                <input type="hidden" name="id"     value="{{id}}">
-                {{^hidden}}<input type="hidden" name="action" value="hide">
-                <input type="submit" value="{{btn_hide}}" class="input">{{/hidden}}
-                {{#hidden}}<input type="hidden" name="action" value="unhide">
-                <input type="submit" value="{{btn_unhide}}" class="input">{{/hidden}}
-            </form>
-            <form method="POST" style="display:inline">
-                <input type="hidden" name="prg_id" value="{{prg_id}}">
-                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
-                <input type="hidden" name="id"     value="{{id}}">
-                <input type="hidden" name="action" value="delete">
-                <input type="submit" value="{{btn_delete}}" class="input">
-            </form>
-        </td>
+    {{^editing}}
+    <tr{{#hidden}} style="opacity:0.5"{{/hidden}}>
+    <td>{{id}}</td>
+    <td>{{page_id}}</td>
+    <td><code>{{user_id}}</code></td>
+    <td>{{name}}</td>
+    <td>{{reply_to}}</td>
+    <td>{{content}}</td>
+    <td>{{created_at}}</td>
+    <td><input type="checkbox" disabled {{#hidden}}checked{{/hidden}}></td>
+    <td><input type="checkbox" disabled {{#flagged}}checked{{/flagged}}></td>
+    <td>
+        <a href="{{base_url}}?edit={{id}}" class="input">{{btn_edit}}</a>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="id"     value="{{id}}">
+            {{^hidden}}<input type="hidden" name="action" value="hide">
+            <input type="submit" value="{{btn_hide}}" class="input">{{/hidden}}
+            {{#hidden}}<input type="hidden" name="action" value="unhide">
+            <input type="submit" value="{{btn_unhide}}" class="input">{{/hidden}}
+        </form>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="id"     value="{{id}}">
+            {{^flagged}}<input type="hidden" name="action" value="flag">
+            <input type="submit" value="{{btn_flag}}" class="input">{{/flagged}}
+            {{#flagged}}<input type="hidden" name="action" value="unflag">
+            <input type="submit" value="{{btn_unflag}}" class="input">{{/flagged}}
+        </form>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="id"     value="{{id}}">
+            <input type="hidden" name="action" value="delete">
+            <input type="submit" value="{{btn_delete}}" class="input"
+                   onclick="return confirm('Delete comment #{{id}}?')">
+        </form>
+    </td>
     </tr>
+    {{/editing}}
+
+    {{#editing}}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id"     value="{{id}}">
+            <td>{{id}}</td>
+            <td>{{page_id}}</td>
+            <td><code>{{user_id}}</code></td>
+            <td>
+                <small>{{label_name}}</small><br>
+                <input type="text" name="name" class="input" value="{{name}}"><br>
+                <small>{{label_email}}</small><br>
+                <input type="text" name="email" class="input" value="{{email}}">
+            </td>
+            <td>{{reply_to}}</td>
+            <td><textarea name="content" rows="5" class="input" style="width:100%">{{content}}</textarea></td>
+            <td>{{created_at}}</td>
+            <td><input type="checkbox" name="hidden"  value="1"{{#hidden}}  checked{{/hidden}}></td>
+            <td><input type="checkbox" name="flagged" value="1"{{#flagged}} checked{{/flagged}}></td>
+            <td>
+                <input type="submit" value="{{btn_update}}" class="input"><br>
+                <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
+            </td>
+        </form>
+    </tr>
+    {{/editing}}
     {{/comment_list}}
+
     </tbody>
 </table>

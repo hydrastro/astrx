@@ -31,7 +31,7 @@
             <input type="hidden" name="action"  value="delete">
             <input type="hidden" name="user_id" value="{{id}}">
             <input type="submit" value="{{btn_delete}}" class="input"
-                   onclick="return confirm('Soft-delete user {{username}}?')">
+                   onclick="return confirm('Soft-delete {{username}}?')">
         </form>
     </td>
     </tr>
@@ -48,26 +48,26 @@
             {{! Identity }}
             <td><code>{{id}}</code></td>
             <td>
-                <label style="font-size:0.8em">{{label_username}}</label><br>
+                <small>{{label_username}}</small><br>
                 <input type="text" name="username" class="input" value="{{username}}"><br>
-                <label style="font-size:0.8em">{{label_display_name}}</label><br>
+                <small>{{label_display_name}}</small><br>
                 <input type="text" name="display_name" class="input" value="{{display_name}}">
             </td>
 
             {{! Contact }}
             <td>
-                <label style="font-size:0.8em">{{label_mailbox}}</label><br>
+                <small>{{label_mailbox}}</small><br>
                 <input type="text" name="mailbox" class="input" value="{{mailbox}}"><br>
-                <label style="font-size:0.8em">{{label_email}}</label><br>
+                <small>{{label_email}}</small><br>
                 <input type="text" name="email" class="input" value="{{email}}">
             </td>
 
-            {{! Role }}
+            {{! Role + birth }}
             <td>
                 <select name="type" class="input">
                     {{#type_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{name}}</option>{{/type_options}}
                 </select><br>
-                <label style="font-size:0.8em">{{label_birth}}</label><br>
+                <small>{{label_birth}}</small><br>
                 <input type="text" name="birth" class="input" value="{{birth}}" placeholder="YYYY-MM-DD">
             </td>
 
@@ -75,28 +75,33 @@
             <td>
                 <label><input type="checkbox" name="verified" value="1"{{#verified}} checked{{/verified}}> {{label_verified}}</label><br>
                 <label><input type="checkbox" name="deleted"  value="1"{{#deleted}}  checked{{/deleted}}>  {{label_deleted}}</label><br>
-                <label style="font-size:0.8em">{{label_login_attempts}}</label><br>
+                <small>{{label_login_attempts}}</small><br>
                 <input type="number" name="login_attempts" class="input" value="{{login_attempts}}" style="width:5em" min="0">
             </td>
 
-            {{! Timestamps (read-only display) }}
+            {{! Timestamps — editable }}
             <td>
-                <small>{{label_created_at}}: {{created_at}}</small><br>
-                <small>{{label_last_access}}: {{last_access}}</small>
+                <small>{{label_created_at}}</small><br>
+                <input type="text" name="created_at" class="input" value="{{created_at}}" placeholder="YYYY-MM-DD HH:MM:SS"><br>
+                <small>{{label_last_access}}</small><br>
+                <input type="text" name="last_access" class="input" value="{{last_access}}" placeholder="YYYY-MM-DD HH:MM:SS">
             </td>
 
-            {{! Credentials }}
+            {{! Credentials + token }}
             <td colspan="2">
-                <label style="font-size:0.8em">{{label_password}} <em>{{label_password_hint}}</em></label><br>
-                <input type="text" name="password" class="input" placeholder="argon2id hash or blank to keep"><br>
-                <fieldset style="margin-top:6px;font-size:0.85em">
+                <small>{{label_password}} — {{label_password_hint}}</small><br>
+                <input type="text" name="password" class="input" value="" placeholder="argon2id hash, or plain text if box below checked"><br>
+                <label><input type="checkbox" name="hash_password" value="1"> {{label_hash_password}}</label>
+                <fieldset style="margin-top:8px;font-size:0.85em">
                     <legend>Token</legend>
-                    <label>{{label_token_hash}}</label><br>
+                    <small>{{label_token_hash}}</small><br>
                     <input type="text" name="token_hash" class="input" value="{{token_hash}}" style="width:100%"><br>
-                    <label>{{label_token_type}}: <input type="number" name="token_type" class="input" value="{{token_type}}" style="width:4em"></label>
+                    <small>{{label_token_type}}: </small>
+                    <input type="number" name="token_type" class="input" value="{{token_type}}" style="width:4em">
                     &nbsp;
                     <label><input type="checkbox" name="token_used" value="1"{{#token_used}} checked{{/token_used}}> {{label_token_used}}</label><br>
-                    <label>{{label_token_expires}}: <input type="text" name="token_expires_at" class="input" value="{{token_expires_at}}" placeholder="YYYY-MM-DD HH:MM:SS"></label>
+                    <small>{{label_token_expires}}: </small>
+                    <input type="text" name="token_expires_at" class="input" value="{{token_expires_at}}" placeholder="YYYY-MM-DD HH:MM:SS">
                 </fieldset>
                 <p>
                     <input type="submit" value="{{btn_update}}" class="input">

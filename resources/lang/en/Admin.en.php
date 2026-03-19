@@ -94,6 +94,11 @@ return [
     'admin.comments.unhidden' => 'Comment unhidden.',
     'admin.comments.deleted'  => 'Comment deleted.',
     'admin.comments.filter'   => 'Filter',
+    'admin.comments.updated'    => 'Comment updated.',
+    'admin.comments.email'      => 'Email',
+    'admin.comments.reply_to'   => 'Reply to',
+    'admin.comments.show_hidden'=> 'Show hidden',
+    'admin.btn.unflag'          => 'Unflag',
 
     // ---- Users --------------------------------------------------------------
     'admin.users.edit_heading'     => 'Edit user',
@@ -112,6 +117,7 @@ return [
     'admin.users.token_type'       => 'Token type',
     'admin.users.token_used'       => 'Token used',
     'admin.users.token_expires'    => 'Token expires',
+    'admin.users.hash_password' => 'Hash automatically (plain text input)',
 
     // ---- Banlist ------------------------------------------------------------
     'admin.banlist.banned'             => 'Ban added.',

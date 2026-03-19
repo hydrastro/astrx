@@ -65,7 +65,12 @@ final class AdminNewsController extends AbstractController
         $rawList = $listResult->isOk() ? $listResult->unwrap() : [];
         $newsList = [];
         foreach ($rawList as $item) {
-            $item['editing'] = ($editId > 0 && (int) $item['id'] === $editId);
+            if ($editId > 0 && (int) $item['id'] === $editId) {
+                // Nested array → Mustache sets $parent = this array inside {{#editing}}
+                $item['editing'] = $item;
+            } else {
+                $item['editing'] = false;
+            }
             $newsList[] = $item;
         }
         $this->ctx->set('news_list', $newsList);

@@ -94,6 +94,11 @@ return [
     'admin.comments.unhidden' => 'Commento mostrato.',
     'admin.comments.deleted'  => 'Commento eliminato.',
     'admin.comments.filter'   => 'Filtra',
+    'admin.comments.updated'    => 'Commento aggiornato.',
+    'admin.comments.email'      => 'Email',
+    'admin.comments.reply_to'   => 'Risposta a',
+    'admin.comments.show_hidden'=> 'Mostra nascosti',
+    'admin.btn.unflag'          => 'Rimuovi segnalazione',
 
     // ---- Users --------------------------------------------------------------
     'admin.users.edit_heading'     => 'Modifica utente',
@@ -112,6 +117,7 @@ return [
     'admin.users.token_type'       => 'Tipo token',
     'admin.users.token_used'       => 'Token usato',
     'admin.users.token_expires'    => 'Scadenza token',
+    'admin.users.hash_password' => 'Hash automatico (testo in chiaro)',
 
     // ---- Banlist ------------------------------------------------------------
     'admin.banlist.banned'             => 'Ban aggiunto.',

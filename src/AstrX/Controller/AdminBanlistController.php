@@ -74,26 +74,32 @@ final class AdminBanlistController extends AbstractController
         // ── Decorate bans with inline editing flag ─────────────────────────
         $banList = [];
         foreach ($rawBans as $ban) {
-            $isEditing        = ($banEditId > 0 && (int) $ban['id'] === $banEditId);
-            $ban['editing']   = $isEditing;
-            $ban['route_options'] = $this->buildRouteOptions($rawRoutes, (int) $ban['ban_route']);
+            $isEditing = ($banEditId > 0 && (int) $ban['id'] === $banEditId);
+            if ($isEditing) {
+                $editCtx = $ban;
+                $editCtx['route_options'] = $this->buildRouteOptions($rawRoutes, (int) $ban['ban_route']);
+                $ban['editing'] = $editCtx; // nested array → Mustache context
+            } else {
+                $ban['editing'] = false;
+            }
             $banList[] = $ban;
         }
 
         // ── Decorate routes + rounds with inline editing flags ─────────────
         $fmtRoutes = [];
         foreach ($rawRoutes as $route) {
-            $route['editing'] = ($routeEditId > 0 && (int) $route['id'] === $routeEditId);
             $rounds = [];
             foreach ($route['rounds'] as $rd) {
-                $rd['editing']        = ($roundEditId > 0 && (int) $rd['id'] === $roundEditId);
                 $rd['penalty_fmt']    = $rd['penalty']    === 0 ? '∞' : $this->fmt((int) $rd['penalty']);
                 $rd['max_tries_fmt']  = $rd['max_tries']  === 0 ? '∞' : (string) (int) $rd['max_tries'];
                 $rd['check_time_fmt'] = $rd['check_time'] === 0 ? '—' : $this->fmt((int) $rd['check_time']);
                 $rd['route_id_val']   = (int) $route['id'];
+                $rd['editing'] = ($roundEditId > 0 && (int) $rd['id'] === $roundEditId) ? $rd : false;
                 $rounds[] = $rd;
             }
             $route['rounds'] = $rounds;
+            $route['editing'] = ($routeEditId > 0 && (int) $route['id'] === $routeEditId) ? $route : false;
+            // Re-assign rounds after setting editing on route (route['rounds'] used in template)
             $fmtRoutes[] = $route;
         }
 
@@ -202,12 +208,13 @@ final class AdminBanlistController extends AbstractController
             // ── Rounds ────────────────────────────────────────────────────
             case 'add_round':
                 $routeId   = (int) ($posted['route_id']   ?? 0);
+                $roundNum  = (int) ($posted['round_num']  ?? 0);
                 $penalty   = (int) ($posted['penalty']    ?? 0);
                 $maxTries  = (int) ($posted['max_tries']  ?? 0);
                 $checkTime = (int) ($posted['check_time'] ?? 0);
                 $enabled   = !empty($posted['enabled']);
                 if ($routeId === 0) { break; }
-                $this->banlist->addRound($routeId, $penalty, $maxTries, $checkTime, $enabled)
+                $this->banlist->addRound($routeId, $roundNum, $penalty, $maxTries, $checkTime, $enabled)
                     ->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.banlist.round_added'));
                 return '?route_edit=' . $routeId;

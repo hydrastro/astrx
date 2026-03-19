@@ -366,6 +366,8 @@ final class UserRepository
         int     $loginAttempts,
         bool    $verified,
         bool    $deleted,
+        ?string $createdAt  = null,
+        ?string $lastAccess = null,
     ): Result {
         try {
             $sets  = [];
@@ -385,6 +387,8 @@ final class UserRepository
             if ($password !== null && $password !== '') {
                 $fields['password'] = $password;
             }
+            if ($createdAt !== null)  { $fields['created_at']  = $createdAt; }
+            if ($lastAccess !== null) { $fields['last_access'] = $lastAccess; }
             foreach ($fields as $col => $val) {
                 $sets[]           = "`{$col}` = :{$col}";
                 $params[":{$col}"] = $val;

@@ -123,15 +123,6 @@ final class AdminNavbarController extends AbstractController
         $prgId     = $this->prg->createId($this->request->uri()->path());
         $pages     = $this->loadPages();
 
-        // Mark the selected page for the entry currently being edited
-        if ($activeEntry > 0) {
-            $editEntryRow  = $this->loadEntry($activeEntry);
-            $editingPageId = (int) ($editEntryRow !== null ? ($editEntryRow['page_id'] ?? 0) : 0);
-            foreach ($pages as &$pg) {
-                $pg['selected'] = ((int) $pg['id'] === $editingPageId);
-            }
-            unset($pg);
-        }
 
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
@@ -148,15 +139,24 @@ final class AdminNavbarController extends AbstractController
             $nb['active'] = ($nb['id'] === $activeNavbar);
             foreach ($nb['pins'] as &$pin) {
                 $pin['navbar_id'] = $nb['id'];
-                $pin['editing']   = ($pin['id'] === $activePin && $nb['id'] === $activeNavbar);
+                $pinIsEditing = ($pin['id'] === $activePin && $nb['id'] === $activeNavbar);
+                $pin['editing'] = $pinIsEditing ? $pin : false;
                 foreach ($pin['entries'] as &$entry) {
                     $entry['navbar_id'] = $nb['id'];
                     $entry['pin_id']    = $pin['id'];
-                    $entry['editing']   = ($entry['id'] === $activeEntry);
-                    // Pre-mark selected page for internal entries
-                    if ((bool) $entry['internal']) {
-                        $epid = (int) ($entry['page_id'] ?? 0);
-                        $entry['page_id_val'] = $epid;
+                    if ($entry['id'] === $activeEntry) {
+                        $entryCtx = $entry;
+                        // Mark the selected page option
+                        $editingPageId = (int) ($entry['page_id'] ?? 0);
+                        $pagesWithSel = [];
+                        foreach ($this->loadPages() as $pg) {
+                            $pg['selected'] = ((int) $pg['id'] === $editingPageId);
+                            $pagesWithSel[] = $pg;
+                        }
+                        $entryCtx['available_pages'] = $pagesWithSel;
+                        $entry['editing'] = $entryCtx;
+                    } else {
+                        $entry['editing'] = false;
                     }
                 }
                 unset($entry);

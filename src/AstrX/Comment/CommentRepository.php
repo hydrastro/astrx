@@ -117,8 +117,8 @@ final class CommentRepository
         $sql = "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
                        name, email, content, reply_to, flagged, hidden, created_at
                   FROM comment"
-             . ($where !== [] ? ' WHERE ' . implode(' AND ', $where) : '')
-             . " ORDER BY created_at {$order}";
+               . ($where !== [] ? ' WHERE ' . implode(' AND ', $where) : '')
+               . " ORDER BY created_at {$order}";
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
@@ -155,15 +155,35 @@ final class CommentRepository
                     (:page, UNHEX(:uid), :name, :email, :content, :reply, :ip)'
             );
             $stmt->execute([
-                ':page'    => $pageId,
-                ':uid'     => $hexUserId,
-                ':name'    => $name,
-                ':email'   => $email,
-                ':content' => $content,
-                ':reply'   => $replyTo,
-                ':ip'      => $ip,
-            ]);
+                               ':page'    => $pageId,
+                               ':uid'     => $hexUserId,
+                               ':name'    => $name,
+                               ':email'   => $email,
+                               ':content' => $content,
+                               ':reply'   => $replyTo,
+                               ':ip'      => $ip,
+                           ]);
             return Result::ok((int) $this->pdo->lastInsertId());
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<true> */
+    /** @return Result<true> */
+    public function update(int $id, string $content, string $name,
+        ?string $email, bool $hidden, bool $flagged): Result
+    {
+        try {
+            $this->pdo->prepare(
+                'UPDATE comment
+                    SET content = :content, name = :name, email = :email,
+                        hidden = :hidden, flagged = :flagged
+                  WHERE id = :id'
+            )->execute([':content' => $content, ':name' => $name,
+                        ':email' => $email, ':hidden' => (int) $hidden,
+                        ':flagged' => (int) $flagged, ':id' => $id]);
+            return Result::ok(true);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -237,9 +257,9 @@ final class CommentRepository
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new CommentDbDiagnostic(
-            CommentDbDiagnostic::ID,
-            CommentDbDiagnostic::LEVEL,
-            $e->getMessage(),
-        )));
+                                                     CommentDbDiagnostic::ID,
+                                                     CommentDbDiagnostic::LEVEL,
+                                                     $e->getMessage(),
+                                                 )));
     }
 }

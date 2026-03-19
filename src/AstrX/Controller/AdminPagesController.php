@@ -66,10 +66,15 @@ final class AdminPagesController extends AbstractController
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($this->request->uri()->path());
 
-        // Decorate each page row with editing flag and pre-filled edit values
+        // Decorate each page row with editing context.
+        // editing must be an ARRAY (not bool) so Mustache keeps the row's data as context.
         $pageList = [];
         foreach ($pages as $row) {
-            $row['editing'] = ($editId > 0 && (int) $row['id'] === $editId);
+            if ($editId > 0 && (int) $row['id'] === $editId) {
+                $row['editing'] = $row; // nested array → context preserved
+            } else {
+                $row['editing'] = false;
+            }
             $pageList[] = $row;
         }
 
