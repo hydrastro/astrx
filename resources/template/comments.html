@@ -8,12 +8,12 @@
     </div>
     {{/has_pagination}}
 
-    {{^comments}}
+    {{^comments_any}}
     <p>{{comments_none}}</p>
-    {{/comments}}
+    {{/comments_any}}
 
     {{#comments}}
-    <div class="comment" id="comment-{{id}}" style="border:1px solid white;padding:10px 10px 0 10px;height:auto;overflow:auto;margin-bottom:10px;{{indent_style}}">
+    <div class="comment" id="comment-{{id}}" style="border:1px solid white;padding:10px 10px 0 10px;height:auto;overflow:auto;margin-bottom:10px;{{row_opacity}}">
         <div style="overflow:auto;margin-bottom:10px">
 
             {{#avatar_section}}
@@ -69,31 +69,31 @@
             </small></p>
             <div class="clear"></div>
         </div>
-    </div>
-    {{/comments}}
+        {{&close_divs_html}}
+        {{/comments}}
 
-    <hr>
-    <h3 id="comment_form">{{comments_submit_heading}}</h3>
-    <form method="POST">
-        <input type="hidden" name="prg_id"   value="{{comments_prg_id}}">
-        <input type="hidden" name="_csrf"     value="{{comments_csrf}}">
-        <input type="hidden" name="reply_to" value="{{comments_reply_to}}">
-        <p>
-            {{#comments_reply_to}}
-            <em>{{comment_label_reply}}: #{{comments_reply_to}}</em>
-            &mdash; <a href="?#comment_form">{{comment_btn_cancel_reply}}</a><br>
-            {{/comments_reply_to}}
-            {{^comments_logged_in}}
-            <label for="comment_name">{{comment_label_name}}: </label>
-            <input type="text" name="name" id="comment_name" class="input"><br>
-            {{/comments_logged_in}}
-            {{#comments_require_email}}
-            <label for="comment_email">{{comment_label_email}}: </label>
-            <input type="email" name="email" id="comment_email" class="input"><br>
-            {{/comments_require_email}}
-            <label for="comment_content">{{comment_label_content}}: </label><br>
-            <textarea name="content" id="comment_content" rows="10" class="input"></textarea><br>
-            <input type="submit" value="{{comment_btn_submit}}" class="input">
-        </p>
-    </form>
-</div>
+        <hr>
+        <h3 id="comment_form">{{comments_submit_heading}}</h3>
+        <form method="POST">
+            <input type="hidden" name="prg_id"   value="{{comments_prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{comments_csrf}}">
+            <input type="hidden" name="reply_to" value="{{comments_reply_to}}">
+            <p>
+                {{#comments_reply_to}}
+                <em>{{comment_label_reply}}: #{{comments_reply_to}}</em>
+                &mdash; <a href="?#comment_form">{{comment_btn_cancel_reply}}</a><br>
+                {{/comments_reply_to}}
+                {{^comments_logged_in}}
+                <label for="comment_name">{{comment_label_name}}: </label>
+                <input type="text" name="name" id="comment_name" class="input"><br>
+                {{/comments_logged_in}}
+                {{#comments_require_email}}
+                <label for="comment_email">{{comment_label_email}}: </label>
+                <input type="email" name="email" id="comment_email" class="input"><br>
+                {{/comments_require_email}}
+                <label for="comment_content">{{comment_label_content}}: </label><br>
+                <textarea name="content" id="comment_content" rows="10" class="input"></textarea><br>
+                <input type="submit" value="{{comment_btn_submit}}" class="input">
+            </p>
+        </form>
+    </div>
