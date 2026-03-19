@@ -40,7 +40,28 @@ final class AvatarController extends AbstractController
 
     public function handle(): Result
     {
-        // Resolve user ID from tail (rewrite) or query (query mode)
+        // ── Guest identicon by arbitrary seed ─────────────────────────────
+        // ?seed=<hex> serves an identicon seeded from any hex string.
+        // Used for guest comment avatars (seed = sha256 of name+ip).
+        $seed = (string) ($this->request->query()->get('seed') ?? '');
+        if ($seed !== '') {
+            if (!ctype_xdigit($seed)) {
+                http_response_code(400);
+                exit;
+            }
+            if ($this->avatarService->useIdenticons()) {
+                $b64 = $this->identicon->render($seed);
+                $png = base64_decode($b64);
+                header('Content-Type: image/png');
+                header('Cache-Control: public, max-age=86400');
+                echo $png;
+                exit;
+            }
+            http_response_code(404);
+            exit;
+        }
+
+        // ── Registered user avatar ────────────────────────────────────────
         $hexId = $this->currentUrl->tailSegment(0)
                  ?? (string) ($this->request->query()->get('uid') ?? '');
 

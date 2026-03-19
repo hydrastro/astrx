@@ -14,5 +14,6 @@ return [
     'comment.btn.hide'   => 'Hide',
     'comment.btn.unhide' => 'Show',
     'comment.btn.delete' => 'Delete',
+    'comment.label.captcha'    => 'Enter the code shown',
     'comment.btn.cancel_reply' => 'Cancel reply',
 ];

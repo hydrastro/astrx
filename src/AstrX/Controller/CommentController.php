@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
+use AstrX\Captcha\CaptchaService;
 use AstrX\Comment\CommentService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -14,26 +17,17 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
-use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
+use AstrX\User\AvatarService;
 use AstrX\User\UserSession;
-use AstrX\User\UserRepository;
 
 /**
  * Public comment display and submission controller.
  *
- * This controller is NOT the main controller for any page — it is included
- * as a sub-component by pages that have comments enabled (page.comments = 1).
- * ContentManager calls it after the primary controller when page.comments = 1.
- *
- * PRG flow (same pattern as user forms):
- *   GET  → render existing comments + empty form (with CSRF)
- *   POST → ContentManager intercepts, stores in PRG, redirects
- *   GET ?_prg=token → pull, validate, submit, redirect back
- *
- * The page template includes {{> comments}} which renders comments.html,
- * a partial that displays the list and the submission form.
- * All comment vars are set under the 'comments_*' namespace.
+ * Injected by ContentManager after the main page controller whenever
+ * page.comments = 1. All comment template vars live in the 'comments_*'
+ * namespace. Nested boxes are produced by a flat loop: each enriched row
+ * carries close_divs_html (N closing </div> tags) so the template engine
+ * never needs to recurse.
  */
 final class CommentController extends AbstractController
 {
@@ -46,23 +40,22 @@ final class CommentController extends AbstractController
         private readonly Page                  $page,
         private readonly CommentService        $commentService,
         private readonly Gate                  $gate,
-        private readonly UserRepository        $userRepo,
         private readonly UserSession           $session,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly AvatarService         $avatarService,
+        private readonly CaptchaService        $captchaService,
     ) {
         parent::__construct($collector);
     }
 
     public function handle(): Result
     {
-        // Process PRG submission
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $this->processSubmission($prgToken);
-            // Redirect back to the page (strip _prg from URL)
             $pageUrl = $this->urlGen->toPage(
                 $this->t->t($this->page->urlId, fallback: $this->page->urlId)
             );
@@ -74,12 +67,11 @@ final class CommentController extends AbstractController
         return $this->ok();
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     private function processSubmission(string $prgToken): void
     {
-        $posted = $this->prg->pull($prgToken) ?? [];
-
+        $posted     = $this->prg->pull($prgToken) ?? [];
         $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
@@ -88,7 +80,7 @@ final class CommentController extends AbstractController
 
         $action = (string) ($posted['action'] ?? 'post');
 
-        // Admin quick-moderation actions from the public comment display
+        // Admin quick-moderation
         if (in_array($action, ['hide', 'unhide', 'delete'], true)) {
             if ($this->gate->can(Permission::ADMIN_COMMENTS)) {
                 $id = (int) ($posted['id'] ?? 0);
@@ -103,11 +95,21 @@ final class CommentController extends AbstractController
             return;
         }
 
+        // Captcha verification for guest users
+        if (!$this->session->isLoggedIn()) {
+            $captchaId   = (string) ($posted['captcha_id']   ?? '');
+            $captchaText = (string) ($posted['captcha_text'] ?? '');
+            $captchaResult = $this->captchaService->verify($captchaId, $captchaText);
+            if (!$captchaResult->isOk()) {
+                $captchaResult->drainTo($this->collector);
+                return;
+            }
+        }
+
         $content = (string) ($posted['content'] ?? '');
         $name    = ($posted['name']  ?? '') !== '' ? (string) $posted['name']  : null;
         $email   = ($posted['email'] ?? '') !== '' ? (string) $posted['email'] : null;
         $replyTo = is_numeric($posted['reply_to'] ?? null) ? (int) $posted['reply_to'] : null;
-
         $remoteIp = (string) ($this->request->server()->get('REMOTE_ADDR') ?? '');
 
         $result = $this->commentService->post(
@@ -115,6 +117,8 @@ final class CommentController extends AbstractController
         );
         $result->drainTo($this->collector);
     }
+
+    // =========================================================================
 
     private function renderComments(): void
     {
@@ -134,25 +138,26 @@ final class CommentController extends AbstractController
         $pageCount = $perPage > 0 ? (int) ceil($total / $perPage) : 1;
         $flat      = $commentsResult->isOk() ? $commentsResult->unwrap() : [];
 
-        $isAdmin      = $this->gate->can(Permission::ADMIN_COMMENTS);
-        $allowReplies = $this->commentService->allowReplies();
+        $isAdmin        = $this->gate->can(Permission::ADMIN_COMMENTS);
+        $allowReplies   = $this->commentService->allowReplies();
+        $useIdenticons  = $this->avatarService->useIdenticons();
+        $profilePageKey = $this->t->t('WORDING_PROFILE', fallback: 'WORDING_PROFILE');
+        $profileBase    = $this->urlGen->toPage($profilePageKey);
 
-        // Enrich each row and pre-compute all template sections.
+        // ── Enrich each comment row ───────────────────────────────────────────
         //
-        // AstrX Mustache: {{#section}} sets $parent = $resolved.
-        // A bool/int/string value clobbers the comment-row context, making inner
-        // {{id}}, {{hidden}} etc. undefined. Fix: every conditional section that
-        // needs row fields is set to [$enriched] (truthy, count=1) or false.
+        // AstrX Mustache engine context rule: {{#section}} sets $parent = $resolved.
+        // A bool/int/string value clobbers the row context, making inner vars undefined.
+        // Every conditional section that needs to read row fields must be [$enriched]
+        // (truthy, count=1, engine sets $parent = $enriched[0]) or false (skipped).
         //
-        // close_divs_html: the outer comment <div> is intentionally left open
-        // after the inner content div closes. Children (deeper depth) render
-        // inside it. close_divs_html = N closing </div> tags injected after
-        // the inner div closes, collapsing the nesting back to the right level.
-        // Formula (current depth D, next depth N):
-        //   N > D  → '' (child follows)
+        // close_divs_html: outer comment divs are left open to nest children inside.
+        // After the inner content div, {{&close_divs_html}} closes the correct number
+        // of outer divs. Formula (current depth D, next depth N):
+        //   N > D  → '' (child follows, outer div stays open)
         //   N == D → '</div>' (sibling)
-        //   N < D  → '</div>' * (D-N+1) (close current + ancestors)
-        //   no next → '</div>' * (D+1) (close all)
+        //   N < D  → '</div>' × (D−N+1) (close current + ancestors)
+        //   no next → '</div>' × (D+1) (close all)
         $comments = [];
         foreach ($flat as $i => $row) {
             $isHidden = (bool) ($row['hidden'] ?? false);
@@ -160,46 +165,69 @@ final class CommentController extends AbstractController
                 ? (int) $row['reply_to'] : null;
 
             if ($row['user_id'] !== null) {
+                // Registered user
                 $displayName = (string) ($row['user_display_name'] ?? $row['name'] ?? 'Anonymous');
                 $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (string) $row['user_id']]);
+                $profileUrl  = $profileBase . '?uid=' . rawurlencode((string) $row['user_id']);
             } else {
+                // Guest
                 $displayName = ($row['name'] ?? '') !== '' ? (string) $row['name'] : 'Anonymous';
-                $avatarSrc   = '';
+                $profileUrl  = '';
+                if ($useIdenticons) {
+                    // Seed = sha256(name + packed_ip) — deterministic per guest identity.
+                    // Use raw name + ip bytes; ip is varbinary from DB (inet_pton output).
+                    $seed      = hash('sha256', ($row['name'] ?? '') . ($row['ip'] ?? ''));
+                    $avatarSrc = $this->urlGen->toPage('avatar', ['seed' => $seed]);
+                } else {
+                    $avatarSrc = '';
+                }
             }
 
             $enriched = $row + [
                     'display_name' => $displayName,
                     'avatar_src'   => $avatarSrc,
+                    'profile_url'  => $profileUrl,
                     'is_own'       => $this->session->isLoggedIn()
                                       && $row['user_id'] === $this->session->userId(),
+                    'row_opacity'  => $isHidden ? 'opacity:0.5;' : '',
                 ];
 
-            $enriched['avatar_section']       = ($avatarSrc !== '') ? [$enriched] : false;
-            $enriched['reply_to_section']     = ($replyTo !== null) ? [$enriched] : false;
-            $enriched['reply_section']        = $allowReplies        ? [$enriched] : false;
-            $enriched['admin_hide_section']   = ($isAdmin && !$isHidden) ? [$enriched] : false;
-            $enriched['admin_unhide_section'] = ($isAdmin && $isHidden)  ? [$enriched] : false;
-            $enriched['admin_delete_section'] = $isAdmin                 ? [$enriched] : false;
-            $enriched['row_opacity']          = $isHidden ? 'opacity:0.5;' : '';
+            // Section wrappers — [$enriched] preserves row context inside Mustache sections.
+            // RULE: never nest a section that needs row context inside another section.
+            //       Each conditional that reads row fields gets its own top-level key.
+            $hasAvatar  = ($avatarSrc !== '');
+            $hasProfile = ($profileUrl !== '');
 
-            // close_divs_html — closes the outer comment div(s) after inner content
+            // Avatar + profile link (registered user with avatar)
+            $enriched['avatar_profile_section'] = ($hasAvatar && $hasProfile)  ? [$enriched] : false;
+            // Avatar without profile link (guest with identicon)
+            $enriched['avatar_plain_section']   = ($hasAvatar && !$hasProfile) ? [$enriched] : false;
+            // Name as a profile link
+            $enriched['name_profile_section']   = $hasProfile  ? [$enriched] : false;
+            // Name as plain text
+            $enriched['name_plain_section']     = !$hasProfile ? [$enriched] : false;
+            // Reply-to badge
+            $enriched['reply_to_section']       = ($replyTo !== null) ? [$enriched] : false;
+            // Reply button
+            $enriched['reply_section']          = $allowReplies        ? [$enriched] : false;
+            // Admin buttons (separate per action, never nested)
+            $enriched['admin_hide_section']     = ($isAdmin && !$isHidden) ? [$enriched] : false;
+            $enriched['admin_unhide_section']   = ($isAdmin && $isHidden)  ? [$enriched] : false;
+            $enriched['admin_delete_section']   = $isAdmin                 ? [$enriched] : false;
+
+            // Nesting: close_divs_html
             $d  = (int) ($row['depth'] ?? 0);
             $nd = isset($flat[$i + 1]) ? (int) ($flat[$i + 1]['depth'] ?? 0) : -1;
-            if ($nd > $d) {
-                $close = 0;
-            } elseif ($nd === $d) {
-                $close = 1;
-            } elseif ($nd >= 0) {
-                $close = $d - $nd + 1;
-            } else {
-                $close = $d + 1;
-            }
+            if ($nd > $d)        { $close = 0; }
+            elseif ($nd === $d)  { $close = 1; }
+            elseif ($nd >= 0)    { $close = $d - $nd + 1; }
+            else                 { $close = $d + 1; }
             $enriched['close_divs_html'] = str_repeat('</div>', $close);
 
             $comments[] = $enriched;
         }
 
-        // Pagination URLs
+        // Pagination
         $baseUrl = $this->urlGen->toPage(
             $this->t->t($this->page->urlId, fallback: $this->page->urlId)
         );
@@ -216,6 +244,18 @@ final class CommentController extends AbstractController
         $prgId          = $this->prg->createId($baseUrl);
         $replyToPreFill = (int) ($this->request->query()->get('reply_to') ?? 0);
 
+        // Captcha for guest users
+        $showCaptcha  = false;
+        $captchaId    = '';
+        $captchaImage = '';
+        if (!$this->session->isLoggedIn()) {
+            $captchaGen = $this->captchaService->generate();
+            if ($captchaGen->isOk()) {
+                ['id' => $captchaId, 'image_b64' => $captchaImage] = $captchaGen->unwrap();
+                $showCaptcha = true;
+            }
+        }
+
         $this->ctx->set('comments',               $comments);
         $this->ctx->set('comments_any',           $comments !== []);
         $this->ctx->set('comments_reply_to',      $replyToPreFill > 0 ? $replyToPreFill : '');
@@ -224,10 +264,12 @@ final class CommentController extends AbstractController
         $this->ctx->set('has_pagination',         $pageCount > 1);
         $this->ctx->set('comments_page_current',  $pageNum);
         $this->ctx->set('comments_allow_replies', $allowReplies);
-        $this->ctx->set('comments_require_email', $this->commentService->requireEmail());
         $this->ctx->set('comments_logged_in',     $this->session->isLoggedIn());
         $this->ctx->set('comments_csrf',          $csrfToken);
         $this->ctx->set('comments_prg_id',        $prgId);
+        $this->ctx->set('show_captcha',           $showCaptcha);
+        $this->ctx->set('captcha_id',             $captchaId);
+        $this->ctx->set('captcha_image',          $captchaImage);
         $this->ctx->set('comments_heading',       $this->t->t('comment.heading'));
         $this->ctx->set('comments_none',          $this->t->t('comment.none'));
         $this->ctx->set('comments_submit_heading',$this->t->t('comment.submit_heading'));
@@ -235,6 +277,7 @@ final class CommentController extends AbstractController
         $this->ctx->set('comment_label_email',    $this->t->t('comment.label.email'));
         $this->ctx->set('comment_label_content',  $this->t->t('comment.label.content'));
         $this->ctx->set('comment_label_reply',    $this->t->t('comment.label.reply'));
+        $this->ctx->set('comment_label_captcha',  $this->t->t('comment.label.captcha'));
         $this->ctx->set('comment_btn_submit',     $this->t->t('comment.btn.submit'));
         $this->ctx->set('comment_btn_reply',      $this->t->t('comment.btn.reply'));
         $this->ctx->set('comment_btn_cancel_reply',$this->t->t('comment.btn.cancel_reply'));

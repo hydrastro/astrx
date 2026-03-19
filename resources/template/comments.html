@@ -16,11 +16,27 @@
     <div class="comment" id="comment-{{id}}" style="border:1px solid white;padding:10px 10px 0 10px;height:auto;overflow:auto;margin-bottom:10px;{{row_opacity}}">
         <div style="overflow:auto;margin-bottom:10px">
 
-            {{#avatar_section}}
-            <img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;">
-            {{/avatar_section}}
+            {{! Registered user avatar with profile link }}
+            {{#avatar_profile_section}}
+            <a href="{{profile_url}}">
+                <img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;">
+            </a>
+            {{/avatar_profile_section}}
 
+            {{! Guest avatar (identicon) — no link }}
+            {{#avatar_plain_section}}
+            <img src="{{avatar_src}}" alt="avatar" style="width:75px;height:75px;float:left;margin-right:10px;">
+            {{/avatar_plain_section}}
+
+            {{! Registered user name — link to profile }}
+            {{#name_profile_section}}
+            <p style="margin:0;float:left"><strong><a href="{{profile_url}}">{{display_name}}</a></strong></p>
+            {{/name_profile_section}}
+
+            {{! Guest name — plain text }}
+            {{#name_plain_section}}
             <p style="margin:0;float:left"><strong>{{display_name}}</strong></p>
+            {{/name_plain_section}}
 
             <div class="right">
                 {{#reply_section}}
@@ -86,13 +102,17 @@
                 {{^comments_logged_in}}
                 <label for="comment_name">{{comment_label_name}}: </label>
                 <input type="text" name="name" id="comment_name" class="input"><br>
-                {{/comments_logged_in}}
-                {{#comments_require_email}}
                 <label for="comment_email">{{comment_label_email}}: </label>
                 <input type="email" name="email" id="comment_email" class="input"><br>
-                {{/comments_require_email}}
+                {{/comments_logged_in}}
                 <label for="comment_content">{{comment_label_content}}: </label><br>
                 <textarea name="content" id="comment_content" rows="10" class="input"></textarea><br>
+                {{#show_captcha}}
+                <img src="data:image/png;base64,{{&captcha_image}}" alt="captcha" class="captcha-image"><br>
+                <label for="captcha_text">{{comment_label_captcha}}: </label>
+                <input type="text" name="captcha_text" id="captcha_text" class="input" autocomplete="off" spellcheck="false"><br>
+                <input type="hidden" name="captcha_id" value="{{captcha_id}}">
+                {{/show_captcha}}
                 <input type="submit" value="{{comment_btn_submit}}" class="input">
             </p>
         </form>
