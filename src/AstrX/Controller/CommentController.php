@@ -14,7 +14,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
-use AstrX\User\UserRepository;
 use AstrX\User\UserSession;
 
 /**
@@ -43,7 +42,6 @@ final class CommentController extends AbstractController
         private readonly Request               $request,
         private readonly Page                  $page,
         private readonly CommentService        $commentService,
-        private readonly UserRepository        $userRepo,
         private readonly UserSession           $session,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
@@ -114,26 +112,26 @@ final class CommentController extends AbstractController
         $pageCount   = $perPage > 0 ? (int) ceil($total / $perPage) : 1;
         $rawComments = $commentsResult->isOk() ? $commentsResult->unwrap() : [];
 
-        // Enrich each comment with the poster's display name and avatar URL
+        // User display_name and avatar flag are now JOINed in the query — no per-comment
+        // user lookup needed. One query serves all comments.
         $comments = [];
         foreach ($rawComments as $row) {
-            $displayName = $row['name'] ?? 'Anonymous';
-            $avatarSrc   = '';
             if ($row['user_id'] !== null) {
-                $ur = $this->userRepo->findPublicById((string) $row['user_id']);
-                if ($ur->isOk() && $ur->unwrap() !== null) {
-                    $u           = $ur->unwrap();
-                    $displayName = (string) ($u['display_name'] ?: $u['username']);
-                    $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (string) $u['id']]);
-                }
+                // Registered user: use joined data
+                $displayName = (string) ($row['user_display_name'] ?? $row['name'] ?? 'Anonymous');
+                $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (string) $row['user_id']]);
+            } else {
+                // Anonymous
+                $displayName = ($row['name'] ?? '') !== '' ? (string) $row['name'] : 'Anonymous';
+                $avatarSrc   = '';
             }
             $comments[] = $row + [
-                'display_name' => $displayName,
-                'avatar_src'   => $avatarSrc,
-                'indent_style' => 'margin-left:' . ((int) $row['depth'] * 24) . 'px',
-                'is_own'       => $this->session->isLoggedIn()
-                                  && $row['user_id'] === $this->session->userId(),
-            ];
+                    'display_name' => $displayName,
+                    'avatar_src'   => $avatarSrc,
+                    'indent_style' => 'margin-left:' . ((int) $row['depth'] * 24) . 'px',
+                    'is_own'       => $this->session->isLoggedIn()
+                                      && $row['user_id'] === $this->session->userId(),
+                ];
         }
 
         // Pagination URLs

@@ -155,6 +155,31 @@ final class CommentService
 
         $hexUserId = $this->session->isLoggedIn() ? $this->session->userId() : null;
 
+        // ── Mute check ────────────────────────────────────────────────────
+        // Check if this user/IP is currently muted (from a previous flood/spam event).
+        $muteResult = $this->repo->isMuted($hexUserId, $ip, $pageId);
+        if ($muteResult->isOk() && $muteResult->unwrap() === true) {
+            return $this->opErr('muted');
+        }
+
+        // ── Flood check ───────────────────────────────────────────────────
+        // minimum_flood_secs=0 disables the check.
+        if ($this->minimumFloodSecs > 0) {
+            $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
+            if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
+                $elapsed = time() - $lastResult->unwrap();
+                if ($elapsed < $this->minimumFloodSecs) {
+                    // Flood detected: mute for antispam_time_secs
+                    if ($this->antispamTimeSecs > 0) {
+                        $this->repo->addMute(
+                            $hexUserId, $ip, null, $this->antispamTimeSecs
+                        );
+                    }
+                    return $this->opErr('flood');
+                }
+            }
+        }
+
         return $this->repo->create(
             $pageId, $hexUserId,
             $hexUserId !== null ? null : $name,
@@ -272,7 +297,7 @@ final class CommentService
     private function opErr(string $operation, string $detail = ''): Result
     {
         return Result::err(null, Diagnostics::of(new CommentDiagnostic(
-            CommentDiagnostic::ID, CommentDiagnostic::LEVEL, $operation, $detail
-        )));
+                                                     CommentDiagnostic::ID, CommentDiagnostic::LEVEL, $operation, $detail
+                                                 )));
     }
 }

@@ -81,7 +81,10 @@ final class AdminCommentsController extends AbstractController
 
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
+        $muteResult = $this->comments->listMutes();
+        $muteResult->drainTo($this->collector);
         $this->ctx->set('comment_list',   $commentList);
+        $this->ctx->set('mute_list',      $muteResult->isOk() ? $muteResult->unwrap() : []);
         $this->ctx->set('filter_page_id', $qPageId ?? '');
         $this->ctx->set('filter_flagged', $qFlagged === '1');
         $this->ctx->set('base_url',       $this->request->uri()->path());
@@ -136,6 +139,13 @@ final class AdminCommentsController extends AbstractController
                 $this->comments->delete($id)->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.comments.deleted'));
                 break;
+            case 'lift_mute':
+                $muteId = (int) ($posted['mute_id'] ?? 0);
+                if ($muteId > 0) {
+                    $this->comments->deleteMute($muteId)->drainTo($this->collector);
+                    $this->flash->set('success', $this->t->t('admin.comments.mute_lifted'));
+                }
+                break;
         }
     }
 
@@ -176,5 +186,8 @@ final class AdminCommentsController extends AbstractController
         $this->ctx->set('label_filter',   $this->t->t('admin.comments.filter'));
         $this->ctx->set('btn_filter',     $this->t->t('admin.btn.filter'));
         $this->ctx->set('label_show_hidden', $this->t->t('admin.comments.show_hidden'));
+        $this->ctx->set('label_mutes',       $this->t->t('admin.comments.mutes'));
+        $this->ctx->set('label_expires',     $this->t->t('admin.comments.mute_expires'));
+        $this->ctx->set('btn_lift_mute',     $this->t->t('admin.comments.lift_mute'));
     }
 }

@@ -217,7 +217,19 @@ final class DefaultTemplateContext
                 }
                 $processedUserNav[] = $e;
             }
-            $this->vars['user_nav'] = $processedUserNav;
+            // Append the logout CSRF token to the logout entry URL.
+            // LogoutController::handle() verifies this token before acting.
+            $logoutToken = \AstrX\Controller\LogoutController::getOrCreateToken();
+            $navWithToken = [];
+            foreach ($processedUserNav as $entry) {
+                if (str_contains((string) ($entry['url'] ?? ''), 'logout')
+                    || str_contains((string) ($entry['name'] ?? ''), 'ogout')) {
+                    $sep = str_contains((string) $entry['url'], '?') ? '&' : '?';
+                    $entry['url'] = $entry['url'] . $sep . '_lt=' . rawurlencode($logoutToken);
+                }
+                $navWithToken[] = $entry;
+            }
+            $this->vars['user_nav'] = $navWithToken;
         } else {
             $this->vars['user_nav'] = [];
         }

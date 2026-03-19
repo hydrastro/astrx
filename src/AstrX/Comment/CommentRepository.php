@@ -36,12 +36,15 @@ final class CommentRepository
         try {
             if ($limit > 0) {
                 $stmt = $this->pdo->prepare(
-                    "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
-                            name, email, content, reply_to, flagged, hidden,
-                            created_at
-                       FROM comment
-                      WHERE page_id = :pid AND hidden = 0
-                      ORDER BY created_at {$order}
+                    "SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                            c.name, c.email, c.content, c.reply_to,
+                            c.flagged, c.hidden, c.created_at,
+                            COALESCE(u.display_name, u.username) AS user_display_name,
+                            u.avatar AS user_has_avatar
+                       FROM comment c
+                       LEFT JOIN user u ON u.id = c.user_id
+                      WHERE c.page_id = :pid AND c.hidden = 0
+                      ORDER BY c.created_at {$order}
                       LIMIT :lim OFFSET :off"
                 );
                 $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
@@ -49,12 +52,15 @@ final class CommentRepository
                 $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
             } else {
                 $stmt = $this->pdo->prepare(
-                    "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
-                            name, email, content, reply_to, flagged, hidden,
-                            created_at
-                       FROM comment
-                      WHERE page_id = :pid AND hidden = 0
-                      ORDER BY created_at {$order}"
+                    "SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                            c.name, c.email, c.content, c.reply_to,
+                            c.flagged, c.hidden, c.created_at,
+                            COALESCE(u.display_name, u.username) AS user_display_name,
+                            u.avatar AS user_has_avatar
+                       FROM comment c
+                       LEFT JOIN user u ON u.id = c.user_id
+                      WHERE c.page_id = :pid AND c.hidden = 0
+                      ORDER BY c.created_at {$order}"
                 );
                 $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
             }
@@ -253,6 +259,128 @@ final class CommentRepository
     }
 
     // -------------------------------------------------------------------------
+
+    /**
+     * Timestamp of the most recent non-hidden comment by this IP or user on any page.
+     * Returns null if no recent comment found.
+     * @return Result<?int> Unix timestamp or null
+     */
+    public function lastCommentTime(?string $hexUserId, ?string $packedIp): Result
+    {
+        try {
+            if ($hexUserId !== null) {
+                $stmt = $this->pdo->prepare(
+                    'SELECT UNIX_TIMESTAMP(created_at) AS ts FROM comment
+                      WHERE user_id = UNHEX(:uid) ORDER BY created_at DESC LIMIT 1'
+                );
+                $stmt->execute([':uid' => $hexUserId]);
+            } elseif ($packedIp !== null) {
+                $stmt = $this->pdo->prepare(
+                    'SELECT UNIX_TIMESTAMP(created_at) AS ts FROM comment
+                      WHERE ip = :ip ORDER BY created_at DESC LIMIT 1'
+                );
+                $stmt->execute([':ip' => $packedIp]);
+            } else {
+                return Result::ok(null);
+            }
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            return Result::ok($row !== false ? (int) $row['ts'] : null);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Check for an active mute affecting this user/IP on this page (or site-wide).
+     * @return Result<bool> true = muted
+     */
+    public function isMuted(?string $hexUserId, ?string $packedIp, int $pageId): Result
+    {
+        try {
+            $now = date('Y-m-d H:i:s');
+            $conditions = [];
+            $params = [':now' => $now, ':page_id' => $pageId];
+            if ($hexUserId !== null) {
+                $conditions[] = '(user_id = UNHEX(:uid) AND (page_id IS NULL OR page_id = :page_id))';
+                $params[':uid'] = $hexUserId;
+            }
+            if ($packedIp !== null) {
+                $conditions[] = '(ip = :ip AND (page_id IS NULL OR page_id = :page_id2))';
+                $params[':ip'] = $packedIp;
+                $params[':page_id2'] = $pageId;
+            }
+            if ($conditions === []) { return Result::ok(false); }
+            $sql = 'SELECT 1 FROM mute WHERE expires_at > :now AND (' .
+                   implode(' OR ', $conditions) . ') LIMIT 1';
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return Result::ok($stmt->fetch() !== false);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Create a mute record for a user/IP.
+     * @return Result<true>
+     */
+    public function addMute(
+        ?string $hexUserId, ?string $packedIp, ?int $pageId, int $durationSecs
+    ): Result {
+        try {
+            $expires = date('Y-m-d H:i:s', time() + $durationSecs);
+            $this->pdo->prepare(
+                'INSERT INTO mute (user_id, ip, page_id, expires_at)
+                 VALUES (UNHEX(:uid), :ip, :page_id, :expires)'
+            )->execute([
+                           ':uid'     => $hexUserId,
+                           ':ip'      => $packedIp,
+                           ':page_id' => $pageId,
+                           ':expires' => $expires,
+                       ]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<list<array<string,mixed>>> */
+    public function listMutes(): Result
+    {
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT m.id, LOWER(HEX(m.user_id)) AS user_id, m.ip, m.page_id,
+                        m.expires_at, u.username
+                   FROM mute m
+                   LEFT JOIN user u ON u.id = m.user_id
+                  WHERE m.expires_at > NOW()
+                  ORDER BY m.expires_at DESC'
+            );
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            // Format packed IP for display
+            foreach ($rows as &$row) {
+                $row['ip_display'] = $row['ip'] !== null
+                    ? (inet_ntop($row['ip']) ?: bin2hex($row['ip']))
+                    : null;
+            }
+            unset($row);
+            return Result::ok($rows);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<true> */
+    public function deleteMute(int $id): Result
+    {
+        try {
+            $this->pdo->prepare('DELETE FROM mute WHERE id = :id')
+                ->execute([':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
 
     private function err(PDOException $e): Result
     {

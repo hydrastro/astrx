@@ -5,7 +5,7 @@ declare(strict_types = 1);
 return [
     'ContentManager' => [
         'default_template'  => 'default',
-        'error_page_id'     => 'WORDING_ERROR',
+        'error_page_url_id'     => 'WORDING_ERROR',
         'main_page_id'      => 'WORDING_MAIN',
         'pages_lang_domain' => 'pages',
         'navbar_lang_domain'       => 'Navbar',

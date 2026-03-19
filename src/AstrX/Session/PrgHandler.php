@@ -55,24 +55,72 @@ final class PrgHandler
         unset($_SESSION[self::POST_PREFIX . $token]);
     }
 
+    /** Max seconds a PRG target may sit unused before being pruned. */
+    private const TARGET_TTL = 3600;
+
+    /** Max number of live PRG targets per session before forced pruning. */
+    private const TARGET_CAP = 50;
+
     public function createId(string $url): string
     {
+        $this->pruneTargets();
         $prgId = bin2hex(random_bytes(16));
-        $_SESSION[self::TARGET_PREFIX . $prgId] = $url;
+        $_SESSION[self::TARGET_PREFIX . $prgId] = [
+            'url' => $url,
+            'ts'  => time(),
+        ];
 
         return $prgId;
     }
 
+    private function pruneTargets(): void
+    {
+        $cutoff = time() - self::TARGET_TTL;
+        $count  = 0;
+        foreach ($_SESSION as $key => $value) {
+            if (!str_starts_with($key, self::TARGET_PREFIX)) { continue; }
+            $count++;
+            $ts = is_array($value) ? (int) ($value['ts'] ?? 0) : 0;
+            if ($ts < $cutoff) {
+                unset($_SESSION[$key]);
+                $count--;
+            }
+        }
+        // Hard cap: evict oldest entries if still over limit
+        if ($count > self::TARGET_CAP) {
+            $entries = [];
+            foreach ($_SESSION as $key => $value) {
+                if (str_starts_with($key, self::TARGET_PREFIX)) {
+                    $entries[$key] = is_array($value) ? (int) ($value['ts'] ?? 0) : 0;
+                }
+            }
+            asort($entries); // oldest first
+            foreach (array_keys($entries) as $key) {
+                unset($_SESSION[$key]);
+                if (--$count <= self::TARGET_CAP) { break; }
+            }
+        }
+    }
+
     public function hasTarget(string $prgId): bool
     {
-        return array_key_exists(self::TARGET_PREFIX . $prgId, $_SESSION);
+        $val = $_SESSION[self::TARGET_PREFIX . $prgId] ?? null;
+        if ($val === null) { return false; }
+        // Legacy format: plain string URL
+        if (is_string($val)) { return true; }
+        // New format: array with 'url' and 'ts'
+        if (is_array($val) && isset($val['url'])) { return true; }
+        return false;
     }
 
     public function getTarget(string $prgId): ?string
     {
         $value = $_SESSION[self::TARGET_PREFIX . $prgId] ?? null;
-
-        return is_string($value) ? $value : null;
+        if (is_string($value)) { return $value; }               // legacy
+        if (is_array($value) && isset($value['url'])) {
+            return (string) $value['url'];
+        }
+        return null;
     }
 
     public function forgetTarget(string $prgId): void
@@ -88,9 +136,9 @@ final class PrgHandler
 
         if ($url === null) {
             throw new RuntimeException(sprintf(
-                                            'Unknown PRG target id "%s".',
-                                            $prgId,
-                                        ));
+                                           'Unknown PRG target id "%s".',
+                                           $prgId,
+                                       ));
         }
 
         if ($token === null || $token === '') {

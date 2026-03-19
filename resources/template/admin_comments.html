@@ -102,3 +102,37 @@
 
     </tbody>
 </table>
+
+<hr>
+<h3>{{label_mutes}}</h3>
+<table>
+    <thead><tr>
+        <th>ID</th>
+        <th>{{label_user}}</th>
+        <th>IP</th>
+        <th>{{label_page}}</th>
+        <th>{{label_expires}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+    {{#mute_list}}
+    <tr>
+        <td>{{id}}</td>
+        <td>{{username}}</td>
+        <td>{{ip_display}}</td>
+        <td>{{page_id}}</td>
+        <td>{{expires_at}}</td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"   value="{{prg_id}}">
+                <input type="hidden" name="_csrf"    value="{{csrf_token}}">
+                <input type="hidden" name="action"   value="lift_mute">
+                <input type="hidden" name="mute_id"  value="{{id}}">
+                <input type="submit" value="{{btn_lift_mute}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/mute_list}}
+    {{^mute_list}}<tr><td colspan="6"><em>No active mutes.</em></td></tr>{{/mute_list}}
+    </tbody>
+</table>

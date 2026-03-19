@@ -10,6 +10,7 @@ use AstrX\Controller\Controller;
 use AstrX\Http\HttpStatus;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
+use AstrX\Http\UploadedFile;
 use AstrX\I18n\Locale;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
@@ -166,12 +167,48 @@ final class ContentManager
         }
 
         if (session_status() === PHP_SESSION_NONE) {
+            // Harden the session cookie before starting the session.
+            // secure=true requires HTTPS — set to false in local dev via config.
+            $secureCookie  = (bool) $this->config->getConfig('Session', 'cookie_secure', false);
+            $sameSite      = (string) $this->config->getConfig('Session', 'cookie_samesite', 'Lax');
+            $cookieLifetime = (int) $this->config->getConfig('Session', 'cookie_lifetime', 0);
+            session_set_cookie_params([
+                                          'lifetime' => $cookieLifetime,
+                                          'path'     => '/',
+                                          'secure'   => $secureCookie,
+                                          'httponly' => true,
+                                          'samesite' => $sameSite,
+                                      ]);
             session_start();
         }
 
         $sid = (string) session_id();
         $current->set($sessionKey, $sid);
         $request->query()->set($sessionKey, $sid);
+
+        // If this is a PRG GET redirect and session data contains __files__,
+        // reconstruct UploadedFile objects so controllers can access them via
+        // $request->files(). This makes multipart form uploads work through PRG.
+        $prgQueryToken = $request->query()->get('_prg');
+        if (is_string($prgQueryToken) && $prgQueryToken !== '') {
+            // PrgHandler is not yet instantiated here — read the session key directly.
+            // PrgHandler::get() uses the key format 'POST_<token>'.
+            $pendingData = $_SESSION['POST_' . $prgQueryToken] ?? null;
+            if (is_array($pendingData) && isset($pendingData['__files__'])) {
+                foreach ($pendingData['__files__'] as $fieldName => $meta) {
+                    if (is_array($meta) && file_exists((string) ($meta['tempPath'] ?? ''))) {
+                        $uf = new \AstrX\Http\UploadedFile(
+                            (string) ($meta['clientFilename']  ?? ''),
+                            (string) ($meta['clientMediaType'] ?? 'application/octet-stream'),
+                            (string) $meta['tempPath'],
+                            (int)    ($meta['size']  ?? 0),
+                            (int)    ($meta['error'] ?? UPLOAD_ERR_OK),
+                        );
+                        $request->files()->set((string) $fieldName, $uf);
+                    }
+                }
+            }
+        }
 
         $pageToken = ($pageToken === '' ? $defaultPageToken : $pageToken);
         $current->set($pageKey, $pageToken);
@@ -200,7 +237,31 @@ final class ContentManager
                 return;
             }
 
-            $token = $prgHandler->storeFromPayload($request->body()->all());
+            // Persist uploaded file temp paths so they survive the redirect.
+            // PHP's temp files are deleted at request end, so we move them to
+            // a stable location (sys_get_temp_dir) keyed on the PRG token.
+            $filesData = [];
+            foreach ($request->files()->all() as $fieldName => $uploadedFile) {
+                if ($uploadedFile instanceof \AstrX\Http\UploadedFile
+                    && $uploadedFile->error() === UPLOAD_ERR_OK) {
+                    $persisted = sys_get_temp_dir() . '/astrx_upload_'
+                                 . bin2hex(random_bytes(8)) . '.tmp';
+                    if (move_uploaded_file($uploadedFile->tempPath(), $persisted)) {
+                        $filesData[$fieldName] = [
+                            'clientFilename'  => $uploadedFile->clientFilename(),
+                            'clientMediaType' => $uploadedFile->clientMediaType(),
+                            'tempPath'        => $persisted,
+                            'size'            => $uploadedFile->size(),
+                            'error'           => UPLOAD_ERR_OK,
+                        ];
+                    }
+                }
+            }
+            $payload = $request->body()->all();
+            if ($filesData !== []) {
+                $payload['__files__'] = $filesData;
+            }
+            $token = $prgHandler->storeFromPayload($payload);
             $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
                 ->drainTo($this->collector);
             if (!$sendResult->isOk()) {
@@ -327,6 +388,32 @@ final class ContentManager
                     }
                 }
             }
+        }
+
+        // If the controller set a 4xx/5xx response code, do not render the page
+        // template — instead render the error page so admin/user content is never
+        // exposed to unauthorised visitors.
+        $currentCode = http_response_code();
+        if (is_int($currentCode) && $currentCode >= 400) {
+            if ($page->template) {
+                $errorUrlId  = (string) $this->config->getConfig('ContentManager', 'error_page_url_id', 'WORDING_ERROR');
+                $eid         = $pageHandler->getPageIdFromUrlId($errorUrlId);
+                $errorPage   = $eid !== null ? $pageHandler->getPage($eid) : null;
+                $renderPage  = $errorPage ?? $page;
+                $engineResult = $this->injector->createClass(TemplateEngine::class)
+                    ->drainTo($this->collector);
+                if ($engineResult->isOk()) {
+                    $ctx->finalise();
+                    $ctx->set('error_code', $currentCode);
+                    $result = $this->injector->getClass(TemplateEngine::class);
+                    /** @var TemplateEngine $engine */
+                    $engine = $engineResult->unwrap();
+                    $r = $engine->renderTemplate($renderPage->fileName, $ctx->all())
+                        ->drainTo($this->collector);
+                    if ($r->isOk()) { echo $r->unwrap(); }
+                }
+            }
+            return;
         }
 
         if ($page->template) {

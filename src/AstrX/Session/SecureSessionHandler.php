@@ -30,6 +30,9 @@ final class SecureSessionHandler implements
     private int $sidBytes = 128;
     private bool $encrypt = true;
     private int $maxRetries = 10;
+    /** Server-side secret mixed into encryption key so stolen DB rows cannot be
+     *  decrypted without also knowing the application secret. */
+    private string $serverSecret = '';
 
     /** Holds the freshly generated SID so validateId() can confirm it in-process. */
     private ?string $currentSessionId = null;
@@ -52,6 +55,12 @@ final class SecureSessionHandler implements
     public function setMaxRetries(int $maxRetries): void
     {
         $this->maxRetries = max(1, $maxRetries);
+    }
+
+    #[InjectConfig('server_secret')]
+    public function setServerSecret(string $secret): void
+    {
+        $this->serverSecret = $secret;
     }
 
     // -------------------------------------------------------------------------
@@ -191,8 +200,11 @@ final class SecureSessionHandler implements
     private function encrypt(string $id, string $data): string
     {
         $iv         = random_bytes(16);
-        $key        = mb_substr($id, 0, 32, '8bit');
-        $macKey     = mb_substr($id, 32, null, '8bit');
+        // Derive keys by mixing the session ID with the server-side secret.
+        // This means a stolen DB row cannot be decrypted without knowing the secret.
+        $material   = hash('sha512', $id . $this->serverSecret, true);
+        $key        = mb_substr($material, 0, 32, '8bit');
+        $macKey     = mb_substr($material, 32, 32, '8bit');
         $ciphertext = (string) openssl_encrypt($data, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
         $hmac       = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
 
@@ -208,8 +220,9 @@ final class SecureSessionHandler implements
         $hmac       = mb_substr($blob, 0, 32, '8bit');
         $iv         = mb_substr($blob, 32, 16, '8bit');
         $ciphertext = mb_substr($blob, 48, null, '8bit');
-        $key        = mb_substr($id, 0, 32, '8bit');
-        $macKey     = mb_substr($id, 32, null, '8bit');
+        $material   = hash('sha512', $id . $this->serverSecret, true);
+        $key        = mb_substr($material, 0, 32, '8bit');
+        $macKey     = mb_substr($material, 32, 32, '8bit');
 
         $expectedHmac = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
         if (!hash_equals($hmac, $expectedHmac)) {

@@ -24,6 +24,7 @@ return [
                 'reply_wrong_page' => "The comment you are replying to is on a different page.",
                 'invalid_email'    => "Please provide a valid email address.",
                 'comment_not_found'=> "Comment not found.",
+                'muted'            => "You have been temporarily muted and cannot post comments.",
                 'gate_denied'      => "You do not have permission to perform this action.",
                 default            => "An error occurred (" . $d->operation() . ").",
             };

@@ -190,4 +190,9 @@ return [
     // ---- Notes --------------------------------------------------------------
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',
     'admin.notes.saved' => 'Note salvate.',
+
+    'admin.comments.mutes'       => 'Silenziamenti attivi',
+    'admin.comments.mute_expires'=> 'Scade il',
+    'admin.comments.lift_mute'   => 'Rimuovi silenziamento',
+    'admin.comments.mute_lifted' => 'Silenziamento rimosso.',
 ];

@@ -190,4 +190,9 @@ return [
     // ---- Notes --------------------------------------------------------------
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
+
+    'admin.comments.mutes'       => 'Active mutes',
+    'admin.comments.mute_expires'=> 'Expires',
+    'admin.comments.lift_mute'   => 'Lift mute',
+    'admin.comments.mute_lifted' => 'Mute lifted.',
 ];

@@ -23,6 +23,7 @@ return [
                 'reply_wrong_page' => "Il commento a cui stai rispondendo è su una pagina diversa.",
                 'invalid_email'    => "Inserisci un indirizzo email valido.",
                 'comment_not_found'=> "Commento non trovato.",
+                'muted'            => "Sei stato temporaneamente silenziato e non puoi pubblicare commenti.",
                 'gate_denied'      => "Non hai i permessi per eseguire questa azione.",
                 default            => "Si è verificato un errore (" . $d->operation() . ").",
             };
