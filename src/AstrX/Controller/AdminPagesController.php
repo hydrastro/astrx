@@ -61,35 +61,22 @@ final class AdminPagesController extends AbstractController
             exit;
         }
 
-        $editId  = (int) ($this->request->query()->get('edit') ?? 0);
-        $editing = false;
-        if ($editId > 0) {
-            $row = $this->loadPage($editId);
-            if ($row !== null) {
-                $editing = true;
-                $this->ctx->set('e_id',          $row['id']);
-                $this->ctx->set('e_url_id',      $row['url_id']);
-                $this->ctx->set('e_file_name',   $row['file_name']);
-                $this->ctx->set('e_title',       $row['title'] ?? '');
-                $this->ctx->set('e_description', $row['description'] ?? '');
-                $this->ctx->set('e_i18n',        (bool) $row['i18n']);
-                $this->ctx->set('e_template',    (bool) $row['template']);
-                $this->ctx->set('e_controller',  (bool) $row['controller']);
-                $this->ctx->set('e_hidden',      (bool) $row['hidden']);
-                $this->ctx->set('e_comments',    (bool) $row['comments']);
-                // Parent page options for closure management
-                $this->ctx->set('all_pages_for_parent', $this->loadAllPagesSimple($editId));
-            }
-        }
-
+        $editId    = (int) ($this->request->query()->get('edit') ?? 0);
         $pages     = $this->loadPages();
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($this->request->uri()->path());
 
-        $this->ctx->set('has_editing', $editing);
-        $this->ctx->set('csrf_token',  $csrfToken);
-        $this->ctx->set('prg_id',      $prgId);
-        $this->ctx->set('page_list',   $pages);
+        // Decorate each page row with editing flag and pre-filled edit values
+        $pageList = [];
+        foreach ($pages as $row) {
+            $row['editing'] = ($editId > 0 && (int) $row['id'] === $editId);
+            $pageList[] = $row;
+        }
+
+        $this->ctx->set('csrf_token', $csrfToken);
+        $this->ctx->set('prg_id',     $prgId);
+        $this->ctx->set('page_list',  $pageList);
+        $this->ctx->set('base_url',   $this->request->uri()->path());
         $this->setI18n();
         return $this->ok();
     }

@@ -53,14 +53,6 @@ final class AdminNewsController extends AbstractController
         }
 
         // Render listing + edit form
-        $editId = (int) ($this->request->query()->get('edit') ?? 0);
-        $editing = null;
-        if ($editId > 0) {
-            $r = $this->news->findByIdAdmin($editId);
-            $r->drainTo($this->collector);
-            $editing = $r->isOk() ? $r->unwrap() : null;
-        }
-
         $listResult = $this->news->fetchAllAdmin();
         $listResult->drainTo($this->collector);
 
@@ -69,9 +61,15 @@ final class AdminNewsController extends AbstractController
 
         $this->ctx->set('csrf_token',  $csrfToken);
         $this->ctx->set('prg_id',      $prgId);
-        $this->ctx->set('news_list',   $listResult->isOk() ? $listResult->unwrap() : []);
-        $this->ctx->set('editing',     $editing);
-        $this->ctx->set('edit_url',    $this->request->uri()->path());
+        $editId = (int) ($this->request->query()->get('edit') ?? 0);
+        $rawList = $listResult->isOk() ? $listResult->unwrap() : [];
+        $newsList = [];
+        foreach ($rawList as $item) {
+            $item['editing'] = ($editId > 0 && (int) $item['id'] === $editId);
+            $newsList[] = $item;
+        }
+        $this->ctx->set('news_list', $newsList);
+        $this->ctx->set('base_url',  $this->request->uri()->path());
         $this->setI18n();
         return $this->ok();
     }
