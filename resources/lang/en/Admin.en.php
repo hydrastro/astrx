@@ -99,6 +99,8 @@ return [
     'admin.comments.reply_to'   => 'Reply to',
     'admin.comments.show_hidden'=> 'Show hidden',
     'admin.btn.unflag'          => 'Unflag',
+    'admin.comments.hidden_only'  => 'Hidden only',
+    'admin.comments.visible_only' => 'Visible only',
 
     // ---- Users --------------------------------------------------------------
     'admin.users.edit_heading'     => 'Edit user',

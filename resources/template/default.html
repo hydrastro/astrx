@@ -67,6 +67,7 @@
     </div>{{/got_results}}
     <div id="main">
         {{>include}}
+        {{#page_comments}}{{&comments_html}}{{/page_comments}}
         <p id="go_top">{{generated_in}} {{time}}s<span class="right"><a
                 href="#">{{go_top}}</a></span></p>
     </div>

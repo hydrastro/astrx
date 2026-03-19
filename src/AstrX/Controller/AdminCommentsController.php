@@ -60,7 +60,10 @@ final class AdminCommentsController extends AbstractController
         $filters = [];
         if ($qPageId !== null) { $filters['page_id'] = (int) $qPageId; }
         if ($qFlagged === '1') { $filters['flagged'] = 1; }
-        if ($qHidden  !== '1') { $filters['hidden']  = 0; }
+        // Admin sees all comments by default — no hidden filter unless 'hidden_only=1'
+        if ($qHidden === '0') { $filters['hidden'] = 0; }  // explicitly request visible-only
+        elseif ($qHidden === '1') { $filters['hidden'] = 1; }  // hidden-only
+        // else: no filter = show everything
 
         $listResult = $this->comments->fetchAll($filters);
         $listResult->drainTo($this->collector);
@@ -81,12 +84,10 @@ final class AdminCommentsController extends AbstractController
 
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
-        $muteResult = $this->comments->listMutes();
-        $muteResult->drainTo($this->collector);
         $this->ctx->set('comment_list',   $commentList);
-        $this->ctx->set('mute_list',      $muteResult->isOk() ? $muteResult->unwrap() : []);
-        $this->ctx->set('filter_page_id', $qPageId ?? '');
-        $this->ctx->set('filter_flagged', $qFlagged === '1');
+        $this->ctx->set('filter_page_id',    $qPageId ?? '');
+        $this->ctx->set('filter_flagged',    $qFlagged === '1');
+        $this->ctx->set('filter_show_hidden',$qHidden ?? '');  // '' | '0' | '1'
         $this->ctx->set('base_url',       $this->request->uri()->path());
         $this->setI18n();
         return $this->ok();
@@ -111,10 +112,11 @@ final class AdminCommentsController extends AbstractController
                 $content = trim((string) ($posted['content'] ?? ''));
                 $name    = trim((string) ($posted['name']    ?? ''));
                 $email   = ($posted['email'] ?? '') !== '' ? trim((string) $posted['email']) : null;
+                $replyTo = ($posted['reply_to'] ?? '') !== '' ? (int) $posted['reply_to'] : null;
                 $hidden  = !empty($posted['hidden']);
                 $flagged = !empty($posted['flagged']);
                 if ($content !== '') {
-                    $r = $this->comments->update($id, $content, $name, $email, $hidden, $flagged);
+                    $r = $this->comments->update($id, $content, $name, $email, $replyTo, $hidden, $flagged);
                     $r->drainTo($this->collector);
                     if ($r->isOk()) {
                         $this->flash->set('success', $this->t->t('admin.comments.updated'));
@@ -138,13 +140,6 @@ final class AdminCommentsController extends AbstractController
             case 'delete':
                 $this->comments->delete($id)->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.comments.deleted'));
-                break;
-            case 'lift_mute':
-                $muteId = (int) ($posted['mute_id'] ?? 0);
-                if ($muteId > 0) {
-                    $this->comments->deleteMute($muteId)->drainTo($this->collector);
-                    $this->flash->set('success', $this->t->t('admin.comments.mute_lifted'));
-                }
                 break;
         }
     }
@@ -185,9 +180,8 @@ final class AdminCommentsController extends AbstractController
         $this->ctx->set('btn_unflag',     $this->t->t('admin.btn.unflag'));
         $this->ctx->set('label_filter',   $this->t->t('admin.comments.filter'));
         $this->ctx->set('btn_filter',     $this->t->t('admin.btn.filter'));
-        $this->ctx->set('label_show_hidden', $this->t->t('admin.comments.show_hidden'));
-        $this->ctx->set('label_mutes',       $this->t->t('admin.comments.mutes'));
-        $this->ctx->set('label_expires',     $this->t->t('admin.comments.mute_expires'));
-        $this->ctx->set('btn_lift_mute',     $this->t->t('admin.comments.lift_mute'));
+        $this->ctx->set('label_show_hidden',      $this->t->t('admin.comments.show_hidden'));
+        $this->ctx->set('label_hidden_only',       $this->t->t('admin.comments.hidden_only'));
+        $this->ctx->set('label_visible_only',      $this->t->t('admin.comments.visible_only'));
     }
 }

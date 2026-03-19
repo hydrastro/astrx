@@ -6,7 +6,13 @@
             <input type="number" name="page_id" class="input" value="{{filter_page_id}}" style="width:5em">
         </label>
         <label><input type="checkbox" name="flagged" value="1"{{#filter_flagged}} checked{{/filter_flagged}}> {{label_flagged}} only</label>
-        <label><input type="checkbox" name="show_hidden" value="1"> {{label_show_hidden}}</label>
+        <label>{{label_show_hidden}}:
+            <select name="show_hidden" class="input">
+                <option value="">All</option>
+                <option value="0">{{label_visible_only}}</option>
+                <option value="1">{{label_hidden_only}}</option>
+            </select>
+        </label>
         <input type="submit" value="{{btn_filter}}" class="input">
     </p>
 </form>
@@ -63,8 +69,7 @@
             <input type="hidden" name="_csrf"  value="{{csrf_token}}">
             <input type="hidden" name="id"     value="{{id}}">
             <input type="hidden" name="action" value="delete">
-            <input type="submit" value="{{btn_delete}}" class="input"
-                   onclick="return confirm('Delete comment #{{id}}?')">
+            <input type="submit" value="{{btn_delete}}" class="input">
         </form>
     </td>
     </tr>
@@ -86,7 +91,7 @@
                 <small>{{label_email}}</small><br>
                 <input type="text" name="email" class="input" value="{{email}}">
             </td>
-            <td>{{reply_to}}</td>
+            <td><input type="number" name="reply_to" class="input" value="{{reply_to}}" style="width:5em" min="0"></td>
             <td><textarea name="content" rows="5" class="input" style="width:100%">{{content}}</textarea></td>
             <td>{{created_at}}</td>
             <td><input type="checkbox" name="hidden"  value="1"{{#hidden}}  checked{{/hidden}}></td>
@@ -100,39 +105,5 @@
     {{/editing}}
     {{/comment_list}}
 
-    </tbody>
-</table>
-
-<hr>
-<h3>{{label_mutes}}</h3>
-<table>
-    <thead><tr>
-        <th>ID</th>
-        <th>{{label_user}}</th>
-        <th>IP</th>
-        <th>{{label_page}}</th>
-        <th>{{label_expires}}</th>
-        <th>{{label_actions}}</th>
-    </tr></thead>
-    <tbody>
-    {{#mute_list}}
-    <tr>
-        <td>{{id}}</td>
-        <td>{{username}}</td>
-        <td>{{ip_display}}</td>
-        <td>{{page_id}}</td>
-        <td>{{expires_at}}</td>
-        <td>
-            <form method="POST" style="display:inline">
-                <input type="hidden" name="prg_id"   value="{{prg_id}}">
-                <input type="hidden" name="_csrf"    value="{{csrf_token}}">
-                <input type="hidden" name="action"   value="lift_mute">
-                <input type="hidden" name="mute_id"  value="{{id}}">
-                <input type="submit" value="{{btn_lift_mute}}" class="input">
-            </form>
-        </td>
-    </tr>
-    {{/mute_list}}
-    {{^mute_list}}<tr><td colspan="6"><em>No active mutes.</em></td></tr>{{/mute_list}}
     </tbody>
 </table>

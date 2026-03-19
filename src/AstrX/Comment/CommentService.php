@@ -76,10 +76,11 @@ final class CommentService
         int  $pageId,
         int  $pageNum     = 1,
         bool $descending  = false,
+        ?int $itemId      = null,
     ): Result {
         $offset = ($pageNum - 1) * $this->commentsPerPage;
         $result = $this->repo->fetchForPage(
-            $pageId, $descending, $this->commentsPerPage, $offset
+            $pageId, $descending, $this->commentsPerPage, $offset, $itemId
         );
         if (!$result->isOk()) {
             return $result;
@@ -88,9 +89,9 @@ final class CommentService
     }
 
     /** @return Result<int> */
-    public function countForPage(int $pageId): Result
+    public function countForPage(int $pageId, ?int $itemId = null): Result
     {
-        return $this->repo->countForPage($pageId);
+        return $this->repo->countForPage($pageId, $itemId);
     }
 
     // -------------------------------------------------------------------------
@@ -109,6 +110,7 @@ final class CommentService
         ?string $email    = null,
         ?int    $replyTo  = null,
         ?string $remoteIp = null,
+        ?int    $itemId   = null,
     ): Result {
         // Permission check
         if ($this->gate->cannot(Permission::COMMENT_POST)) {
@@ -155,25 +157,20 @@ final class CommentService
 
         $hexUserId = $this->session->isLoggedIn() ? $this->session->userId() : null;
 
-        // ── Mute check ────────────────────────────────────────────────────
-        // Check if this user/IP is currently muted (from a previous flood/spam event).
+        // ── Mute check ────────────────────────────────────────────────
         $muteResult = $this->repo->isMuted($hexUserId, $ip, $pageId);
         if ($muteResult->isOk() && $muteResult->unwrap() === true) {
             return $this->opErr('muted');
         }
 
-        // ── Flood check ───────────────────────────────────────────────────
-        // minimum_flood_secs=0 disables the check.
+        // ── Flood check ───────────────────────────────────────────────
         if ($this->minimumFloodSecs > 0) {
             $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $elapsed = time() - $lastResult->unwrap();
                 if ($elapsed < $this->minimumFloodSecs) {
-                    // Flood detected: mute for antispam_time_secs
                     if ($this->antispamTimeSecs > 0) {
-                        $this->repo->addMute(
-                            $hexUserId, $ip, null, $this->antispamTimeSecs
-                        );
+                        $this->repo->addMute($hexUserId, $ip, null, $this->antispamTimeSecs);
                     }
                     return $this->opErr('flood');
                 }
@@ -184,7 +181,7 @@ final class CommentService
             $pageId, $hexUserId,
             $hexUserId !== null ? null : $name,
             $hexUserId !== null ? null : $email,
-            $content, $replyTo, $ip,
+            $content, $replyTo, $ip, $itemId,
         );
     }
 

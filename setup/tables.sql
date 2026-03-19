@@ -243,6 +243,7 @@ CREATE TABLE `comment`
 (
     `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
     `page_id`    INT           NOT NULL,
+    `item_id`    INT           NULL,                  -- optional sub-page scope (e.g. post id within a blog page)
     `user_id`    BINARY(16)    NULL,
     `name`       VARCHAR(64)   NULL,
     `email`      VARCHAR(320)  NULL,
@@ -256,6 +257,7 @@ CREATE TABLE `comment`
     FOREIGN KEY (user_id)  REFERENCES user    (id) ON UPDATE CASCADE ON DELETE SET NULL,
     FOREIGN KEY (reply_to) REFERENCES comment (id) ON UPDATE CASCADE ON DELETE SET NULL,
     INDEX idx_page    (page_id),
+    INDEX idx_item    (item_id),
     INDEX idx_user    (user_id),
     INDEX idx_created (created_at)
 );
@@ -566,3 +568,6 @@ INSERT INTO `banlist_round` (route_id, round_num, penalty, max_tries, check_time
                                                                                                (3, 2,  86400,   15, 604800,  1), -- 1d,   15 tries/1w
                                                                                                (3, 3,  604800,  15, 2592000, 1), -- 1w,   15 tries/1mo
                                                                                                (3, 4,  2592000, 10, 2592000, 1); -- 1mo,  10 tries/1mo
+
+
+

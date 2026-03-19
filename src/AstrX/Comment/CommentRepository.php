@@ -30,39 +30,40 @@ final class CommentRepository
      *
      * @return Result<list<array<string,mixed>>>
      */
-    public function fetchForPage(int $pageId, bool $descending = false, int $limit = 0, int $offset = 0): Result
+    public function fetchForPage(int $pageId, bool $descending = false, int $limit = 0, int $offset = 0, ?int $itemId = null): Result
     {
         $order = $descending ? 'DESC' : 'ASC';
         try {
             if ($limit > 0) {
                 $stmt = $this->pdo->prepare(
-                    "SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                    "SELECT c.id, c.page_id, c.item_id, LOWER(HEX(c.user_id)) AS user_id,
                             c.name, c.email, c.content, c.reply_to,
                             c.flagged, c.hidden, c.created_at,
                             COALESCE(u.display_name, u.username) AS user_display_name,
                             u.avatar AS user_has_avatar
-                       FROM comment c
-                       LEFT JOIN user u ON u.id = c.user_id
-                      WHERE c.page_id = :pid AND c.hidden = 0
-                      ORDER BY c.created_at {$order}
-                      LIMIT :lim OFFSET :off"
+                       FROM comment c LEFT JOIN user u ON u.id = c.user_id
+                      WHERE c.page_id = :pid AND c.hidden = 0"
+                    . ($itemId !== null ? " AND c.item_id = :item_id" : " AND c.item_id IS NULL")
+                    . " ORDER BY c.created_at {$order} LIMIT :lim OFFSET :off"
                 );
                 $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
+                if ($itemId !== null) { $stmt->bindValue(':item_id', $itemId, PDO::PARAM_INT); }
                 $stmt->bindValue(':lim', $limit,  PDO::PARAM_INT);
                 $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
             } else {
                 $stmt = $this->pdo->prepare(
-                    "SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                    "SELECT c.id, c.page_id, c.item_id, LOWER(HEX(c.user_id)) AS user_id,
                             c.name, c.email, c.content, c.reply_to,
                             c.flagged, c.hidden, c.created_at,
                             COALESCE(u.display_name, u.username) AS user_display_name,
                             u.avatar AS user_has_avatar
-                       FROM comment c
-                       LEFT JOIN user u ON u.id = c.user_id
-                      WHERE c.page_id = :pid AND c.hidden = 0
-                      ORDER BY c.created_at {$order}"
+                       FROM comment c LEFT JOIN user u ON u.id = c.user_id
+                      WHERE c.page_id = :pid AND c.hidden = 0"
+                    . ($itemId !== null ? " AND c.item_id = :item_id" : " AND c.item_id IS NULL")
+                    . " ORDER BY c.created_at {$order}"
                 );
                 $stmt->bindValue(':pid', $pageId, PDO::PARAM_INT);
+                if ($itemId !== null) { $stmt->bindValue(':item_id', $itemId, PDO::PARAM_INT); }
             }
             $stmt->execute();
             return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -72,13 +73,15 @@ final class CommentRepository
     }
 
     /** @return Result<int> total visible comment count for a page */
-    public function countForPage(int $pageId): Result
+    public function countForPage(int $pageId, ?int $itemId = null): Result
     {
         try {
-            $stmt = $this->pdo->prepare(
-                'SELECT COUNT(id) FROM comment WHERE page_id = :pid AND hidden = 0'
-            );
-            $stmt->execute([':pid' => $pageId]);
+            $sql = 'SELECT COUNT(id) FROM comment WHERE page_id = :pid AND hidden = 0'
+                   . ($itemId !== null ? ' AND item_id = :item_id' : ' AND item_id IS NULL');
+            $stmt = $this->pdo->prepare($sql);
+            $params = [':pid' => $pageId];
+            if ($itemId !== null) { $params[':item_id'] = $itemId; }
+            $stmt->execute($params);
             return Result::ok((int) $stmt->fetchColumn());
         } catch (PDOException $e) {
             return $this->err($e);
@@ -151,17 +154,19 @@ final class CommentRepository
         ?string $email,
         string  $content,
         ?int    $replyTo,
-        ?string $ip,    // raw output of inet_pton()
+        ?string $ip,       // raw output of inet_pton()
+        ?int    $itemId = null,
     ): Result {
         try {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO comment
-                    (page_id, user_id, name, email, content, reply_to, ip)
+                    (page_id, item_id, user_id, name, email, content, reply_to, ip)
                  VALUES
-                    (:page, UNHEX(:uid), :name, :email, :content, :reply, :ip)'
+                    (:page, :item_id, UNHEX(:uid), :name, :email, :content, :reply, :ip)'
             );
             $stmt->execute([
                                ':page'    => $pageId,
+                               ':item_id' => $itemId,
                                ':uid'     => $hexUserId,
                                ':name'    => $name,
                                ':email'   => $email,
@@ -176,18 +181,18 @@ final class CommentRepository
     }
 
     /** @return Result<true> */
-    /** @return Result<true> */
     public function update(int $id, string $content, string $name,
-        ?string $email, bool $hidden, bool $flagged): Result
+        ?string $email, ?int $replyTo, bool $hidden, bool $flagged): Result
     {
         try {
             $this->pdo->prepare(
                 'UPDATE comment
                     SET content = :content, name = :name, email = :email,
-                        hidden = :hidden, flagged = :flagged
+                        reply_to = :reply_to, hidden = :hidden, flagged = :flagged
                   WHERE id = :id'
             )->execute([':content' => $content, ':name' => $name,
-                        ':email' => $email, ':hidden' => (int) $hidden,
+                        ':email' => $email, ':reply_to' => $replyTo,
+                        ':hidden' => (int) $hidden,
                         ':flagged' => (int) $flagged, ':id' => $id]);
             return Result::ok(true);
         } catch (PDOException $e) {
@@ -260,11 +265,7 @@ final class CommentRepository
 
     // -------------------------------------------------------------------------
 
-    /**
-     * Timestamp of the most recent non-hidden comment by this IP or user on any page.
-     * Returns null if no recent comment found.
-     * @return Result<?int> Unix timestamp or null
-     */
+    /** @return Result<?int> */
     public function lastCommentTime(?string $hexUserId, ?string $packedIp): Result
     {
         try {
@@ -283,65 +284,44 @@ final class CommentRepository
             } else {
                 return Result::ok(null);
             }
-            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
             return Result::ok($row !== false ? (int) $row['ts'] : null);
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
+        } catch (PDOException $e) { return $this->err($e); }
     }
 
-    /**
-     * Check for an active mute affecting this user/IP on this page (or site-wide).
-     * @return Result<bool> true = muted
-     */
+    /** @return Result<bool> */
     public function isMuted(?string $hexUserId, ?string $packedIp, int $pageId): Result
     {
         try {
             $now = date('Y-m-d H:i:s');
-            $conditions = [];
-            $params = [':now' => $now, ':page_id' => $pageId];
+            $conds = []; $params = [':now' => $now, ':page_id' => $pageId];
             if ($hexUserId !== null) {
-                $conditions[] = '(user_id = UNHEX(:uid) AND (page_id IS NULL OR page_id = :page_id))';
+                $conds[] = '(user_id = UNHEX(:uid) AND (page_id IS NULL OR page_id = :page_id))';
                 $params[':uid'] = $hexUserId;
             }
             if ($packedIp !== null) {
-                $conditions[] = '(ip = :ip AND (page_id IS NULL OR page_id = :page_id2))';
-                $params[':ip'] = $packedIp;
-                $params[':page_id2'] = $pageId;
+                $conds[] = '(ip = :ip AND (page_id IS NULL OR page_id = :page_id2))';
+                $params[':ip'] = $packedIp; $params[':page_id2'] = $pageId;
             }
-            if ($conditions === []) { return Result::ok(false); }
-            $sql = 'SELECT 1 FROM mute WHERE expires_at > :now AND (' .
-                   implode(' OR ', $conditions) . ') LIMIT 1';
-            $stmt = $this->pdo->prepare($sql);
+            if ($conds === []) { return Result::ok(false); }
+            $stmt = $this->pdo->prepare(
+                'SELECT 1 FROM mute WHERE expires_at > :now AND (' . implode(' OR ', $conds) . ') LIMIT 1'
+            );
             $stmt->execute($params);
             return Result::ok($stmt->fetch() !== false);
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
+        } catch (PDOException $e) { return $this->err($e); }
     }
 
-    /**
-     * Create a mute record for a user/IP.
-     * @return Result<true>
-     */
-    public function addMute(
-        ?string $hexUserId, ?string $packedIp, ?int $pageId, int $durationSecs
-    ): Result {
+    /** @return Result<true> */
+    public function addMute(?string $hexUserId, ?string $packedIp, ?int $pageId, int $durationSecs): Result
+    {
         try {
             $expires = date('Y-m-d H:i:s', time() + $durationSecs);
             $this->pdo->prepare(
-                'INSERT INTO mute (user_id, ip, page_id, expires_at)
-                 VALUES (UNHEX(:uid), :ip, :page_id, :expires)'
-            )->execute([
-                           ':uid'     => $hexUserId,
-                           ':ip'      => $packedIp,
-                           ':page_id' => $pageId,
-                           ':expires' => $expires,
-                       ]);
+                'INSERT INTO mute (user_id, ip, page_id, expires_at) VALUES (UNHEX(:uid), :ip, :pid, :exp)'
+            )->execute([':uid' => $hexUserId, ':ip' => $packedIp, ':pid' => $pageId, ':exp' => $expires]);
             return Result::ok(true);
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
+        } catch (PDOException $e) { return $this->err($e); }
     }
 
     /** @return Result<list<array<string,mixed>>> */
@@ -349,38 +329,31 @@ final class CommentRepository
     {
         try {
             $stmt = $this->pdo->query(
-                'SELECT m.id, LOWER(HEX(m.user_id)) AS user_id, m.ip, m.page_id,
+                "SELECT m.id, LOWER(HEX(m.user_id)) AS user_id, m.ip, m.page_id,
                         m.expires_at, u.username
-                   FROM mute m
-                   LEFT JOIN user u ON u.id = m.user_id
-                  WHERE m.expires_at > NOW()
-                  ORDER BY m.expires_at DESC'
+                   FROM mute m LEFT JOIN user u ON u.id = m.user_id
+                  WHERE m.expires_at > NOW() ORDER BY m.expires_at DESC"
             );
-            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-            // Format packed IP for display
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as &$row) {
                 $row['ip_display'] = $row['ip'] !== null
-                    ? (inet_ntop($row['ip']) ?: bin2hex($row['ip']))
-                    : null;
+                    ? (inet_ntop($row['ip']) ?: bin2hex($row['ip'])) : null;
             }
             unset($row);
             return Result::ok($rows);
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
+        } catch (PDOException $e) { return $this->err($e); }
     }
 
     /** @return Result<true> */
     public function deleteMute(int $id): Result
     {
         try {
-            $this->pdo->prepare('DELETE FROM mute WHERE id = :id')
-                ->execute([':id' => $id]);
+            $this->pdo->prepare('DELETE FROM mute WHERE id = :id')->execute([':id' => $id]);
             return Result::ok(true);
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
+        } catch (PDOException $e) { return $this->err($e); }
     }
+
+
 
     private function err(PDOException $e): Result
     {

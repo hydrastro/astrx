@@ -16,7 +16,9 @@
     </div>
     {{/news}}
 </div>
+{{#has_pagination}}
 <p class="news_nav"><small>{{news_older}} {{#has_first}}<a href="{{first_url}}">{{news_first}}</a> {{/has_first}}{{#has_prev}}<a href="{{prev_url}}">{{news_prev}}</a> {{/has_prev}}{{#pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/pages}}{{#has_next}} <a href="{{next_url}}">{{news_next}}</a>{{/has_next}}{{#has_last}} <a href="{{last_url}}">{{news_last}}</a>{{/has_last}}</small></p>
+{{/has_pagination}}
 {{/has_news}}
 {{^has_news}}
 <p>{{news_empty}}</p>

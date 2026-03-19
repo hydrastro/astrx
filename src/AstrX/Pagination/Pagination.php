@@ -136,19 +136,21 @@ final class Pagination
             }
         }
 
+        $hasMultiplePages = $this->pageCount > 1;
         return [
-            'page'       => $this->page,
-            'page_count' => $this->pageCount,
-            'per_page'   => $this->perPage,
-            'has_prev'   => $this->hasPrev(),
-            'prev_url'   => $this->hasPrev() ? $urlForPage($this->page - 1) : '',
-            'has_next'   => $this->hasNext(),
-            'next_url'   => $this->hasNext() ? $urlForPage($this->page + 1) : '',
-            'has_first'  => $this->page > 1,
-            'first_url'  => $this->page > 1 ? $urlForPage(1) : '',
-            'has_last'   => $this->page < $this->pageCount,
-            'last_url'   => $this->page < $this->pageCount ? $urlForPage($this->pageCount) : '',
-            'pages'      => $pages,
+            'page'             => $this->page,
+            'page_count'       => $this->pageCount,
+            'per_page'         => $this->perPage,
+            'has_pagination'   => $hasMultiplePages,  // false when only one page
+            'has_prev'         => $this->hasPrev(),
+            'prev_url'         => $this->hasPrev() ? $urlForPage($this->page - 1) : '',
+            'has_next'         => $this->hasNext(),
+            'next_url'         => $this->hasNext() ? $urlForPage($this->page + 1) : '',
+            'has_first'        => $this->page > 1,
+            'first_url'        => $this->page > 1 ? $urlForPage(1) : '',
+            'has_last'         => $this->page < $this->pageCount,
+            'last_url'         => $this->page < $this->pageCount ? $urlForPage($this->pageCount) : '',
+            'pages'            => $pages,
         ];
     }
 }

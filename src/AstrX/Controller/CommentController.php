@@ -14,6 +14,8 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
 use AstrX\User\UserSession;
 
 /**
@@ -42,6 +44,7 @@ final class CommentController extends AbstractController
         private readonly Request               $request,
         private readonly Page                  $page,
         private readonly CommentService        $commentService,
+        private readonly Gate                  $gate,
         private readonly UserSession           $session,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
@@ -81,6 +84,23 @@ final class CommentController extends AbstractController
             return;
         }
 
+        $action = (string) ($posted['action'] ?? 'post');
+
+        // Admin quick-moderation actions from the public comment display
+        if (in_array($action, ['hide', 'unhide', 'delete'], true)) {
+            if ($this->gate->can(Permission::ADMIN_COMMENTS)) {
+                $id = (int) ($posted['id'] ?? 0);
+                if ($id > 0) {
+                    match ($action) {
+                        'hide'   => $this->commentService->hide($id)->drainTo($this->collector),
+                        'unhide' => $this->commentService->unhide($id)->drainTo($this->collector),
+                        'delete' => $this->commentService->delete($id)->drainTo($this->collector),
+                    };
+                }
+            }
+            return;
+        }
+
         $content = (string) ($posted['content'] ?? '');
         $name    = ($posted['name']  ?? '') !== '' ? (string) $posted['name']  : null;
         $email   = ($posted['email'] ?? '') !== '' ? (string) $posted['email'] : null;
@@ -112,26 +132,46 @@ final class CommentController extends AbstractController
         $pageCount   = $perPage > 0 ? (int) ceil($total / $perPage) : 1;
         $rawComments = $commentsResult->isOk() ? $commentsResult->unwrap() : [];
 
-        // User display_name and avatar flag are now JOINed in the query — no per-comment
-        // user lookup needed. One query serves all comments.
+        // Enrich each comment with display data and pre-computed section wrappers.
+        //
+        // AstrX Mustache context rule: entering {{#section}} sets $parent = $resolved.
+        // If $resolved is a bool/int/string, $parent is clobbered and all inner
+        // {{var}} lookups fail to find comment-row fields.
+        //
+        // Solution: every conditional section that reads comment data is set to
+        // [$enriched] (truthy, count=1) or false (skip). The engine then sets
+        // $parent = $enriched[0] = the full comment row, so all inner vars resolve.
+        //
+        // Admin hide/unhide are SEPARATE sections so we never use {{#hidden}}/{{^hidden}}
+        // inside a wrapper — that would clobber $parent a second time.
+        $isAdmin      = $this->gate->can(Permission::ADMIN_COMMENTS);
+        $allowReplies = $this->commentService->allowReplies();
         $comments = [];
         foreach ($rawComments as $row) {
             if ($row['user_id'] !== null) {
-                // Registered user: use joined data
                 $displayName = (string) ($row['user_display_name'] ?? $row['name'] ?? 'Anonymous');
                 $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (string) $row['user_id']]);
             } else {
-                // Anonymous
                 $displayName = ($row['name'] ?? '') !== '' ? (string) $row['name'] : 'Anonymous';
                 $avatarSrc   = '';
             }
-            $comments[] = $row + [
-                    'display_name' => $displayName,
-                    'avatar_src'   => $avatarSrc,
-                    'indent_style' => 'margin-left:' . ((int) $row['depth'] * 24) . 'px',
-                    'is_own'       => $this->session->isLoggedIn()
-                                      && $row['user_id'] === $this->session->userId(),
+            $replyTo  = isset($row['reply_to']) && (int) $row['reply_to'] > 0
+                ? (int) $row['reply_to'] : null;
+            $isHidden = (bool) ($row['hidden'] ?? false);
+            $enriched = $row + [
+                    'display_name'  => $displayName,
+                    'avatar_src'    => $avatarSrc,
+                    'indent_style'  => 'margin-left:' . ((int) $row['depth'] * 24) . 'px',
+                    'is_own'        => $this->session->isLoggedIn()
+                                       && $row['user_id'] === $this->session->userId(),
                 ];
+            $enriched['avatar_section']       = ($avatarSrc !== '') ? [$enriched] : false;
+            $enriched['reply_to_section']     = ($replyTo !== null) ? [$enriched] : false;
+            $enriched['reply_section']        = $allowReplies        ? [$enriched] : false;
+            $enriched['admin_hide_section']   = ($isAdmin && !$isHidden) ? [$enriched] : false;
+            $enriched['admin_unhide_section'] = ($isAdmin && $isHidden)  ? [$enriched] : false;
+            $enriched['admin_delete_section'] = $isAdmin                 ? [$enriched] : false;
+            $comments[] = $enriched;
         }
 
         // Pagination URLs
@@ -150,9 +190,12 @@ final class CommentController extends AbstractController
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($baseUrl);
 
+        $replyToPreFill = (int) ($this->request->query()->get('reply_to') ?? 0);
+        $this->ctx->set('comments_reply_to',     $replyToPreFill > 0 ? $replyToPreFill : '');
         $this->ctx->set('comments',              $comments);
         $this->ctx->set('comments_count',        $total);
         $this->ctx->set('comments_pages',        $pages);
+        $this->ctx->set('has_pagination',        $pageCount > 1);
         $this->ctx->set('comments_page_current', $pageNum);
         $this->ctx->set('comments_allow_replies',$this->commentService->allowReplies());
         $this->ctx->set('comments_require_email',$this->commentService->requireEmail());
@@ -167,6 +210,10 @@ final class CommentController extends AbstractController
         $this->ctx->set('comment_label_content', $this->t->t('comment.label.content'));
         $this->ctx->set('comment_label_reply',   $this->t->t('comment.label.reply'));
         $this->ctx->set('comment_btn_submit',    $this->t->t('comment.btn.submit'));
-        $this->ctx->set('comment_btn_reply',     $this->t->t('comment.btn.reply'));
+        $this->ctx->set('comment_btn_reply',        $this->t->t('comment.btn.reply'));
+        $this->ctx->set('comment_btn_cancel_reply', $this->t->t('comment.btn.cancel_reply'));
+        $this->ctx->set('comment_btn_hide',         $this->t->t('comment.btn.hide'));
+        $this->ctx->set('comment_btn_unhide',       $this->t->t('comment.btn.unhide'));
+        $this->ctx->set('comment_btn_delete',       $this->t->t('comment.btn.delete'));
     }
 }

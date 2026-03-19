@@ -11,4 +11,8 @@ return [
     'comment.label.reply'    => 'Replying to',
     'comment.btn.submit'     => 'Post comment',
     'comment.btn.reply'      => 'Reply',
+    'comment.btn.hide'   => 'Hide',
+    'comment.btn.unhide' => 'Show',
+    'comment.btn.delete' => 'Delete',
+    'comment.btn.cancel_reply' => 'Cancel reply',
 ];
