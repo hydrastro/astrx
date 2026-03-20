@@ -123,7 +123,7 @@
         <a href="{{edit_url}}" class="input">{{btn_edit}}</a>
         {{/is_editing}}
         {{#is_editing}}
-        <a href="{{cancel_url}}" class="input">{{btn_cancel}}</a>
+        <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
         {{/is_editing}}
         &nbsp;
         <form method="POST" style="display:inline">
@@ -182,7 +182,7 @@
                 <td><input type="checkbox" name="enabled" value="1"{{#enabled}} checked{{/enabled}}></td>
                 <td>
                     <input type="submit" value="{{btn_update}}" class="input">
-                    <a href="{{cancel_url}}" class="input">{{btn_cancel}}</a>
+                    <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
                 </td>
             </form>
         </tr>

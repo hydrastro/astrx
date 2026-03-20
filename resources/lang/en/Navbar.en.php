@@ -30,7 +30,7 @@ return [
 
     // Admin navbar — configuration
     'WORDING_ADMIN_CONFIG_SYSTEM.label'   => 'System',
-    'WORDING_ADMIN_CONFIG_ACCESS.label'   => 'Access & Security',
+    'WORDING_ADMIN_CONFIG_ACCESS.label'   => 'Access',
     'WORDING_ADMIN_CONFIG_CONTENT.label'  => 'Content',
     'WORDING_ADMIN_CONFIG_COMMENTS.label' => 'Comments',
     'WORDING_ADMIN_CONFIG_CAPTCHA.label'  => 'Captcha',

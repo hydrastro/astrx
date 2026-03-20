@@ -26,7 +26,7 @@ return [
     // Config pages — meta
     'WORDING_ADMIN_CONFIG_SYSTEM.title'            => 'Config — System',
     'WORDING_ADMIN_CONFIG_SYSTEM.description'      => 'Edit core system configuration.',
-    'WORDING_ADMIN_CONFIG_ACCESS.title'            => 'Config — Access & Security',
+    'WORDING_ADMIN_CONFIG_ACCESS.title'            => 'Config — Access',
     'WORDING_ADMIN_CONFIG_ACCESS.description'      => 'Edit auth grants and banlist routes.',
     'WORDING_ADMIN_CONFIG_CONTENT.title'           => 'Config — Content',
     'WORDING_ADMIN_CONFIG_CONTENT.description'     => 'Edit news pagination settings.',
@@ -49,7 +49,7 @@ return [
     'admin.nav.pages'                 => 'Pages',
     'admin.nav.notes'                 => 'Notes',
     'admin.nav.config_system'         => 'System',
-    'admin.nav.config_access'         => 'Access & Security',
+    'admin.nav.config_access'         => 'Access',
     'admin.nav.config_content'        => 'Content',
     'admin.nav.config_comments'       => 'Comments',
     'admin.nav.config_captcha'        => 'Captcha',
@@ -251,7 +251,7 @@ return [
     'admin.config.system.contentmanager' => 'Content Manager',
 
     // ---- Config — Access section headings -----------------------------------
-    'admin.config.access.heading'    => 'Access & Security Configuration',
+    'admin.config.access.heading'    => 'Access Configuration',
     'admin.config.access.grants'     => 'Permission Grants',
     'admin.config.access.banlist'    => 'Banlist Routes',
     'admin.config.access.group'      => 'Group',
