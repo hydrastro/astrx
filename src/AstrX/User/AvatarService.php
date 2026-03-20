@@ -62,10 +62,9 @@ final class AvatarService
             return $this->opErr('avatar_extension', $ext);
         }
 
-        // Verify it's actually an image using getimagesize() — part of GD,
-        // no separate extension required (unlike exif_imagetype).
-        $imageInfo = @getimagesize($file->tempPath());
-        if ($imageInfo === false) {
+        // Verify it is actually an image using getimagesize() — part of GD,
+        // no separate PHP extension required (unlike exif_imagetype).
+        if (@getimagesize($file->tempPath()) === false) {
             return $this->opErr('avatar_invalid');
         }
 
@@ -76,6 +75,15 @@ final class AvatarService
         }
 
         $destPath = $this->pathFor($hexId);
+
+        // Ensure the avatar directory exists and is writable.
+        if (!is_dir($this->avatarDir)) {
+            if (!mkdir($this->avatarDir, 0775, true)) {
+                imagedestroy($srcImage);
+                return $this->opErr('avatar_move_failed', $this->avatarDir);
+            }
+        }
+
         if (!imagepng($srcImage, $destPath)) {
             imagedestroy($srcImage);
             return $this->opErr('avatar_move_failed', $destPath);

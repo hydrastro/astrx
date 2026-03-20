@@ -67,11 +67,6 @@ final class MainController extends AbstractController
             $this->request->query()->set($showKey, $tail[2]);
         }
 
-        // Comment sub-params from tail[3..6]: cp / co / cs / ci
-        // Injecting into request->query() makes them visible to CommentController.
-        if (isset($tail[3]) && ctype_digit($tail[3])) {
-            $this->request->query()->set('cp', $tail[3]);
-        }
         if (isset($tail[4])) {
             $seg = strtolower($tail[4]);
             if ($seg === 'asc' || $seg === 'desc') {
@@ -127,13 +122,13 @@ final class MainController extends AbstractController
         $localizedOrder   = $pagination->descending ? $wordDesc : $wordAsc;
         $perPage          = $pagination->perPage;
 
-        // Carry current comment-pagination state into news pagination links
-        // so clicking news pages does not reset comment page/order/indent.
+        // Read comment params from the raw browser query string (not the enriched
+        // request->query() bag which includes ContentManager-injected values).
+        parse_str($this->request->uri()->query(), $_rawQ);
         $commentExtra = [];
         foreach (['cp', 'co', 'cs', 'ci'] as $_ck) {
-            $_cv = $this->request->query()->get($_ck);
-            if ($_cv !== null && $_cv !== '') {
-                $commentExtra[$_ck] = $_cv;
+            if (isset($_rawQ[$_ck]) && (string) $_rawQ[$_ck] !== '') {
+                $commentExtra[$_ck] = $_rawQ[$_ck];
             }
         }
 
@@ -151,14 +146,14 @@ final class MainController extends AbstractController
         // Form action: bare page URL. Browser appends order/show as query params.
         $formAction = $this->urlGenerator->toPage($resolvedUrlId);
 
-        // Hidden inputs carrying current comment state through the news filter form.
+        // Hidden inputs: carry comment state through the news filter form.
+        // Use _rawQ (already parsed above) — same raw browser source as commentExtra.
         $newsCommentInputs = '';
         foreach (['cp', 'co', 'cs', 'ci'] as $_ck) {
-            $_cv = $this->request->query()->get($_ck);
-            if ($_cv !== null && $_cv !== '') {
-                $k = htmlspecialchars($_ck, ENT_QUOTES);
-                $v = htmlspecialchars($_cv, ENT_QUOTES);
-                $newsCommentInputs .= "<input type=\"hidden\" name=\"{$k}\" value=\"{$v}\">\n";
+            if (isset($_rawQ[$_ck]) && (string) $_rawQ[$_ck] !== '') {
+                $ek = htmlspecialchars($_ck, ENT_QUOTES);
+                $ev = htmlspecialchars((string) $_rawQ[$_ck], ENT_QUOTES);
+                $newsCommentInputs .= "<input type=\"hidden\" name=\"{$ek}\" value=\"{$ev}\">\n";
             }
         }
 

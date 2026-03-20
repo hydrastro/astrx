@@ -200,95 +200,52 @@ final class CommentController extends AbstractController
         // Preserve all current query params EXCEPT comment-specific ones.
         // This keeps news pagination params (pn, show, order) in the URL.
         // ── URL helpers ───────────────────────────────────────────────────────
-        // Read news sub-param config so we can reconstruct the current news URL.
-        $newsPnKey      = (string) $this->config->getConfig('News', 'pn_key',    'pn');
-        $newsShowKey    = (string) $this->config->getConfig('News', 'show_key',  'show');
-        $newsOrderKey   = (string) $this->config->getConfig('News', 'order_key', 'order');
-        $newsDefaultPp  = (int)    $this->config->getConfig('News', 'per_page',   20);
-        $newsDefaultDsc = (bool)   $this->config->getConfig('News', 'descending', true);
-        $newsWordAsc    = $this->t->t('news.order.asc',  fallback: 'asc');
-        $newsWordDesc   = $this->t->t('news.order.desc', fallback: 'desc');
-        $newsDefaultOrd = $newsDefaultDsc ? $newsWordDesc : $newsWordAsc;
+        // comment params are always query-string params — never path segments.
+        // commentUrlFor() takes the current raw request URL, strips comment-specific
+        // keys, and appends the new values. It has ZERO knowledge of what other
+        // controllers contributed to the URL (news segments, user segments, anything).
+        //
+        // In rewrite mode: /en/main/4/desc/1?cp=2&co=asc
+        // In query mode:   /index.php?lang=en&page=main&pn=4&order=desc&cp=2&co=asc
+        // On non-news pages: /en/user?cp=2 (no path segments from other controllers)
 
-        // Current news sub-params (injected into request->query() by MainController
-        // from URL tail segments — works in both rewrite and query mode).
-        $newsPage  = max(1, (int) ($this->request->query()->get($newsPnKey)    ?? 1));
-        $newsOrder = (string) ($this->request->query()->get($newsOrderKey) ?? $newsDefaultOrd);
-        $newsShow  = max(0, (int) ($this->request->query()->get($newsShowKey)  ?? $newsDefaultPp));
+        $rawPath     = $this->request->uri()->path();
+        $rawQuery    = $this->request->uri()->query();   // real browser query string only
+        $commentKeys = [self::CP_PAGE, self::CP_ORDER, self::CP_SHOW, self::CP_INDENT,
+                        CommentPrgHandler::QUERY_KEY, 'reply_to'];
 
-        $resolvedNewsId = $this->page->i18n
-            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
-            : $this->page->urlId;
+        // Parse raw browser query and strip comment-specific and internal routing keys.
+        // This preserves whatever the browser sent (news path form params, etc.)
+        // without including anything ContentManager injected into request->query().
+        $sessionKey = (string) $this->config->getConfig('Routing', 'session_key', 'sid');
+        $pageKey    = (string) $this->config->getConfig('Routing', 'page_key',    'page');
+        $localeKey  = (string) $this->config->getConfig('Routing', 'locale_key',  'lang');
+        $stripKeys  = array_merge(
+            $commentKeys,
+            [$sessionKey, $pageKey, $localeKey, '_prg', '_cp', 'prg_id', '_comment', '_news_active']
+        );
+        parse_str($rawQuery, $baseParams);
+        foreach ($stripKeys as $sk) { unset($baseParams[$sk]); }
 
-        // Build comment path segments with right-to-left default stripping.
-        // When any segment is non-default, all segments to its left are kept.
-        // Segment order: cp / co / cs / ci
-        // Default values: cp=1, co='asc', cs=config default, ci=1 (nested)
-        $buildCommentSegments = function (
-            int $cp, string $co, int $cs, int $ci
-        ) use ($perPage): array {
-            $segs = [];
-            // Right-to-left: strip trailing defaults
-            if ($ci !== self::DEFAULT_INDENT)   { array_unshift($segs, (string) $ci); }
-            if ($cs !== $perPage || $segs !== []) { array_unshift($segs, (string) $cs); }
-            if ($co !== self::DEFAULT_ORDER || $segs !== []) { array_unshift($segs, $co); }
-            if ($cp !== 1 || $segs !== []) { array_unshift($segs, (string) $cp); }
-            return $segs;
-        };
-
-        // Build a URL for a given combination of comment params.
-        // In rewrite mode: comment segments are appended to news path (as pathSegments).
-        // In query mode:   comment params are query string key=val pairs.
         $commentUrlFor = function (
-            int $p,
+            int     $p,
             ?string $ord  = null,
             ?int    $show = null,
             ?int    $ind  = null,
-        ) use (
-            $pageBase, $order, $csPerPage, $indent, $perPage,
-            $newsPage, $newsOrder, $newsShow, $newsDefaultOrd, $newsDefaultPp,
-            $resolvedNewsId, $buildCommentSegments
-        ): string {
+        ) use ($rawPath, $baseParams, $order, $csPerPage, $indent, $perPage): string {
             $cp = $p;
             $co = $ord  ?? $order;
             $cs = $show ?? $csPerPage;
             $ci = $ind  ?? $indent;
 
-            $commentSegs = $buildCommentSegments($cp, $co, $cs, $ci);
+            $q = $baseParams;
+            if ($cp !== 1)                  { $q[self::CP_PAGE]   = $cp; }
+            if ($co !== self::DEFAULT_ORDER) { $q[self::CP_ORDER]  = $co; }
+            if ($cs !== $perPage)            { $q[self::CP_SHOW]   = $cs; }
+            if ($ci !== self::DEFAULT_INDENT){ $q[self::CP_INDENT] = $ci; }
 
-            // In rewrite mode all comment params are encoded as path segments —
-            // extraQuery must be empty to avoid duplication (?cp=3&cs=2 on top of path).
-            // In query mode pathSegments will be empty so all comment params go in extraQuery.
-            $extraQuery = [];
-            if ($commentSegs === []) {
-                // Query mode or all params are default: use query string.
-                foreach (['cp' => $cp, 'co' => $co, 'cs' => $cs, 'ci' => $ci] as $k => $v) {
-                    $default = match ($k) {
-                        'cp' => 1,
-                        'co' => self::DEFAULT_ORDER,
-                        'cs' => $perPage,
-                        'ci' => self::DEFAULT_INDENT,
-                    };
-                    if ($v !== $default) { $extraQuery[$k] = $v; }
-                }
-            }
-            // When $commentSegs is non-empty, toSubPage (rewrite mode) forces all
-            // three news segments into the path and appends comment segments after them.
-            // extraQuery stays empty — no duplication.
-
-            return $this->urlGen->toSubPage(
-                resolvedUrlId:  $resolvedNewsId,
-                page:           $newsPage,
-                order:          $newsOrder,
-                perPage:        $newsShow,
-                defaultPage:    1,
-                defaultOrder:   $newsDefaultOrd,
-                defaultPerPage: $newsDefaultPp,
-                extraQuery:     $extraQuery,
-                pathSegments:   $commentSegs,
-            );
+            return $q !== [] ? $rawPath . '?' . http_build_query($q) : $rawPath;
         };
-
         $isAdmin       = $this->gate->can(Permission::ADMIN_COMMENTS);
         $allowReplies  = $this->commentService->allowReplies();
         $useIdenticons = $this->avatarService->useIdenticons();
@@ -332,9 +289,8 @@ final class CommentController extends AbstractController
             // reply_url MUST be set before the section wrappers below.
             // The snapshot [$enriched] is taken by value — any key added after
             // reply_section is assigned will NOT appear inside {{#reply_section}}.
-            $replyBase = $commentUrlFor(1);
-            $replySep  = str_contains($replyBase, '?') ? '&' : '?';
-            $enriched['reply_url'] = $replyBase . $replySep
+            // reply_url: current URL with comment keys stripped + reply_to param
+            $enriched['reply_url'] = ($baseParams !== [] ? $rawPath . '?' . http_build_query($baseParams) . '&' : $rawPath . '?')
                                      . 'reply_to=' . (int) $row['id'] . '#comment_form';
 
             // ── Section wrappers ──────────────────────────────────────────────
@@ -395,19 +351,9 @@ final class CommentController extends AbstractController
         $toDescUrl = $commentUrlFor(1, 'desc', $csPerPage, $indent);
         $toNestUrl = $commentUrlFor(1, $order, $csPerPage, 1);
         $toFlatUrl = $commentUrlFor(1, $order, $csPerPage, 0);
-        // Comment filter form action: current news-state URL with NO comment segments.
-        // Browser appends co/cs/ci from form fields as query params.
-        $filterFormAction = $this->urlGen->toSubPage(
-            resolvedUrlId:  $resolvedNewsId,
-            page:           $newsPage,
-            order:          $newsOrder,
-            perPage:        $newsShow,
-            defaultPage:    1,
-            defaultOrder:   $newsDefaultOrd,
-            defaultPerPage: $newsDefaultPp,
-            extraQuery:     [],
-            pathSegments:   [],
-        );
+        // Comment filter form action: current URL with comment params stripped.
+        $filterFormAction = $rawPath . ($baseParams !== [] ? '?' . http_build_query($baseParams) : '');
+
 
         // ── PRG setup ─────────────────────────────────────────────────────────
         $csrfToken = $this->csrf->generate(self::FORM);
@@ -442,22 +388,9 @@ final class CommentController extends AbstractController
         $this->ctx->set('comments_filter_action',$filterFormAction);
 
         // Pass all current non-comment query params as hidden inputs for the filter form
-        // Filter form: preserve news sub-params as hidden inputs in query mode.
-        // In rewrite mode these are in the URL path, so no hidden inputs needed.
-        // We build them from the current news request params.
-        $filterHiddenInputs = '';
-        $urlRewrite = (bool) $this->config->getConfig('Routing', 'url_rewrite', true);
-        if (!$urlRewrite) {
-            foreach ([$newsPnKey, $newsShowKey, $newsOrderKey] as $_nk) {
-                $_nv = $this->request->query()->get($_nk);
-                if ($_nv !== null && $_nv !== '') {
-                    $k = htmlspecialchars($_nk, ENT_QUOTES);
-                    $v = htmlspecialchars($_nv, ENT_QUOTES);
-                    $filterHiddenInputs .= "<input type=\"hidden\" name=\"{$k}\" value=\"{$v}\">\n";
-                }
-            }
-        }
-        $this->ctx->set('comments_base_query_inputs', $filterHiddenInputs);
+        // No hidden inputs needed: baseParams already preserves all non-comment query
+        // params from the raw browser URL (including news params in query mode).
+        $this->ctx->set('comments_base_query_inputs', '');
 
         // Pagination
         $this->ctx->set('comments_any',          $comments !== []);
