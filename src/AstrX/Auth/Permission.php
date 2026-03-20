@@ -52,4 +52,15 @@ enum Permission: string
     case ADMIN_NAVBAR    = 'admin.navbar';
     case ADMIN_PAGES     = 'admin.pages';
     case ADMIN_NOTES     = 'admin.notes';
+
+    // ---- Admin config sections ----------------------------------------------
+    // Each section has its own permission so partial admin access is possible
+    // (e.g. a trusted moderator can edit Comments config but not System config).
+    case ADMIN_CONFIG_SYSTEM   = 'admin.config.system';   // Core + Routing + Session + Template + …
+    case ADMIN_CONFIG_ACCESS   = 'admin.config.access';   // Auth grants + Banlist routes
+    case ADMIN_CONFIG_CONTENT  = 'admin.config.content';  // News pagination
+    case ADMIN_CONFIG_COMMENTS = 'admin.config.comments'; // Comment service + antispam
+    case ADMIN_CONFIG_CAPTCHA  = 'admin.config.captcha';  // CaptchaService + CaptchaRenderer
+    case ADMIN_CONFIG_USERS    = 'admin.config.users';    // UserService + AvatarService + Identicon
+    case ADMIN_CONFIG_MAIL     = 'admin.config.mail';     // Mailer + MailboxManager
 }

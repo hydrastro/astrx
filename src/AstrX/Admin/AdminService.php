@@ -11,26 +11,25 @@ use AstrX\Auth\Permission;
  *
  * NAV_PAGES maps url_id slug → label translation key.
  * Order determines display order in the admin nav.
- *
- * Authentication is handled by Gate::can(Permission::ADMIN_ACCESS) —
- * each controller calls this itself so the gate is the single source of truth.
  */
 final class AdminService
 {
-    /**
-     * Admin sub-page slugs → label keys.
-     * Keys are the raw url_id values as stored in the page table.
-     * These will be prefixed with WORDING_ for the i18n lookup.
-     */
     public const array NAV_PAGES = [
+        // ── Content management ──────────────────────────────────────────────
         'admin'          => 'admin.nav.home',
         'admin_news'     => 'admin.nav.news',
-        'admin_comments' => 'admin.nav.comments',
-        'admin_users'    => 'admin.nav.users',
+        'admin_comments' => 'admin.nav.comments',   // moderation + comment config
+        'admin_users'    => 'admin.nav.users',       // user management + user config
         'admin_banlist'  => 'admin.nav.banlist',
         'admin_navbar'   => 'admin.nav.navbar',
         'admin_pages'    => 'admin.nav.pages',
         'admin_notes'    => 'admin.nav.notes',
+
+        // ── Configuration ───────────────────────────────────────────────────
+        'admin_config_system'  => 'admin.nav.config_system',  // core + routing + session + news
+        'admin_config_access'  => 'admin.nav.config_access',  // grants + banlist routes
+        'admin_config_captcha' => 'admin.nav.config_captcha',
+        'admin_config_mail'    => 'admin.nav.config_mail',
     ];
 
     public function __construct(private readonly Gate $gate) {}

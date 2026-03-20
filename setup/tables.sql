@@ -243,7 +243,7 @@ CREATE TABLE `comment`
 (
     `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
     `page_id`    INT           NOT NULL,
-    `item_id`    INT           NULL,                  -- optional sub-page scope (e.g. post id within a blog page)
+    `item_id`    INT           NULL,
     `user_id`    BINARY(16)    NULL,
     `name`       VARCHAR(64)   NULL,
     `email`      VARCHAR(320)  NULL,
@@ -293,45 +293,25 @@ CREATE TABLE `captcha`
 -- ============================================================
 -- SECURITY: BANLIST
 --
--- banlist_route — named penalty profiles (Permanent, Bad comment, Failed login, …)
--- banlist_round — escalation steps within a route; round_num is auto-assigned
--- banlist       — one row per ban; ban_route references banlist_route.id
+-- Route/round definitions (penalty schedules) live in Banlist.config.php,
+-- edited via the admin config UI. They are compile-time configuration.
+--
+-- ban_route is a VARCHAR(64) key matching BanlistRepository::ROUTE_* constants
+-- (e.g. 'permanent', 'bad_comment', 'failed_login'). No FK to a route table —
+-- the route definition lives in PHP config, not in the DB.
 -- ============================================================
-
-CREATE TABLE `banlist_route`
-(
-    `id`          INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `name`        VARCHAR(64)  NOT NULL,
-    `description` VARCHAR(255) NOT NULL DEFAULT '',
-    INDEX idx_name (name)
-);
-
-CREATE TABLE `banlist_round`
-(
-    `id`          INT     NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `route_id`    INT     NOT NULL,
-    `round_num`   INT     NOT NULL DEFAULT 0,  -- auto-assigned (MAX+1) by BanlistRepository
-    `penalty`     INT     NOT NULL DEFAULT 0,  -- seconds; 0 = permanent
-    `max_tries`   INT     NOT NULL DEFAULT 0,  -- 0 = no escalation
-    `check_time`  INT     NOT NULL DEFAULT 0,  -- sliding window seconds; 0 = no window
-    `enabled`     TINYINT NOT NULL DEFAULT 1,
-    FOREIGN KEY (route_id) REFERENCES banlist_route (id) ON DELETE CASCADE,
-    INDEX idx_route (route_id),
-    UNIQUE KEY uq_route_round (route_id, round_num)
-);
 
 CREATE TABLE `banlist`
 (
-    `id`            INT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `ban_route`     INT      NOT NULL,             -- FK → banlist_route.id
-    `penalty_round` SMALLINT NOT NULL DEFAULT 0,
-    `tries`         SMALLINT NOT NULL DEFAULT 0,
-    `reason`        TEXT     NOT NULL DEFAULT '',
-    `start`         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `end`           TIMESTAMP NULL,
-    `check_time`    TIMESTAMP NULL,
-    `active`        TINYINT  NOT NULL DEFAULT 1,
-    FOREIGN KEY (ban_route) REFERENCES banlist_route (id) ON UPDATE CASCADE,
+    `id`            INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `ban_route`     VARCHAR(64)  NOT NULL DEFAULT 'permanent',
+    `penalty_round` SMALLINT     NOT NULL DEFAULT 0,
+    `tries`         SMALLINT     NOT NULL DEFAULT 0,
+    `reason`        TEXT         NOT NULL DEFAULT '',
+    `start`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `end`           TIMESTAMP    NULL,
+    `check_time`    TIMESTAMP    NULL,
+    `active`        TINYINT      NOT NULL DEFAULT 1,
     INDEX idx_active (active),
     INDEX idx_route  (ban_route)
 );
@@ -381,77 +361,104 @@ CREATE TABLE `site_config`
 -- Pages
 --
 -- ID map:
---   1  main            9  user (section root)
---   2  error           10 avatar
---   3  login           11 admin_banlist
---   4  register        12 admin_comments
---   5  recover         13 admin_navbar
---   6  profile         14 admin_news
---   7  user_settings   15 admin_notes
---   8  user_home       16 admin_pages
---                      17 admin_users
---                      18 admin (section root)
---                      19 logout
+--   1  main             9  user (section root)
+--   2  error           10  avatar
+--   3  login           11  admin_banlist
+--   4  register        12  admin_comments
+--   5  recover         13  admin_navbar
+--   6  profile         14  admin_news
+--   7  user_settings   15  admin_notes
+--   8  user_home       16  admin_pages
+--                      17  admin_users
+--                      18  admin (section root)
+--                      19  logout
+--                      20  admin_config_system
+--                      21  admin_config_access
+--                      22  admin_config_content
+--                      23  admin_config_comments
+--                      24  admin_config_captcha
+--                      25  admin_config_users
+--                      26  admin_config_mail
 -- ----------------------------------------------------------
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES
-    ('WORDING_MAIN',           1, 'main',          1, 1, 0, 1),  -- id=1
-    ('WORDING_ERROR',          1, 'error',          1, 1, 1, 0),  -- id=2
-    ('WORDING_LOGIN',          1, 'login',          1, 1, 0, 0),  -- id=3
-    ('WORDING_REGISTER',       1, 'register',       1, 1, 0, 0),  -- id=4
-    ('WORDING_RECOVER',        1, 'recover',        1, 1, 0, 0),  -- id=5
-    ('WORDING_PROFILE',        1, 'profile',        1, 1, 0, 0),  -- id=6
-    ('WORDING_SETTINGS',       1, 'user_settings',  1, 1, 0, 0),  -- id=7
-    ('WORDING_USER_HOME',      1, 'user_home',      1, 1, 0, 0),  -- id=8
-    ('WORDING_USER',           1, 'user',           1, 1, 0, 0),  -- id=9
-    ('avatar',                 0, 'avatar',         0, 1, 0, 0),  -- id=10
-    ('WORDING_ADMIN_BANLIST',  1, 'admin_banlist',  1, 1, 0, 0),  -- id=11
-    ('WORDING_ADMIN_COMMENTS', 1, 'admin_comments', 1, 1, 0, 0),  -- id=12
-    ('WORDING_ADMIN_NAVBAR',   1, 'admin_navbar',   1, 1, 0, 0),  -- id=13
-    ('WORDING_ADMIN_NEWS',     1, 'admin_news',     1, 1, 0, 0),  -- id=14
-    ('WORDING_ADMIN_NOTES',    1, 'admin_notes',    1, 1, 0, 0),  -- id=15
-    ('WORDING_ADMIN_PAGES',    1, 'admin_pages',    1, 1, 0, 0),  -- id=16
-    ('WORDING_ADMIN_USERS',    1, 'admin_users',    1, 1, 0, 0),  -- id=17
-    ('WORDING_ADMIN',          1, 'admin',          1, 1, 0, 0),  -- id=18
-    ('WORDING_LOGOUT',         1, 'logout',         0, 1, 0, 0);  -- id=19
+    ('WORDING_MAIN',                    1, 'main',                   1, 1, 0, 1),  -- id=1
+    ('WORDING_ERROR',                   1, 'error',                  1, 1, 1, 0),  -- id=2
+    ('WORDING_LOGIN',                   1, 'login',                  1, 1, 0, 0),  -- id=3
+    ('WORDING_REGISTER',                1, 'register',               1, 1, 0, 0),  -- id=4
+    ('WORDING_RECOVER',                 1, 'recover',                1, 1, 0, 0),  -- id=5
+    ('WORDING_PROFILE',                 1, 'profile',                1, 1, 0, 0),  -- id=6
+    ('WORDING_SETTINGS',                1, 'user_settings',          1, 1, 0, 0),  -- id=7
+    ('WORDING_USER_HOME',               1, 'user_home',              1, 1, 0, 0),  -- id=8
+    ('WORDING_USER',                    1, 'user',                   1, 1, 0, 0),  -- id=9
+    ('avatar',                          0, 'avatar',                 0, 1, 0, 0),  -- id=10
+    ('WORDING_ADMIN_BANLIST',           1, 'admin_banlist',          1, 1, 0, 0),  -- id=11
+    ('WORDING_ADMIN_COMMENTS',          1, 'admin_comments',         1, 1, 0, 0),  -- id=12
+    ('WORDING_ADMIN_NAVBAR',            1, 'admin_navbar',           1, 1, 0, 0),  -- id=13
+    ('WORDING_ADMIN_NEWS',              1, 'admin_news',             1, 1, 0, 0),  -- id=14
+    ('WORDING_ADMIN_NOTES',             1, 'admin_notes',            1, 1, 0, 0),  -- id=15
+    ('WORDING_ADMIN_PAGES',             1, 'admin_pages',            1, 1, 0, 0),  -- id=16
+    ('WORDING_ADMIN_USERS',             1, 'admin_users',            1, 1, 0, 0),  -- id=17
+    ('WORDING_ADMIN',                   1, 'admin',                  1, 1, 0, 0),  -- id=18
+    ('WORDING_LOGOUT',                  1, 'logout',                 0, 1, 0, 0),  -- id=19
+    ('WORDING_ADMIN_CONFIG_SYSTEM',     1, 'admin_config_system',    1, 1, 0, 0),  -- id=20
+    ('WORDING_ADMIN_CONFIG_ACCESS',     1, 'admin_config_access',    1, 1, 0, 0),  -- id=21
+    ('WORDING_ADMIN_CONFIG_CONTENT',    1, 'admin_config_content',   1, 1, 0, 0),  -- id=22
+    ('WORDING_ADMIN_CONFIG_COMMENTS',   1, 'admin_config_comments',  1, 1, 0, 0),  -- id=23
+    ('WORDING_ADMIN_CONFIG_CAPTCHA',    1, 'admin_config_captcha',   1, 1, 0, 0),  -- id=24
+    ('WORDING_ADMIN_CONFIG_USERS',      1, 'admin_config_users',     1, 1, 0, 0),  -- id=25
+    ('WORDING_ADMIN_CONFIG_MAIL',       1, 'admin_config_mail',      1, 1, 0, 0);  -- id=26
 
 
 INSERT INTO `page_robots` (page_id, `index`, follow)
 VALUES
     (1,1,1),(2,0,0),(3,1,1),(4,1,1),(5,1,1),(6,0,0),(7,0,0),(8,0,0),(9,1,1),
-    (10,0,0),(11,0,0),(12,0,0),(13,0,0),(14,0,0),(15,0,0),(16,0,0),(17,0,0),(18,0,0),(19,0,0);
+    (10,0,0),(11,0,0),(12,0,0),(13,0,0),(14,0,0),(15,0,0),(16,0,0),(17,0,0),(18,0,0),(19,0,0),
+    (20,0,0),(21,0,0),(22,0,0),(23,0,0),(24,0,0),(25,0,0),(26,0,0);
 
 
 INSERT INTO `page_meta` (page_id, title, description)
 VALUES
-    (1,  'My Website',         'This is my awesome website!'),
-    (2,  'Error',              'An error occurred.'),
-    (3,  'Login',              'Log in to your account.'),
-    (4,  'Register',           'Create a new account.'),
-    (5,  'Recover',            'Recover your account password.'),
-    (6,  'User Profile',       'View a user profile.'),
-    (7,  'Settings',           'Manage your account settings.'),
-    (8,  'Home',               'Welcome to your home page.'),
-    (9,  'User Area',          'Log in or create your account.'),
-    (10, '',                   ''),
-    (11, 'Admin — Banlist',    'Manage the banlist.'),
-    (12, 'Admin — Comments',   'Moderate site comments.'),
-    (13, 'Admin — Navbar',     'Edit the navigation bar.'),
-    (14, 'Admin — News',       'Manage news posts.'),
-    (15, 'Admin — Notes',      'Personal admin notes.'),
-    (16, 'Admin — Pages',      'Manage site pages.'),
-    (17, 'Admin — Users',      'Manage user accounts.'),
-    (18, 'Administration',     'Administration area.'),
-    (19, 'Logout',             '');
+    (1,  'My Website',                  'This is my awesome website!'),
+    (2,  'Error',                       'An error occurred.'),
+    (3,  'Login',                       'Log in to your account.'),
+    (4,  'Register',                    'Create a new account.'),
+    (5,  'Recover',                     'Recover your account password.'),
+    (6,  'User Profile',                'View a user profile.'),
+    (7,  'Settings',                    'Manage your account settings.'),
+    (8,  'Home',                        'Welcome to your home page.'),
+    (9,  'User Area',                   'Log in or create your account.'),
+    (10, '',                            ''),
+    (11, 'Admin — Banlist',             'Manage the banlist.'),
+    (12, 'Admin — Comments',            'Moderate site comments.'),
+    (13, 'Admin — Navbar',              'Edit the navigation bar.'),
+    (14, 'Admin — News',                'Manage news posts.'),
+    (15, 'Admin — Notes',               'Personal admin notes.'),
+    (16, 'Admin — Pages',               'Manage site pages.'),
+    (17, 'Admin — Users',               'Manage user accounts.'),
+    (18, 'Administration',              'Administration area.'),
+    (19, 'Logout',                      ''),
+    (20, 'Config — System',             'Edit core system configuration.'),
+    (21, 'Config — Access & Security',  'Edit auth grants and banlist routes.'),
+    (22, 'Config — Content',            'Edit news pagination settings.'),
+    (23, 'Config — Comments',           'Edit comment service configuration.'),
+    (24, 'Config — Captcha',            'Edit captcha settings.'),
+    (25, 'Config — Users',              'Edit user service configuration.'),
+    (26, 'Config — Mail',               'Edit mail configuration.');
 
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES
+    -- Self-references
     (1,1),(2,2),(3,3),(4,4),(5,5),(6,6),(7,7),(8,8),(9,9),(10,10),
     (11,11),(12,12),(13,13),(14,14),(15,15),(16,16),(17,17),(18,18),(19,19),
+    (20,20),(21,21),(22,22),(23,23),(24,24),(25,25),(26,26),
+    -- User section children (9 is ancestor)
     (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),
-    (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17);
+    -- Admin section children (18 is ancestor)
+    (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17),
+    (18,20),(18,21),(18,22),(18,23),(18,24),(18,25),(18,26);
 
 
 INSERT INTO `keyword` (keyword, i18n)
@@ -462,7 +469,10 @@ VALUES
     ('Recover',             0), ('Lost Password',       0), ('Admin',               0),
     ('Administration Area', 0), ('Settings',            0), ('Banlist',             0),
     ('Comments',            0), ('Navbar',              0), ('News',                0),
-    ('Notes',               0), ('Pages',               0), ('Users',               0);
+    ('Notes',               0), ('Pages',               0), ('Users',               0),
+    ('Config',              0), ('System',              0), ('Access',              0),
+    ('Security',            0), ('Content',             0), ('Captcha',             0),
+    ('Mail',                0);
 
 
 INSERT INTO `page_keyword` (page_id, keyword_id)
@@ -472,7 +482,12 @@ VALUES
     (11,12),(11,13),(11,14),(11,15),(12,12),(12,13),(12,14),(12,16),
     (13,12),(13,13),(13,14),(13,17),(14,12),(14,13),(14,14),(14,18),
     (15,12),(15,13),(15,14),(15,19),(16,12),(16,13),(16,14),(16,20),
-    (17,12),(17,13),(17,14),(17,21);
+    (17,12),(17,13),(17,14),(17,21),
+    -- Config pages share admin + config keywords
+    (20,12),(20,13),(20,22),(20,23),(21,12),(21,13),(21,22),(21,24),(21,25),
+    (22,12),(22,13),(22,22),(22,26),(23,12),(23,13),(23,22),(23,16),
+    (24,12),(24,13),(24,22),(24,27),(25,12),(25,13),(25,22),(25,21),
+    (26,12),(26,13),(26,22),(26,28);
 
 
 -- ----------------------------------------------------------
@@ -487,34 +502,44 @@ VALUES
     (2, 0, 1),  -- id=2  user first pin (custom: User Home)
     (2, 1, 0),  -- id=3  user middle pin (alpha: Profile, Settings)
     (2, 2, 1),  -- id=4  user last pin (custom: Logout)
-    (3, 0, 1),  -- id=5  admin first pin (custom: Dashboard)
-    (3, 1, 0);  -- id=6  admin middle pin (alpha: everything else)
+    (3, 0, 1),  -- id=5  admin: Dashboard (custom, single entry)
+    (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
 
-INSERT INTO `navbar_entry_ids` () VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+INSERT INTO `navbar_entry_ids` ()
+VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
-    (1,  1, 1, 'WORDING_HOME',          1, 1, 0),
-    (2,  1, 1, 'WORDING_USER',          1, 1, 1),
-    (3,  1, 0, 'Test',                  0, 0, 2),
-    (4,  1, 0, 'Ext',                   0, 0, 3),
-    (5,  2, 1, 'WORDING_USER_HOME',     1, 1, 0),
-    (6,  3, 1, 'WORDING_PROFILE',       1, 1, 0),
-    (7,  3, 1, 'WORDING_SETTINGS',      1, 1, 0),
-    (8,  4, 1, 'WORDING_LOGOUT',        1, 1, 0),
-    (9,  5, 1, 'WORDING_ADMIN',         1, 1, 0),
-    (10, 6, 1, 'WORDING_ADMIN_NEWS',    1, 1, 0),
-    (11, 6, 1, 'WORDING_ADMIN_COMMENTS',1, 1, 0),
-    (12, 6, 1, 'WORDING_ADMIN_USERS',   1, 1, 0),
-    (13, 6, 1, 'WORDING_ADMIN_BANLIST', 1, 1, 0),
-    (14, 6, 1, 'WORDING_ADMIN_NAVBAR',  1, 1, 0),
-    (15, 6, 1, 'WORDING_ADMIN_PAGES',   1, 1, 0),
-    (16, 6, 1, 'WORDING_ADMIN_NOTES',   1, 1, 0);
+    -- Public navbar
+    (1,  1, 1, 'WORDING_HOME',                  1, 1, 0),
+    (2,  1, 1, 'WORDING_USER',                  1, 1, 1),
+    (3,  1, 0, 'Test',                           0, 0, 2),
+    (4,  1, 0, 'Ext',                            0, 0, 3),
+    -- User navbar
+    (5,  2, 1, 'WORDING_USER_HOME',             1, 1, 0),
+    (6,  3, 1, 'WORDING_PROFILE',               1, 1, 0),
+    (7,  3, 1, 'WORDING_SETTINGS',              1, 1, 0),
+    (8,  4, 1, 'WORDING_LOGOUT',                1, 1, 0),
+    -- Admin navbar — Dashboard (pin 5, custom)
+    (9,  5, 1, 'WORDING_ADMIN',                 1, 1, 0),
+    -- Admin navbar — all other pages (pin 6, alpha-sorted)
+    (10, 6, 1, 'WORDING_ADMIN_NEWS',            1, 1, 0),
+    (11, 6, 1, 'WORDING_ADMIN_COMMENTS',        1, 1, 0),
+    (12, 6, 1, 'WORDING_ADMIN_USERS',           1, 1, 0),
+    (13, 6, 1, 'WORDING_ADMIN_BANLIST',         1, 1, 0),
+    (14, 6, 1, 'WORDING_ADMIN_NAVBAR',          1, 1, 0),
+    (15, 6, 1, 'WORDING_ADMIN_PAGES',           1, 1, 0),
+    (16, 6, 1, 'WORDING_ADMIN_NOTES',           1, 1, 0),
+    (17, 6, 1, 'WORDING_ADMIN_CONFIG_SYSTEM',   1, 1, 0),
+    (18, 6, 1, 'WORDING_ADMIN_CONFIG_ACCESS',   1, 1, 0),
+    (19, 6, 1, 'WORDING_ADMIN_CONFIG_CAPTCHA',  1, 1, 0),
+    (20, 6, 1, 'WORDING_ADMIN_CONFIG_MAIL',     1, 1, 0);
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
     (1,1),(2,9),(5,8),(6,6),(7,7),(8,19),
-    (9,18),(10,14),(11,12),(12,17),(13,11),(14,13),(15,16),(16,15);
+    (9,18),(10,14),(11,12),(12,17),(13,11),(14,13),(15,16),(16,15),
+    (17,20),(18,21),(19,24),(20,26);
 
 INSERT INTO `navbar_external` (id, url)
 VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
@@ -539,35 +564,3 @@ VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
-
-
--- ----------------------------------------------------------
--- Banlist routes & rounds
--- Routes use AUTO_INCREMENT starting from 1 (no id=0 tricks needed).
--- BanlistRepository never hardcodes these ids — routes are fully DB-driven.
--- ----------------------------------------------------------
-
-INSERT INTO `banlist_route` (name, description) VALUES
-                                                    ('Permanent',    'Immediate permanent ban.'),
-                                                    ('Bad comment',  'Escalating bans for posting bad comments.'),
-                                                    ('Failed login', 'Escalating bans for too many failed login attempts.');
--- ids assigned: 1=Permanent, 2=Bad comment, 3=Failed login
-
-INSERT INTO `banlist_round` (route_id, round_num, penalty, max_tries, check_time, enabled) VALUES
-                                                                                               -- Permanent: single round, no escalation
-                                                                                               (1, 0, 0, 0, 0, 1),
-                                                                                               -- Bad comment escalation
-                                                                                               (2, 0,  10800,   3, 3600,    1),  -- 3h,   3 tries/1h
-                                                                                               (2, 1,  21600,   2, 86400,   1),  -- 6h,   2 tries/1d
-                                                                                               (2, 2,  604800,  1, 604800,  1),  -- 1w,   1 try/1w
-                                                                                               (2, 3,  2592000, 1, 2592000, 1),  -- 1mo,  1 try/1mo
-                                                                                               (2, 4,  0,       0, 0,       1),  -- permanent
-                                                                                               -- Failed login escalation
-                                                                                               (3, 0,  300,     20, 3600,    1), -- 5m,   20 tries/1h
-                                                                                               (3, 1,  3600,    15, 86400,   1), -- 1h,   15 tries/1d
-                                                                                               (3, 2,  86400,   15, 604800,  1), -- 1d,   15 tries/1w
-                                                                                               (3, 3,  604800,  15, 2592000, 1), -- 1w,   15 tries/1mo
-                                                                                               (3, 4,  2592000, 10, 2592000, 1); -- 1mo,  10 tries/1mo
-
-
-

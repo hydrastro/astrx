@@ -1,0 +1,137 @@
+<h2>{{heading}}</h2>
+
+{{! ── Live Preview ────────────────────────────────────────────────────── }}
+<h3>{{section_preview}}</h3>
+<table>
+  <tr>
+    <th>{{preview_text}}</th>
+    <td><img src="data:image/gif;base64,{{preview_image}}" alt="captcha preview"></td>
+  </tr>
+</table>
+<hr>
+
+{{! ── CaptchaService ──────────────────────────────────────────────────── }}
+<h3>{{section_service}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="service">
+  <table>
+    <tr><th>{{label_captcha_expiration}}</th>
+      <td><input type="number" name="captcha_expiration" value="{{cfg_captcha_expiration}}" min="60" class="input" /> s</td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+  </table>
+</form>
+<hr>
+
+{{! ── CaptchaRenderer ────────────────────────────────────────────────── }}
+<h3>{{section_renderer}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="renderer">
+  <table>
+
+    <tr><th>{{label_captcha_type}}</th><td>
+      <select name="captcha_type" class="input" />
+        {{#type_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/type_options}}
+      </select>
+    </td></tr>
+    <tr><th>{{label_captcha_length}}</th>
+      <td><input type="number" name="captcha_length" value="{{cfg_captcha_length}}" min="1" max="20" class="input" /></td></tr>
+    <tr><th>{{label_char_list}}</th>
+      <td><input type="text" name="char_list" value="{{cfg_char_list}}" style="width:30em" class="input" /></td></tr>
+
+    <tr><th colspan="2">Canvas</th></tr>
+    <tr><th>{{label_image_width}}</th>
+      <td><input type="number" name="image_width" value="{{cfg_image_width}}" min="1" class="input" /> <small>(1 = auto)</small></td></tr>
+    <tr><th>{{label_image_height}}</th>
+      <td><input type="number" name="image_height" value="{{cfg_image_height}}" min="1" class="input" /> <small>(1 = auto)</small></td></tr>
+
+    <tr><th colspan="2">Colors</th></tr>
+    <tr><th>{{label_background_color}}</th>
+      <td><input type="text" name="background_color" value="{{cfg_background_color}}" maxlength="6" style="width:6em" class="input" /></td></tr>
+    <tr><th>{{label_text_color}}</th>
+      <td><input type="text" name="text_color" value="{{cfg_text_color}}" maxlength="6" style="width:6em" class="input" />
+        <input type="checkbox" name="text_color_random" value="1"{{#cfg_text_color_random}} checked{{/cfg_text_color_random}} class="input" />
+        {{label_text_color_random}}</td></tr>
+    <tr><th>{{label_lines_color}}</th>
+      <td><input type="text" name="lines_color" value="{{cfg_lines_color}}" maxlength="6" style="width:6em" class="input" />
+        <input type="checkbox" name="lines_color_random" value="1"{{#cfg_lines_color_random}} checked{{/cfg_lines_color_random}} class="input" />
+        {{label_lines_color_random}}</td></tr>
+    <tr><th>{{label_dots_color}}</th>
+      <td><input type="text" name="dots_color" value="{{cfg_dots_color}}" maxlength="6" style="width:6em" class="input" />
+        <input type="checkbox" name="dots_color_random" value="1"{{#cfg_dots_color_random}} checked{{/cfg_dots_color_random}} class="input" />
+        {{label_dots_color_random}}</td></tr>
+
+    <tr><th colspan="2">Noise</th></tr>
+    <tr><th>{{label_lines_start_from_border}}</th>
+      <td><input type="checkbox" name="lines_start_from_border" value="1"{{#cfg_lines_start_from_border}} checked{{/cfg_lines_start_from_border}} class="input" /></td></tr>
+    <tr><th>{{label_lines_number}}</th>
+      <td><input type="number" name="lines_number" value="{{cfg_lines_number}}" min="0" class="input" /></td></tr>
+    <tr><th>{{label_dots_number}}</th>
+      <td><input type="number" name="dots_number" value="{{cfg_dots_number}}" min="0" class="input" /></td></tr>
+
+    <tr><th colspan="2">Font</th></tr>
+    <tr><th>{{label_font_file}}</th>
+      <td><input type="text" name="font_file" value="{{cfg_font_file}}" style="width:30em" class="input" /></td></tr>
+    <tr><th>{{label_font_size}}</th>
+      <td><input type="number" name="font_size" value="{{cfg_font_size}}" min="8" class="input" /></td></tr>
+    <tr><th>{{label_font_min_angle}} / {{label_font_max_angle}}</th>
+      <td><input type="number" name="font_min_angle" value="{{cfg_font_min_angle}}" class="input" />
+        / <input type="number" name="font_max_angle" value="{{cfg_font_max_angle}}" class="input" /> °</td></tr>
+    <tr><th>{{label_font_min_distance}} / {{label_font_max_distance}}</th>
+      <td><input type="number" name="font_min_distance" value="{{cfg_font_min_distance}}" min="0" class="input" />
+        / <input type="number" name="font_max_distance" value="{{cfg_font_max_distance}}" min="0" class="input" /> px</td></tr>
+    <tr><th>{{label_font_x_border}} / {{label_font_y_border}}</th>
+      <td><input type="number" name="font_x_border" value="{{cfg_font_x_border}}" min="0" class="input" />
+        / <input type="number" name="font_y_border" value="{{cfg_font_y_border}}" min="0" class="input" /> px</td></tr>
+
+    <tr><th colspan="2">HARD mode</th></tr>
+    <tr><th>{{label_trace_line_color}}</th>
+      <td><input type="text" name="trace_line_color" value="{{cfg_trace_line_color}}" maxlength="6" style="width:6em" class="input" /></td></tr>
+    <tr><th>{{label_non_captcha_char_number}}</th>
+      <td><input type="number" name="non_captcha_char_number" value="{{cfg_non_captcha_char_number}}" min="0" class="input" /></td></tr>
+    <tr><th>{{label_use_border_linear_randomness}}</th>
+      <td><input type="checkbox" name="use_border_linear_randomness" value="1"{{#cfg_use_border_linear_randomness}} checked{{/cfg_use_border_linear_randomness}} class="input" /></td></tr>
+    <tr><th>{{label_max_rounds_number}}</th>
+      <td><input type="number" name="max_rounds_number" value="{{cfg_max_rounds_number}}" min="100" class="input" /></td></tr>
+
+    <tr><td colspan="2">
+      <input type="submit" value="{{btn_save}}" class="input">
+      &nbsp;
+      <input type="submit" name="section" value="preview" form="" class="input"
+             formaction="" formmethod="POST">
+    </td></tr>
+  </table>
+</form>
+
+{{! Preview button: separate form that submits section=preview without saving }}
+<form method="POST" id="preview-form" style="display:inline">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
+  <input type="hidden" name="section" value="preview" />
+  <input type="hidden" name="captcha_type"               value="{{cfg_captcha_type}}" />
+  <input type="hidden" name="captcha_length"             value="{{cfg_captcha_length}}" />
+  <input type="hidden" name="char_list"                  value="{{cfg_char_list}}" />
+  <input type="hidden" name="image_width"                value="{{cfg_image_width}}" />
+  <input type="hidden" name="image_height"               value="{{cfg_image_height}}" />
+  <input type="hidden" name="background_color"           value="{{cfg_background_color}}" />
+  <input type="hidden" name="text_color"                 value="{{cfg_text_color}}" />
+  <input type="hidden" name="lines_color"                value="{{cfg_lines_color}}" />
+  <input type="hidden" name="dots_color"                 value="{{cfg_dots_color}}" />
+  <input type="hidden" name="lines_number"               value="{{cfg_lines_number}}" />
+  <input type="hidden" name="dots_number"                value="{{cfg_dots_number}}" />
+  <input type="hidden" name="font_file"                  value="{{cfg_font_file}}" />
+  <input type="hidden" name="font_size"                  value="{{cfg_font_size}}" />
+  <input type="hidden" name="font_min_angle"             value="{{cfg_font_min_angle}}" />
+  <input type="hidden" name="font_max_angle"             value="{{cfg_font_max_angle}}" />
+  <input type="hidden" name="font_min_distance"          value="{{cfg_font_min_distance}}" />
+  <input type="hidden" name="font_max_distance"          value="{{cfg_font_max_distance}}" />
+  <input type="hidden" name="font_x_border"              value="{{cfg_font_x_border}}" />
+  <input type="hidden" name="font_y_border"              value="{{cfg_font_y_border}}" />
+  <input type="hidden" name="trace_line_color"           value="{{cfg_trace_line_color}}" />
+  <input type="hidden" name="non_captcha_char_number"    value="{{cfg_non_captcha_char_number}}" />
+  <input type="hidden" name="max_rounds_number"          value="{{cfg_max_rounds_number}}" />
+  <input type="submit" value="{{btn_preview}}" class="input" />
+</form>

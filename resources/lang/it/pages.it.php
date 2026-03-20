@@ -1,12 +1,16 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Slug URL pagine — locale it.
+ * File completo con le 7 nuove pagine di configurazione admin.
+ */
 return [
-    // Framework pages
+    // Pagine framework
     'WORDING_MAIN'      => 'principale',
     'WORDING_ERROR'     => 'errore',
 
-    // User-facing pages
+    // Pagine utente
     'WORDING_LOGIN'     => 'accesso',
     'WORDING_REGISTER'  => 'registrazione',
     'WORDING_RECOVER'   => 'recupero',
@@ -16,7 +20,7 @@ return [
     'WORDING_USER'      => 'utente',
     'WORDING_LOGOUT'    => 'esci',
 
-    // Pagine admin
+    // Admin — gestione contenuti
     'WORDING_ADMIN'          => 'admin',
     'WORDING_ADMIN_NEWS'     => 'admin-notizie',
     'WORDING_ADMIN_COMMENTS' => 'admin-commenti',
@@ -25,6 +29,15 @@ return [
     'WORDING_ADMIN_NAVBAR'   => 'admin-navigazione',
     'WORDING_ADMIN_PAGES'    => 'admin-pagine',
     'WORDING_ADMIN_NOTES'    => 'admin-note',
+
+    // Admin — configurazione
+    'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-sistema',
+    'WORDING_ADMIN_CONFIG_ACCESS'   => 'admin-config-accesso',
+    'WORDING_ADMIN_CONFIG_CONTENT'  => 'admin-config-contenuto',
+    'WORDING_ADMIN_CONFIG_COMMENTS' => 'admin-config-commenti',
+    'WORDING_ADMIN_CONFIG_CAPTCHA'  => 'admin-config-captcha',
+    'WORDING_ADMIN_CONFIG_USERS'    => 'admin-config-utenti',
+    'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-posta',
 
     // Pagina test commenti
     'WORDING_COMMENTS_TEST' => 'commenti-test',

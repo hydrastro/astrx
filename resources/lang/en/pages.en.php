@@ -3,15 +3,7 @@ declare(strict_types=1);
 
 /**
  * Page URL slugs — en locale.
- *
- * Every WORDING_ key corresponds to a page row with i18n=1.
- * The value is the public URL slug for this locale.
- *
- * Convention:
- *   WORDING_ prefix + i18n=1 → translated slug (this file)
- *   No prefix   + i18n=0    → raw literal slug, not translated
- *
- * Admin and developer docs use English slugs as stable canonical references.
+ * Full file including the 7 new admin config pages.
  */
 return [
     // Framework pages
@@ -28,7 +20,7 @@ return [
     'WORDING_USER'      => 'user',
     'WORDING_LOGOUT'    => 'logout',
 
-    // Admin pages
+    // Admin — content management
     'WORDING_ADMIN'          => 'admin',
     'WORDING_ADMIN_NEWS'     => 'admin-news',
     'WORDING_ADMIN_COMMENTS' => 'admin-comments',
@@ -37,6 +29,15 @@ return [
     'WORDING_ADMIN_NAVBAR'   => 'admin-navbar',
     'WORDING_ADMIN_PAGES'    => 'admin-pages',
     'WORDING_ADMIN_NOTES'    => 'admin-notes',
+
+    // Admin — configuration
+    'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-system',
+    'WORDING_ADMIN_CONFIG_ACCESS'   => 'admin-config-access',
+    'WORDING_ADMIN_CONFIG_CONTENT'  => 'admin-config-content',
+    'WORDING_ADMIN_CONFIG_COMMENTS' => 'admin-config-comments',
+    'WORDING_ADMIN_CONFIG_CAPTCHA'  => 'admin-config-captcha',
+    'WORDING_ADMIN_CONFIG_USERS'    => 'admin-config-users',
+    'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-mail',
 
     // Comments test page
     'WORDING_COMMENTS_TEST' => 'comments-test',
