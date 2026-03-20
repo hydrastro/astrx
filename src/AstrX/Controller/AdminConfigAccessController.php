@@ -22,26 +22,18 @@ use AstrX\Template\DefaultTemplateContext;
 /**
  * Admin — Access configuration editor.
  *
- * Two sections on one page:
+ * Permission grants matrix with dynamic group support:
+ *   - ADMIN is always '*' (read-only column).
+ *   - All other groups are editable.
+ *   - Groups can be added (section=add_group) or deleted (section=delete_group)
+ *     via separate single-purpose forms that never touch the permission checkboxes.
  *
- * 1. Auth grants — one form per group (GUEST / USER / MOD).
- *    Rendered as a table: rows = permission groups (news.*, comment.*, …),
- *    columns = the three editable roles.  Each cell is a checkbox.
- *    ADMIN always has '*' (full access) and is shown as read-only.
- *
- * 2. Banlist routes — add / edit / delete routes and their rounds.
- *    Routes are the PHP-config penalty schedules (permanent, bad_comment, …).
- *    Rounds are the escalation steps within each route.
- *    Writes Banlist.config.php atomically.
+ * Route management has moved to AdminBanlistController.
  */
 final class AdminConfigAccessController extends AbstractController
 {
     private const FORM = 'admin_config_access';
 
-    /** Groups the UI lets you edit (ADMIN is always '*', kept read-only). */
-    private const EDITABLE_GROUPS = ['GUEST', 'USER', 'MOD'];
-
-    /** Permission prefix → human section label key. */
     private const PREFIX_LABELS = [
         'news'    => 'admin.config.access.prefix_news',
         'comment' => 'admin.config.access.prefix_comment',
@@ -103,9 +95,10 @@ final class AdminConfigAccessController extends AbstractController
 
         $section = (string) ($posted['section'] ?? '');
         $result  = match ($section) {
-            'grants'  => $this->saveGrants($posted),
-            'routes'  => $this->saveRoutes($posted),
-            default   => null,
+            'grants'       => $this->saveGrants($posted),
+            'add_group'    => $this->addGroup($posted),
+            'delete_group' => $this->deleteGroup($posted),
+            default        => null,
         };
 
         if ($result !== null) {
@@ -118,12 +111,19 @@ final class AdminConfigAccessController extends AbstractController
 
     // ── Savers ────────────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /**
+     * Save permission checkboxes for all existing groups.
+     * Never adds or removes groups — that is handled by addGroup/deleteGroup.
+     *
+     * @param array<string, mixed> $p
+     */
     private function saveGrants(array $p): Result
     {
-        $grants = ['ADMIN' => ['*']];
+        $existing = (array) $this->config->getConfig('Gate', 'grants', []);
+        $grants   = ['ADMIN' => ['*']];
 
-        foreach (self::EDITABLE_GROUPS as $group) {
+        $editableGroups = array_filter(array_keys($existing), fn($g) => $g !== 'ADMIN');
+        foreach ($editableGroups as $group) {
             $perms = [];
             foreach (Permission::cases() as $perm) {
                 $field = 'perm_' . $group . '_' . str_replace('.', '__', $perm->value);
@@ -137,60 +137,44 @@ final class AdminConfigAccessController extends AbstractController
         return $this->writer->write('Auth', ['Gate' => ['grants' => $grants]]);
     }
 
-    /** @param array<string, mixed> $p */
-    private function saveRoutes(array $p): Result
+    /**
+     * Add a new group with empty permissions.
+     * Preserves all existing group permissions unchanged.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function addGroup(array $p): Result
     {
-        $action   = (string) ($p['route_action'] ?? '');
-        $routeKey = trim((string) ($p['route_key'] ?? ''));
-        $current  = $this->loadRoutes();
-
-        switch ($action) {
-            case 'add_route':
-                if ($routeKey !== '' && !isset($current[$routeKey])) {
-                    $current[$routeKey] = [];
-                }
-                break;
-
-            case 'delete_route':
-                unset($current[$routeKey]);
-                break;
-
-            case 'add_round':
-                if ($routeKey !== '' && isset($current[$routeKey])) {
-                    $nextIdx = $current[$routeKey] !== [] ? max(array_keys($current[$routeKey])) + 1 : 0;
-                    $current[$routeKey][$nextIdx] = [
-                        'penalty'    => max(0, (int) ($p['penalty']    ?? 0)),
-                        'max_tries'  => max(0, (int) ($p['max_tries']  ?? 0)),
-                        'check_time' => max(0, (int) ($p['check_time'] ?? 0)),
-                        'enabled'    => !empty($p['enabled']),
-                    ];
-                }
-                break;
-
-            case 'update_round':
-                $roundIdx = (int) ($p['round_idx'] ?? -1);
-                if ($routeKey !== '' && isset($current[$routeKey][$roundIdx])) {
-                    $current[$routeKey][$roundIdx] = [
-                        'penalty'    => max(0, (int) ($p['penalty']    ?? 0)),
-                        'max_tries'  => max(0, (int) ($p['max_tries']  ?? 0)),
-                        'check_time' => max(0, (int) ($p['check_time'] ?? 0)),
-                        'enabled'    => !empty($p['enabled']),
-                    ];
-                }
-                break;
-
-            case 'delete_round':
-                $roundIdx = (int) ($p['round_idx'] ?? -1);
-                if ($routeKey !== '' && isset($current[$routeKey][$roundIdx])) {
-                    unset($current[$routeKey][$roundIdx]);
-                    $current[$routeKey] = array_values($current[$routeKey]);
-                }
-                break;
+        $newGroup = strtoupper(trim((string) ($p['new_group_name'] ?? '')));
+        if ($newGroup === '' || $newGroup === 'ADMIN') {
+            return Result::ok(false); // no-op
         }
 
-        return $this->writer->write('Banlist', [
-            'BanlistRepository' => ['routes' => $current],
-        ]);
+        $existing = (array) $this->config->getConfig('Gate', 'grants', []);
+        if (isset($existing[$newGroup])) {
+            return Result::ok(false); // already exists, no-op
+        }
+
+        $existing[$newGroup] = [];
+        return $this->writer->write('Auth', ['Gate' => ['grants' => $existing]]);
+    }
+
+    /**
+     * Delete a group entirely.
+     * Preserves all remaining group permissions unchanged.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function deleteGroup(array $p): Result
+    {
+        $group = strtoupper(trim((string) ($p['delete_group'] ?? '')));
+        if ($group === '' || $group === 'ADMIN') {
+            return Result::ok(false); // no-op
+        }
+
+        $existing = (array) $this->config->getConfig('Gate', 'grants', []);
+        unset($existing[$group]);
+        return $this->writer->write('Auth', ['Gate' => ['grants' => $existing]]);
     }
 
     // ── Context builder ───────────────────────────────────────────────────────
@@ -200,26 +184,32 @@ final class AdminConfigAccessController extends AbstractController
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($selfUrl);
 
-        $grants  = (array) $this->config->getConfig('Gate', 'grants', []);
-        $routes  = $this->loadRoutes();
-        $editKey = trim((string) ($this->request->query()->get('route_edit') ?? ''));
+        $grants         = (array) $this->config->getConfig('Gate', 'grants', []);
+        $editableGroups = array_values(
+            array_filter(array_keys($grants), fn($g) => $g !== 'ADMIN')
+        );
 
-        // ── Grants matrix ─────────────────────────────────────────────────────
-        // Group permissions by their resource prefix (news, comment, user, ban, admin)
-        // so the template can render a sub-table per prefix.
+        // Dynamic column headers.
+        $groupHeaders = array_map(fn($g) => ['name' => $g], $editableGroups);
+
+        // Permission rows grouped by prefix.
         $prefixSections = [];
         foreach (self::PREFIX_LABELS as $prefix => $labelKey) {
             $rows = [];
             foreach (Permission::cases() as $perm) {
                 if (!str_starts_with($perm->value, $prefix . '.')) { continue; }
                 $cells = [];
-                foreach (self::EDITABLE_GROUPS as $group) {
+                foreach ($editableGroups as $group) {
                     $groupGrants = (array) ($grants[$group] ?? []);
                     $granted     = in_array($perm->value, $groupGrants, true);
                     $field       = 'perm_' . $group . '_' . str_replace('.', '__', $perm->value);
-                    $cells[] = ['group' => $group, 'field' => $field, 'granted' => $granted];
+                    $cells[]     = ['group' => $group, 'field' => $field, 'granted' => $granted];
                 }
-                $rows[] = ['perm_value' => $perm->value, 'perm_name' => $perm->name, 'cells' => $cells];
+                $rows[] = [
+                    'perm_value' => $perm->value,
+                    'perm_name'  => $perm->name,
+                    'cells'      => $cells,
+                ];
             }
             if ($rows !== []) {
                 $prefixSections[] = [
@@ -229,95 +219,33 @@ final class AdminConfigAccessController extends AbstractController
             }
         }
 
-        // ── Routes ────────────────────────────────────────────────────────────
-        $routeList = [];
-        foreach ($routes as $key => $rounds) {
-            $roundList = [];
-            $isEditing = ($editKey !== '' && $editKey === $key);
-            foreach ($rounds as $idx => $round) {
-                $rd = [
-                    'index'          => $idx,
-                    'penalty'        => (int)  ($round['penalty']    ?? 0),
-                    'max_tries'      => (int)  ($round['max_tries']  ?? 0),
-                    'check_time'     => (int)  ($round['check_time'] ?? 0),
-                    'enabled'        => (bool) ($round['enabled']    ?? true),
-                    'penalty_fmt'    => $this->fmt((int) ($round['penalty']    ?? 0)),
-                    'max_tries_fmt'  => ($round['max_tries']  ?? 0) === 0 ? '∞' : (string) (int) $round['max_tries'],
-                    'check_time_fmt' => ($round['check_time'] ?? 0) === 0 ? '—' : $this->fmt((int) $round['check_time']),
-                    'route_key_val'  => $key,
-                    'editing'        => $isEditing ? [['index' => $idx, 'route_key_val' => $key,
-                                                       'penalty' => (int) ($round['penalty'] ?? 0),
-                                                       'max_tries' => (int) ($round['max_tries'] ?? 0),
-                                                       'check_time' => (int) ($round['check_time'] ?? 0),
-                                                       'enabled' => (bool) ($round['enabled'] ?? true)]] : false,
-                ];
-                $roundList[] = $rd;
-            }
-            $routeList[] = [
-                'key'           => $key,
-                'rounds'        => $roundList,
-                'is_editing'    => $isEditing,
-                'edit_url'      => $selfUrl . '?route_edit=' . rawurlencode($key),
-                'cancel_url'    => $selfUrl,
-            ];
-        }
+        // Groups available for deletion (all editable groups).
+        $deletableGroups = array_map(fn($g) => ['name' => $g], $editableGroups);
 
         $this->ctx->set('csrf_token',       $csrfToken);
         $this->ctx->set('prg_id',           $prgId);
         $this->ctx->set('base_url',         $selfUrl);
-        $this->ctx->set('editable_groups',  self::EDITABLE_GROUPS);
+        $this->ctx->set('group_headers',    $groupHeaders);
         $this->ctx->set('prefix_sections',  $prefixSections);
-        $this->ctx->set('route_list',       $routeList);
+        $this->ctx->set('deletable_groups', $deletableGroups);
         $this->setI18n();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** @return array<string, list<array<string,mixed>>> */
-    private function loadRoutes(): array
-    {
-        return (array) $this->config->getConfig('BanlistRepository', 'routes', []);
-    }
-
-    private function fmt(int $s): string
-    {
-        if ($s === 0) { return '0s'; }
-        $out = []; $r = $s;
-        foreach ([['y',31536000],['mo',2592000],['w',604800],['d',86400],['h',3600],['m',60],['s',1]] as [$u,$d]) {
-            if ($r >= $d) { $v = intdiv($r, $d); $out[] = $v . $u; $r -= $v * $d; }
-        }
-        return implode(' ', array_slice($out, 0, 2));
-    }
-
     private function setI18n(): void
     {
-        $this->ctx->set('heading',                  $this->t->t('admin.config.access.heading'));
-        $this->ctx->set('section_grants',           $this->t->t('admin.config.access.grants'));
-        $this->ctx->set('section_banlist',          $this->t->t('admin.config.access.banlist'));
-        $this->ctx->set('label_permission',         $this->t->t('admin.config.access.permission'));
-        $this->ctx->set('label_admin_note',         $this->t->t('admin.config.access.admin_note'));
-        $this->ctx->set('label_route_key',          $this->t->t('admin.config.access.route_key'));
-        $this->ctx->set('label_round',              $this->t->t('admin.banlist.round'));
-        $this->ctx->set('label_penalty',            $this->t->t('admin.banlist.penalty'));
-        $this->ctx->set('label_max_tries',          $this->t->t('admin.banlist.max_tries'));
-        $this->ctx->set('label_check_win',          $this->t->t('admin.banlist.check_win'));
-        $this->ctx->set('label_enabled',            $this->t->t('admin.banlist.enabled'));
-        $this->ctx->set('label_new_route_key',      $this->t->t('admin.config.access.new_route_key'));
-        $this->ctx->set('btn_save',                 $this->t->t('admin.btn.save'));
-        $this->ctx->set('btn_add_route',            $this->t->t('admin.config.access.add_route'));
-        $this->ctx->set('btn_add_round',            $this->t->t('admin.config.access.add_round'));
-        $this->ctx->set('btn_delete',               $this->t->t('admin.btn.delete'));
-        $this->ctx->set('btn_edit',                 $this->t->t('admin.btn.edit'));
-        $this->ctx->set('btn_update',               $this->t->t('admin.btn.update'));
-        $this->ctx->set('btn_cancel',               $this->t->t('admin.btn.cancel'));
-        // Prefix section labels (for grant matrix headings)
+        $this->ctx->set('heading',              $this->t->t('admin.config.access.heading'));
+        $this->ctx->set('section_grants',       $this->t->t('admin.config.access.grants'));
+        $this->ctx->set('label_permission',     $this->t->t('admin.config.access.permission'));
+        $this->ctx->set('label_admin_note',     $this->t->t('admin.config.access.admin_note'));
+        $this->ctx->set('label_new_group_name', $this->t->t('admin.config.access.new_group_name'));
+        $this->ctx->set('label_delete_group',   $this->t->t('admin.config.access.delete_group'));
+        $this->ctx->set('btn_save',             $this->t->t('admin.btn.save'));
+        $this->ctx->set('btn_add_group',        $this->t->t('admin.btn.add'));
+        $this->ctx->set('btn_delete_group',     $this->t->t('admin.btn.delete'));
         foreach (self::PREFIX_LABELS as $prefix => $key) {
             $this->ctx->set('prefix_' . $prefix, $this->t->t($key, fallback: $prefix));
         }
-        // Group column headers
-        foreach (self::EDITABLE_GROUPS as $g) {
-            $this->ctx->set('group_' . strtolower($g), $g);
-        }
-        $this->ctx->set('group_admin', 'ADMIN');
     }
 }

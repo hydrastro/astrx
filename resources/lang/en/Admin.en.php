@@ -277,6 +277,9 @@ return [
 
     // Access page — route management
     'admin.config.access.new_route_key'  => 'New route key',
+    'admin.config.access.add_group'       => 'Add group',
+    'admin.config.access.delete_group'    => 'Delete group',
+    'admin.config.access.new_group_name'  => 'New group name',
 
     // ---- Config — Content section headings ----------------------------------
     'admin.config.content.heading' => 'Content Configuration',
