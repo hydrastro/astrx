@@ -109,9 +109,8 @@ final class MainController extends AbstractController
         $localizedOrder   = $pagination->descending ? $wordDesc : $wordAsc;
         $perPage          = $pagination->perPage;
 
-        // Preserve current comment-pagination params in news pagination URLs.
-        // Comment params use dedicated keys (cp/co/cs/ci) that never collide with
-        // news params. In rewrite mode they become ?key=val appended to the path.
+        // Carry current comment-pagination state into news pagination links
+        // so clicking news pages does not reset comment page/order/indent.
         $commentExtra = [];
         foreach (['cp', 'co', 'cs', 'ci'] as $_ck) {
             $_cv = $this->request->query()->get($_ck);
@@ -134,6 +133,17 @@ final class MainController extends AbstractController
         // Form action: bare page URL. Browser appends order/show as query params.
         $formAction = $this->urlGenerator->toPage($resolvedUrlId);
 
+        // Hidden inputs carrying current comment state through the news filter form.
+        $newsCommentInputs = '';
+        foreach (['cp', 'co', 'cs', 'ci'] as $_ck) {
+            $_cv = $this->request->query()->get($_ck);
+            if ($_cv !== null && $_cv !== '') {
+                $k = htmlspecialchars($_ck, ENT_QUOTES);
+                $v = htmlspecialchars($_cv, ENT_QUOTES);
+                $newsCommentInputs .= "<input type=\"hidden\" name=\"{$k}\" value=\"{$v}\">\n";
+            }
+        }
+
         // --- Template vars ---------------------------------------------------
         $this->ctx->set('news_heading',      $this->t->t('news.heading'));
         $this->ctx->set('news_date',         $this->t->t('news.date'));
@@ -154,6 +164,7 @@ final class MainController extends AbstractController
         $this->ctx->set('news_word_asc',      $wordAsc);
         $this->ctx->set('news_word_desc',     $wordDesc);
         $this->ctx->set('news_form_action',   $formAction);
+        $this->ctx->set('news_comment_inputs', $newsCommentInputs);
         $this->ctx->set('news_desc_selected', $pagination->descending);
         $this->ctx->set('news_asc_selected',  !$pagination->descending);
 

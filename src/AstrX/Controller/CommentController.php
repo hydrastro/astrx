@@ -15,6 +15,7 @@ use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Config\Config;
 use AstrX\Session\CommentPrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
@@ -67,6 +68,7 @@ final class CommentController extends AbstractController
         private readonly Gate                  $gate,
         private readonly UserSession           $session,
         private readonly CsrfHandler           $csrf,
+        private readonly Config                $config,
         private readonly CommentPrgHandler     $commentPrg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
@@ -165,6 +167,9 @@ final class CommentController extends AbstractController
             : self::DEFAULT_INDENT;
         $nested     = ($indent !== 0);
 
+        // Bare page URL — used for form actions, PRG target, cancel-reply link.
+        $pageBase = $this->pageBaseUrl();
+
         // ── Fetch comments ────────────────────────────────────────────────────
         // $csPerPage = 0 means 'show all' (no limit), just like news does.
         // We pass it explicitly to getCommentsForPage so the offset/limit are correct.
@@ -194,43 +199,93 @@ final class CommentController extends AbstractController
         // ── Build comment pagination URLs ─────────────────────────────────────
         // Preserve all current query params EXCEPT comment-specific ones.
         // This keeps news pagination params (pn, show, order) in the URL.
-        $commentKeys = [self::CP_PAGE, self::CP_ORDER, self::CP_SHOW, self::CP_INDENT,
-                        CommentPrgHandler::QUERY_KEY, 'reply_to'];
-        $baseQuery   = $this->currentNonCommentQuery($commentKeys);
-        $pageBase    = $this->pageBaseUrl();
+        // ── URL helpers ───────────────────────────────────────────────────────
+        // Read news sub-param config so we can reconstruct the current news URL.
+        $newsPnKey      = (string) $this->config->getConfig('News', 'pn_key',    'pn');
+        $newsShowKey    = (string) $this->config->getConfig('News', 'show_key',  'show');
+        $newsOrderKey   = (string) $this->config->getConfig('News', 'order_key', 'order');
+        $newsDefaultPp  = (int)    $this->config->getConfig('News', 'per_page',   20);
+        $newsDefaultDsc = (bool)   $this->config->getConfig('News', 'descending', true);
+        $newsWordAsc    = $this->t->t('news.order.asc',  fallback: 'asc');
+        $newsWordDesc   = $this->t->t('news.order.desc', fallback: 'desc');
+        $newsDefaultOrd = $newsDefaultDsc ? $newsWordDesc : $newsWordAsc;
 
+        // Current news sub-params (injected into request->query() by MainController
+        // from URL tail segments — works in both rewrite and query mode).
+        $newsPage  = max(1, (int) ($this->request->query()->get($newsPnKey)    ?? 1));
+        $newsOrder = (string) ($this->request->query()->get($newsOrderKey) ?? $newsDefaultOrd);
+        $newsShow  = max(0, (int) ($this->request->query()->get($newsShowKey)  ?? $newsDefaultPp));
+
+        $resolvedNewsId = $this->page->i18n
+            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
+            : $this->page->urlId;
+
+        // Build comment path segments with right-to-left default stripping.
+        // When any segment is non-default, all segments to its left are kept.
+        // Segment order: cp / co / cs / ci
+        // Default values: cp=1, co='asc', cs=config default, ci=1 (nested)
+        $buildCommentSegments = function (
+            int $cp, string $co, int $cs, int $ci
+        ) use ($perPage): array {
+            $segs = [];
+            // Right-to-left: strip trailing defaults
+            if ($ci !== self::DEFAULT_INDENT)   { array_unshift($segs, (string) $ci); }
+            if ($cs !== $perPage || $segs !== []) { array_unshift($segs, (string) $cs); }
+            if ($co !== self::DEFAULT_ORDER || $segs !== []) { array_unshift($segs, $co); }
+            if ($cp !== 1 || $segs !== []) { array_unshift($segs, (string) $cp); }
+            return $segs;
+        };
+
+        // Build a URL for a given combination of comment params.
+        // In rewrite mode: comment segments are appended to news path (as pathSegments).
+        // In query mode:   comment params are query string key=val pairs.
         $commentUrlFor = function (
             int $p,
             ?string $ord  = null,
             ?int    $show = null,
             ?int    $ind  = null,
-        ) use ($pageBase, $baseQuery, $order, $csPerPage, $indent, $effectivePerPage, $perPage): string {
-            $q = $baseQuery;
-            if ($p > 1)                               { $q[self::CP_PAGE]   = $p; }
-            $o = $ord  ?? $order;
-            $s = $show ?? $csPerPage;
-            $i = $ind  ?? $indent;
-            if ($o !== self::DEFAULT_ORDER)           { $q[self::CP_ORDER]  = $o; }
-            if ($s !== $perPage)                      { $q[self::CP_SHOW]   = $s; }
-            if ($i !== self::DEFAULT_INDENT)          { $q[self::CP_INDENT] = $i; }
-            return $q !== [] ? $pageBase . '?' . http_build_query($q)
-                : $pageBase;
+        ) use (
+            $pageBase, $order, $csPerPage, $indent, $perPage,
+            $newsPage, $newsOrder, $newsShow, $newsDefaultOrd, $newsDefaultPp,
+            $resolvedNewsId, $buildCommentSegments
+        ): string {
+            $cp = $p;
+            $co = $ord  ?? $order;
+            $cs = $show ?? $csPerPage;
+            $ci = $ind  ?? $indent;
+
+            $commentSegs = $buildCommentSegments($cp, $co, $cs, $ci);
+
+            // toSubPage handles the mode split internally:
+            //   rewrite → news path segments + comment pathSegments
+            //   query   → all as query params (comment params via extraQuery)
+            $extraQuery = [];
+            foreach (['cp' => $cp, 'co' => $co, 'cs' => $cs, 'ci' => $ci] as $k => $v) {
+                // In query mode include only non-default comment params
+                $default = match ($k) {
+                    'cp' => 1,
+                    'co' => self::DEFAULT_ORDER,
+                    'cs' => $perPage,
+                    'ci' => self::DEFAULT_INDENT,
+                };
+                if ($v !== $default) {
+                    $extraQuery[$k] = $v;
+                }
+            }
+
+            return $this->urlGen->toSubPage(
+                resolvedUrlId:  $resolvedNewsId,
+                page:           $newsPage,
+                order:          $newsOrder,
+                perPage:        $newsShow,
+                defaultPage:    1,
+                defaultOrder:   $newsDefaultOrd,
+                defaultPerPage: $newsDefaultPp,
+                extraQuery:     $extraQuery,
+                pathSegments:   $commentSegs,
+            );
         };
 
-        $pages = [];
-        for ($p = 1; $p <= $pageCount; $p++) {
-            $url     = $p !== $pageNum ? $commentUrlFor($p) : '';
-            $pages[] = [
-                'number'     => $p,
-                'url'        => $url,
-                'is_current' => $p === $pageNum,
-                'link'       => $url !== ''
-                    ? '<a href="' . htmlspecialchars($url) . '">' . $p . '</a>'
-                    : '',
-            ];
-        }
-
-        // ── Enrich each row ───────────────────────────────────────────────────
         $isAdmin       = $this->gate->can(Permission::ADMIN_COMMENTS);
         $allowReplies  = $this->commentService->allowReplies();
         $useIdenticons = $this->avatarService->useIdenticons();
@@ -240,7 +295,7 @@ final class CommentController extends AbstractController
 
         // Build reply_to pre-fill URL (strips reply_to, keeps other params)
         $replyToPreFill  = (int) ($this->request->query()->get('reply_to') ?? 0);
-        $cancelReplyUrl  = $pageBase . ($baseQuery !== [] ? '?' . http_build_query($baseQuery) : '');
+        $cancelReplyUrl  = $pageBase;  // always go to bare page URL to cancel reply
 
         $comments = [];
         foreach ($flat as $i => $row) {
@@ -308,16 +363,48 @@ final class CommentController extends AbstractController
 
         // ── Pagination ────────────────────────────────────────────────────────
         $hasPagination = ($pageCount > 1);
-        $prevUrl = $pageNum > 1           ? $commentUrlFor($pageNum - 1) : '';
-        $nextUrl = $pageNum < $pageCount  ? $commentUrlFor($pageNum + 1) : '';
+        $prevUrl  = $pageNum > 1          ? $commentUrlFor($pageNum - 1) : '';
+        $nextUrl  = $pageNum < $pageCount ? $commentUrlFor($pageNum + 1) : '';
+        $firstUrl = $pageNum > 1          ? $commentUrlFor(1)            : '';
+        $lastUrl  = $pageNum < $pageCount ? $commentUrlFor($pageCount)   : '';
+
+        // Windowed page list (±3 around current, same as news Pagination)
+        $pageWindow = 3;
+        $pages = [];
+        if ($pageCount > 1) {
+            $lo = max(1, $pageNum - $pageWindow);
+            $hi = min($pageCount, $pageNum + $pageWindow);
+            for ($p = $lo; $p <= $hi; $p++) {
+                $url     = $p !== $pageNum ? $commentUrlFor($p) : '';
+                $pages[] = [
+                    'number'     => $p,
+                    'url'        => $url,
+                    'is_current' => $p === $pageNum,
+                    'link'       => $url !== ''
+                        ? '<a href="' . htmlspecialchars($url) . '">' . $p . '</a>'
+                        : '',
+                ];
+            }
+        }
 
         // ── Filter form: order/indent URLs ────────────────────────────────────
         $toAscUrl  = $commentUrlFor(1, 'asc',  $csPerPage, $indent);
         $toDescUrl = $commentUrlFor(1, 'desc', $csPerPage, $indent);
         $toNestUrl = $commentUrlFor(1, $order, $csPerPage, 1);
         $toFlatUrl = $commentUrlFor(1, $order, $csPerPage, 0);
-        // Form action for the show-count form (GET form, browser adds cs=N)
-        $filterFormAction = $pageBase;
+        // Comment filter form action: current news-state URL with NO comment segments.
+        // Browser appends co/cs/ci from form fields as query params.
+        $filterFormAction = $this->urlGen->toSubPage(
+            resolvedUrlId:  $resolvedNewsId,
+            page:           $newsPage,
+            order:          $newsOrder,
+            perPage:        $newsShow,
+            defaultPage:    1,
+            defaultOrder:   $newsDefaultOrd,
+            defaultPerPage: $newsDefaultPp,
+            extraQuery:     [],
+            pathSegments:   [],
+        );
 
         // ── PRG setup ─────────────────────────────────────────────────────────
         $csrfToken = $this->csrf->generate(self::FORM);
@@ -352,18 +439,37 @@ final class CommentController extends AbstractController
         $this->ctx->set('comments_filter_action',$filterFormAction);
 
         // Pass all current non-comment query params as hidden inputs for the filter form
-        $this->ctx->set('comments_base_query_inputs', $this->buildHiddenInputs($baseQuery));
+        // Filter form: preserve news sub-params as hidden inputs in query mode.
+        // In rewrite mode these are in the URL path, so no hidden inputs needed.
+        // We build them from the current news request params.
+        $filterHiddenInputs = '';
+        $urlRewrite = (bool) $this->config->getConfig('Routing', 'url_rewrite', true);
+        if (!$urlRewrite) {
+            foreach ([$newsPnKey, $newsShowKey, $newsOrderKey] as $_nk) {
+                $_nv = $this->request->query()->get($_nk);
+                if ($_nv !== null && $_nv !== '') {
+                    $k = htmlspecialchars($_nk, ENT_QUOTES);
+                    $v = htmlspecialchars($_nv, ENT_QUOTES);
+                    $filterHiddenInputs .= "<input type=\"hidden\" name=\"{$k}\" value=\"{$v}\">\n";
+                }
+            }
+        }
+        $this->ctx->set('comments_base_query_inputs', $filterHiddenInputs);
 
         // Pagination
         $this->ctx->set('comments_any',          $comments !== []);
         $this->ctx->set('comments',              $comments);
         $this->ctx->set('comments_count',        $total);
         $this->ctx->set('comments_pages',        $pages);
-        $this->ctx->set('comments_has_pagination',        $hasPagination);
+        $this->ctx->set('comments_has_pagination', $hasPagination);
         $this->ctx->set('comments_prev_url',     $prevUrl);
         $this->ctx->set('comments_next_url',     $nextUrl);
-        $this->ctx->set('comments_has_prev',     $prevUrl !== '');
-        $this->ctx->set('comments_has_next',     $nextUrl !== '');
+        $this->ctx->set('comments_first_url',    $firstUrl);
+        $this->ctx->set('comments_last_url',     $lastUrl);
+        $this->ctx->set('comments_has_prev',     $prevUrl  !== '');
+        $this->ctx->set('comments_has_next',     $nextUrl  !== '');
+        $this->ctx->set('comments_has_first',    $firstUrl !== '');
+        $this->ctx->set('comments_has_last',     $lastUrl  !== '');
 
         // Reply pre-fill
         $this->ctx->set('comments_reply_to',     $replyToPreFill > 0 ? $replyToPreFill : '');
@@ -401,6 +507,10 @@ final class CommentController extends AbstractController
         $this->ctx->set('comment_btn_unhide',         $this->t->t('comment.btn.unhide'));
         $this->ctx->set('comment_btn_delete',         $this->t->t('comment.btn.delete'));
         $this->ctx->set('comment_word_older',         $this->t->t('comment.word.older'));
+        $this->ctx->set('comment_word_first',         $this->t->t('comment.word.first'));
+        $this->ctx->set('comment_word_last',          $this->t->t('comment.word.last'));
+        $this->ctx->set('comment_word_prev',          $this->t->t('comment.word.prev'));
+        $this->ctx->set('comment_word_next',          $this->t->t('comment.word.next'));
     }
 
     // =========================================================================

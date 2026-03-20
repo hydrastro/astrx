@@ -98,6 +98,7 @@ final class UrlGenerator
         string $defaultOrder   = 'desc',
         int    $defaultPerPage = 20,
         array  $extraQuery     = [],
+        array  $pathSegments   = [],  // rewrite-mode extra segments appended after primary
     ): string {
         [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale] =
             $this->routingConfig();
@@ -107,7 +108,7 @@ final class UrlGenerator
                 $basePath, $locale, $resolvedUrlId,
                 $page, $order, $perPage,
                 $defaultPage, $defaultOrder, $defaultPerPage,
-                $extraQuery,
+                $extraQuery, $pathSegments,
             );
         }
 
@@ -136,7 +137,12 @@ final class UrlGenerator
         return [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale];
     }
 
-    /** @param array<string, scalar> $extraQuery */
+    /**
+     * @param array<string, scalar> $extraQuery
+     * @param list<string>          $pathSegments  Extra segments appended after primary.
+     *                                             When non-empty all three primary segments
+     *                                             are always emitted so positions are unambiguous.
+     */
     private function rewriteSubPage(
         string $basePath,
         string $locale,
@@ -148,27 +154,34 @@ final class UrlGenerator
         string $defaultOrder,
         int    $defaultPerPage,
         array  $extraQuery,
+        array  $pathSegments = [],
     ): string {
         $base = rtrim($basePath, '/');
         $root = $locale !== ''
             ? $base . '/' . $locale . '/' . $resolvedUrlId
             : $base . '/' . $resolvedUrlId;
 
-        // Build segments right-to-left, trimming trailing defaults.
-        $segments = [];
+        if ($pathSegments !== []) {
+            // When secondary segments are present, all three primary segments must
+            // be emitted so their positions are fixed and unambiguous to the router.
+            $primary = [(string) $page, $order, (string) $perPage];
+        } else {
+            // Standard right-to-left trailing-default stripping.
+            $primary = [];
+            if ($perPage !== $defaultPerPage) {
+                array_unshift($primary, (string) $perPage);
+            }
+            if ($order !== $defaultOrder || $primary !== []) {
+                array_unshift($primary, $order);
+            }
+            if ($page !== $defaultPage || $primary !== []) {
+                array_unshift($primary, (string) $page);
+            }
+        }
 
-        if ($perPage !== $defaultPerPage) {
-            array_unshift($segments, (string) $perPage);
-        }
-        if ($order !== $defaultOrder || $segments !== []) {
-            array_unshift($segments, $order);
-        }
-        if ($page !== $defaultPage || $segments !== []) {
-            array_unshift($segments, (string) $page);
-        }
-
-        $path = $segments !== []
-            ? $root . '/' . implode('/', $segments)
+        $allSegments = array_merge($primary, $pathSegments);
+        $path = $allSegments !== []
+            ? $root . '/' . implode('/', $allSegments)
             : $root;
 
         $extra = $extraQuery !== [] ? '?' . http_build_query($extraQuery) : '';

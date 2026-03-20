@@ -102,12 +102,7 @@
         {{/comments}}
 
         {{#comments_has_pagination}}
-        <p class="comments_nav"><small>
-            {{comment_word_older}}
-            {{#comments_has_prev}}<a href="{{comments_prev_url}}">&#8592;</a>{{/comments_has_prev}}
-            {{#comments_pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/comments_pages}}
-            {{#comments_has_next}}<a href="{{comments_next_url}}">&#8594;</a>{{/comments_has_next}}
-        </small></p>
+        <p class="comments_nav"><small>{{#comments_has_first}}<a href="{{comments_first_url}}">{{comment_word_first}}</a> {{/comments_has_first}}{{#comments_has_prev}}<a href="{{comments_prev_url}}">{{comment_word_prev}}</a> {{/comments_has_prev}}{{#comments_pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/comments_pages}}{{#comments_has_next}} <a href="{{comments_next_url}}">{{comment_word_next}}</a>{{/comments_has_next}}{{#comments_has_last}} <a href="{{comments_last_url}}">{{comment_word_last}}</a>{{/comments_has_last}}</small></p>
         {{/comments_has_pagination}}
 
         <hr>

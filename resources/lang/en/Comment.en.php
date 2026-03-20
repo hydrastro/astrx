@@ -32,4 +32,8 @@ return [
 
     // ── Words ─────────────────────────────────────────────────────────────────
     'comment.word.older'  => 'Comments:',
+    'comment.word.first' => '<<',
+    'comment.word.last'  => '>>',
+    'comment.word.prev'  => '<',
+    'comment.word.next'  => '>',
 ];
