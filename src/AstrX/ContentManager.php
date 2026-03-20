@@ -24,6 +24,7 @@ use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlStack;
 use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
 use AstrX\Session\CommentPrgHandler;
+use AstrX\Http\UploadedFile;
 use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
 use AstrX\Template\DefaultTemplateContext;
@@ -220,7 +221,29 @@ final class ContentManager
                     http_response_code(HttpStatus::BAD_REQUEST->value);
                     return;
                 }
-                $token = $prgHandler->storeFromPayload($request->body()->all());
+                // Persist uploaded files through the PRG cycle: move each file to a
+                // persistent temp path and store its metadata in __files__ so the
+                // GET side can reconstruct UploadedFile objects before routing.
+                $payload = $request->body()->all();
+                $fileMeta = [];
+                foreach ($request->files()->all() as $fieldName => $uploadedFile) {
+                    if (!$uploadedFile instanceof UploadedFile || $uploadedFile->hasError()) {
+                        continue;
+                    }
+                    $tmpDest = sys_get_temp_dir() . '/astrx_upload_' . bin2hex(random_bytes(8));
+                    if (move_uploaded_file($uploadedFile->tempPath(), $tmpDest)) {
+                        $fileMeta[(string) $fieldName] = [
+                            'client_filename'   => $uploadedFile->clientFilename(),
+                            'client_media_type' => $uploadedFile->clientMediaType(),
+                            'temp_path'         => $tmpDest,
+                            'size'              => $uploadedFile->size(),
+                        ];
+                    }
+                }
+                if ($fileMeta !== []) {
+                    $payload['__files__'] = $fileMeta;
+                }
+                $token = $prgHandler->storeFromPayload($payload);
                 $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
                     ->drainTo($this->collector);
             }
@@ -229,6 +252,31 @@ final class ContentManager
                 return;
             }
             exit;
+        }
+
+        // Restore uploaded files that were persisted through the PRG cycle.
+        // ContentManager stored them as __files__ in the PRG payload on POST.
+        // We peek at the payload here (without consuming it) and inject the
+        // reconstructed UploadedFile objects into the request FileBag so
+        // controllers can read them via $request->files() as normal.
+        $prgTokenForFiles = $request->query()->get($prgHandler->tokenQueryKey());
+        if (is_string($prgTokenForFiles) && $prgTokenForFiles !== '') {
+            $peeked = $prgHandler->get($prgTokenForFiles);
+            if (is_array($peeked) && isset($peeked['__files__']) && is_array($peeked['__files__'])) {
+                foreach ($peeked['__files__'] as $fieldName => $meta) {
+                    if (!is_array($meta) || !isset($meta['temp_path'])) { continue; }
+                    if (!file_exists((string) $meta['temp_path'])) { continue; }
+                    $request->files()->set(
+                        (string) $fieldName,
+                        UploadedFile::fromTempPath(
+                            (string) ($meta['client_filename']   ?? ''),
+                            (string) ($meta['client_media_type'] ?? 'application/octet-stream'),
+                            (string)  $meta['temp_path'],
+                            (int)    ($meta['size']              ?? 0),
+                        )
+                    );
+                }
+            }
         }
 
         $pageHandlerResult = $this->injector->createClass(PageHandler::class)

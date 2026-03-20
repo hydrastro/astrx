@@ -135,7 +135,7 @@ final class ErrorHandler
         // Only show raw debug output in dev/test environments.
         // In production/staging, render a generic error page or fail silently.
         if ($this->env->isDevLike()) {
-            echo "<h1>Error</h1><pre>";
+            echo "<body bgcolor='black' text='white'></body><h1>Error</h1><pre>";
             print_r($this->exceptions);
 
             echo "\n\nDiagnostics (sink):\n";

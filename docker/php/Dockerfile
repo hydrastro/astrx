@@ -9,6 +9,6 @@ RUN apk add --no-cache \
         libjpeg-turbo-dev \
         libpng-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql
+    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif
 
 CMD [ "php-fpm"]

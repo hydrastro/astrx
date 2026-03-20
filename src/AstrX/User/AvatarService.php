@@ -62,9 +62,10 @@ final class AvatarService
             return $this->opErr('avatar_extension', $ext);
         }
 
-        // Verify it's actually an image
-        $imageType = exif_imagetype($file->tempPath());
-        if ($imageType === false) {
+        // Verify it's actually an image using getimagesize() — part of GD,
+        // no separate extension required (unlike exif_imagetype).
+        $imageInfo = @getimagesize($file->tempPath());
+        if ($imageInfo === false) {
             return $this->opErr('avatar_invalid');
         }
 

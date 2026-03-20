@@ -37,6 +37,27 @@ final class UploadedFile
     public function isValid(): bool           { return $this->error === UPLOAD_ERR_OK; }
     public function hasError(): bool          { return !$this->isValid(); }
 
+    /**
+     * Create an UploadedFile from a pre-moved temp path (not an original PHP upload).
+     * Used when files survive through the PRG cycle: ContentManager moves the file
+     * to a persistent temp path, serialises metadata in the PRG payload, and on
+     * the GET side reconstructs an UploadedFile via this factory.
+     * moveTo() will use rename() instead of move_uploaded_file() for these instances.
+     */
+    public static function fromTempPath(
+        string $clientFilename,
+        string $clientMediaType,
+        string $tempPath,
+        int    $size,
+    ): self {
+        $f = new self($clientFilename, $clientMediaType, $tempPath, $size, UPLOAD_ERR_OK);
+        $f->preMoved = true;
+        return $f;
+    }
+
+    /** True for files that were pre-moved out of the PHP upload temp dir. */
+    private bool $preMoved = false;
+
     /** @return Result<bool> */
     public function moveTo(string $path): Result
     {
@@ -49,6 +70,20 @@ final class UploadedFile
                     $this->error,
                 )
             ));
+        }
+
+        if ($this->preMoved) {
+            // File was pre-moved by ContentManager; use rename() — not move_uploaded_file().
+            if (!rename($this->tempPath, $path)) {
+                return Result::err(false, Diagnostics::of(
+                    new MoveFailedDiagnostic(
+                        self::ID_MOVE_FAILED,
+                        self::LVL_MOVE_FAILED,
+                        $path,
+                    )
+                ));
+            }
+            return Result::ok(true);
         }
 
         if (!is_uploaded_file($this->tempPath)) {

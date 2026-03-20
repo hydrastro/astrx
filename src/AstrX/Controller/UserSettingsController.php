@@ -174,7 +174,8 @@ final class UserSettingsController extends AbstractController
     private function renderForm(): Result
     {
         $hexId   = $this->session->userId();
-        $pageUrl = $this->request->uri()->path();
+        // Use UrlGenerator for self-URL so it works in both rewrite and query mode.
+        $pageUrl = $this->urlGen->toPage($this->t->t('WORDING_SETTINGS', fallback: 'WORDING_SETTINGS'));
 
         // Generate CSRF tokens for each form action
         $actions = [
