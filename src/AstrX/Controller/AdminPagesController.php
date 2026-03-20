@@ -6,11 +6,14 @@ namespace AstrX\Controller;
 use AstrX\Admin\Diagnostic\AdminDbDiagnostic;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
+use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
+use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Routing\UrlGenerator;
 use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
@@ -41,6 +44,8 @@ final class AdminPagesController extends AbstractController
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
+        private readonly Page                  $page,
+        private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -53,10 +58,16 @@ final class AdminPagesController extends AbstractController
             return $this->ok();
         }
 
+        // Self-URL: works in both rewrite (/en/admin-banlist) and query mode.
+        $resolvedUrlId = $this->page->i18n
+            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
+            : $this->page->urlId;
+        $selfUrl = $this->urlGen->toPage($resolvedUrlId);
+
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $this->processForm($prgToken);
-            Response::redirect($this->request->uri()->path())
+            Response::redirect($selfUrl)
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -64,14 +75,14 @@ final class AdminPagesController extends AbstractController
         $editId    = (int) ($this->request->query()->get('edit') ?? 0);
         $pages     = $this->loadPages();
         $csrfToken = $this->csrf->generate(self::FORM);
-        $prgId     = $this->prg->createId($this->request->uri()->path());
+        $prgId     = $this->prg->createId($selfUrl);
 
         // Decorate each page row with editing context.
         // editing must be an ARRAY (not bool) so Mustache keeps the row's data as context.
         $pageList = [];
         foreach ($pages as $row) {
             if ($editId > 0 && (int) $row['id'] === $editId) {
-                $row['editing'] = $row; // nested array → context preserved
+                $row['editing'] = [$row]; // [$data] → Mustache iterates exactly once
             } else {
                 $row['editing'] = false;
             }
@@ -81,7 +92,7 @@ final class AdminPagesController extends AbstractController
         $this->ctx->set('csrf_token', $csrfToken);
         $this->ctx->set('prg_id',     $prgId);
         $this->ctx->set('page_list',  $pageList);
-        $this->ctx->set('base_url',   $this->request->uri()->path());
+        $this->ctx->set('base_url',   $selfUrl);
         $this->setI18n();
         return $this->ok();
     }

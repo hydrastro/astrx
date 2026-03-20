@@ -16,6 +16,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Page\Page;
 
 final class AdminNewsController extends AbstractController
 {
@@ -31,6 +32,7 @@ final class AdminNewsController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
         private readonly UrlGenerator          $urlGen,
+        private readonly Page                  $page,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -43,11 +45,17 @@ final class AdminNewsController extends AbstractController
             return $this->ok();
         }
 
+        // Self-URL: works in both rewrite (/en/admin-banlist) and query mode.
+        $resolvedUrlId = $this->page->i18n
+            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
+            : $this->page->urlId;
+        $selfUrl = $this->urlGen->toPage($resolvedUrlId);
+
         // PRG: process submitted form
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $this->processForm($prgToken);
-            Response::redirect($this->request->uri()->path())
+            Response::redirect($selfUrl)
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -57,7 +65,7 @@ final class AdminNewsController extends AbstractController
         $listResult->drainTo($this->collector);
 
         $csrfToken = $this->csrf->generate(self::FORM);
-        $prgId     = $this->prg->createId($this->request->uri()->path());
+        $prgId     = $this->prg->createId($selfUrl);
 
         $this->ctx->set('csrf_token',  $csrfToken);
         $this->ctx->set('prg_id',      $prgId);
@@ -67,14 +75,14 @@ final class AdminNewsController extends AbstractController
         foreach ($rawList as $item) {
             if ($editId > 0 && (int) $item['id'] === $editId) {
                 // Nested array → Mustache sets $parent = this array inside {{#editing}}
-                $item['editing'] = $item;
+                $item['editing'] = [$item]; // [$data] → Mustache iterates exactly once
             } else {
                 $item['editing'] = false;
             }
             $newsList[] = $item;
         }
         $this->ctx->set('news_list', $newsList);
-        $this->ctx->set('base_url',  $this->request->uri()->path());
+        $this->ctx->set('base_url',  $selfUrl);
         $this->setI18n();
         return $this->ok();
     }

@@ -6,11 +6,14 @@ namespace AstrX\Controller;
 use AstrX\Admin\Diagnostic\AdminDbDiagnostic;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
+use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
+use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Routing\UrlGenerator;
 use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
@@ -52,6 +55,8 @@ final class AdminNavbarController extends AbstractController
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
+        private readonly Page                  $page,
+        private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -68,6 +73,12 @@ final class AdminNavbarController extends AbstractController
             return $this->ok();
         }
 
+        // Self-URL: works in both rewrite (/en/admin-banlist) and query mode.
+        $resolvedUrlId = $this->page->i18n
+            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
+            : $this->page->urlId;
+        $selfUrl = $this->urlGen->toPage($resolvedUrlId);
+
         // PRG dispatch
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
@@ -76,7 +87,7 @@ final class AdminNavbarController extends AbstractController
             $nb  = (int) ($this->request->query()->get('nb') ?? 1);
             $pin = (int) ($this->request->query()->get('pin') ?? 0);
             $qs  = '?nb=' . $nb . ($pin > 0 ? '&pin=' . $pin : '');
-            Response::redirect($this->request->uri()->path() . $qs)
+            Response::redirect($selfUrl . $qs)
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -120,7 +131,7 @@ final class AdminNavbarController extends AbstractController
         }
 
         $csrfToken = $this->csrf->generate(self::FORM);
-        $prgId     = $this->prg->createId($this->request->uri()->path());
+        $prgId     = $this->prg->createId($selfUrl);
         $pages     = $this->loadPages();
 
 
@@ -132,7 +143,7 @@ final class AdminNavbarController extends AbstractController
         $this->ctx->set('has_edit_pin',   false);
         $this->ctx->set('has_edit_entry', false);
         $this->ctx->set('available_pages', $pages);
-        $this->ctx->set('base_url',       $this->request->uri()->path());
+        $this->ctx->set('base_url',       $selfUrl);
 
         // Decorate navbars: active flag, navbar_id, pin_id, editing flags
         foreach ($navbars as &$nb) {
@@ -140,7 +151,7 @@ final class AdminNavbarController extends AbstractController
             foreach ($nb['pins'] as &$pin) {
                 $pin['navbar_id'] = $nb['id'];
                 $pinIsEditing = ($pin['id'] === $activePin && $nb['id'] === $activeNavbar);
-                $pin['editing'] = $pinIsEditing ? $pin : false;
+                $pin['editing'] = $pinIsEditing ? [$pin] : false;
                 foreach ($pin['entries'] as &$entry) {
                     $entry['navbar_id'] = $nb['id'];
                     $entry['pin_id']    = $pin['id'];
@@ -154,7 +165,7 @@ final class AdminNavbarController extends AbstractController
                             $pagesWithSel[] = $pg;
                         }
                         $entryCtx['available_pages'] = $pagesWithSel;
-                        $entry['editing'] = $entryCtx;
+                        $entry['editing'] = [$entryCtx];
                     } else {
                         $entry['editing'] = false;
                     }

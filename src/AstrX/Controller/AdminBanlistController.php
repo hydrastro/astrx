@@ -6,11 +6,14 @@ namespace AstrX\Controller;
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
+use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
+use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Routing\UrlGenerator;
 use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
@@ -37,6 +40,8 @@ final class AdminBanlistController extends AbstractController
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
+        private readonly Page                  $page,
+        private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -49,10 +54,16 @@ final class AdminBanlistController extends AbstractController
             return $this->ok();
         }
 
+        // Self-URL: works in both rewrite (/en/admin-banlist) and query mode.
+        $resolvedUrlId = $this->page->i18n
+            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
+            : $this->page->urlId;
+        $selfUrl = $this->urlGen->toPage($resolvedUrlId);
+
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $qs = $this->processForm($prgToken);
-            Response::redirect($this->request->uri()->path() . $qs)
+            Response::redirect($selfUrl . $qs)
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -78,7 +89,7 @@ final class AdminBanlistController extends AbstractController
             if ($isEditing) {
                 $editCtx = $ban;
                 $editCtx['route_options'] = $this->buildRouteOptions($rawRoutes, (int) $ban['ban_route']);
-                $ban['editing'] = $editCtx; // nested array → Mustache context
+                $ban['editing'] = [$editCtx]; // [$data] → Mustache iterates exactly once
             } else {
                 $ban['editing'] = false;
             }
@@ -94,17 +105,17 @@ final class AdminBanlistController extends AbstractController
                 $rd['max_tries_fmt']  = $rd['max_tries']  === 0 ? '∞' : (string) (int) $rd['max_tries'];
                 $rd['check_time_fmt'] = $rd['check_time'] === 0 ? '—' : $this->fmt((int) $rd['check_time']);
                 $rd['route_id_val']   = (int) $route['id'];
-                $rd['editing'] = ($roundEditId > 0 && (int) $rd['id'] === $roundEditId) ? $rd : false;
+                $rd['editing'] = ($roundEditId > 0 && (int) $rd['id'] === $roundEditId) ? [$rd] : false;
                 $rounds[] = $rd;
             }
             $route['rounds'] = $rounds;
-            $route['editing'] = ($routeEditId > 0 && (int) $route['id'] === $routeEditId) ? $route : false;
+            $route['editing'] = ($routeEditId > 0 && (int) $route['id'] === $routeEditId) ? [$route] : false;
             // Re-assign rounds after setting editing on route (route['rounds'] used in template)
             $fmtRoutes[] = $route;
         }
 
         $csrfToken          = $this->csrf->generate(self::FORM);
-        $prgId              = $this->prg->createId($this->request->uri()->path());
+        $prgId              = $this->prg->createId($selfUrl);
         $addBanRouteOptions = $this->buildRouteOptions($rawRoutes, -1);
 
         $this->ctx->set('csrf_token',     $csrfToken);
@@ -112,7 +123,7 @@ final class AdminBanlistController extends AbstractController
         $this->ctx->set('ban_list',       $banList);
         $this->ctx->set('ban_routes',     $fmtRoutes);
         $this->ctx->set('add_ban_routes', $addBanRouteOptions);
-        $this->ctx->set('base_url',       $this->request->uri()->path());
+        $this->ctx->set('base_url',       $selfUrl);
         $this->setI18n();
         return $this->ok();
     }
