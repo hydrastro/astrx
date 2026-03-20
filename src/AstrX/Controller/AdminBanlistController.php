@@ -6,14 +6,11 @@ namespace AstrX\Controller;
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
-use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
-use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
-use AstrX\Routing\UrlGenerator;
 use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
@@ -23,11 +20,9 @@ use AstrX\Template\DefaultTemplateContext;
  * Admin banlist management.
  *
  * Three sections:
- *   1. Bans     — add / edit (?edit=N) / activate / delete
- *   2. Routes   — view only (defined in Banlist.config.php, edited via AdminConfigAccessController)
- *   3. (Rounds are part of route config, also edited via AdminConfigAccessController)
- *
- * ban_route is now a VARCHAR(64) string key matching BanlistRepository::ROUTE_* constants.
+ *   1. Bans         — add / edit (?edit=N) / activate / delete
+ *   2. Routes       — add / edit (?route_edit=N) / delete
+ *   3. Rounds       — add / edit (?round_edit=N) / delete (nested inside routes)
  */
 final class AdminBanlistController extends AbstractController
 {
@@ -42,8 +37,6 @@ final class AdminBanlistController extends AbstractController
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
-        private readonly Page                  $page,
-        private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
     ) {
         parent::__construct($collector);
@@ -56,56 +49,76 @@ final class AdminBanlistController extends AbstractController
             return $this->ok();
         }
 
-        $resolvedUrlId = $this->page->i18n
-            ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
-            : $this->page->urlId;
-        $selfUrl = $this->urlGen->toPage($resolvedUrlId);
-
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $qs = $this->processForm($prgToken);
-            Response::redirect($selfUrl . $qs)
+            Response::redirect($this->request->uri()->path() . $qs)
                 ->send()->drainTo($this->collector);
             exit;
         }
 
-        $banEditId = (int) ($this->request->query()->get('edit') ?? 0);
+        // ── Query params ───────────────────────────────────────────────────
+        $banEditId   = (int) ($this->request->query()->get('edit')       ?? 0);
+        $routeEditId = (int) ($this->request->query()->get('route_edit') ?? 0);
+        $roundEditId = (int) ($this->request->query()->get('round_edit') ?? 0);
 
-        $listResult = $this->banlist->listAll();
+        // ── Data ──────────────────────────────────────────────────────────
+        $listResult   = $this->banlist->listAll();
+        $rawRoutes = $this->banlist->listRoutes();
         $listResult->drainTo($this->collector);
-        $rawBans = $listResult->isOk() ? $listResult->unwrap() : [];
 
-        $routes    = $this->banlist->listRoutes();
-        $routeOpts = $this->buildRouteOptions($routes, '');
+        $rawBans   = $listResult->isOk()   ? $listResult->unwrap()   : [];
 
+        // ── Decorate bans with inline editing flag ─────────────────────────
         $banList = [];
         foreach ($rawBans as $ban) {
             $isEditing = ($banEditId > 0 && (int) $ban['id'] === $banEditId);
             if ($isEditing) {
-                $editCtx                = $ban;
-                $editCtx['route_options'] = $this->buildRouteOptions($routes, (string) $ban['ban_route']);
-                $ban['editing']         = [$editCtx];
+                $editCtx = $ban;
+                $editCtx['route_options'] = $this->buildRouteOptions($rawRoutes, (int) $ban['ban_route']);
+                $ban['editing'] = $editCtx; // nested array → Mustache context
             } else {
                 $ban['editing'] = false;
             }
             $banList[] = $ban;
         }
 
-        $csrfToken = $this->csrf->generate(self::FORM);
-        $prgId     = $this->prg->createId($selfUrl);
+        // ── Decorate routes + rounds with inline editing flags ─────────────
+        $fmtRoutes = [];
+        foreach ($rawRoutes as $route) {
+            $rounds = [];
+            foreach ($route['rounds'] as $rd) {
+                $rd['penalty_fmt']    = $rd['penalty']    === 0 ? '∞' : $this->fmt((int) $rd['penalty']);
+                $rd['max_tries_fmt']  = $rd['max_tries']  === 0 ? '∞' : (string) (int) $rd['max_tries'];
+                $rd['check_time_fmt'] = $rd['check_time'] === 0 ? '—' : $this->fmt((int) $rd['check_time']);
+                $rd['route_id_val']   = (int) $route['id'];
+                $rd['editing'] = ($roundEditId > 0 && (int) $rd['id'] === $roundEditId) ? $rd : false;
+                $rounds[] = $rd;
+            }
+            $route['rounds'] = $rounds;
+            $route['editing'] = ($routeEditId > 0 && (int) $route['id'] === $routeEditId) ? $route : false;
+            // Re-assign rounds after setting editing on route (route['rounds'] used in template)
+            $fmtRoutes[] = $route;
+        }
+
+        $csrfToken          = $this->csrf->generate(self::FORM);
+        $prgId              = $this->prg->createId($this->request->uri()->path());
+        $addBanRouteOptions = $this->buildRouteOptions($rawRoutes, -1);
 
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
         $this->ctx->set('ban_list',       $banList);
-        $this->ctx->set('ban_routes',     $routes);
-        $this->ctx->set('add_ban_routes', $routeOpts);
-        $this->ctx->set('base_url',       $selfUrl);
+        $this->ctx->set('ban_routes',     $fmtRoutes);
+        $this->ctx->set('add_ban_routes', $addBanRouteOptions);
+        $this->ctx->set('base_url',       $this->request->uri()->path());
         $this->setI18n();
         return $this->ok();
     }
 
+
     // =========================================================================
 
+    /** Returns query string to preserve context on redirect */
     private function processForm(string $prgToken): string
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
@@ -118,11 +131,12 @@ final class AdminBanlistController extends AbstractController
         $action = (string) ($posted['action'] ?? '');
 
         switch ($action) {
+            // ── Bans ──────────────────────────────────────────────────────
             case 'ban':
                 $type   = (string) ($posted['type']   ?? '');
                 $value  = trim((string) ($posted['value']  ?? ''));
                 $reason = trim((string) ($posted['reason'] ?? ''));
-                $route  = (string) ($posted['route']  ?? BanlistRepository::ROUTE_PERMANENT);
+                $route  = (int)    ($posted['route']   ?? 0);
                 $end    = ($posted['end'] ?? '') !== '' ? (string) $posted['end'] : null;
                 if ($value === '' || $reason === '') { break; }
                 $r = match ($type) {
@@ -140,7 +154,7 @@ final class AdminBanlistController extends AbstractController
             case 'update_ban':
                 $banId  = (int)    ($posted['ban_id']  ?? 0);
                 $reason = trim((string) ($posted['reason'] ?? ''));
-                $route  = (string) ($posted['route']   ?? BanlistRepository::ROUTE_PERMANENT);
+                $route  = (int)    ($posted['route']   ?? 0);
                 $end    = ($posted['end'] ?? '') !== '' ? (string) $posted['end'] : null;
                 $active = !empty($posted['active']);
                 if ($banId === 0 || $reason === '') { break; }
@@ -164,6 +178,62 @@ final class AdminBanlistController extends AbstractController
                     ->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.banlist.deleted'));
                 break;
+
+            // ── Routes ────────────────────────────────────────────────────
+            case 'add_route':
+                $name = trim((string) ($posted['name'] ?? ''));
+                $desc = trim((string) ($posted['description'] ?? ''));
+                if ($name === '') { break; }
+                $this->banlist->addRoute($name, $desc)->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.route_added'));
+                break;
+
+            case 'update_route':
+                $routeId = (int) ($posted['route_id'] ?? 0);
+                $name    = trim((string) ($posted['name'] ?? ''));
+                $desc    = trim((string) ($posted['description'] ?? ''));
+                if ($routeId === 0 || $name === '') { break; }
+                $this->banlist->updateRoute($routeId, $name, $desc)->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.route_updated'));
+                break;
+
+            case 'delete_route':
+                $this->banlist->deleteRoute((int) ($posted['route_id'] ?? 0))
+                    ->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.route_deleted'));
+                break;
+
+            // ── Rounds ────────────────────────────────────────────────────
+            case 'add_round':
+                $routeId   = (int) ($posted['route_id']   ?? 0);
+                $roundNum  = (int) ($posted['round_num']  ?? 0);
+                $penalty   = (int) ($posted['penalty']    ?? 0);
+                $maxTries  = (int) ($posted['max_tries']  ?? 0);
+                $checkTime = (int) ($posted['check_time'] ?? 0);
+                $enabled   = !empty($posted['enabled']);
+                if ($routeId === 0) { break; }
+                $this->banlist->addRound($routeId, $roundNum, $penalty, $maxTries, $checkTime, $enabled)
+                    ->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.round_added'));
+                return '?route_edit=' . $routeId;
+
+            case 'update_round':
+                $roundId   = (int) ($posted['round_id']   ?? 0);
+                $penalty   = (int) ($posted['penalty']    ?? 0);
+                $maxTries  = (int) ($posted['max_tries']  ?? 0);
+                $checkTime = (int) ($posted['check_time'] ?? 0);
+                $enabled   = !empty($posted['enabled']);
+                if ($roundId === 0) { break; }
+                $this->banlist->updateRound($roundId, $penalty, $maxTries, $checkTime, $enabled)
+                    ->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.round_updated'));
+                break;
+
+            case 'delete_round':
+                $this->banlist->deleteRound((int) ($posted['round_id'] ?? 0))
+                    ->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.round_deleted'));
+                break;
         }
 
         return '';
@@ -172,17 +242,17 @@ final class AdminBanlistController extends AbstractController
     // =========================================================================
 
     /**
-     * @param list<array{key:string,name:string,rounds:list<array>}> $routes
-     * @return list<array{key:string,name:string,selected:bool}>
+     * @param list<array<string,mixed>> $routes
+     * @return list<array{id:int,name:string,selected:bool}>
      */
-    private function buildRouteOptions(array $routes, string $selectedKey): array
+    private function buildRouteOptions(array $routes, int $selectedId): array
     {
         $options = [];
         foreach ($routes as $r) {
             $options[] = [
-                'key'      => $r['key'],
-                'name'     => $r['name'],
-                'selected' => ($r['key'] === $selectedKey),
+                'id'       => (int) $r['id'],
+                'name'     => (string) $r['name'],
+                'selected' => ((int) $r['id'] === $selectedId),
             ];
         }
         return $options;
@@ -212,9 +282,17 @@ final class AdminBanlistController extends AbstractController
         $this->ctx->set('label_name',       $this->t->t('admin.field.name'));
         $this->ctx->set('label_actions',    $this->t->t('admin.field.actions'));
         $this->ctx->set('label_ip_hint',    $this->t->t('admin.banlist.ip_hint'));
+        $this->ctx->set('label_round',      $this->t->t('admin.banlist.round'));
+        $this->ctx->set('label_penalty',    $this->t->t('admin.banlist.penalty'));
+        $this->ctx->set('label_max_tries',  $this->t->t('admin.banlist.max_tries'));
+        $this->ctx->set('label_check_win',  $this->t->t('admin.banlist.check_win'));
+        $this->ctx->set('label_enabled',    $this->t->t('admin.banlist.enabled'));
+        $this->ctx->set('label_desc',       $this->t->t('admin.pages.description'));
         $this->ctx->set('btn_ban',          $this->t->t('admin.btn.ban'));
+        $this->ctx->set('btn_mercy',        $this->t->t('admin.btn.mercy'));
         $this->ctx->set('btn_update',       $this->t->t('admin.btn.update'));
         $this->ctx->set('btn_edit',         $this->t->t('admin.btn.edit'));
+        $this->ctx->set('btn_add',          $this->t->t('admin.btn.add'));
         $this->ctx->set('btn_delete',       $this->t->t('admin.btn.delete'));
         $this->ctx->set('btn_cancel',       $this->t->t('admin.btn.cancel'));
         $this->ctx->set('btn_activate',     $this->t->t('admin.btn.activate'));
