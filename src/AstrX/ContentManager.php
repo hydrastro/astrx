@@ -417,6 +417,11 @@ final class ContentManager
                 ? $page->templateFileName
                 : (string) $this->config->getConfig('ContentManager', 'default_template', 'default');
 
+            // Resolve deferred pagination URLs (SubPageState + CommentState → URLs).
+            // Must happen before comments are pre-rendered because comments.html
+            // references comments_filter_action, comments_has_pagination etc.
+            $ctx->resolveUrls();
+
             // Render the comments partial into a ctx variable so it lands
             // inside the template (inside #main) rather than after </html>.
             if ($page->comments) {

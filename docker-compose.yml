@@ -19,6 +19,7 @@ services:
         depends_on:
           - phpfpm
     phpfpm:
+      user: "1000:100"
       tty: true
       restart: always
       container_name: container.phpfpm

@@ -1,11 +1,10 @@
 <?php
 
 declare(strict_types = 1);
-const INDEX_DIR
-= __DIR__ .
-  DIRECTORY_SEPARATOR .
-  ".." .
-  DIRECTORY_SEPARATOR;
+define(
+    "INDEX_DIR",
+    realpath(__DIR__ . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR
+);
 const RESOURCES_DIR = INDEX_DIR . "resources" . DIRECTORY_SEPARATOR;
 const LANG_DIR = RESOURCES_DIR . "lang" . DIRECTORY_SEPARATOR;
 const CONFIG_DIR = RESOURCES_DIR . "config" . DIRECTORY_SEPARATOR;

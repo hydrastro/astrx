@@ -12,6 +12,9 @@ use AstrX\User\UserSession;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
+use AstrX\Pagination\Pagination;
+use AstrX\Template\SubPageState;
+use AstrX\Template\CommentState;
 use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
@@ -45,6 +48,25 @@ final class DefaultTemplateContext
 
     /** @var list<string> url_ids of the current page and all its ancestors */
     private array $ancestorUrlIds = [];
+
+    // ── Deferred URL generation ──────────────────────────────────────────
+    // Controllers register state objects instead of computed URL strings.
+    // finalise() generates all pagination URLs once both states are known.
+
+    /** Guard: resolveUrls() is idempotent. */
+    private bool $urlsResolved = false;
+
+    /** State of the primary paginated controller (e.g. news). Null if page has no SubPage. */
+    private ?SubPageState $subPageState = null;
+
+    /** State of the comment controller. Null if page has no comments. */
+    private ?CommentState $commentState = null;
+
+    /** Stored Pagination object for deferred toTemplateVars() call. */
+    private ?Pagination $pagination   = null;
+
+    /** Page window for deferred Pagination::toTemplateVars(). */
+    private int $pageWindow = 3;
 
     public function __construct(
         private readonly Config      $config,
@@ -81,6 +103,37 @@ final class DefaultTemplateContext
     public function all(): array
     {
         return $this->vars;
+    }
+
+    // ── Deferred URL registration ─────────────────────────────────────────
+
+    /**
+     * Register the primary controller's pagination state.
+     * Replaces computing news pagination URLs in the controller — finalise() does it.
+     */
+    public function setSubPageState(SubPageState $state): void
+    {
+        $this->subPageState = $state;
+    }
+
+    /**
+     * Store the Pagination object for deferred toTemplateVars() call.
+     * Must be called with the same Pagination that was used for data fetching
+     * (i.e. after withTotal()).
+     */
+    public function setPagination(Pagination $pagination, int $pageWindow = 3): void
+    {
+        $this->pagination  = $pagination;
+        $this->pageWindow  = $pageWindow;
+    }
+
+    /**
+     * Register the comment controller's pagination state.
+     * Replaces computing comment pagination URLs in CommentController.
+     */
+    public function setCommentState(CommentState $state): void
+    {
+        $this->commentState = $state;
     }
 
     // -------------------------------------------------------------------------
@@ -179,6 +232,11 @@ final class DefaultTemplateContext
      */
     public function finalise(): void
     {
+        // ── Deferred URL resolution ───────────────────────────────────────────
+        // Guard: resolveUrls() is called by ContentManager before comments are
+        // pre-rendered. The guard ensures a second call from finalise() is a no-op.
+        $this->resolveUrls();
+
         // ---- User session nav -------------------------------------------------
         // user_nav comes from navbar id=2 (DB-driven, managed via admin navbar editor).
         // When logged out, we show a single guest link instead.
@@ -328,4 +386,223 @@ final class DefaultTemplateContext
             $this->vars['results']     = $results;
         }
     }
+    // =========================================================================
+    // Private — deferred URL generation
+    // =========================================================================
+
+    /**
+     * Generate all deferred pagination URLs now that both SubPageState and
+     * CommentState are known.
+     *
+     * SubPage pagination:
+     *   Each page link appends comment path segments as pathSegments so the
+     *   news URL correctly encodes both navigation states, e.g.:
+     *     /en/main/3/desc/1/2/asc   (news page 3, comment page 2 with asc)
+     *
+     * Comment pagination:
+     *   Each comment link prepends the current SubPage path prefix, e.g.:
+     *     /en/main/4/desc/1/3/asc   (news page 4, comment page 3 with asc)
+     *   On non-SubPage pages:
+     *     /en/user/3/asc            (comment page 3, no news prefix)
+     *
+     * Query mode: path segments become ?key=val pairs — same logic, different output.
+     *
+     * This method also generates:
+     *   news_comment_inputs  — hidden inputs carrying comment state through news filter form
+     *   comments_base_query_inputs — hidden inputs carrying news state through comment filter form (query mode)
+     *   comments_filter_action     — action URL for comment filter form
+     */
+    /** Idempotent: safe to call multiple times (second call is a no-op). */
+    public function resolveUrls(): void
+    {
+        if ($this->urlsResolved) { return; }
+        $this->urlsResolved = true;
+
+        // Always initialise comment vars so templates never receive Undefined notices
+        // on pages without comments (where setCommentState() was never called).
+        $emptyString = '';
+        foreach ([
+                     'comments_filter_action', 'comments_base_query_inputs',
+                     'comments_prev_url', 'comments_next_url',
+                     'comments_first_url', 'comments_last_url',
+                     'comments_to_asc_url', 'comments_to_desc_url',
+                     'comments_to_nest_url', 'comments_to_flat_url',
+                     'news_comment_inputs',
+                 ] as $_k) {
+            $this->vars[$_k] = $emptyString;
+        }
+        foreach ([
+                     'comments_has_pagination', 'comments_has_prev', 'comments_has_next',
+                     'comments_has_first', 'comments_has_last',
+                 ] as $_k) {
+            $this->vars[$_k] = false;
+        }
+        $this->vars['comments_pages'] = [];
+
+        $urlRewrite = (bool) $this->config->getConfig('Routing', 'url_rewrite', true);
+        $sp = $this->subPageState;
+        $cs = $this->commentState;
+
+        // ── SubPage pagination ────────────────────────────────────────────────
+        if ($this->pagination !== null && $sp !== null) {
+            // Comment segs to suffix onto every news pagination link.
+            $commentSegs   = $cs !== null ? $cs->toPathSegments() : [];
+            $commentExtra  = $cs !== null ? $cs->toQueryParams()  : [];
+            $urlGenerator  = $this->urlGenerator;
+
+            $urlForPage = function (int $p) use ($sp, $commentSegs, $commentExtra, $urlRewrite, $urlGenerator): string {
+                return $urlGenerator->toSubPage(
+                    resolvedUrlId:  $sp->resolvedUrlId,
+                    page:           $p,
+                    order:          $sp->order,
+                    perPage:        $sp->perPage,
+                    defaultPage:    $sp->defaultPage,
+                    defaultOrder:   $sp->defaultOrder,
+                    defaultPerPage: $sp->defaultPerPage,
+                    extraQuery:     $urlRewrite ? [] : $commentExtra,
+                    pathSegments:   $urlRewrite ? $commentSegs : [],
+                );
+            };
+
+            foreach ($this->pagination->toTemplateVars($urlForPage, $this->pageWindow) as $k => $v) {
+                $this->vars[$k] = $v;
+            }
+        }
+
+        // ── Comment pagination ────────────────────────────────────────────────
+        if ($cs !== null) {
+            $urlGenerator = $this->urlGenerator;
+
+            // Build a URL for arbitrary comment params (page, order, perPage, indent).
+            $commentUrlFor = function (
+                int $p, ?string $ord = null, ?int $show = null, ?int $ind = null
+            ) use ($cs, $sp, $urlRewrite, $urlGenerator): string {
+                $variant = $cs->withPage($p);
+                if ($ord  !== null) { $variant = $variant->withOrder($ord); }
+                if ($show !== null) { $variant = $variant->withPerPage($show); }
+                if ($ind  !== null) { $variant = $variant->withIndent($ind); }
+
+                $segs  = $variant->toPathSegments();
+                $query = $variant->toQueryParams();
+
+                if ($sp !== null) {
+                    // SubPage prefix: comment state goes after news segments.
+                    return $urlGenerator->toSubPage(
+                        resolvedUrlId:  $sp->resolvedUrlId,
+                        page:           $sp->page,
+                        order:          $sp->order,
+                        perPage:        $sp->perPage,
+                        defaultPage:    $sp->defaultPage,
+                        defaultOrder:   $sp->defaultOrder,
+                        defaultPerPage: $sp->defaultPerPage,
+                        extraQuery:     $urlRewrite ? [] : $query,
+                        pathSegments:   $urlRewrite ? $segs : [],
+                    );
+                }
+
+                // No SubPage prefix — comment state goes directly after page root.
+                $pageBase = $urlGenerator->toPage($cs->resolvedPageUrlId);
+                if ($urlRewrite && $segs !== []) {
+                    return $pageBase . '/' . implode('/', $segs);
+                }
+                return $query !== [] ? $pageBase . '?' . http_build_query($query) : $pageBase;
+            };
+
+            $pageNum   = $cs->page;
+            $pageCount = $cs->pageCount;
+            $pageWindow = $cs->pageWindow;
+
+            $prevUrl  = $pageNum > 1          ? $commentUrlFor($pageNum - 1) : '';
+            $nextUrl  = $pageNum < $pageCount ? $commentUrlFor($pageNum + 1) : '';
+            $firstUrl = $pageNum > 1          ? $commentUrlFor(1)            : '';
+            $lastUrl  = $pageNum < $pageCount ? $commentUrlFor($pageCount)   : '';
+
+            $pages = [];
+            if ($pageCount > 1) {
+                $lo = max(1, $pageNum - $pageWindow);
+                $hi = min($pageCount, $pageNum + $pageWindow);
+                for ($p = $lo; $p <= $hi; $p++) {
+                    $url     = $p !== $pageNum ? $commentUrlFor($p) : '';
+                    $pages[] = [
+                        'number' => $p,
+                        'url'    => $url,
+                        'link'   => $url !== ''
+                            ? '<a href="' . htmlspecialchars($url) . '">' . $p . '</a>'
+                            : '',
+                    ];
+                }
+            }
+
+            $order  = $cs->order;
+            $perPage = $cs->perPage;
+            $indent = $cs->indent;
+
+            // Filter form action: the news-state URL without comment segs.
+            // Submitting the comment filter form sends the new co/cs/ci as
+            // fresh query params, which the page then routes correctly.
+            if ($sp !== null) {
+                $filterAction = $urlGenerator->toSubPage(
+                    resolvedUrlId:  $sp->resolvedUrlId,
+                    page:           $sp->page,
+                    order:          $sp->order,
+                    perPage:        $sp->perPage,
+                    defaultPage:    $sp->defaultPage,
+                    defaultOrder:   $sp->defaultOrder,
+                    defaultPerPage: $sp->defaultPerPage,
+                    extraQuery:     [],
+                    pathSegments:   [],
+                );
+            } else {
+                $filterAction = $urlGenerator->toPage($cs->resolvedPageUrlId);
+            }
+
+            // Hidden inputs for the comment filter form in query mode:
+            // the news sub-params (pn/order/show) live in the query string and
+            // must be forwarded so the GET form does not lose them.
+            $filterHiddenInputs = '';
+            if (!$urlRewrite && $sp !== null) {
+                $newsParams = [];
+                if ($sp->page !== $sp->defaultPage)    { $newsParams[$sp->pnKey]    = $sp->page; }
+                if ($sp->order !== $sp->defaultOrder)  { $newsParams[$sp->orderKey] = $sp->order; }
+                if ($sp->perPage !== $sp->defaultPerPage) { $newsParams[$sp->showKey] = $sp->perPage; }
+                foreach ($newsParams as $k => $v) {
+                    $ek = htmlspecialchars($k, ENT_QUOTES);
+                    $ev = htmlspecialchars((string) $v, ENT_QUOTES);
+                    $filterHiddenInputs .= "<input type=\"hidden\" name=\"{$ek}\" value=\"{$ev}\">\n";
+                }
+            }
+
+            $this->vars['comments_has_pagination']     = $pageCount > 1;
+            $this->vars['comments_pages']              = $pages;
+            $this->vars['comments_prev_url']           = $prevUrl;
+            $this->vars['comments_next_url']           = $nextUrl;
+            $this->vars['comments_first_url']          = $firstUrl;
+            $this->vars['comments_last_url']           = $lastUrl;
+            $this->vars['comments_has_prev']           = $prevUrl  !== '';
+            $this->vars['comments_has_next']           = $nextUrl  !== '';
+            $this->vars['comments_has_first']          = $firstUrl !== '';
+            $this->vars['comments_has_last']           = $lastUrl  !== '';
+            $this->vars['comments_to_asc_url']         = $commentUrlFor(1, 'asc',  $perPage, $indent);
+            $this->vars['comments_to_desc_url']        = $commentUrlFor(1, 'desc', $perPage, $indent);
+            $this->vars['comments_to_nest_url']        = $commentUrlFor(1, $order, $perPage, 1);
+            $this->vars['comments_to_flat_url']        = $commentUrlFor(1, $order, $perPage, 0);
+            $this->vars['comments_filter_action']      = $filterAction;
+            $this->vars['comments_base_query_inputs']  = $filterHiddenInputs;
+        }
+
+        // ── news_comment_inputs ───────────────────────────────────────────────
+        // Hidden inputs that carry the current comment state through the news
+        // filter form submission so the comment page/order is not lost.
+        if ($cs !== null) {
+            $commentParams = $cs->toQueryParams();
+            $inputs = '';
+            foreach ($commentParams as $k => $v) {
+                $ek = htmlspecialchars($k, ENT_QUOTES);
+                $ev = htmlspecialchars((string) $v, ENT_QUOTES);
+                $inputs .= "<input type=\"hidden\" name=\"{$ek}\" value=\"{$ev}\">\n";
+            }
+            $this->vars['news_comment_inputs'] = $inputs;
+        }
+    }
+
 }
