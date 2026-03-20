@@ -67,6 +67,24 @@ final class MainController extends AbstractController
             $this->request->query()->set($showKey, $tail[2]);
         }
 
+        // Comment sub-params from tail[3..6]: cp / co / cs / ci
+        // Injecting into request->query() makes them visible to CommentController.
+        if (isset($tail[3]) && ctype_digit($tail[3])) {
+            $this->request->query()->set('cp', $tail[3]);
+        }
+        if (isset($tail[4])) {
+            $seg = strtolower($tail[4]);
+            if ($seg === 'asc' || $seg === 'desc') {
+                $this->request->query()->set('co', $seg);
+            }
+        }
+        if (isset($tail[5]) && ctype_digit($tail[5])) {
+            $this->request->query()->set('cs', $tail[5]);
+        }
+        if (isset($tail[6]) && ($tail[6] === '0' || $tail[6] === '1')) {
+            $this->request->query()->set('ci', $tail[6]);
+        }
+
         // Normalise the order query param regardless of routing mode.
         // The form submits locale words (e.g. 'ascendente') directly as query
         // params. Pagination::fromRequest only recognises canonical 'asc'/'desc',

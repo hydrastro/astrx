@@ -256,22 +256,25 @@ final class CommentController extends AbstractController
 
             $commentSegs = $buildCommentSegments($cp, $co, $cs, $ci);
 
-            // toSubPage handles the mode split internally:
-            //   rewrite → news path segments + comment pathSegments
-            //   query   → all as query params (comment params via extraQuery)
+            // In rewrite mode all comment params are encoded as path segments —
+            // extraQuery must be empty to avoid duplication (?cp=3&cs=2 on top of path).
+            // In query mode pathSegments will be empty so all comment params go in extraQuery.
             $extraQuery = [];
-            foreach (['cp' => $cp, 'co' => $co, 'cs' => $cs, 'ci' => $ci] as $k => $v) {
-                // In query mode include only non-default comment params
-                $default = match ($k) {
-                    'cp' => 1,
-                    'co' => self::DEFAULT_ORDER,
-                    'cs' => $perPage,
-                    'ci' => self::DEFAULT_INDENT,
-                };
-                if ($v !== $default) {
-                    $extraQuery[$k] = $v;
+            if ($commentSegs === []) {
+                // Query mode or all params are default: use query string.
+                foreach (['cp' => $cp, 'co' => $co, 'cs' => $cs, 'ci' => $ci] as $k => $v) {
+                    $default = match ($k) {
+                        'cp' => 1,
+                        'co' => self::DEFAULT_ORDER,
+                        'cs' => $perPage,
+                        'ci' => self::DEFAULT_INDENT,
+                    };
+                    if ($v !== $default) { $extraQuery[$k] = $v; }
                 }
             }
+            // When $commentSegs is non-empty, toSubPage (rewrite mode) forces all
+            // three news segments into the path and appends comment segments after them.
+            // extraQuery stays empty — no duplication.
 
             return $this->urlGen->toSubPage(
                 resolvedUrlId:  $resolvedNewsId,
