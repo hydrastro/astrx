@@ -109,6 +109,17 @@ final class MainController extends AbstractController
         $localizedOrder   = $pagination->descending ? $wordDesc : $wordAsc;
         $perPage          = $pagination->perPage;
 
+        // Preserve current comment-pagination params in news pagination URLs.
+        // Comment params use dedicated keys (cp/co/cs/ci) that never collide with
+        // news params. In rewrite mode they become ?key=val appended to the path.
+        $commentExtra = [];
+        foreach (['cp', 'co', 'cs', 'ci'] as $_ck) {
+            $_cv = $this->request->query()->get($_ck);
+            if ($_cv !== null && $_cv !== '') {
+                $commentExtra[$_ck] = $_cv;
+            }
+        }
+
         $urlForPage = fn(int $p): string => $this->urlGenerator->toSubPage(
             resolvedUrlId:  $resolvedUrlId,
             page:           $p,
@@ -117,6 +128,7 @@ final class MainController extends AbstractController
             defaultPage:    1,
             defaultOrder:   $defaultOrder,
             defaultPerPage: $defaultPerPage,
+            extraQuery:     $commentExtra,
         );
 
         // Form action: bare page URL. Browser appends order/show as query params.

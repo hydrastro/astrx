@@ -101,14 +101,14 @@
         {{&close_divs_html}}
         {{/comments}}
 
-        {{#has_pagination}}
+        {{#comments_has_pagination}}
         <p class="comments_nav"><small>
             {{comment_word_older}}
             {{#comments_has_prev}}<a href="{{comments_prev_url}}">&#8592;</a>{{/comments_has_prev}}
             {{#comments_pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/comments_pages}}
             {{#comments_has_next}}<a href="{{comments_next_url}}">&#8594;</a>{{/comments_has_next}}
         </small></p>
-        {{/has_pagination}}
+        {{/comments_has_pagination}}
 
         <hr>
         <h3 id="comment_form">{{comments_submit_heading}}</h3>

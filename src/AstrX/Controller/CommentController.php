@@ -359,7 +359,7 @@ final class CommentController extends AbstractController
         $this->ctx->set('comments',              $comments);
         $this->ctx->set('comments_count',        $total);
         $this->ctx->set('comments_pages',        $pages);
-        $this->ctx->set('has_pagination',        $hasPagination);
+        $this->ctx->set('comments_has_pagination',        $hasPagination);
         $this->ctx->set('comments_prev_url',     $prevUrl);
         $this->ctx->set('comments_next_url',     $nextUrl);
         $this->ctx->set('comments_has_prev',     $prevUrl !== '');
