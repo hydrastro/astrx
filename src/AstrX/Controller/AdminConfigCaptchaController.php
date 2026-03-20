@@ -107,9 +107,10 @@ final class AdminConfigCaptchaController extends AbstractController
         }
 
         $result = match ($section) {
-            'service'  => $this->saveService($posted),
-            'renderer' => $this->saveRenderer($posted),
-            default    => null,
+            'service'            => $this->saveService($posted),
+            'renderer'           => $this->saveRenderer($posted),
+            'context_difficulty' => $this->saveContextDifficulty($posted),
+            default              => null,
         };
 
         if ($result !== null) {
@@ -208,6 +209,17 @@ final class AdminConfigCaptchaController extends AbstractController
         ];
     }
 
+    /** @param array<string, mixed> $p */
+    private function saveContextDifficulty(array $p): Result
+    {
+        $full = $this->loadFullCaptchaConfig();
+        $full['CaptchaRenderer']['login_captcha_difficulty']    = (int) ($p['login_captcha_difficulty']    ?? CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['register_captcha_difficulty'] = (int) ($p['register_captcha_difficulty'] ?? CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['recover_captcha_difficulty']  = (int) ($p['recover_captcha_difficulty']  ?? CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['comment_captcha_difficulty']  = (int) ($p['comment_captcha_difficulty']  ?? CaptchaType::MEDIUM->value);
+        return $this->writer->write('Captcha', $full);
+    }
+
     private function sanitiseHex(string $v): string
     {
         $v = ltrim(trim($v), '#');
@@ -258,6 +270,17 @@ final class AdminConfigCaptchaController extends AbstractController
         $this->ctx->set('preview_text',  $previewText);
         $this->ctx->set('type_options',  $typeOptions);
 
+        // Per-context difficulty option lists
+        foreach (['login', 'register', 'recover', 'comment'] as $ctx) {
+            $cfgKey  = $ctx . '_captcha_difficulty';
+            $current = (int) $this->config->getConfig('CaptchaRenderer', $cfgKey, CaptchaType::MEDIUM->value);
+            $opts    = [];
+            foreach (CaptchaType::cases() as $type) {
+                $opts[] = ['value' => $type->value, 'label' => $type->name, 'selected' => $type->value === $current];
+            }
+            $this->ctx->set($cfgKey . '_options', $opts);
+        }
+
         // Service
         $this->ctx->set('cfg_captcha_expiration', (int) $this->config->getConfig('CaptchaService', 'captcha_expiration', 600));
 
@@ -303,6 +326,11 @@ final class AdminConfigCaptchaController extends AbstractController
         $this->ctx->set('label_char_list',                  $this->t->t('admin.config.field.char_list'));
         $this->ctx->set('label_captcha_length',             $this->t->t('admin.config.field.captcha_length'));
         $this->ctx->set('label_captcha_type',               $this->t->t('admin.config.field.captcha_type'));
+        $this->ctx->set('section_context_difficulty',        $this->t->t('admin.config.captcha.context_difficulty'));
+        $this->ctx->set('label_login_captcha_difficulty',    $this->t->t('admin.config.captcha.login_difficulty'));
+        $this->ctx->set('label_register_captcha_difficulty', $this->t->t('admin.config.captcha.register_difficulty'));
+        $this->ctx->set('label_recover_captcha_difficulty',  $this->t->t('admin.config.captcha.recover_difficulty'));
+        $this->ctx->set('label_comment_captcha_difficulty',  $this->t->t('admin.config.captcha.comment_difficulty'));
         $this->ctx->set('label_font_size',                  $this->t->t('admin.config.field.font_size'));
         $this->ctx->set('label_font_file',                  $this->t->t('admin.config.field.font_file'));
         $this->ctx->set('label_font_min_distance',          $this->t->t('admin.config.field.font_min_distance'));

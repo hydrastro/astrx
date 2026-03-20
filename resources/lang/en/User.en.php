@@ -91,6 +91,10 @@ return [
     'user.home.profile_text'     => 'View your public profile.',
     'user.home.settings_heading' => 'Settings',
     'user.home.settings_text'    => 'Manage your account.',
+    'user.home.logout'           => 'Sign out',
+    'user.home.profile_heading.desc'  => 'View and edit your public profile.',
+    'user.home.settings_heading.desc' => 'Change your password, avatar, and preferences.',
+    'user.home.logout.desc'           => 'End your current session.',
 
     // -------------------------------------------------------------------------
     // Settings

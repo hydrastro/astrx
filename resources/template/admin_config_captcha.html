@@ -25,6 +25,38 @@
 <hr>
 
 {{! ── CaptchaRenderer ────────────────────────────────────────────────── }}
+{{! ── Per-context Difficulty ─────────────────────────────────────────── }}
+<h3>{{section_context_difficulty}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="context_difficulty">
+  <table>
+    <tr><th>{{label_login_captcha_difficulty}}</th><td>
+      <select name="login_captcha_difficulty" class="input">
+        {{#login_captcha_difficulty_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/login_captcha_difficulty_options}}
+      </select>
+    </td></tr>
+    <tr><th>{{label_register_captcha_difficulty}}</th><td>
+      <select name="register_captcha_difficulty" class="input">
+        {{#register_captcha_difficulty_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/register_captcha_difficulty_options}}
+      </select>
+    </td></tr>
+    <tr><th>{{label_recover_captcha_difficulty}}</th><td>
+      <select name="recover_captcha_difficulty" class="input">
+        {{#recover_captcha_difficulty_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/recover_captcha_difficulty_options}}
+      </select>
+    </td></tr>
+    <tr><th>{{label_comment_captcha_difficulty}}</th><td>
+      <select name="comment_captcha_difficulty" class="input">
+        {{#comment_captcha_difficulty_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/comment_captcha_difficulty_options}}
+      </select>
+    </td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+  </table>
+</form>
+<hr>
+
 <h3>{{section_renderer}}</h3>
 <form method="POST">
   <input type="hidden" name="prg_id"  value="{{prg_id}}">

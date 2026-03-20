@@ -21,6 +21,12 @@ return [
         'char_list' => '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ',
         'captcha_length' => 5,
         'captcha_type' => 2,
+        // Per-context difficulty overrides (0=EASY, 1=MEDIUM, 2=HARD).
+        // These are read by the relevant controllers before calling generateWithType().
+        'login_captcha_difficulty'    => 1,
+        'register_captcha_difficulty' => 1,
+        'recover_captcha_difficulty'  => 1,
+        'comment_captcha_difficulty'  => 1,
         'font_size' => 20,
         'font_file' => '/app/resources//fonts/FSEX300.ttf',
         'font_min_distance' => 0,

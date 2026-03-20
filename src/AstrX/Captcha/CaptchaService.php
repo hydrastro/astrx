@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\Captcha;
 
+use AstrX\Captcha\CaptchaType;
+
 use AstrX\Captcha\Diagnostic\CaptchaExpiredDiagnostic;
 use AstrX\Captcha\Diagnostic\CaptchaNotFoundDiagnostic;
 use AstrX\Captcha\Diagnostic\CaptchaWrongDiagnostic;
@@ -73,9 +75,21 @@ final class CaptchaService
         }
 
         return Result::ok([
-            'id'        => $id,
-            'image_b64' => $this->renderer->render($text),
-        ]);
+                              'id'        => $id,
+                              'image_b64' => $this->renderer->render($text),
+                          ]);
+    }
+
+    /**
+     * Generate a captcha using a specific difficulty type,
+     * overriding the renderer's globally-configured type for this call only.
+     *
+     * @return Result<array{id: string, image_b64: string}>
+     */
+    public function generateWithType(CaptchaType $type): Result
+    {
+        $this->renderer->setCaptchaType($type->value);
+        return $this->generate();
     }
 
     /**
@@ -101,26 +115,26 @@ final class CaptchaService
 
         if ($row === null) {
             return Result::err(false, Diagnostics::of(new CaptchaNotFoundDiagnostic(
-                CaptchaNotFoundDiagnostic::ID,
-                CaptchaNotFoundDiagnostic::LEVEL,
-                $id,
-            )));
+                                                          CaptchaNotFoundDiagnostic::ID,
+                                                          CaptchaNotFoundDiagnostic::LEVEL,
+                                                          $id,
+                                                      )));
         }
 
         if (time() > $row['expires_at']) {
             return Result::err(false, Diagnostics::of(new CaptchaExpiredDiagnostic(
-                CaptchaExpiredDiagnostic::ID,
-                CaptchaExpiredDiagnostic::LEVEL,
-                $id,
-                $row['expires_at'],
-            )));
+                                                          CaptchaExpiredDiagnostic::ID,
+                                                          CaptchaExpiredDiagnostic::LEVEL,
+                                                          $id,
+                                                          $row['expires_at'],
+                                                      )));
         }
 
         if (!hash_equals(strtolower($row['text']), strtolower($submittedText))) {
             return Result::err(false, Diagnostics::of(new CaptchaWrongDiagnostic(
-                CaptchaWrongDiagnostic::ID,
-                CaptchaWrongDiagnostic::LEVEL,
-            )));
+                                                          CaptchaWrongDiagnostic::ID,
+                                                          CaptchaWrongDiagnostic::LEVEL,
+                                                      )));
         }
 
         // Consume the token — delete by ID, not by text

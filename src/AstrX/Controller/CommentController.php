@@ -6,6 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaService;
+use AstrX\Captcha\CaptchaType;
 use AstrX\Comment\CommentService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -74,7 +75,7 @@ final class CommentController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly AvatarService         $avatarService,
-        private readonly CaptchaService        $captchaService,
+        private readonly CaptchaService        $captchaService
     ) {
         parent::__construct($collector);
     }
@@ -299,7 +300,10 @@ final class CommentController extends AbstractController
         $captchaId    = '';
         $captchaImage = '';
         if (!$this->session->isLoggedIn()) {
-            $captchaGen = $this->captchaService->generate();
+            $commentDifficulty = CaptchaType::from(
+                (int) $this->config->getConfig('CaptchaRenderer', 'comment_captcha_difficulty', CaptchaType::MEDIUM->value)
+            );
+            $captchaGen = $this->captchaService->generateWithType($commentDifficulty);
             if ($captchaGen->isOk()) {
                 ['id' => $captchaId, 'image_b64' => $captchaImage] = $captchaGen->unwrap();
                 $showCaptcha = true;

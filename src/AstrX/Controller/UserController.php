@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Captcha\CaptchaService;
+use AstrX\Captcha\CaptchaType;
+use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
@@ -36,6 +38,7 @@ final class UserController extends AbstractController
         private readonly UserSession           $session,
         private readonly UserService           $userService,
         private readonly CaptchaService        $captchaService,
+        private readonly Config                $config,
         private readonly CsrfHandler           $csrf,
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
@@ -147,7 +150,10 @@ final class UserController extends AbstractController
 
         $captchaId = ''; $captchaB64 = '';
         if ($showCaptcha) {
-            $gen = $this->captchaService->generate();
+            $loginDifficulty = CaptchaType::from(
+                (int) $this->config->getConfig('CaptchaRenderer', 'login_captcha_difficulty', CaptchaType::MEDIUM->value)
+            );
+            $gen = $this->captchaService->generateWithType($loginDifficulty);
             $gen->drainTo($this->collector);
             if ($gen->isOk()) {
                 $captchaId  = $gen->unwrap()['id'];

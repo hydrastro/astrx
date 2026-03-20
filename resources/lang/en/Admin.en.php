@@ -274,12 +274,12 @@ return [
     'admin.config.access.prefix_user'    => 'Users',
     'admin.config.access.prefix_ban'     => 'Banlist',
     'admin.config.access.prefix_admin'   => 'Admin panel',
-
-    // Access page — route management
-    'admin.config.access.new_route_key'  => 'New route key',
     'admin.config.access.add_group'       => 'Add group',
     'admin.config.access.delete_group'    => 'Delete group',
     'admin.config.access.new_group_name'  => 'New group name',
+
+    // Access page — route management
+    'admin.config.access.new_route_key'  => 'New route key',
 
     // ---- Config — Content section headings ----------------------------------
     'admin.config.content.heading' => 'Content Configuration',
@@ -293,6 +293,12 @@ return [
 
     // ---- Config — Captcha section headings ----------------------------------
     'admin.config.captcha.heading'     => 'Captcha Configuration',
+    // Per-context difficulty
+    'admin.config.captcha.context_difficulty'  => 'Captcha Difficulty per Context',
+    'admin.config.captcha.login_difficulty'    => 'Login captcha',
+    'admin.config.captcha.register_difficulty' => 'Registration captcha',
+    'admin.config.captcha.recover_difficulty'  => 'Password recovery captcha',
+    'admin.config.captcha.comment_difficulty'  => 'Comment form captcha',
     'admin.config.captcha.service'     => 'Token Settings',
     'admin.config.captcha.renderer'    => 'Renderer Settings',
     'admin.config.captcha.preview'     => 'Live Preview',

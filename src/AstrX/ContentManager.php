@@ -302,6 +302,32 @@ final class ContentManager
             $this->injector->setClass($page);
         }
 
+        // ── Admin page guard ──────────────────────────────────────────────────────
+        // All pages that are descendants of the admin root require ADMIN_ACCESS.
+        // We detect this by checking if any ancestor has url_id = 'WORDING_ADMIN',
+        // or the page itself is the admin root.
+        $isAdminPage = $page->urlId === 'WORDING_ADMIN'
+                       || array_any(
+                           $page->ancestors,
+                           fn($a) => ($a['url_id'] ?? '') === 'WORDING_ADMIN'
+                       );
+        if ($isAdminPage && $this->gate->cannot(Permission::ADMIN_ACCESS)) {
+            $loginUrlId = $this->config->getConfig('Routing', 'default_page', 'WORDING_LOGIN');
+            // resolve the login URL properly through the translator
+            $loginSlug  = $this->translator->t('WORDING_LOGIN', fallback: 'login');
+            $locale     = $this->translator->getLocale();
+            $basePath   = (string) $this->config->getConfig('Routing', 'base_path', '/');
+            $urlRewrite = (bool)   $this->config->getConfig('Routing', 'url_rewrite', true);
+            $localeKey  = (string) $this->config->getConfig('Routing', 'locale_key', 'lang');
+            if ($urlRewrite) {
+                $loginUrl = rtrim($basePath, '/') . '/' . $locale . '/' . $loginSlug;
+            } else {
+                $loginUrl = $basePath . '?' . $localeKey . '=' . $locale . '&page=' . $loginSlug;
+            }
+            Response::redirect($loginUrl)->send()->drainTo($this->collector);
+            exit;
+        }
+
         // Load lang files for the current page and all its ancestors (bottom-up order,
         // so more-specific pages override ancestor values where keys overlap).
         // This replaces the old 'extra_lang_domains' config list — just add pages to the

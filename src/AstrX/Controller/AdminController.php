@@ -55,6 +55,7 @@ final class AdminController extends AbstractController
                 'desc'  => $this->t->t($labelKey . '.desc'),
             ];
         }
+        usort($sections, fn($a, $b) => strcmp($a['name'], $b['name']));
         $this->ctx->set('admin_sections', $sections);
 
         return $this->ok();

@@ -1,8 +1,8 @@
 <h2>{{user_welcome_heading}}, {{username}}!</h2>
 <p>{{user_welcome_body}}</p>
 <hr>
-<h3><a href="{{profile_url}}">{{user_profile_heading}}</a></h3>
-<p>{{user_profile_text}}</p>
+{{#user_sections}}
+<h3><a href="{{url}}">{{name}}</a></h3>
+{{#desc}}<p>{{desc}}</p>{{/desc}}
 <hr>
-<h3><a href="{{settings_url}}">{{user_settings_heading}}</a></h3>
-<p>{{user_settings_text}}</p>
+{{/user_sections}}

@@ -37,14 +37,27 @@ final class UserHomeController extends AbstractController
 
         $this->ctx->set('user_welcome_heading', $this->t->t('user.home.heading'));
         $this->ctx->set('user_welcome_body',    $this->t->t('user.home.body'));
-        $this->ctx->set('user_profile_heading', $this->t->t('user.home.profile_heading'));
-        $this->ctx->set('user_profile_text',    $this->t->t('user.home.profile_text'));
-        $this->ctx->set('user_settings_heading',$this->t->t('user.home.settings_heading'));
-        $this->ctx->set('user_settings_text',   $this->t->t('user.home.settings_text'));
         $this->ctx->set('username',             $this->session->username());
-        $this->ctx->set('profile_url',          $this->urlGen->toPage($this->t->t('WORDING_PROFILE'), ['uid' => $this->session->userId()]));
-        $this->ctx->set('settings_url',         $this->urlGen->toPage($this->t->t('WORDING_SETTINGS')));
-        $this->ctx->set('logout_url',           $this->urlGen->toPage($this->t->t('WORDING_LOGOUT')));
+
+        // Build section links dynamically — sorted alphabetically.
+        // Add entries here (slug => label key) to have them appear on the home page.
+        // Each slug must have a WORDING_{SLUG} translation key for URL resolution.
+        $navPages = [
+            'profile'  => 'user.home.profile_heading',
+            'settings' => 'user.home.settings_heading',
+            'logout'   => 'user.home.logout',
+        ];
+        $sections = [];
+        foreach ($navPages as $slug => $labelKey) {
+            $urlArgs = $slug === 'profile' ? ['uid' => $this->session->userId()] : [];
+            $sections[] = [
+                'url'  => $this->urlGen->toPage($this->t->t('WORDING_' . strtoupper($slug)), $urlArgs),
+                'name' => $this->t->t($labelKey),
+                'desc' => $this->t->t($labelKey . '.desc', fallback: ''),
+            ];
+        }
+        usort($sections, fn($a, $b) => strcmp($a['name'], $b['name']));
+        $this->ctx->set('user_sections', $sections);
 
         return $this->ok();
     }
