@@ -5,9 +5,9 @@
 <p><em>{{label_admin_note}}</em></p>
 
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="grants" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="grants">
 
   <table>
     <thead>
@@ -27,7 +27,7 @@
       <td><code>{{perm_value}}</code> <small>({{perm_name}})</small></td>
       {{#cells}}
       <td style="text-align:center">
-        <input type="checkbox" name="{{field}}" value="1"{{#granted}} checked{{/granted}} />
+        <input type="checkbox" name="{{field}}" value="1"{{#granted}} checked{{/granted}}>
       </td>
       {{/cells}}
       <td style="text-align:center">*</td>
@@ -37,7 +37,7 @@
     </tbody>
   </table>
 
-  <p><input type="submit" value="{{btn_save}}" class="input" /></p>
+  <p><input type="submit" value="{{btn_save}}" class="input"></p>
 </form>
 <hr>
 
@@ -54,12 +54,12 @@
   {{/is_editing}}
   &nbsp;
   <form method="POST" style="display:inline">
-    <input type="hidden" name="prg_id"        value="{{prg_id}}" />
-    <input type="hidden" name="_csrf"          value="{{csrf_token}}" />
-    <input type="hidden" name="section"        value="routes" />
-    <input type="hidden" name="route_action"   value="delete_route" />
-    <input type="hidden" name="route_key"      value="{{key}}" />
-    <input type="submit" value="{{btn_delete}}" class="input" />
+    <input type="hidden" name="prg_id"        value="{{prg_id}}">
+    <input type="hidden" name="_csrf"          value="{{csrf_token}}">
+    <input type="hidden" name="section"        value="routes">
+    <input type="hidden" name="route_action"   value="delete_route">
+    <input type="hidden" name="route_key"      value="{{key}}">
+    <input type="submit" value="{{btn_delete}}" class="input">
   </form>
 </h4>
 <table>
@@ -82,13 +82,13 @@
     <td><input type="checkbox" disabled{{#enabled}} checked{{/enabled}}></td>
     <td>
       <form method="POST" style="display:inline">
-        <input type="hidden" name="prg_id"      value="{{prg_id}}" />
-        <input type="hidden" name="_csrf"        value="{{csrf_token}}" />
-        <input type="hidden" name="section"      value="routes" />
-        <input type="hidden" name="route_action" value="delete_round" />
-        <input type="hidden" name="route_key"    value="{{route_key_val}}" />
-        <input type="hidden" name="round_idx"    value="{{index}}" />
-        <input type="submit" value="{{btn_delete}}" class="input" />
+        <input type="hidden" name="prg_id"      value="{{prg_id}}">
+        <input type="hidden" name="_csrf"        value="{{csrf_token}}">
+        <input type="hidden" name="section"      value="routes">
+        <input type="hidden" name="route_action" value="delete_round">
+        <input type="hidden" name="route_key"    value="{{route_key_val}}">
+        <input type="hidden" name="round_idx"    value="{{index}}">
+        <input type="submit" value="{{btn_delete}}" class="input">
       </form>
     </td>
   </tr>
@@ -96,18 +96,18 @@
   {{#editing}}
   <tr>
     <form method="POST">
-      <input type="hidden" name="prg_id"      value="{{prg_id}}" />
-      <input type="hidden" name="_csrf"        value="{{csrf_token}}" />
-      <input type="hidden" name="section"      value="routes" />
-      <input type="hidden" name="route_action" value="update_round" />
-      <input type="hidden" name="route_key"    value="{{route_key_val}}" />
-      <input type="hidden" name="round_idx"    value="{{index}}" />
+      <input type="hidden" name="prg_id"      value="{{prg_id}}">
+      <input type="hidden" name="_csrf"        value="{{csrf_token}}">
+      <input type="hidden" name="section"      value="routes">
+      <input type="hidden" name="route_action" value="update_round">
+      <input type="hidden" name="route_key"    value="{{route_key_val}}">
+      <input type="hidden" name="round_idx"    value="{{index}}">
       <td>{{index}}</td>
-      <td><input type="number" name="penalty"    value="{{penalty}}"    min="0" style="width:7em" /></td>
-      <td><input type="number" name="max_tries"  value="{{max_tries}}"  min="0" style="width:5em" /></td>
-      <td><input type="number" name="check_time" value="{{check_time}}" min="0" style="width:7em" /></td>
-      <td><input type="checkbox" name="enabled" value="1"{{#enabled}} checked{{/enabled}} /></td>
-      <td><input type="submit" value="{{btn_update}}" class="input" /></td>
+      <td><input type="number" name="penalty"    value="{{penalty}}"    min="0" style="width:7em" class="input"></td>
+      <td><input type="number" name="max_tries"  value="{{max_tries}}"  min="0" style="width:5em" class="input"></td>
+      <td><input type="number" name="check_time" value="{{check_time}}" min="0" style="width:7em" class="input"></td>
+      <td><input type="checkbox" name="enabled" value="1"{{#enabled}} checked{{/enabled}}></td>
+      <td><input type="submit" value="{{btn_update}}" class="input"></td>
     </form>
   </tr>
   {{/editing}}
@@ -117,15 +117,15 @@
   {{#is_editing}}
   <tr>
     <form method="POST">
-      <input type="hidden" name="prg_id"      value="{{prg_id}}" />
-      <input type="hidden" name="_csrf"        value="{{csrf_token}}" />
-      <input type="hidden" name="section"      value="routes" />
-      <input type="hidden" name="route_action" value="add_round" />
-      <input type="hidden" name="route_key"    value="{{key}}" />
+      <input type="hidden" name="prg_id"      value="{{prg_id}}">
+      <input type="hidden" name="_csrf"        value="{{csrf_token}}">
+      <input type="hidden" name="section"      value="routes">
+      <input type="hidden" name="route_action" value="add_round">
+      <input type="hidden" name="route_key"    value="{{key}}">
       <td><em>new</em></td>
-      <td><input type="number" name="penalty"    value="0"  min="0" style="width:7em"></td>
-      <td><input type="number" name="max_tries"  value="0"  min="0" style="width:5em"></td>
-      <td><input type="number" name="check_time" value="0"  min="0" style="width:7em"></td>
+      <td><input type="number" name="penalty"    value="0"  min="0" style="width:7em" class="input"></td>
+      <td><input type="number" name="max_tries"  value="0"  min="0" style="width:5em" class="input"></td>
+      <td><input type="number" name="check_time" value="0"  min="0" style="width:7em" class="input"></td>
       <td><input type="checkbox" name="enabled" value="1" checked></td>
       <td><input type="submit" value="{{btn_add_round}}" class="input"></td>
     </form>
@@ -143,8 +143,8 @@
   <input type="hidden" name="route_action" value="add_route">
   <p>
     <label>{{label_new_route_key}}:
-      <input type="text" name="route_key" placeholder="e.g. spam_link" class="input" />
+      <input type="text" name="route_key" placeholder="e.g. spam_link" class="input">
     </label>
-    <input type="submit" value="{{btn_add_route}}" class="input" />
+    <input type="submit" value="{{btn_add_route}}" class="input">
   </p>
 </form>

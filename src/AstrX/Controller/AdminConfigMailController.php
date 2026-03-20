@@ -166,18 +166,24 @@ final class AdminConfigMailController extends AbstractController
     private function saveMailer(array $p)
     : Result {
         $full = $this->loadFullMailConfig();
-        $full['Mailer'] = array_merge($full['Mailer']??[], [
-            'host' => trim((string)($p['host']??'localhost')),
-            'port' => max(1, (int)($p['port']??587)),
-            'username' => trim((string)($p['username']??'')),
-            'password' => trim((string)($p['password']??'')),
-            'from_address' => trim((string)($p['from_address']??'')),
-            'from_name' => trim((string)($p['from_name']??'')),
-            'encryption' => trim((string)($p['encryption']??'tls')),
-            'timeout' => max(5, (int)($p['timeout']??30)),
-            'socks5_host' => trim((string)($p['socks5_host']??'')),
-            'socks5_port' => max(1, (int)($p['socks5_port']??9050)),
+        $full['Mailer'] = array_merge($full['Mailer'] ?? [], [
+            'host'         => trim((string) ($p['host']         ?? 'localhost')),
+            'port'         => max(1, (int)  ($p['port']         ?? 587)),
+            'username'     => trim((string) ($p['username']     ?? '')),
+            'from_address' => trim((string) ($p['from_address'] ?? '')),
+            'from_name'    => trim((string) ($p['from_name']    ?? '')),
+            'encryption'   => trim((string) ($p['encryption']   ?? 'tls')),
+            'timeout'      => max(5, (int)  ($p['timeout']      ?? 30)),
+            'socks5_host'  => trim((string) ($p['socks5_host']  ?? '')),
+            'socks5_port'  => max(1, (int)  ($p['socks5_port']  ?? 9050)),
         ]);
+        // Preserve existing password when blank is submitted (placeholder = keep current).
+        $newPw = trim((string) ($p['password'] ?? ''));
+        if ($newPw !== '') {
+            $full['Mailer']['password'] = $newPw;
+        } elseif (!array_key_exists('password', $full['Mailer'])) {
+            $full['Mailer']['password'] = '';
+        }
 
         return $this->writer->write('Mail', $full);
     }
@@ -186,11 +192,17 @@ final class AdminConfigMailController extends AbstractController
     private function saveMailbox(array $p)
     : Result {
         $full = $this->loadFullMailConfig();
-        $full['MailboxManager'] = [
-            'mailbox_domain' => trim((string)($p['mailbox_domain']??'')),
-            'mailapi_url' => trim((string)($p['mailapi_url']??'')),
-            'mailapi_secret' => trim((string)($p['mailapi_secret']??'')),
-        ];
+        $full['MailboxManager'] = array_merge($full['MailboxManager'] ?? [], [
+            'mailbox_domain' => trim((string) ($p['mailbox_domain'] ?? '')),
+            'mailapi_url'    => trim((string) ($p['mailapi_url']    ?? '')),
+        ]);
+        // Preserve existing secret when blank is submitted.
+        $newSecret = trim((string) ($p['mailapi_secret'] ?? ''));
+        if ($newSecret !== '') {
+            $full['MailboxManager']['mailapi_secret'] = $newSecret;
+        } elseif (!array_key_exists('mailapi_secret', $full['MailboxManager'])) {
+            $full['MailboxManager']['mailapi_secret'] = '';
+        }
 
         return $this->writer->write('Mail', $full);
     }

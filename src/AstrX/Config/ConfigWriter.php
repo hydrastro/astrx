@@ -50,6 +50,39 @@ final class ConfigWriter
         return Result::ok(true);
     }
 
+    /**
+     * Write the main config.php file.
+     * Unlike write() which appends '.config.php', this writes to 'config.php' directly.
+     * @param array<string, array<string, mixed>> $config
+     */
+    public function writeMainConfig(array $config): Result
+    {
+        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'config.php';
+        $php  = $this->render($config);
+        $tmp  = $path . '.tmp.' . bin2hex(random_bytes(4));
+
+        if (file_put_contents($tmp, $php, LOCK_EX) === false) {
+            return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
+                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          $tmp, 'write_failed',
+                                                      )));
+        }
+
+        if (!rename($tmp, $path)) {
+            @unlink($tmp);
+            return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
+                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          $path, 'rename_failed',
+                                                      )));
+        }
+
+        if (function_exists('opcache_invalidate')) {
+            opcache_invalidate($path, true);
+        }
+
+        return Result::ok(true);
+    }
+
     private function render(array $config): string
     {
         return "<?php\ndeclare(strict_types=1);\n\nreturn " . $this->exportValue($config, 0) . ";\n";

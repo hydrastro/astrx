@@ -97,11 +97,11 @@
                 <small>{{label_email}}</small><br>
                 <input type="text" name="email" class="input" value="{{email}}">
             </td>
-            <td><input type="number" name="reply_to" class="input" value="{{reply_to}}" style="width:5em" min="0" class="input" /></td>
+            <td><input type="number" name="reply_to" class="input" value="{{reply_to}}" style="width:5em" min="0" class="input"></td>
             <td><textarea name="content" rows="5" class="input" style="width:100%">{{content}}</textarea></td>
             <td>{{created_at}}</td>
-            <td><input type="checkbox" name="hidden"  value="1"{{#hidden}}  checked{{/hidden}} /></td>
-            <td><input type="checkbox" name="flagged" value="1"{{#flagged}} checked{{/flagged}} /></td>
+            <td><input type="checkbox" name="hidden"  value="1"{{#hidden}}  checked{{/hidden}}></td>
+            <td><input type="checkbox" name="flagged" value="1"{{#flagged}} checked{{/flagged}}></td>
             <td>
                 <input type="submit" value="{{btn_update}}" class="input"><br>
                 <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
@@ -122,29 +122,29 @@
 
 <h4>{{section_general}}</h4>
 <form method="POST">
-    <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-    <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-    <input type="hidden" name="section" value="general" />
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="general">
     <table>
         <tr><th>{{label_comments_per_page}}</th>
-            <td><input type="number" name="comments_per_page" value="{{cfg_comments_per_page}}" min="1" class="input" /></td></tr>
+            <td><input type="number" name="comments_per_page" value="{{cfg_comments_per_page}}" min="1" class="input"></td></tr>
         <tr><th>{{label_allow_replies}}</th>
-            <td><input type="checkbox" name="allow_replies" value="1"{{#cfg_allow_replies}} checked{{/cfg_allow_replies}} /></td></tr>
+            <td><input type="checkbox" name="allow_replies" value="1"{{#cfg_allow_replies}} checked{{/cfg_allow_replies}}></td></tr>
         <tr><th>{{label_require_email_comment}}</th>
-            <td><input type="checkbox" name="require_email" value="1"{{#cfg_require_email}} checked{{/cfg_require_email}} /></td></tr>
+            <td><input type="checkbox" name="require_email" value="1"{{#cfg_require_email}} checked{{/cfg_require_email}}></td></tr>
         <tr><th>{{label_minimum_flood_secs}}</th>
-            <td><input type="number" name="minimum_flood_secs" value="{{cfg_minimum_flood_secs}}" min="0" class="input" /></td></tr>
+            <td><input type="number" name="minimum_flood_secs" value="{{cfg_minimum_flood_secs}}" min="0" class="input"></td></tr>
         <tr><th>{{label_antispam_time_secs}}</th>
-            <td><input type="number" name="antispam_time_secs" value="{{cfg_antispam_time_secs}}" min="0" class="input" /></td></tr>
+            <td><input type="number" name="antispam_time_secs" value="{{cfg_antispam_time_secs}}" min="0" class="input"></td></tr>
         <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
     </table>
 </form>
 
 <h4>{{section_antispam}}</h4>
 <form method="POST">
-    <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-    <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-    <input type="hidden" name="section" value="antispam" />
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="antispam">
     <table>
         <thead><tr>
             <th>{{label_regex_key}}</th>
@@ -155,10 +155,10 @@
         <tbody>
         {{#antispam_list}}
         <tr>
-            <td><input type="number" name="regex_key[]"     value="{{key}}" min="1" style="width:4em" class="input" /></td>
-            <td><input type="text"   name="regex_pattern[]" value="{{regex}}" style="width:24em" class="input" /></td>
-            <td style="text-align:center"><input type="checkbox" name="regex_enabled[]" value="1"{{#enabled}} checked{{/enabled}} /></td>
-            <td><input type="text"   name="regex_message[]" value="{{message}}" style="width:18em" class="input" /></td>
+            <td><input type="number" name="regex_key[]"     value="{{key}}" min="1" style="width:4em" class="input"></td>
+            <td><input type="text"   name="regex_pattern[]" value="{{regex}}" style="width:24em" class="input"></td>
+            <td style="text-align:center"><input type="checkbox" name="regex_enabled[]" value="1"{{#enabled}} checked{{/enabled}}></td>
+            <td><input type="text"   name="regex_message[]" value="{{message}}" style="width:18em" class="input"></td>
         </tr>
         {{/antispam_list}}
         {{^has_antispam}}

@@ -3,18 +3,18 @@
 {{! ── Prelude ──────────────────────────────────────────────────────────── }}
 <h3>{{section_prelude}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="prelude" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="prelude">
   <table>
     <tr><th>{{label_environment}}</th><td>
       <select name="environment" class="input">
         {{#cfg_env_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/cfg_env_options}}
       </select>
     </td></tr>
-    <tr><th>{{label_available_languages}}</th><td><input type="text" name="available_languages" value="{{cfg_available_languages}}" class="input" /></td></tr>
-    <tr><th>{{label_default_language}}</th><td><input type="text" name="default_language" value="{{cfg_default_language}}" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>{{label_available_languages}}</th><td><input type="text" name="available_languages" value="{{cfg_available_languages}}" class="input"></td></tr>
+    <tr><th>{{label_default_language}}</th><td><input type="text" name="default_language" value="{{cfg_default_language}}" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -22,18 +22,18 @@
 {{! ── Routing ──────────────────────────────────────────────────────────── }}
 <h3>{{section_routing}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="routing" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="routing">
   <table>
-    <tr><th>{{label_url_rewrite}}</th><td><input type="checkbox" name="url_rewrite" value="1"{{#cfg_url_rewrite}} checked{{/cfg_url_rewrite}} /></td></tr>
-    <tr><th>{{label_base_path}}</th><td><input type="text" name="base_path" value="{{cfg_base_path}}" class="input" /></td></tr>
-    <tr><th>{{label_entry_point}}</th><td><input type="text" name="entry_point" value="{{cfg_entry_point}}" class="input" /></td></tr>
-    <tr><th>{{label_locale_key}}</th><td><input type="text" name="locale_key" value="{{cfg_locale_key}}" class="input" /></td></tr>
-    <tr><th>{{label_session_key}}</th><td><input type="text" name="session_key" value="{{cfg_session_key}}" class="input" /></td></tr>
-    <tr><th>{{label_page_key}}</th><td><input type="text" name="page_key" value="{{cfg_page_key}}" class="input" /></td></tr>
-    <tr><th>{{label_default_page}}</th><td><input type="text" name="default_page" value="{{cfg_default_page}}" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>{{label_url_rewrite}}</th><td><input type="checkbox" name="url_rewrite" value="1"{{#cfg_url_rewrite}} checked{{/cfg_url_rewrite}}></td></tr>
+    <tr><th>{{label_base_path}}</th><td><input type="text" name="base_path" value="{{cfg_base_path}}" class="input"></td></tr>
+    <tr><th>{{label_entry_point}}</th><td><input type="text" name="entry_point" value="{{cfg_entry_point}}" class="input"></td></tr>
+    <tr><th>{{label_locale_key}}</th><td><input type="text" name="locale_key" value="{{cfg_locale_key}}" class="input"></td></tr>
+    <tr><th>{{label_session_key}}</th><td><input type="text" name="session_key" value="{{cfg_session_key}}" class="input"></td></tr>
+    <tr><th>{{label_page_key}}</th><td><input type="text" name="page_key" value="{{cfg_page_key}}" class="input"></td></tr>
+    <tr><th>{{label_default_page}}</th><td><input type="text" name="default_page" value="{{cfg_default_page}}" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -41,20 +41,20 @@
 {{! ── Session ──────────────────────────────────────────────────────────── }}
 <h3>{{section_session}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="session" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="session">
   <table>
-    <tr><th>{{label_use_cookies}}</th><td><input type="checkbox" name="use_cookies" value="1"{{#cfg_use_cookies}} checked{{/cfg_use_cookies}} /></td></tr>
-    <tr><th>{{label_sid_bytes}}</th><td><input type="number" name="sid_bytes" value="{{cfg_sid_bytes}}" min="32" class="input" /></td></tr>
-    <tr><th>{{label_session_id_regex}}</th><td><input type="text" name="session_id_regex" value="{{cfg_session_id_regex}}" class="input" /></td></tr>
-    <tr><th>{{label_encrypt}}</th><td><input type="checkbox" name="encrypt" value="1"{{#cfg_encrypt}} checked{{/cfg_encrypt}} /></td></tr>
-    <tr><th>{{label_cipher}}</th><td><input type="text" name="cipher" value="{{cfg_cipher}}" class="input" /></td></tr>
-    <tr><th>{{label_hmac_algo}}</th><td><input type="text" name="hmac_algo" value="{{cfg_hmac_algo}}" class="input" /></td></tr>
-    <tr><th>{{label_prg_token_key}}</th><td><input type="text" name="prg_token_key" value="{{cfg_prg_token_key}}" class="input" /></td></tr>
-    <tr><th>{{label_prg_token_regex}}</th><td><input type="text" name="prg_token_regex" value="{{cfg_prg_token_regex}}" class="input" /></td></tr>
-    <tr><th>{{label_max_sid_retries}}</th><td><input type="number" name="max_sid_retries" value="{{cfg_max_sid_retries}}" min="1" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>{{label_use_cookies}}</th><td><input type="checkbox" name="use_cookies" value="1"{{#cfg_use_cookies}} checked{{/cfg_use_cookies}}></td></tr>
+    <tr><th>{{label_sid_bytes}}</th><td><input type="number" name="sid_bytes" value="{{cfg_sid_bytes}}" min="32" class="input"></td></tr>
+    <tr><th>{{label_session_id_regex}}</th><td><input type="text" name="session_id_regex" value="{{cfg_session_id_regex}}" class="input"></td></tr>
+    <tr><th>{{label_encrypt}}</th><td><input type="checkbox" name="encrypt" value="1"{{#cfg_encrypt}} checked{{/cfg_encrypt}}></td></tr>
+    <tr><th>{{label_cipher}}</th><td><input type="text" name="cipher" value="{{cfg_cipher}}" class="input"></td></tr>
+    <tr><th>{{label_hmac_algo}}</th><td><input type="text" name="hmac_algo" value="{{cfg_hmac_algo}}" class="input"></td></tr>
+    <tr><th>{{label_prg_token_key}}</th><td><input type="text" name="prg_token_key" value="{{cfg_prg_token_key}}" class="input"></td></tr>
+    <tr><th>{{label_prg_token_regex}}</th><td><input type="text" name="prg_token_regex" value="{{cfg_prg_token_regex}}" class="input"></td></tr>
+    <tr><th>{{label_max_sid_retries}}</th><td><input type="number" name="max_sid_retries" value="{{cfg_max_sid_retries}}" min="1" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -66,13 +66,13 @@
   <input type="hidden" name="_csrf"   value="{{csrf_token}}">
   <input type="hidden" name="section" value="template">
   <table>
-    <tr><th>{{label_template_dir}}</th><td><input type="text" name="template_dir" value="{{cfg_template_dir}}" class="input" /></td></tr>
-    <tr><th>{{label_template_extension}}</th><td><input type="text" name="template_extension" value="{{cfg_template_extension}}" class="input" /></td></tr>
-    <tr><th>{{label_template_cache_dir}}</th><td><input type="text" name="template_cache_dir" value="{{cfg_template_cache_dir}}" class="input" /></td></tr>
-    <tr><th>{{label_cache_templates}}</th><td><input type="checkbox" name="cache_templates" value="1"{{#cfg_cache_templates}} checked{{/cfg_cache_templates}} /></td></tr>
-    <tr><th>{{label_php_processing}}</th><td><input type="checkbox" name="php_processing" value="1"{{#cfg_php_processing}} checked{{/cfg_php_processing}} /></td></tr>
-    <tr><th>{{label_parse_mode}}</th><td><input type="number" name="parse_mode" value="{{cfg_parse_mode}}" min="0" max="1" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>{{label_template_dir}}</th><td><input type="text" name="template_dir" value="{{cfg_template_dir}}" class="input"></td></tr>
+    <tr><th>{{label_template_extension}}</th><td><input type="text" name="template_extension" value="{{cfg_template_extension}}" class="input"></td></tr>
+    <tr><th>{{label_template_cache_dir}}</th><td><input type="text" name="template_cache_dir" value="{{cfg_template_cache_dir}}" class="input"></td></tr>
+    <tr><th>{{label_cache_templates}}</th><td><input type="checkbox" name="cache_templates" value="1"{{#cfg_cache_templates}} checked{{/cfg_cache_templates}}></td></tr>
+    <tr><th>{{label_php_processing}}</th><td><input type="checkbox" name="php_processing" value="1"{{#cfg_php_processing}} checked{{/cfg_php_processing}}></td></tr>
+    <tr><th>{{label_parse_mode}}</th><td><input type="number" name="parse_mode" value="{{cfg_parse_mode}}" min="0" max="1" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -80,13 +80,13 @@
 {{! ── Translator ───────────────────────────────────────────────────────── }}
 <h3>{{section_translator}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="translator" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="translator">
   <table>
-    <tr><th>{{label_lang_dir}}</th><td><input type="text" name="lang_dir" value="{{cfg_lang_dir}}" class="input" /></td></tr>
-    <tr><th>{{label_fallback_to_key}}</th><td><input type="checkbox" name="fallback_to_key" value="1"{{#cfg_fallback_to_key}} checked{{/cfg_fallback_to_key}} /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>{{label_lang_dir}}</th><td><input type="text" name="lang_dir" value="{{cfg_lang_dir}}" class="input"></td></tr>
+    <tr><th>{{label_fallback_to_key}}</th><td><input type="checkbox" name="fallback_to_key" value="1"{{#cfg_fallback_to_key}} checked{{/cfg_fallback_to_key}}></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -94,31 +94,31 @@
 {{! ── ContentManager ──────────────────────────────────────────────────── }}
 <h3>{{section_contentmanager}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="contentmanager" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="contentmanager">
   <table>
-    <tr><th>{{label_default_template}}</th><td><input type="text" name="default_template" value="{{cfg_default_template}}" class="input" /></td></tr>
-    <tr><th>{{label_error_page_url_id}}</th><td><input type="text" name="error_page_url_id" value="{{cfg_error_page_url_id}}" class="input" /></td></tr>
-    <tr><th>{{label_main_page_id}}</th><td><input type="text" name="main_page_id" value="{{cfg_main_page_id}}" class="input" /></td></tr>
-    <tr><th>{{label_pages_lang_domain}}</th><td><input type="text" name="pages_lang_domain" value="{{cfg_pages_lang_domain}}" class="input" /></td></tr>
-    <tr><th>{{label_navbar_lang_domain}}</th><td><input type="text" name="navbar_lang_domain" value="{{cfg_navbar_lang_domain}}" class="input" /></td></tr>
-    <tr><th>{{label_diagnostics_lang_domain}}</th><td><input type="text" name="diagnostics_lang_domain" value="{{cfg_diagnostics_lang_domain}}" class="input" /></td></tr>
-    <tr><th>{{label_public_navbar_id}}</th><td><input type="number" name="public_navbar_id" value="{{cfg_public_navbar_id}}" min="1" class="input" /></td></tr>
-    <tr><th>{{label_user_navbar_id}}</th><td><input type="number" name="user_navbar_id" value="{{cfg_user_navbar_id}}" min="1" class="input" /></td></tr>
-    <tr><th>{{label_admin_navbar_id}}</th><td><input type="number" name="admin_navbar_id" value="{{cfg_admin_navbar_id}}" min="1" class="input" /></td></tr>
-    <tr><th>{{label_extra_lang_domains}}</th><td><input type="text" name="extra_lang_domains" value="{{cfg_extra_lang_domains}}" class="input" /></td></tr>
-    <tr><th>{{label_status_bar_min_level}}</th><td><input type="number" name="status_bar_min_level" value="{{cfg_status_bar_min_level}}" min="0" max="7" class="input" /></td></tr>
+    <tr><th>{{label_default_template}}</th><td><input type="text" name="default_template" value="{{cfg_default_template}}" class="input"></td></tr>
+    <tr><th>{{label_error_page_url_id}}</th><td><input type="text" name="error_page_url_id" value="{{cfg_error_page_url_id}}" class="input"></td></tr>
+    <tr><th>{{label_main_page_id}}</th><td><input type="text" name="main_page_id" value="{{cfg_main_page_id}}" class="input"></td></tr>
+    <tr><th>{{label_pages_lang_domain}}</th><td><input type="text" name="pages_lang_domain" value="{{cfg_pages_lang_domain}}" class="input"></td></tr>
+    <tr><th>{{label_navbar_lang_domain}}</th><td><input type="text" name="navbar_lang_domain" value="{{cfg_navbar_lang_domain}}" class="input"></td></tr>
+    <tr><th>{{label_diagnostics_lang_domain}}</th><td><input type="text" name="diagnostics_lang_domain" value="{{cfg_diagnostics_lang_domain}}" class="input"></td></tr>
+    <tr><th>{{label_public_navbar_id}}</th><td><input type="number" name="public_navbar_id" value="{{cfg_public_navbar_id}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_user_navbar_id}}</th><td><input type="number" name="user_navbar_id" value="{{cfg_user_navbar_id}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_admin_navbar_id}}</th><td><input type="number" name="admin_navbar_id" value="{{cfg_admin_navbar_id}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_extra_lang_domains}}</th><td><input type="text" name="extra_lang_domains" value="{{cfg_extra_lang_domains}}" class="input"></td></tr>
+    <tr><th>{{label_status_bar_min_level}}</th><td><input type="number" name="status_bar_min_level" value="{{cfg_status_bar_min_level}}" min="0" max="7" class="input"></td></tr>
     <tr><th colspan="2">{{label_level_classes}}</th></tr>
-    <tr><th>DEBUG</th><td><input type="text" name="level_class_debug"     value="{{cfg_level_class_debug}}" class="input" /></td></tr>
-    <tr><th>INFO</th><td><input type="text" name="level_class_info"      value="{{cfg_level_class_info}}" class="input" /></td></tr>
-    <tr><th>NOTICE</th><td><input type="text" name="level_class_notice"    value="{{cfg_level_class_notice}}" class="input" /></td></tr>
-    <tr><th>WARNING</th><td><input type="text" name="level_class_warning"   value="{{cfg_level_class_warning}}" class="input" /></td></tr>
-    <tr><th>ERROR</th><td><input type="text" name="level_class_error"     value="{{cfg_level_class_error}}" class="input" /></td></tr>
-    <tr><th>CRITICAL</th><td><input type="text" name="level_class_critical"  value="{{cfg_level_class_critical}}" class="input" /></td></tr>
-    <tr><th>ALERT</th><td><input type="text" name="level_class_alert"     value="{{cfg_level_class_alert}}" class="input" /></td></tr>
-    <tr><th>EMERGENCY</th><td><input type="text" name="level_class_emergency" value="{{cfg_level_class_emergency}}" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+    <tr><th>DEBUG</th><td><input type="text" name="level_class_debug"     value="{{cfg_level_class_debug}}" class="input"></td></tr>
+    <tr><th>INFO</th><td><input type="text" name="level_class_info"      value="{{cfg_level_class_info}}" class="input"></td></tr>
+    <tr><th>NOTICE</th><td><input type="text" name="level_class_notice"    value="{{cfg_level_class_notice}}" class="input"></td></tr>
+    <tr><th>WARNING</th><td><input type="text" name="level_class_warning"   value="{{cfg_level_class_warning}}" class="input"></td></tr>
+    <tr><th>ERROR</th><td><input type="text" name="level_class_error"     value="{{cfg_level_class_error}}" class="input"></td></tr>
+    <tr><th>CRITICAL</th><td><input type="text" name="level_class_critical"  value="{{cfg_level_class_critical}}" class="input"></td></tr>
+    <tr><th>ALERT</th><td><input type="text" name="level_class_alert"     value="{{cfg_level_class_alert}}" class="input"></td></tr>
+    <tr><th>EMERGENCY</th><td><input type="text" name="level_class_emergency" value="{{cfg_level_class_emergency}}" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
 <hr>
@@ -126,22 +126,22 @@
 {{! ── News Pagination (News.config.php) ───────────────────────────────── }}
 <h3>{{section_news}}</h3>
 <form method="POST">
-  <input type="hidden" name="prg_id"  value="{{prg_id}}" />
-  <input type="hidden" name="_csrf"   value="{{csrf_token}}" />
-  <input type="hidden" name="section" value="news" />
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="news">
   <table>
     <tr><th>{{label_per_page}}</th>
-      <td><input type="number" name="per_page" value="{{cfg_per_page}}" min="1" class="input" /></td></tr>
+      <td><input type="number" name="per_page" value="{{cfg_per_page}}" min="1" class="input"></td></tr>
     <tr><th>{{label_descending}}</th>
-      <td><input type="checkbox" name="descending" value="1"{{#cfg_descending}} checked{{/cfg_descending}} /></td></tr>
+      <td><input type="checkbox" name="descending" value="1"{{#cfg_descending}} checked{{/cfg_descending}}></td></tr>
     <tr><th>{{label_pn_key}}</th>
-      <td><input type="text" name="pn_key" value="{{cfg_pn_key}}" class="input" /></td></tr>
+      <td><input type="text" name="pn_key" value="{{cfg_pn_key}}" class="input"></td></tr>
     <tr><th>{{label_show_key}}</th>
-      <td><input type="text" name="show_key" value="{{cfg_show_key}}" class="input" /></td></tr>
+      <td><input type="text" name="show_key" value="{{cfg_show_key}}" class="input"></td></tr>
     <tr><th>{{label_order_key}}</th>
-      <td><input type="text" name="order_key" value="{{cfg_order_key}}" class="input" /></td></tr>
+      <td><input type="text" name="order_key" value="{{cfg_order_key}}" class="input"></td></tr>
     <tr><th>{{label_page_window}}</th>
-      <td><input type="number" name="page_window" value="{{cfg_page_window}}" min="1" class="input" /></td></tr>
-    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input" /></td></tr>
+      <td><input type="number" name="page_window" value="{{cfg_page_window}}" min="1" class="input"></td></tr>
+    <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>

@@ -227,9 +227,13 @@ final class AdminCommentsController extends AbstractController
             }
 
             $this->ctx->set('comment_list',       $commentList);
-            $this->ctx->set('filter_page_id',     $qPageId  ?? '');
-            $this->ctx->set('filter_flagged',     ($qFlagged ?? '') === '1');
-            $this->ctx->set('filter_show_hidden', $qHidden  ?? '');
+            $this->ctx->set('filter_page_id',           $qPageId  ?? '');
+            $this->ctx->set('filter_flagged',           ($qFlagged ?? '') === '1');
+            $this->ctx->set('filter_show_hidden',       $qHidden  ?? '');
+            // Explicit bool vars so Mustache can mark the correct <option> selected.
+            $this->ctx->set('filter_show_hidden_any',     $qHidden === null || $qHidden === '');
+            $this->ctx->set('filter_show_hidden_visible', $qHidden === '0');
+            $this->ctx->set('filter_show_hidden_hidden',  $qHidden === '1');
         }
 
         if ($canConfig) {

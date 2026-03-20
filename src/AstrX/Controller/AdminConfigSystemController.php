@@ -144,7 +144,7 @@ final class AdminConfigSystemController extends AbstractController
         ];
 
         // Preserve other domains in config.php (ModuleLoader, ErrorHandler, Injector)
-        return $this->writer->write('config', $current);
+        return $this->writer->writeMainConfig($current);
     }
 
     /** @param array<string, mixed> $p */
@@ -675,16 +675,13 @@ final class AdminConfigSystemController extends AbstractController
      * Falls back to empty array if file is missing/unreadable.
      * @return array<string, array<string, mixed>>
      */
-    private function loadFile(string $baseName)
-    : array {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') .
-                $baseName .
-                '.config.php';
-        if (!is_file($path)) {
-            return [];
-        }
+    private function loadFile(string $baseName): array
+    {
+        // 'config' is the main config.php, not a module config file.
+        $suffix = $baseName === 'config' ? '.php' : '.config.php';
+        $path   = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $baseName . $suffix;
+        if (!is_file($path)) { return []; }
         $loaded = @include $path;
-
         return is_array($loaded) ? $loaded : [];
     }
 
