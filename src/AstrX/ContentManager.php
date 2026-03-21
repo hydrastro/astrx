@@ -453,7 +453,7 @@ final class ContentManager
             if ($page->comments) {
                 $ctx->set('page_comments', true);
                 // Pre-render the partial so it is available as {{&comments_html}}
-                $commentsPreResult = $engine->renderTemplate('comments', $ctx->all())
+                $commentsPreResult = $engine->renderTemplate('partials/comments', $ctx->all())
                     ->drainTo($this->collector);
                 if ($commentsPreResult->isOk()) {
                     $ctx->set('comments_html', $commentsPreResult->unwrap());

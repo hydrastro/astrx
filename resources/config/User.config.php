@@ -29,7 +29,7 @@ return [
         'password_regex' => [],
     ],
     'AvatarService' => [
-        'avatar_dir' => '/app/resources/avatars',
+        'avatar_dir' => '/app/resources/avatar',
         'avatar_file_size' => 1048576,
         'use_identicons' => true,
     ],
