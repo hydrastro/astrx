@@ -282,6 +282,22 @@ final class ImapClient
     }
 
     /**
+     * Fetch the raw RFC 2822 headers of a message by UID.
+     * Returns the raw header block as a string, suitable for display in a <pre> tag.
+     * @return Result<string>
+     */
+    public function fetchRawHeaders(int $uid): Result
+    {
+        $r = $this->command("UID FETCH {$uid} (RFC822.HEADER)");
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        $raw = $this->lastLiteralContent;
+        if ($raw === '') {
+            return Result::err(false);
+        }
+        return Result::ok($raw);
+    }
+
+    /**
      * Mark a message (by UID) as seen or unseen.
      * @return Result<true>
      */

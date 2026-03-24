@@ -134,6 +134,17 @@ final class WebmailService
                           ]);
     }
 
+    /**
+     * Fetch the raw RFC 2822 header block for display.
+     * @return Result<string>
+     */
+    public function fetchRawHeaders(string $folder, int $uid): Result
+    {
+        $r = $this->imap->selectFolder($folder);
+        if (!$r->isOk()) { return $r; }
+        return $this->imap->fetchRawHeaders($uid);
+    }
+
     public function disconnect(): void
     {
         $this->imap->logout();
