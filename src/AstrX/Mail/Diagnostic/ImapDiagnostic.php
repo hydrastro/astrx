@@ -34,7 +34,7 @@ final class ImapDiagnostic extends AbstractDiagnostic
         return 'astrx.mail.imap.' . $this->operation;
     }
 
-    public function context()
+    public function vars()
     : array
     {
         return ['detail' => $this->detail];

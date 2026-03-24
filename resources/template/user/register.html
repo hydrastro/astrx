@@ -17,7 +17,11 @@
     <input type="password" name="repeat" class="input" id="reg_repeat" autocomplete="new-password"><br>
     {{#show_mailbox}}
     <label for="reg_mailbox">{{reg_mailbox}}: </label>
-    <input type="text" name="mailbox" class="input" id="reg_mailbox" value="{{mailbox_value}}" autocomplete="email"><br>
+    <input type="text" name="mailbox" class="input" id="reg_mailbox"
+           value="{{mailbox_value}}" autocomplete="username"
+           placeholder="{{reg_mailbox_hint}}"
+           pattern="[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}"
+           title="{{reg_mailbox_hint}}"><br>
     {{/show_mailbox}}
     {{#show_email}}
     <label for="reg_email">{{reg_email}}: </label>

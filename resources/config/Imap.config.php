@@ -27,6 +27,16 @@ return [
         'imap_socks5_host' => '',
         'imap_socks5_port' => 9050,
     ],
+    'WebmailConfig' => [
+        // The domain appended to the mailbox local-part to form the full address.
+        // e.g. mailbox='alice' + mail_domain='mail.example.com' → alice@mail.example.com
+        'mail_domain'               => 'localhost',
+        // Set to true if your IMAP server requires a full address for LOGIN
+        // (e.g. 'alice@mail.example.com'). Set to false if it accepts the local-part
+        // only (e.g. 'alice'). Dovecot with virtual users typically requires the full
+        // address; Courier/Cyrus may accept local-part only.
+        'imap_login_use_full_address' => true,
+    ],
     'WebmailService' => [
         'messages_per_page' => 25,
         'trash_folder'      => 'Trash',

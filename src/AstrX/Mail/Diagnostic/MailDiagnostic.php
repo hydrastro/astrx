@@ -38,7 +38,7 @@ final class MailDiagnostic extends AbstractDiagnostic
         return 'astrx.mail.' . $this->operation;
     }
 
-    public function context(): array
+    public function vars(): array
     {
         return ['detail' => $this->detail];
     }

@@ -15,6 +15,8 @@ return [
             ],
             'USER' => [
                 'news.view',
+                'news.create',
+                'news.edit.any',
                 'comment.post',
                 'comment.hide.own',
                 'comment.delete.own',
@@ -37,8 +39,6 @@ return [
                 'user.view.public',
                 'user.edit.own',
                 'user.delete.own',
-                'webmail.access',
-                'webmail.send',
                 'admin.access',
                 'admin.comments',
                 'admin.config.captcha',

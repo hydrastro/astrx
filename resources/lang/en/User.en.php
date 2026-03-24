@@ -44,6 +44,7 @@ return [
     'user.field.old_password'    => 'Current password',
     'user.field.repeat'          => 'Repeat password',
     'user.field.mailbox'         => 'Login email',
+    'user.field.mailbox_hint'    => 'Local part only (e.g. alice — without @domain)',
     'user.field.email'           => 'Recovery email',
     'user.field.display_name'    => 'Display name',
     'user.field.birth_date'      => 'Date of birth',

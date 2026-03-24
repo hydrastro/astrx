@@ -277,11 +277,12 @@ final class UserService
             return $this->opErr('empty_fields');
         }
 
-        // Mailbox — now validated as a full email address.
-        // Stored in the DB as the login identifier; distinct from the recovery email.
+        // Mailbox — the local-part of the user's mailbox address (e.g. 'alice').
+        // The domain is fixed per-installation (configured in Imap.config.php).
+        // Valid characters: letters, digits, dots, hyphens, underscores; 1-64 chars.
         if ($this->requireEmail) {
             $mailbox = $mailbox ?? '';
-            if ($mailbox === '' || !filter_var($mailbox, FILTER_VALIDATE_EMAIL)) {
+            if ($mailbox === '' || !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}$/', $mailbox)) {
                 return $this->opErr('invalid_mailbox');
             }
             $mbResult = $this->repo->isMailboxAvailable($mailbox);

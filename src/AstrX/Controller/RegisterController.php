@@ -183,6 +183,7 @@ final class RegisterController extends AbstractController
         $this->ctx->set('reg_password',     $this->t->t('user.field.password'));
         $this->ctx->set('reg_repeat',       $this->t->t('user.field.repeat'));
         $this->ctx->set('reg_mailbox',      $this->t->t('user.field.mailbox'));
+        $this->ctx->set('reg_mailbox_hint', $this->t->t('user.field.mailbox_hint'));
         $this->ctx->set('reg_email',        $this->t->t('user.field.email'));
         $this->ctx->set('reg_display_name', $this->t->t('user.field.display_name'));
         $this->ctx->set('reg_birth_date',   $this->t->t('user.field.birth_date'));

@@ -25,7 +25,9 @@ final class WebmailService
     private int    $messagesPerPage = 25;
     private string $trashFolder     = 'Trash';
     private string $sentFolder      = 'Sent';
-    private string $draftsFolder    = 'Drafts';
+    private string $draftsFolder             = 'Drafts';
+    private string $mailDomain               = 'localhost';
+    private bool   $imapLoginUseFullAddress  = true;
 
     #[InjectConfig('messages_per_page')]
     public function setMessagesPerPage(int $v): void { $this->messagesPerPage = max(5, min(200, $v)); }
@@ -38,6 +40,14 @@ final class WebmailService
 
     #[InjectConfig('drafts_folder')]
     public function setDraftsFolder(string $v): void { $this->draftsFolder = $v; }
+
+    /** Mail domain appended to the local-part to form a full address. */
+    #[InjectConfig('mail_domain')]
+    public function setMailDomain(string $v): void { $this->mailDomain = $v; }
+
+    /** When true, IMAP LOGIN uses 'localpart@domain'; when false, just 'localpart'. */
+    #[InjectConfig('imap_login_use_full_address')]
+    public function setImapLoginUseFullAddress(bool $v): void { $this->imapLoginUseFullAddress = $v; }
 
     public function __construct(
         private readonly ImapClient $imap,
@@ -57,12 +67,24 @@ final class WebmailService
      * Connect and authenticate. Must be called before any other method.
      * @return Result<true>
      */
-    public function connect(string $imapUser, string $imapPassword): Result
+    /**
+     * Connect using the mailbox local-part. The IMAP login identity is constructed
+     * here based on the imap_login_use_full_address flag:
+     *   true  → 'localpart@mail_domain'  (Dovecot virtual users, most modern servers)
+     *   false → 'localpart'              (single-domain or older servers)
+     *
+     * @param string $mailboxLocalPart  The local-part only (from UserSession::mailbox())
+     * @return Result<true>
+     */
+    public function connect(string $mailboxLocalPart, string $imapPassword): Result
     {
         if ($this->imap->isConnected()) { return Result::ok(true); }
         $r = $this->imap->connect();
         if (!$r->isOk()) { return $r; }
-        return $this->imap->login($imapUser, $imapPassword);
+        $loginId = $this->imapLoginUseFullAddress
+            ? $mailboxLocalPart . '@' . $this->mailDomain
+            : $mailboxLocalPart;
+        return $this->imap->login($loginId, $imapPassword);
     }
 
     /**
@@ -78,7 +100,10 @@ final class WebmailService
         string $cc = '',
         string $bcc = '',
     ): Result {
-        $raw = $this->buildRawMessage($fromAddress, $fromName, $toAddress, $subject, $bodyText, '', $cc, $bcc, '');
+        $draftFrom = $fromAddress !== '' && !str_contains($fromAddress, '@')
+            ? $fromAddress . '@' . $this->mailDomain
+            : $fromAddress;
+        $raw = $this->buildRawMessage($draftFrom, $fromName, $toAddress, $subject, $bodyText, '', $cc, $bcc, '');
         return $this->imap->appendToSent($raw, $this->draftsFolder);
     }
 
@@ -238,12 +263,17 @@ final class WebmailService
         string $bcc = '',
         string $inReplyTo = '',
     ): Result {
+        // Resolve the sender's full email address from the local-part + domain.
+        $resolvedFrom = $fromAddress !== '' && !str_contains($fromAddress, '@')
+            ? $fromAddress . '@' . $this->mailDomain
+            : $fromAddress;
+
         // Send via SMTP (Mailer only accepts a single To: for now)
-        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml);
+        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName);
         if (!$r->isOk()) { return $r; }
 
         // Build raw message for IMAP APPEND
-        $raw = $this->buildRawMessage($fromAddress, $fromName, $toAddress, $subject, $bodyText, $bodyHtml, $cc, $bcc, $inReplyTo);
+        $raw = $this->buildRawMessage($resolvedFrom, $fromName, $toAddress, $subject, $bodyText, $bodyHtml, $cc, $bcc, $inReplyTo);
 
         // Append to Sent folder (non-fatal if it fails)
         $this->imap->appendToSent($raw, $this->sentFolder);
@@ -331,6 +361,7 @@ final class WebmailService
         return $headers . "\r\n" . quoted_printable_encode($body);
     }
 
+    public function mailDomain(): string   { return $this->mailDomain; }
     public function trashFolder(): string  { return $this->trashFolder; }
     public function sentFolder(): string   { return $this->sentFolder; }
     public function draftsFolder(): string { return $this->draftsFolder; }

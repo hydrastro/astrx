@@ -600,8 +600,8 @@ VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 -- Default admin user
 -- ----------------------------------------------------------
 
-INSERT INTO `user` (id, username, password, type, verified, deleted)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator',
+INSERT INTO `user` (id, username, mailbox, password, type, verified, deleted)
+VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator', 'postmaster',
         '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE',
         1, 1, 0);
 

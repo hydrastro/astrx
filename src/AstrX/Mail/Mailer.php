@@ -110,12 +110,22 @@ final class Mailer
      * Send a plain-text email.
      * @return Result<true>
      */
+    /**
+     * Send an email.
+     *
+     * @param string $fromAddressOverride  When non-empty, overrides the configured
+     *                                     from_address for this message only.
+     *                                     Used by webmail to send as the logged-in user.
+     * @param string $fromNameOverride     Paired display name override.
+     */
     public function send(
         string $toAddress,
         string $toName,
         string $subject,
         string $bodyText,
         string $bodyHtml = '',
+        string $fromAddressOverride = '',
+        string $fromNameOverride    = '',
     )
     : Result {
         try {
@@ -124,7 +134,9 @@ final class Mailer
                 $toName,
                 $subject,
                 $bodyText,
-                $bodyHtml
+                $bodyHtml,
+                $fromAddressOverride,
+                $fromNameOverride,
             );
         } catch (\Throwable $e) {
             return $this->err($e->getMessage());
@@ -142,8 +154,12 @@ final class Mailer
         string $subject,
         string $bodyText,
         string $bodyHtml,
+        string $fromAddressOverride = '',
+        string $fromNameOverride    = '',
     )
     : Result {
+        $effectiveFromAddress = $fromAddressOverride !== '' ? $fromAddressOverride : $this->fromAddress;
+        $effectiveFromName    = $fromAddressOverride !== '' ? $fromNameOverride    : $this->fromName;
         $sock = $this->connect();
 
         $this->read($sock);                         // 220 greeting
@@ -185,7 +201,7 @@ final class Mailer
         }
 
         // Envelope
-        $this->cmd($sock, "MAIL FROM:<{$this->fromAddress}>");
+        $this->cmd($sock, "MAIL FROM:<{$effectiveFromAddress}>");
         $this->read($sock, '250');
 
         $this->cmd($sock, "RCPT TO:<{$toAddress}>");
@@ -201,7 +217,9 @@ final class Mailer
             $toName,
             $subject,
             $boundary,
-            $bodyHtml !== ''
+            $bodyHtml !== '',
+            $effectiveFromAddress,
+            $effectiveFromName,
         );
         $body = $this->buildBody($bodyText, $bodyHtml, $boundary);
 
@@ -391,12 +409,16 @@ final class Mailer
         string $toName,
         string $subject,
         string $boundary,
-        bool $hasHtml,
+        bool   $hasHtml,
+        string $fromAddress = '',
+        string $fromName    = '',
     )
     : string {
-        $from = $this->fromName !== '' ?
-            '"' . $this->fromName . '" <' . $this->fromAddress . '>' :
-            '<' . $this->fromAddress . '>';
+        if ($fromAddress === '') { $fromAddress = $this->fromAddress; }
+        if ($fromName    === '') { $fromName    = $this->fromName; }
+        $from = $fromName !== '' ?
+            '"' . $fromName . '" <' . $fromAddress . '>' :
+            '<' . $fromAddress . '>';
         $to = $toName !== '' ? '"' . $toName . '" <' . $toAddress . '>' :
             '<' . $toAddress . '>';
         $msgId = '<' .
