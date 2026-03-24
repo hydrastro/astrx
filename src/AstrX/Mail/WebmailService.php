@@ -184,10 +184,12 @@ final class WebmailService
      * List messages in a folder with pagination.
      * @return Result<array{messages:list<array<string,mixed>>,total:int,pages:int,page:int,per_page:int}>
      */
-    public function listMessages(string $folder, int $page = 1): Result
+    public function listMessages(string $folder, int $page = 1, int $perPageOverride = 0): Result
     {
         $page    = max(1, $page);
-        $perPage = $this->messagesPerPage;
+        $perPage = $perPageOverride > 0
+            ? max(5, min(200, $perPageOverride))
+            : $this->messagesPerPage;
 
         $total = $this->imap->selectFolder($folder);
         if (!$total->isOk()) { return $total; }

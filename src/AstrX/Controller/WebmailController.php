@@ -136,6 +136,8 @@ final class WebmailController extends AbstractController
         $folder   = (string)  ($this->request->query()->get('folder')    ?? self::INBOX);
         $uid      = (int)     ($this->request->query()->get('uid')       ?? 0);
         $page     = (int)     ($this->request->query()->get('page')      ?? 1);
+        $perPage  = (int)     ($this->request->query()->get('per_page')  ?? 0);  // 0 = use config
+        $sort     = (string)  ($this->request->query()->get('sort')      ?? 'newest');
         $compose  = ($this->request->query()->get('compose') !== null);
         $replyUid = (int)     ($this->request->query()->get('reply_uid') ?? 0);
 
@@ -144,7 +146,7 @@ final class WebmailController extends AbstractController
         } elseif ($uid > 0) {
             $this->buildMessageContext($selfUrl, $folder, $uid, $page);
         } else {
-            $this->buildFolderContext($selfUrl, $folder, $page);
+            $this->buildFolderContext($selfUrl, $folder, $page, $perPage, $sort);
         }
 
         return $this->ok();
@@ -380,13 +382,17 @@ final class WebmailController extends AbstractController
         $this->setI18n();
     }
 
-    private function buildFolderContext(string $selfUrl, string $folder, int $page): void
+    private function buildFolderContext(string $selfUrl, string $folder, int $page, int $perPageOverride = 0, string $sort = 'newest'): void
     {
         $folders = $this->getFolders($selfUrl, $folder);
-        $listR   = $this->webmail->listMessages($folder, $page);
+        $listR   = $this->webmail->listMessages($folder, $page, $perPageOverride);
         $listR->drainTo($this->collector);
         $list = $listR->isOk() ? $listR->unwrap()
             : ['messages' => [], 'total' => 0, 'pages' => 1, 'page' => 1, 'per_page' => 25];
+        // Sort order: newest first (default, UIDs descending) or oldest first
+        if ($sort === 'oldest') {
+            $list['messages'] = array_reverse($list['messages']);
+        }
 
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($selfUrl);
@@ -399,14 +405,37 @@ final class WebmailController extends AbstractController
         $this->ctx->set('folders',         $folders);
         $this->ctx->set('current_folder',  $folder);
         $this->ctx->set('messages',        $this->decorateMessages($list['messages'], $folder, $selfUrl));
+        $effectivePerPage = $perPageOverride > 0 ? $perPageOverride : $list['per_page'];
+        $msgFrom = ($list['page'] - 1) * $effectivePerPage + 1;
+        $msgTo   = min($list['page'] * $effectivePerPage, $list['total']);
         $this->ctx->set('msg_total',       $list['total']);
+        $this->ctx->set('msg_from',        $msgFrom);
+        $this->ctx->set('msg_to',          $msgTo);
         $this->ctx->set('msg_pages',       $list['pages']);
         $this->ctx->set('msg_page',        $list['page']);
         $this->ctx->set('has_prev',        $list['page'] > 1);
         $this->ctx->set('has_next',        $list['page'] < $list['pages']);
-        $this->ctx->set('prev_url',        $selfUrl . '?' . http_build_query(['folder' => $folder, 'page' => $list['page'] - 1]));
-        $this->ctx->set('next_url',        $selfUrl . '?' . http_build_query(['folder' => $folder, 'page' => $list['page'] + 1]));
+        $pgParams = array_filter(['folder' => $folder, 'per_page' => $perPageOverride ?: null, 'sort' => $sort !== 'newest' ? $sort : null]);
+        $this->ctx->set('prev_url', $selfUrl . '?' . http_build_query(array_merge($pgParams, ['page' => $list['page'] - 1])));
+        $this->ctx->set('next_url', $selfUrl . '?' . http_build_query(array_merge($pgParams, ['page' => $list['page'] + 1])));
+        $this->ctx->set('sort_newest',      $sort !== 'oldest');
+        $this->ctx->set('sort_oldest',      $sort === 'oldest');
+        $this->ctx->set('per_page_10',      $effectivePerPage === 10);
+        $this->ctx->set('per_page_25',      $effectivePerPage === 25);
+        $this->ctx->set('per_page_50',      $effectivePerPage === 50);
+        $this->ctx->set('per_page_100',     $effectivePerPage === 100);
         $this->ctx->set('compose_url',     $selfUrl . '?compose=1&folder=' . rawurlencode($folder));
+        // Build move-to options for the bulk action bar
+        $allFolders  = $this->webmail->getFolders();
+        $moveOptions = [];
+        if ($allFolders->isOk()) {
+            foreach ($allFolders->unwrap() as $f) {
+                if ($f['name'] !== $folder) {
+                    $moveOptions[] = ['name' => $f['name'], 'display' => $f['display']];
+                }
+            }
+        }
+        $this->ctx->set('move_options',    $moveOptions);
         $this->ctx->set('csrf_token',      $csrfToken);
         $this->ctx->set('prg_id',          $prgId);
         $this->ctx->set('base_url',        $selfUrl);
@@ -578,10 +607,13 @@ final class WebmailController extends AbstractController
      */
     private function decorateMessages(array $messages, string $folder, string $selfUrl): array
     {
-        return array_map(function ($m) use ($folder, $selfUrl) {
-            $m['view_url'] = $selfUrl . '?' . http_build_query(['folder' => $folder, 'uid' => $m['uid']]);
-            $m['date_fmt'] = $m['date_ts'] > 0 ? date('d M Y H:i', $m['date_ts']) : $m['date_str'];
-            $m['unread']   = !$m['seen'];
+        $even = false;
+        return array_map(function ($m) use ($folder, $selfUrl, &$even) {
+            $m['view_url']  = $selfUrl . '?' . http_build_query(['folder' => $folder, 'uid' => $m['uid']]);
+            $m['date_fmt']  = $m['date_ts'] > 0 ? date('d M Y H:i', $m['date_ts']) : $m['date_str'];
+            $m['unread']    = !$m['seen'];
+            $m['row_even']  = $even;
+            $even           = !$even;
             return $m;
         }, $messages);
     }
@@ -654,6 +686,14 @@ final class WebmailController extends AbstractController
             'label_page'                     => 'webmail.page',
             'label_of'                       => 'webmail.of',
             'label_total'                    => 'webmail.total',
+            'label_viewing'                  => 'webmail.viewing',
+            'label_transform'                => 'webmail.transform',
+            'label_move_selected'            => 'webmail.move_selected',
+            'label_sort_newest'              => 'webmail.sort_newest',
+            'label_sort_oldest'              => 'webmail.sort_oldest',
+            'label_sort'                     => 'webmail.sort',
+            'label_show'                     => 'webmail.show',
+            'label_per_page'                 => 'webmail.per_page',
             'label_images_blocked'           => 'webmail.images_blocked',
             'label_trust_sender'             => 'webmail.trust_sender',
             'label_untrust_sender'           => 'webmail.untrust_sender',
