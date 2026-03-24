@@ -1,10 +1,12 @@
 {{! ══════════════════════════════════════════════════════════════ WEBMAIL ══ }}
 <style>
     /* ── Two-column layout ───────────────────────────────────────────────────── */
-    #wm-wrap        { display:table; width:100%; table-layout:fixed; }
+    #wm-wrap        { display:table; width:calc(100% + 20px); table-layout:fixed;
+        margin: -10px; /* cancel #main 10px padding on all sides */ }
     #wm-sidebar     { display:table-cell; width:12%; vertical-align:top;
-        border-right:1px solid #fff; padding-right:0; }
-    #wm-content     { display:table-cell; vertical-align:top; padding-left:1em; }
+        border-right:1px solid #fff;
+        padding:10px 0 10px 0; }
+    #wm-content     { display:table-cell; vertical-align:top; padding:10px 10px 10px 1em; }
 
     /* ── Folder sidebar: same pattern as site navbar ─────────────────────────── */
     #wm-nav         { list-style:none; margin:0; padding:0; }
@@ -64,11 +66,14 @@
         font-family:monospace; font-size:0.85em; max-width:80em; }
 
     /* ── Compose ─────────────────────────────────────────────────────────────── */
-    #wm-compose th  { white-space:nowrap; text-align:right;
-        padding:2px 8px 2px 0; vertical-align:top; width:5em; }
-    #wm-compose td input,
-    #wm-compose td textarea { width:100%; max-width:42em; box-sizing:border-box; }
-    #wm-compose textarea    { height:16em; resize:vertical; }
+    #wm-compose              { max-width:58em; }
+    #wm-compose-hdr          { width:100%; border-collapse:collapse; margin:4px 0; }
+    #wm-compose-hdr th       { white-space:nowrap; text-align:right; width:7em;
+        padding:2px 8px 2px 0; vertical-align:middle;
+        font-weight:normal; color:#aaa; }
+    #wm-compose-hdr td       { padding:2px 0; }
+    #wm-compose-hdr td input,
+    #wm-compose-hdr td select { width:100%; box-sizing:border-box; }
 </style>
 
 {{! ── 403 ────────────────────────────────────────────────────────────────── }}
@@ -99,7 +104,6 @@
 
 {{! ── Authenticated two-column layout ────────────────────────────────────── }}
 {{^webmail_view_login}}
-<h2>{{webmail_heading}}</h2>
 <div id="wm-wrap">
 
     {{! ── Folder sidebar ───────────────────────────────────────────────────────── }}
@@ -183,19 +187,43 @@
             {{/has_messages}}
 
             {{! ── Bulk action bar ────────────────────────────────────────────────────── }}
-            <div class="wm-bulk">
-                {{label_transform}}:
-                <input type="submit" name="action" value="mark_seen_bulk"   class="input">
-                <input type="submit" name="action" value="mark_unseen_bulk" class="input">
-                <input type="submit" name="action" value="delete_bulk"      class="input">
-                &nbsp;|&nbsp;
-                {{label_move_selected}}:
+        </form>{{! /wm-bulk-form — table + checkboxes }}
+        <div class="wm-bulk">
+            {{label_transform}}:
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_seen_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_mark_read_bulk}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_unseen_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_mark_unread_bulk}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="delete_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_delete_bulk}}" class="input">
+            </form>
+            &nbsp;|&nbsp;
+            {{label_move_selected}}:
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="move_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
                 <select name="target_folder" class="input">
                     {{#move_options}}<option value="{{name}}">{{display}}</option>{{/move_options}}
                 </select>
-                <input type="submit" name="action" value="move_bulk" class="input">
-            </div>
-        </form>{{! /wm-bulk-form }}
+                <input type="submit" value="{{btn_move_bulk}}" class="input">
+            </form>
+        </div>
 
         {{! ── Pagination (text input like news) ──────────────────────────────────── }}
         <div class="wm-pager">
@@ -220,6 +248,7 @@
         <div class="wm-msg-actions">
             <a href="{{back_url}}"    class="input">{{btn_back}}</a>
             <a href="{{reply_url}}"   class="input">{{btn_reply}}</a>
+            <a href="{{forward_url}}" class="input">{{btn_forward}}</a>
             <a href="{{headers_url}}" class="input">{{label_view_headers}}</a>
             {{! Delete }}
             <form method="POST">
@@ -350,54 +379,70 @@
         {{! ════════════════════════════════════════ COMPOSE ══════════════════════════ }}
         {{#webmail_view_compose}}
         <h3>{{webmail_compose_heading}}</h3>
-        <div id="wm-compose">
-            <form method="POST">
-                <input type="hidden" name="prg_id"     value="{{prg_id}}">
-                <input type="hidden" name="_csrf"       value="{{csrf_token}}">
-                <input type="hidden" name="folder"      value="{{current_folder}}">
-                <input type="hidden" name="in_reply_to" value="{{compose_in_reply_to}}">
-                <table>
-                    <tr>
-                        <th>{{webmail_compose_from}}</th>
-                        <td><em>{{user_mailbox}}</em></td>
-                    </tr>
-                    <tr>
-                        <th>{{webmail_compose_to}}</th>
-                        <td><input type="email" name="to" class="input"
-                                   value="{{compose_to}}"></td>
-                    </tr>
-                    <tr>
-                        <th>{{webmail_compose_cc}}</th>
-                        <td><input type="text" name="cc" class="input"
-                                   value="{{compose_cc}}" placeholder="optional"></td>
-                    </tr>
-                    <tr>
-                        <th>{{webmail_compose_bcc}}</th>
-                        <td><input type="text" name="bcc" class="input"
-                                   value="{{compose_bcc}}" placeholder="optional"></td>
-                    </tr>
-                    <tr>
-                        <th>{{webmail_compose_subject}}</th>
-                        <td><input type="text" name="subject" class="input"
-                                   value="{{compose_subject}}"></td>
-                    </tr>
-                    <tr>
-                        <th>{{webmail_compose_body}}</th>
-                        <td><textarea name="body" class="input">{{compose_body}}</textarea></td>
-                    </tr>
-                    <tr>
-                        <td></td>
-                        <td>
-                            <input type="hidden" name="action" value="send">
-                            <input type="submit" value="{{webmail_compose_send}}" class="input">
-                            <button type="submit" name="action"
-                                    value="save_draft" class="input">{{webmail_compose_save_draft}}</button>
-                            <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
-                        </td>
-                    </tr>
-                </table>
-            </form>
-        </div>
+        <form method="POST" id="wm-compose">
+            <input type="hidden" name="prg_id"     value="{{prg_id}}">
+            <input type="hidden" name="_csrf"       value="{{csrf_token}}">
+            <input type="hidden" name="folder"      value="{{current_folder}}">
+            <input type="hidden" name="in_reply_to" value="{{compose_in_reply_to}}">
+
+            <p style="margin:0 0 5px">
+                <input type="hidden" name="action" value="send">
+                <input type="submit" value="{{webmail_compose_send}}" class="input">
+                <button type="submit" name="action" value="save_draft" class="input">{{webmail_compose_save_draft}}</button>
+                <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
+            </p>
+
+            <table id="wm-compose-hdr">
+                <tr>
+                    <th>{{webmail_compose_from}}</th>
+                    <td><em>{{user_mailbox}}</em></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_to}}</th>
+                    <td><input type="email" name="to" class="input" value="{{compose_to}}"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_cc}}</th>
+                    <td><input type="text" name="cc" class="input" value="{{compose_cc}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_bcc}}</th>
+                    <td><input type="text" name="bcc" class="input" value="{{compose_bcc}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{label_reply_to_field}}</th>
+                    <td><input type="email" name="reply_to" class="input" value="{{compose_reply_to}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_subject}}</th>
+                    <td><input type="text" name="subject" class="input" value="{{compose_subject}}"></td>
+                </tr>
+                <tr>
+                    <th>{{label_priority}}</th>
+                    <td>
+                        <select name="priority" class="input">
+                            <option value="high">{{label_priority_high}}</option>
+                            <option value="normal" selected>{{label_priority_normal}}</option>
+                            <option value="low">{{label_priority_low}}</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th></th>
+                    <td><label><input type="checkbox" name="read_receipt" value="1"> {{label_read_receipt}}</label></td>
+                </tr>
+            </table>
+
+            <textarea name="body" class="input"
+                      style="width:100%;box-sizing:border-box;height:18em;margin-top:4px;resize:vertical"
+            >{{compose_body}}</textarea>
+
+            <p style="margin:4px 0 0">
+                <input type="submit" value="{{webmail_compose_send}}" class="input">
+                <button type="submit" name="action" value="save_draft" class="input">{{webmail_compose_save_draft}}</button>
+                <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
+            </p>
+        </form>
         {{/webmail_view_compose}}
 
     </div>{{! #wm-content }}

@@ -126,6 +126,8 @@ final class Mailer
         string $bodyHtml = '',
         string $fromAddressOverride = '',
         string $fromNameOverride    = '',
+        string $priority            = 'normal',  // 'high', 'normal', 'low'
+        bool   $readReceipt         = false,
     )
     : Result {
         try {
@@ -137,6 +139,8 @@ final class Mailer
                 $bodyHtml,
                 $fromAddressOverride,
                 $fromNameOverride,
+                $priority,
+                $readReceipt,
             );
         } catch (\Throwable $e) {
             return $this->err($e->getMessage());
@@ -156,6 +160,8 @@ final class Mailer
         string $bodyHtml,
         string $fromAddressOverride = '',
         string $fromNameOverride    = '',
+        string $priority            = 'normal',
+        bool   $readReceipt         = false,
     )
     : Result {
         $effectiveFromAddress = $fromAddressOverride !== '' ? $fromAddressOverride : $this->fromAddress;
@@ -220,6 +226,8 @@ final class Mailer
             $bodyHtml !== '',
             $effectiveFromAddress,
             $effectiveFromName,
+            $priority,
+            $readReceipt,
         );
         $body = $this->buildBody($bodyText, $bodyHtml, $boundary);
 
@@ -410,8 +418,10 @@ final class Mailer
         string $subject,
         string $boundary,
         bool   $hasHtml,
-        string $fromAddress = '',
-        string $fromName    = '',
+        string $fromAddress  = '',
+        string $fromName     = '',
+        string $priority     = 'normal',
+        bool   $readReceipt  = false,
     )
     : string {
         if ($fromAddress === '') { $fromAddress = $this->fromAddress; }
@@ -434,6 +444,18 @@ final class Mailer
         $h .= "Subject: {$subject}\r\n";
         $h .= "Date: {$date}\r\n";
         $h .= "Message-ID: {$msgId}\r\n";
+        // Priority headers (X-Priority / Importance / X-MS-Exchange-Message-Class)
+        if ($priority === 'high') {
+            $h .= "X-Priority: 1\r\n";
+            $h .= "Importance: High\r\n";
+        } elseif ($priority === 'low') {
+            $h .= "X-Priority: 5\r\n";
+            $h .= "Importance: Low\r\n";
+        }
+        // Read receipt (Disposition-Notification-To)
+        if ($readReceipt) {
+            $h .= "Disposition-Notification-To: {$fromAddress}\r\n";
+        }
         $h .= "MIME-Version: 1.0\r\n";
 
         if ($hasHtml) {

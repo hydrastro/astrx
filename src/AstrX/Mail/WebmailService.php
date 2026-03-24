@@ -134,17 +134,6 @@ final class WebmailService
                           ]);
     }
 
-    /**
-     * Fetch the raw RFC 2822 header block for display.
-     * @return Result<string>
-     */
-    public function fetchRawHeaders(string $folder, int $uid): Result
-    {
-        $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return $r; }
-        return $this->imap->fetchRawHeaders($uid);
-    }
-
     public function disconnect(): void
     {
         $this->imap->logout();
@@ -195,12 +184,10 @@ final class WebmailService
      * List messages in a folder with pagination.
      * @return Result<array{messages:list<array<string,mixed>>,total:int,pages:int,page:int,per_page:int}>
      */
-    public function listMessages(string $folder, int $page = 1, int $perPageOverride = 0): Result
+    public function listMessages(string $folder, int $page = 1): Result
     {
         $page    = max(1, $page);
-        $perPage = $perPageOverride > 0
-            ? max(5, min(200, $perPageOverride))
-            : $this->messagesPerPage;
+        $perPage = $this->messagesPerPage;
 
         $total = $this->imap->selectFolder($folder);
         if (!$total->isOk()) { return $total; }
@@ -271,10 +258,13 @@ final class WebmailService
         string $toAddress,
         string $subject,
         string $bodyText,
-        string $bodyHtml = '',
-        string $cc = '',
-        string $bcc = '',
-        string $inReplyTo = '',
+        string $bodyHtml    = '',
+        string $cc          = '',
+        string $bcc         = '',
+        string $inReplyTo   = '',
+        string $priority    = 'normal',
+        bool   $readReceipt = false,
+        string $replyTo     = '',
     ): Result {
         // Resolve the sender's full email address from the local-part + domain.
         $resolvedFrom = $fromAddress !== '' && !str_contains($fromAddress, '@')
@@ -282,11 +272,11 @@ final class WebmailService
             : $fromAddress;
 
         // Send via SMTP (Mailer only accepts a single To: for now)
-        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName);
+        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName, $priority, $readReceipt);
         if (!$r->isOk()) { return $r; }
 
         // Build raw message for IMAP APPEND
-        $raw = $this->buildRawMessage($resolvedFrom, $fromName, $toAddress, $subject, $bodyText, $bodyHtml, $cc, $bcc, $inReplyTo);
+        $raw = $this->buildRawMessage($resolvedFrom, $fromName, $toAddress, $subject, $bodyText, $bodyHtml, $cc, $bcc, $inReplyTo, $priority, $replyTo);
 
         // Append to Sent folder (non-fatal if it fails)
         $this->imap->appendToSent($raw, $this->sentFolder);
@@ -332,10 +322,12 @@ final class WebmailService
         string $to,
         string $subject,
         string $body,
-        string $bodyHtml = '',
-        string $cc = '',
-        string $bcc = '',
-        string $inReplyTo = '',
+        string $bodyHtml    = '',
+        string $cc          = '',
+        string $bcc         = '',
+        string $inReplyTo   = '',
+        string $priority    = 'normal',
+        string $replyTo     = '',
     ): string {
         $date    = date('r');
         $msgId   = '<' . bin2hex(random_bytes(12)) . '@' . (gethostname() ?: 'localhost') . '>';
@@ -351,6 +343,16 @@ final class WebmailService
         $headers .= "Message-ID: {$msgId}\r\n";
         if ($inReplyTo !== '') {
             $headers .= "In-Reply-To: {$inReplyTo}\r\n";
+        }
+        if ($replyTo !== '') {
+            $headers .= "Reply-To: {$replyTo}\r\n";
+        }
+        if ($priority === 'high') {
+            $headers .= "X-Priority: 1\r\n";
+            $headers .= "Importance: High\r\n";
+        } elseif ($priority === 'low') {
+            $headers .= "X-Priority: 5\r\n";
+            $headers .= "Importance: Low\r\n";
         }
         $headers .= "MIME-Version: 1.0\r\n";
 
