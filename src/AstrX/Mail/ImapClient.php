@@ -39,8 +39,13 @@ final class ImapClient
     private int    $port       = 993;
     private string $encryption = 'ssl';
     private int    $timeout    = 30;
-    private string $socks5Host = '';
-    private int    $socks5Port = 9050;
+    private string $socks5Host  = '';
+    private int    $socks5Port  = 9050;
+    /**
+     * Whether to verify the server's SSL certificate.
+     * Set to false for self-signed certs on private/test mail servers.
+     */
+    private bool   $verifySsl   = true;
 
     #[InjectConfig('imap_host')]
     public function setHost(string $v): void { $this->host = $v; }
@@ -59,6 +64,9 @@ final class ImapClient
 
     #[InjectConfig('imap_socks5_port')]
     public function setSocks5Port(int $v): void { $this->socks5Port = $v; }
+
+    #[InjectConfig('imap_verify_ssl')]
+    public function setVerifySsl(bool $v): void { $this->verifySsl = $v; }
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +117,7 @@ final class ImapClient
         $r = $this->command(
             'LOGIN ' . $this->quoteString($username) . ' ' . $this->quoteString($password)
         );
-        if (!$r->isOk()) { return $this->err('login', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         $this->loggedIn = true;
         return Result::ok(true);
     }
@@ -121,7 +129,7 @@ final class ImapClient
     public function listFolders(): Result
     {
         $r = $this->command('LIST "" "*"');
-        if (!$r->isOk()) { return $this->err('list', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $folders = [];
         foreach ($this->untaggedLines() as $line) {
@@ -153,7 +161,7 @@ final class ImapClient
     public function folderStatus(string $folder): Result
     {
         $r = $this->command('STATUS ' . $this->quoteString($folder) . ' (MESSAGES UNSEEN RECENT)');
-        if (!$r->isOk()) { return $this->err('status', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $result = ['total' => 0, 'unseen' => 0, 'recent' => 0];
         foreach ($this->untaggedLines() as $line) {
@@ -172,7 +180,7 @@ final class ImapClient
     public function selectFolder(string $folder): Result
     {
         $r = $this->command('SELECT ' . $this->quoteString($folder));
-        if (!$r->isOk()) { return $this->err('select', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $exists = 0;
         foreach ($this->untaggedLines() as $line) {
@@ -211,7 +219,7 @@ final class ImapClient
 
         // Fetch envelope+flags for the sequence range
         $r = $this->command("FETCH {$set} (UID FLAGS ENVELOPE)");
-        if (!$r->isOk()) { return $this->err('fetch_headers', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $messages = [];
         foreach ($this->untaggedLines() as $line) {
@@ -255,7 +263,7 @@ final class ImapClient
     {
         // Fetch flags + full RFC822 message
         $r = $this->command("UID FETCH {$uid} (FLAGS RFC822)");
-        if (!$r->isOk()) { return $this->err('fetch_message', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         // UID FETCH may return a literal. We need to read it.
         $raw   = $this->lastLiteralContent;
@@ -281,7 +289,7 @@ final class ImapClient
     {
         $op  = $seen ? '+FLAGS' : '-FLAGS';
         $r   = $this->command("UID STORE {$uid} {$op} (\\Seen)");
-        return $r->isOk() ? Result::ok(true) : $this->err('flag', $r->unwrap());
+        return $r->isOk() ? Result::ok(true) : Result::err(false, $r->diagnostics());
     }
 
     /**
@@ -296,10 +304,10 @@ final class ImapClient
 
         // Fall back to COPY + mark deleted + expunge
         $r = $this->command("UID COPY {$uid} " . $this->quoteString($targetFolder));
-        if (!$r->isOk()) { return $this->err('move', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $r = $this->command("UID STORE {$uid} +FLAGS (\\Deleted)");
-        if (!$r->isOk()) { return $this->err('move', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $this->command("EXPUNGE");
         return Result::ok(true);
@@ -320,7 +328,7 @@ final class ImapClient
         }
         // No Trash — just mark deleted
         $r = $this->command("UID STORE {$uid} +FLAGS (\\Deleted)");
-        if (!$r->isOk()) { return $this->err('delete', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         $this->command("EXPUNGE");
         return Result::ok(true);
     }
@@ -332,7 +340,7 @@ final class ImapClient
     public function createFolder(string $name): Result
     {
         $r = $this->command("CREATE " . $this->quoteString($name));
-        return $r->isOk() ? Result::ok(true) : $this->err('create_folder', $r->unwrap());
+        return $r->isOk() ? Result::ok(true) : Result::err(false, $r->diagnostics());
     }
 
     /**
@@ -390,7 +398,11 @@ final class ImapClient
         if ($this->socks5Host !== '') {
             $sock = $this->connectViaSocks5();
         } elseif ($this->encryption === 'ssl') {
-            $ctx  = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true]]);
+            $ctx  = stream_context_create(['ssl' => [
+                'verify_peer'       => $this->verifySsl,
+                'verify_peer_name'  => $this->verifySsl,
+                'allow_self_signed' => !$this->verifySsl,
+            ]]);
             $sock = @stream_socket_client(
                 "ssl://{$this->host}:{$this->port}", $errno, $errstr,
                 $this->timeout, STREAM_CLIENT_CONNECT, $ctx
@@ -438,7 +450,7 @@ final class ImapClient
     private function starttls(): Result
     {
         $r = $this->command('STARTTLS');
-        if (!$r->isOk()) { return $this->err('starttls', $r->unwrap()); }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }

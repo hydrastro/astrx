@@ -458,7 +458,12 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
         if ($loopParents !== []) {
             $endParent = end($loopParents);
-            $code .= 'function ' . ltrim($endParent[self::AST_VALUE], self::TOKEN_OPERATOR_DEREFERENCE)
+            // Section function names must be valid PHP identifiers.
+            // Dots from dereference notation (e.g. 'message.seen') and
+            // slashes from subdirectory paths are replaced with underscores.
+            $sectionFnName = preg_replace('/[^a-zA-Z0-9_]/', '_',
+                                          ltrim($endParent[self::AST_VALUE], self::TOKEN_OPERATOR_DEREFERENCE));
+            $code .= 'function ' . $sectionFnName
                      . $iteration . '($args,$parent,$i){$buffer="";';
 
             $code .= match ($endParent[self::AST_TYPE]) {
@@ -501,7 +506,9 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
                 case self::TOKEN_TYPE_LOOP_START:
                 case self::TOKEN_TYPE_INVERTED_LOOP_START:
-                    $functionName = $valueExpr . $iteration;
+                    $safeFnName  = preg_replace('/[^a-zA-Z0-9_]/', '_',
+                                                ltrim((string) $val, self::TOKEN_OPERATOR_DEREFERENCE));
+                    $functionName = $safeFnName . $iteration;
                     $code        .= '$buffer.=$this->' . $functionName . '($args,$parent,$i);';
                     $loopParents[] = $ast[$i];
                     $this->writeCode($ast[$i - 1] ?? [], $loopParents, $functionsCode, $iteration);
