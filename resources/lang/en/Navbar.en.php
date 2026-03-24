@@ -36,4 +36,6 @@ return [
     'WORDING_ADMIN_CONFIG_CAPTCHA.label'  => 'Captcha',
     'WORDING_ADMIN_CONFIG_USERS.label'    => 'Users',
     'WORDING_ADMIN_CONFIG_MAIL.label'     => 'Mail',
+    'WORDING_ADMIN_CONFIG_WEBMAIL.label'  => 'Webmail / IMAP',
+    'WORDING_WEBMAIL.label'               => 'Webmail',
 ];

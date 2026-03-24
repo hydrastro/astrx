@@ -151,6 +151,7 @@ return [
 
     // ---- Webmail -------------------------------------------------------
     'webmail.heading'             => 'Webmail',
+    'webmail.heading.desc'        => 'Read and send emails from your mailbox.',
     'webmail.login.heading'       => 'Connect to Mailbox',
     'webmail.login.body'          => 'Enter your mailbox password to access your emails.',
     'webmail.login.password'      => 'Mailbox password',
