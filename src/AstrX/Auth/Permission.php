@@ -63,4 +63,8 @@ enum Permission: string
     case ADMIN_CONFIG_CAPTCHA  = 'admin.config.captcha';  // CaptchaService + CaptchaRenderer
     case ADMIN_CONFIG_USERS    = 'admin.config.users';    // UserService + AvatarService + Identicon
     case ADMIN_CONFIG_MAIL     = 'admin.config.mail';     // Mailer + MailboxManager
+
+    // ---- Webmail ------------------------------------------------------------
+    case WEBMAIL_ACCESS  = 'webmail.access';   // access the webmail UI
+    case WEBMAIL_SEND    = 'webmail.send';     // send emails via webmail
 }

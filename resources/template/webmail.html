@@ -1,0 +1,213 @@
+{{! ═══════════════════════════════════════════════════════════ WEBMAIL ══ }}
+
+{{#webmail_forbidden}}
+<h2>403</h2>
+<p>You do not have permission to access webmail.</p>
+{{/webmail_forbidden}}
+
+{{^webmail_forbidden}}
+
+{{! ── IMAP login prompt ──────────────────────────────────────────────── }}
+{{#webmail_needs_login}}
+<h2>{{webmail_login_heading}}</h2>
+<p>{{webmail_login_body}}</p>
+{{#webmail_imap_error}}
+<p class="diag-error">{{webmail_login_error}}</p>
+{{/webmail_imap_error}}
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="action" value="connect">
+    <table>
+        <tr>
+            <th>{{webmail_login_password}}</th>
+            <td><input type="password" name="imap_password" class="input" autocomplete="current-password"></td>
+        </tr>
+        <tr>
+            <td colspan="2">
+                <input type="submit" value="{{webmail_login_btn}}" class="input">
+            </td>
+        </tr>
+    </table>
+</form>
+{{/webmail_needs_login}}
+
+{{! ── Main webmail layout (folders + content area) ───────────────────── }}
+{{^webmail_needs_login}}
+<h2>{{webmail_heading}}</h2>
+
+<table style="width:100%;vertical-align:top">
+    <tr>
+
+        {{! ── Folder sidebar ───────────────────────────────────────────────── }}
+        <td style="width:15%;vertical-align:top;padding-right:1em">
+            <strong>{{label_folders}}</strong><br><br>
+            {{#folders}}
+            <a href="{{url}}"{{#is_current}} style="font-weight:bold"{{/is_current}}>
+            {{display}}{{#has_unseen}} ({{unseen}}){{/has_unseen}}
+            </a><br>
+            {{/folders}}
+            <br>
+            <a href="{{compose_url}}" class="input">{{btn_compose}}</a>
+            <br><br>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"  value="{{prg_id}}">
+                <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+                <input type="hidden" name="action"  value="disconnect">
+                <input type="submit" value="{{btn_disconnect}}" class="input">
+            </form>
+        </td>
+
+        {{! ── Content area ─────────────────────────────────────────────────── }}
+        <td style="vertical-align:top">
+
+            {{! ── Folder / message list ──────────────────────────────────────── }}
+            {{#webmail_listing}}
+            <h3>{{current_folder}}
+                <small style="font-weight:normal">
+                    {{label_total}}: {{msg_total}}
+                </small>
+            </h3>
+
+            {{^messages}}
+            <p><em>{{label_no_messages}}</em></p>
+            {{/messages}}
+
+            {{#messages}}
+            <table style="width:100%;border-collapse:collapse">
+                <thead>
+                <tr>
+                    <th style="text-align:left">{{label_from}}</th>
+                    <th style="text-align:left">{{label_subject}}</th>
+                    <th style="text-align:left">{{label_date}}</th>
+                    <th>{{label_actions}}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{#messages}}
+                <tr{{#unread}} style="font-weight:bold"{{/unread}}>
+                <td>{{from_display}}</td>
+                <td><a href="{{view_url}}">{{subject}}</a></td>
+                <td><small>{{date_fmt}}</small></td>
+                <td>
+                    <form method="POST" style="display:inline">
+                        <input type="hidden" name="prg_id"  value="{{prg_id}}">
+                        <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+                        <input type="hidden" name="action"  value="delete">
+                        <input type="hidden" name="folder"  value="{{../current_folder}}">
+                        <input type="hidden" name="uid"     value="{{uid}}">
+                        <input type="submit" value="{{btn_delete}}" class="input">
+                    </form>
+                </td>
+    </tr>
+    {{/messages}}
+    </tbody>
+</table>
+{{/messages}}
+
+{{! Pagination }}
+{{#has_prev}}
+<a href="{{prev_url}}" class="input">{{label_prev}}</a>
+{{/has_prev}}
+{{label_page}} {{msg_page}} {{label_of}} {{msg_pages}}
+{{#has_next}}
+<a href="{{next_url}}" class="input">{{label_next}}</a>
+{{/has_next}}
+{{/webmail_listing}}
+
+{{! ── Single message view ─────────────────────────────────────────── }}
+{{#webmail_viewing}}
+{{#message_found}}
+<a href="{{back_url}}" class="input">{{btn_back}}</a>
+&nbsp;
+<a href="{{reply_url}}" class="input">{{btn_reply}}</a>
+&nbsp;
+<form method="POST" style="display:inline">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="action"  value="delete">
+    <input type="hidden" name="folder"  value="{{msg_folder}}">
+    <input type="hidden" name="uid"     value="{{msg_uid}}">
+    <input type="submit" value="{{btn_delete}}" class="input">
+</form>
+&nbsp;
+{{#move_options}}
+{{! Move form — one per target folder }}
+{{/move_options}}
+<form method="POST" style="display:inline">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="action"  value="move">
+    <input type="hidden" name="folder"  value="{{msg_folder}}">
+    <input type="hidden" name="uid"     value="{{msg_uid}}">
+    <select name="target_folder" class="input">
+        {{#move_options}}<option value="{{name}}">{{display}}</option>{{/move_options}}
+    </select>
+    <input type="submit" value="{{btn_move}}" class="input">
+</form>
+<hr>
+
+<table>
+    <tr><th style="text-align:right">{{label_from}}:</th><td>{{message.from}}</td></tr>
+    <tr><th style="text-align:right">{{label_subject}}:</th><td><strong>{{message.subject}}</strong></td></tr>
+    <tr><th style="text-align:right">{{label_date}}:</th><td>{{message.date}}</td></tr>
+</table>
+<hr>
+{{#message.body_text}}
+<pre style="white-space:pre-wrap;word-wrap:break-word;font-family:monospace">{{message.body_text}}</pre>
+{{/message.body_text}}
+{{^message.body_text}}
+{{#message.body_html}}
+<div style="border:1px solid #ccc;padding:1em">{{&message.body_html}}</div>
+{{/message.body_html}}
+{{/message.body_text}}
+{{/message_found}}
+{{^message_found}}
+<p><em>Message not found.</em></p>
+<a href="{{back_url}}" class="input">{{btn_back}}</a>
+{{/message_found}}
+{{/webmail_viewing}}
+
+{{! ── Compose form ────────────────────────────────────────────────── }}
+{{#webmail_composing}}
+<h3>{{webmail_compose_heading}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"       value="{{prg_id}}">
+    <input type="hidden" name="_csrf"         value="{{csrf_token}}">
+    <input type="hidden" name="action"        value="send">
+    <input type="hidden" name="folder"        value="{{current_folder}}">
+    <input type="hidden" name="in_reply_to"   value="{{compose_in_reply_to}}">
+    <table>
+        <tr>
+            <th>{{webmail_compose_from}}</th>
+            <td><em>{{user_mailbox}}</em></td>
+        </tr>
+        <tr>
+            <th>{{webmail_compose_to}}</th>
+            <td><input type="email" name="to" class="input" value="{{compose_to}}" required style="width:30em"></td>
+        </tr>
+        <tr>
+            <th>{{webmail_compose_subject}}</th>
+            <td><input type="text" name="subject" class="input" value="{{compose_subject}}" required style="width:30em"></td>
+        </tr>
+        <tr>
+            <th style="vertical-align:top">{{webmail_compose_body}}</th>
+            <td><textarea name="body" class="input" rows="15" style="width:40em">{{compose_body}}</textarea></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>
+                <input type="submit" value="{{webmail_compose_send}}" class="input">
+                &nbsp;
+                <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
+            </td>
+        </tr>
+    </table>
+</form>
+{{/webmail_composing}}
+
+</td>
+</tr>
+</table>
+{{/webmail_needs_login}}
+
+{{/webmail_forbidden}}

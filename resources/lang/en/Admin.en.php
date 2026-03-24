@@ -430,4 +430,24 @@ return [
     // ---- Notes --------------------------------------------------------------
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
+
+    // ---- Config — Webmail IMAP settings --------------------------------
+    'admin.nav.config_webmail'              => 'Webmail / IMAP',
+    'admin.nav.config_webmail.desc'         => 'IMAP server and webmail settings.',
+    'WORDING_ADMIN_CONFIG_WEBMAIL.title'    => 'Config — Webmail',
+    'WORDING_ADMIN_CONFIG_WEBMAIL.description' => 'Edit IMAP and webmail configuration.',
+    'admin.config.webmail.heading'          => 'Webmail Configuration',
+    'admin.config.webmail.imap'             => 'IMAP Server',
+    'admin.config.webmail.folders'          => 'Folder Names',
+    'admin.config.field.imap_host'          => 'IMAP host',
+    'admin.config.field.imap_port'          => 'IMAP port',
+    'admin.config.field.imap_encryption'    => 'Encryption',
+    'admin.config.field.imap_timeout'       => 'Timeout (s)',
+    'admin.config.field.imap_socks5_host'   => 'SOCKS5 host (Tor)',
+    'admin.config.field.imap_socks5_port'   => 'SOCKS5 port',
+    'admin.config.field.messages_per_page'  => 'Messages per page',
+    'admin.config.field.trash_folder'       => 'Trash folder name',
+    'admin.config.field.sent_folder'        => 'Sent folder name',
+    'admin.config.field.drafts_folder'      => 'Drafts folder name',
+
 ];

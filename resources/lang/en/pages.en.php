@@ -39,6 +39,10 @@ return [
     'WORDING_ADMIN_CONFIG_USERS'    => 'admin-config-users',
     'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-mail',
 
+    // Webmail
+    'WORDING_WEBMAIL'            => 'webmail',
+    'WORDING_ADMIN_CONFIG_WEBMAIL' => 'admin-config-webmail',
+
     // Comments test page
     'WORDING_COMMENTS_TEST' => 'comments-test',
 

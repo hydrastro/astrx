@@ -1,0 +1,49 @@
+<h2>{{heading}}</h2>
+
+{{! ── IMAP Server ─────────────────────────────────────────────────────── }}
+<h3>{{section_imap}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="imap">
+    <table>
+        <tr><th>{{label_imap_host}}</th>
+            <td><input type="text" name="imap_host" value="{{cfg_imap_host}}" class="input"></td></tr>
+        <tr><th>{{label_imap_port}}</th>
+            <td><input type="number" name="imap_port" value="{{cfg_imap_port}}" min="1" max="65535" class="input"></td></tr>
+        <tr><th>{{label_imap_encryption}}</th>
+            <td>
+                <select name="imap_encryption" class="input">
+                    {{#encryption_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/encryption_options}}
+                </select>
+            </td></tr>
+        <tr><th>{{label_imap_timeout}}</th>
+            <td><input type="number" name="imap_timeout" value="{{cfg_imap_timeout}}" min="5" class="input"> s</td></tr>
+        <tr><th colspan="2">Tor / SOCKS5</th></tr>
+        <tr><th>{{label_imap_socks5_host}}</th>
+            <td><input type="text" name="imap_socks5_host" value="{{cfg_imap_socks5_host}}" class="input"></td></tr>
+        <tr><th>{{label_imap_socks5_port}}</th>
+            <td><input type="number" name="imap_socks5_port" value="{{cfg_imap_socks5_port}}" min="1" max="65535" class="input"></td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>
+<hr>
+
+{{! ── Webmail Folders ─────────────────────────────────────────────────── }}
+<h3>{{section_folders}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="folders">
+    <table>
+        <tr><th>{{label_messages_per_page}}</th>
+            <td><input type="number" name="messages_per_page" value="{{cfg_messages_per_page}}" min="5" max="200" class="input"></td></tr>
+        <tr><th>{{label_trash_folder}}</th>
+            <td><input type="text" name="trash_folder" value="{{cfg_trash_folder}}" class="input"></td></tr>
+        <tr><th>{{label_sent_folder}}</th>
+            <td><input type="text" name="sent_folder" value="{{cfg_sent_folder}}" class="input"></td></tr>
+        <tr><th>{{label_drafts_folder}}</th>
+            <td><input type="text" name="drafts_folder" value="{{cfg_drafts_folder}}" class="input"></td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>

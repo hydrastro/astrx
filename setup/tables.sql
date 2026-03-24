@@ -506,7 +506,7 @@ VALUES
     (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
 
 INSERT INTO `navbar_entry_ids` ()
-VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
@@ -533,13 +533,23 @@ VALUES
     (17, 6, 1, 'WORDING_ADMIN_CONFIG_SYSTEM',   1, 1, 0),
     (18, 6, 1, 'WORDING_ADMIN_CONFIG_ACCESS',   1, 1, 0),
     (19, 6, 1, 'WORDING_ADMIN_CONFIG_CAPTCHA',  1, 1, 0),
-    (20, 6, 1, 'WORDING_ADMIN_CONFIG_MAIL',     1, 1, 0);
+    (20, 6, 1, 'WORDING_ADMIN_CONFIG_MAIL',     1, 1, 0),
+    -- Webmail user page (pin 3 = user middle, alpha-sorted)
+    (21, 3, 1, 'WORDING_WEBMAIL',               1, 1, 0),
+    -- Webmail admin config (pin 6 = admin everything, alpha-sorted)
+    (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',  1, 1, 0);
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
     (1,1),(2,9),(5,8),(6,6),(7,7),(8,19),
     (9,18),(10,14),(11,12),(12,17),(13,11),(14,13),(15,16),(16,15),
     (17,20),(18,21),(19,24),(20,26);
+
+-- Map new navbar entries to their pages (using url_id lookup)
+INSERT INTO `navbar_internal` (id, page_id)
+SELECT 21, p.id FROM `page` p WHERE p.url_id = 'WORDING_WEBMAIL'
+UNION ALL
+SELECT 22, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_CONFIG_WEBMAIL';
 
 INSERT INTO `navbar_external` (id, url)
 VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
@@ -561,6 +571,25 @@ VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator',
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
+
+INSERT INTO `page_closure` (ancestor, descendant)
+VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
+
+-- Webmail user page (child of user, id=9)
+INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_WEBMAIL', 1, 'webmail', 1, 1, 0, 0);
+
+INSERT INTO `page_closure` (ancestor, descendant)
+SELECT 9, LAST_INSERT_ID()
+UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
+
+-- Webmail admin config page (child of admin, id=18)
+INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_ADMIN_CONFIG_WEBMAIL', 1, 'admin_config_webmail', 1, 1, 0, 0);
+
+INSERT INTO `page_closure` (ancestor, descendant)
+SELECT 18, LAST_INSERT_ID()
+UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());

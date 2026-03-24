@@ -103,6 +103,9 @@ final class LoginController extends AbstractController
         }
 
         $this->session->login($loginResult->unwrap());
+        // Store cleartext password in the AES-encrypted session so webmail
+        // can connect to IMAP without re-prompting the user.
+        $this->session->storeImapPassword($password);
 
         Response::redirect($this->urlGen->toPage($this->t->t('WORDING_USER_HOME')))
             ->send()->drainTo($this->collector);

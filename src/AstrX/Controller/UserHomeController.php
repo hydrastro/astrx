@@ -45,6 +45,7 @@ final class UserHomeController extends AbstractController
         $navPages = [
             'profile'  => 'user.home.profile_heading',
             'settings' => 'user.home.settings_heading',
+            'webmail'  => 'webmail.heading',
             'logout'   => 'user.home.logout',
         ];
         $sections = [];

@@ -92,7 +92,30 @@ final class UserSession
             'type'         => (int)     $row['type'],
             'verified'     => (bool)    $row['verified'],
             'avatar'       => (bool)    $row['avatar'],
+            'mailbox'      => (string) ($row['mailbox'] ?? ''),
         ];
+    }
+
+    /** The user's mailbox address (e.g. username@domain.onion). */
+    public function mailbox(): string
+    {
+        return (string) (($_SESSION[self::KEY] ?? [])['mailbox'] ?? '');
+    }
+
+    /**
+     * Store the user's IMAP password in the (AES-encrypted) session.
+     * Called at login time so webmail can connect without re-prompting.
+     * Safe: the session data is AES-256-CTR encrypted at rest.
+     */
+    public function storeImapPassword(string $password): void
+    {
+        $_SESSION['_webmail_pass'] = $password;
+    }
+
+    /** Retrieve the stored IMAP password, or '' if not set. */
+    public function imapPassword(): string
+    {
+        return (string) ($_SESSION['_webmail_pass'] ?? '');
     }
 
     public function logout(): void

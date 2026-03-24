@@ -22,6 +22,8 @@ return [
                 'user.view.public',
                 'user.edit.own',
                 'user.delete.own',
+                'webmail.access',
+                'webmail.send',
             ],
             'MOD' => [
                 'news.view',
@@ -38,6 +40,8 @@ return [
                 'admin.access',
                 'admin.comments',
                 'admin.config.captcha',
+                'webmail.access',
+                'webmail.send',
                 'admin.config.users',
                 'admin.config.mail',
             ],
