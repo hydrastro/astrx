@@ -149,6 +149,34 @@ final class DefaultTemplateContext
      * {url_id}.keywords. The page's database values serve as fallbacks so
      * the framework stays functional even when a translation file is absent.
      */
+    /**
+     * Build the template include path from ancestor file_names + the page's own.
+     *
+     * Examples:
+     *   admin_banlist (child of admin) → 'admin/admin_banlist'
+     *   profile       (child of user)  → 'user/profile'
+     *   main          (no ancestors)   → 'main'
+     *
+     * Uses file_name (never translated) so this is fully i18n-safe.
+     * Skips the self-reference (page_closure includes the page as its own ancestor).
+     * Sorts by id ascending so root ancestors come first in the path.
+     */
+    private function buildIncludePath(Page $page): string
+    {
+        $ancestors = $page->ancestors;
+        usort($ancestors, fn($a, $b) => ($a['id'] ?? 0) <=> ($b['id'] ?? 0));
+
+        $parts = [];
+        foreach ($ancestors as $anc) {
+            $fn = (string) ($anc['file_name'] ?? '');
+            if ($fn !== '' && $fn !== $page->fileName) {
+                $parts[] = $fn;
+            }
+        }
+        $parts[] = $page->fileName;
+        return implode('/', $parts);
+    }
+
     public function buildBase(Page $page): void
     {
         $urlId = $page->urlId;
@@ -196,7 +224,7 @@ final class DefaultTemplateContext
             'keywords'     => $keywords,
             'index'        => $page->index,
             'follow'       => $page->follow,
-            'include'      => $page->fileName,
+            'include'      => $this->buildIncludePath($page),
             'captcha'      => 'partials/captcha',  // partial name — {{> captcha}} resolves to captcha.html
 
             'website_name' => (string) $this->config->getConfig('ContentManager', 'website_name', 'AstrX'),

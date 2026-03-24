@@ -268,6 +268,10 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
         if ($this->cacheTemplates) {
             $cacheFile = $this->templateCacheDir . $template . '.php';
+            $cacheDir  = dirname($cacheFile);
+            if (!is_dir($cacheDir)) {
+                mkdir($cacheDir, 0755, recursive: true);
+            }
             @file_put_contents($cacheFile, $code);
         }
 
@@ -281,9 +285,11 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
     public function getTemplateClassName(string $templateName, string $templateContent): string
     {
-        return self::TEMPLATE_CLASS_PREFIX
-               . ltrim($templateName, self::TOKEN_OPERATOR_DEREFERENCE)
-               . md5($templateContent);
+        // Sanitise the template name so slashes (from subdirectory paths like
+        // 'admin/admin_banlist' or 'partials/comments') do not produce an
+        // invalid PHP class name.  Replace '/' with '_'.
+        $safeName = str_replace('/', '_', ltrim($templateName, self::TOKEN_OPERATOR_DEREFERENCE));
+        return self::TEMPLATE_CLASS_PREFIX . $safeName . md5($templateContent);
     }
 
     // -------------------------------------------------------------------------
