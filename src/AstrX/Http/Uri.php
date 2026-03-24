@@ -16,7 +16,10 @@ final class Uri implements \Stringable
 
     public static function fromString(string $uri): self
     {
+        // parse_url() returns false for seriously malformed URLs (e.g. "///").
+        // Treat that as an empty URI rather than letting a TypeError propagate.
         $parts = parse_url($uri);
+        if ($parts === false) { $parts = []; }
 
         return new self(
             scheme:   isset($parts['scheme']) ? (string) $parts['scheme'] : '',

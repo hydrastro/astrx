@@ -506,7 +506,7 @@ VALUES
     (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
 
 INSERT INTO `navbar_entry_ids` ()
-VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
@@ -537,7 +537,9 @@ VALUES
     -- Webmail user page (pin 3 = user middle, alpha-sorted)
     (21, 3, 1, 'WORDING_WEBMAIL',               1, 1, 0),
     -- Webmail admin config (pin 6 = admin everything, alpha-sorted)
-    (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',  1, 1, 0);
+    (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',  1, 1, 0),
+    -- Audit log in admin navbar (pin 6, alpha-sorted)
+    (23, 6, 1, 'WORDING_ADMIN_AUDIT_LOG',        1, 1, 0);
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
@@ -549,7 +551,9 @@ VALUES
 INSERT INTO `navbar_internal` (id, page_id)
 SELECT 21, p.id FROM `page` p WHERE p.url_id = 'WORDING_WEBMAIL'
 UNION ALL
-SELECT 22, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_CONFIG_WEBMAIL';
+SELECT 22, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_CONFIG_WEBMAIL'
+UNION ALL
+SELECT 23, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_AUDIT_LOG';
 
 INSERT INTO `navbar_external` (id, url)
 VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
@@ -575,6 +579,36 @@ VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- Webmail: trusted sender list
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `webmail_trusted_sender`
+(
+    `user_id`      BINARY(16)   NOT NULL,
+    `sender_email` VARCHAR(320) NOT NULL,
+    `created_at`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`user_id`, `sender_email`),
+    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Admin audit log (INSERT-only; never updated/deleted by the app)
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `admin_audit_log`
+(
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`    BINARY(16)      NOT NULL,
+    `username`   VARCHAR(64)     NOT NULL,
+    `action`     VARCHAR(64)     NOT NULL,
+    `resource`   VARCHAR(128)    NOT NULL DEFAULT '',
+    `detail`     TEXT            NOT NULL DEFAULT '',
+    `ip`         VARCHAR(45)     NOT NULL DEFAULT '',
+    `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_action`     (`action`),
+    INDEX `idx_user_id`    (`user_id`),
+    INDEX `idx_created_at` (`created_at`)
+);
+
 -- Webmail user page (child of user, id=9)
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES ('WORDING_WEBMAIL', 1, 'webmail', 1, 1, 0, 0);
@@ -586,6 +620,14 @@ UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
 -- Webmail admin config page (child of admin, id=18)
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES ('WORDING_ADMIN_CONFIG_WEBMAIL', 1, 'admin_config_webmail', 1, 1, 0, 0);
+
+INSERT INTO `page_closure` (ancestor, descendant)
+SELECT 18, LAST_INSERT_ID()
+UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
+
+-- Admin audit log page (child of admin, id=18)
+INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_ADMIN_AUDIT_LOG', 1, 'admin_audit_log', 1, 1, 0, 0);
 
 INSERT INTO `page_closure` (ancestor, descendant)
 SELECT 18, LAST_INSERT_ID()

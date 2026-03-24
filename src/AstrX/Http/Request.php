@@ -256,6 +256,7 @@ final class Request
         }
 
         $parts = parse_url($requestUri);
+        if ($parts === false) { $parts = []; }
 
         return new Uri(
             scheme: $scheme,

@@ -40,7 +40,8 @@ return [
     'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-mail',
 
     // Webmail
-    'WORDING_WEBMAIL'            => 'webmail',
+    'WORDING_WEBMAIL'              => 'webmail',
+    'WORDING_ADMIN_AUDIT_LOG'      => 'admin-audit-log',
     'WORDING_ADMIN_CONFIG_WEBMAIL' => 'admin-config-webmail',
 
     // Comments test page

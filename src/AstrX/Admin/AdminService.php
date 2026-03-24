@@ -31,6 +31,9 @@ final class AdminService
         'admin_config_captcha' => 'admin.nav.config_captcha',
         'admin_config_mail'    => 'admin.nav.config_mail',
         'admin_config_webmail' => 'admin.nav.config_webmail',
+
+        // ── Audit ──────────────────────────────────────────────────────
+        'admin_audit_log'      => 'admin.nav.audit_log',
     ];
 
     public function __construct(private readonly Gate $gate) {}

@@ -450,4 +450,21 @@ return [
     'admin.config.field.sent_folder'        => 'Sent folder name',
     'admin.config.field.drafts_folder'      => 'Drafts folder name',
 
+
+    // ---- Audit log -------------------------------------------------------
+    'admin.nav.audit_log'               => 'Audit Log',
+    'admin.nav.audit_log.desc'          => 'View a history of all admin actions.',
+    'WORDING_ADMIN_AUDIT_LOG.title'     => 'Admin — Audit Log',
+    'WORDING_ADMIN_AUDIT_LOG.description' => 'Admin action history.',
+    'admin.audit.heading'               => 'Audit Log',
+    'admin.audit.action'                => 'Action',
+    'admin.audit.resource'              => 'Resource',
+    'admin.audit.detail'                => 'Detail',
+    'admin.audit.ip'                    => 'IP',
+    'admin.audit.time'                  => 'Time',
+    'admin.audit.total'                 => 'Total entries',
+    'admin.audit.no_entries'            => 'No entries found.',
+    'admin.btn.filter'                  => 'Filter',
+    'admin.btn.prev'                    => '← Prev',
+    'admin.btn.next'                    => 'Next →',
 ];

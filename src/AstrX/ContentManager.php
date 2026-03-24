@@ -304,12 +304,14 @@ final class ContentManager
 
         // ── Admin page guard ──────────────────────────────────────────────────────
         // All pages that are descendants of the admin root require ADMIN_ACCESS.
-        // We detect this by checking if any ancestor has url_id = 'WORDING_ADMIN',
-        // or the page itself is the admin root.
-        $isAdminPage = $page->urlId === 'WORDING_ADMIN'
+        // We check file_name (never translated, never editable via the Pages UI)
+        // rather than url_id (translated slug that could theoretically change).
+        // The admin root's file_name is 'admin'; all its descendants include it
+        // as an ancestor in the closure table.
+        $isAdminPage = $page->fileName === 'admin'
                        || array_any(
                            $page->ancestors,
-                           fn($a) => ($a['url_id'] ?? '') === 'WORDING_ADMIN'
+                           fn($a) => ($a['file_name'] ?? '') === 'admin'
                        );
         if ($isAdminPage && $this->gate->cannot(Permission::ADMIN_ACCESS)) {
             $loginUrlId = $this->config->getConfig('Routing', 'default_page', 'WORDING_LOGIN');

@@ -6,6 +6,7 @@ namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
 use AstrX\Mail\Diagnostic\MailDiagnostic;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 
@@ -25,6 +26,9 @@ use AstrX\Result\Result;
  */
 final class MailboxManager
 {
+    public const string          ID_MAILBOX_ERROR  = 'astrx.mail/mailbox_error';
+    public const DiagnosticLevel LVL_MAILBOX_ERROR = DiagnosticLevel::ERROR;
+
     private string $mailboxDomain = '';
     private string $mailapiUrl = '';
     private string $mailapiSecret = '';
@@ -233,6 +237,8 @@ final class MailboxManager
 
     private function err(string $op, string $detail = ''): Result
     {
-        return Result::err(false, Diagnostics::of(new MailDiagnostic($op, $detail)));
+        return Result::err(false, Diagnostics::of(new MailDiagnostic(
+                                                      self::ID_MAILBOX_ERROR, self::LVL_MAILBOX_ERROR, $op, $detail
+                                                  )));
     }
 }

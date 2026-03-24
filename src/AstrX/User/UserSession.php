@@ -118,10 +118,17 @@ final class UserSession
         return (string) ($_SESSION['_webmail_pass'] ?? '');
     }
 
+    /** Remove the stored IMAP password (on logout or failed auth). */
+    public function clearImapPassword(): void
+    {
+        unset($_SESSION['_webmail_pass']);
+    }
+
     public function logout(): void
     {
         $_SESSION[self::LOGGED_IN] = false;
         unset($_SESSION[self::KEY]);
+        $this->clearImapPassword();
     }
 
     /** Called after a successful username change. */

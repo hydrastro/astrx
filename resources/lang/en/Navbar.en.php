@@ -37,5 +37,6 @@ return [
     'WORDING_ADMIN_CONFIG_USERS.label'    => 'Users',
     'WORDING_ADMIN_CONFIG_MAIL.label'     => 'Mail',
     'WORDING_ADMIN_CONFIG_WEBMAIL.label'  => 'Webmail / IMAP',
+    'WORDING_ADMIN_AUDIT_LOG.label'       => 'Audit Log',
     'WORDING_WEBMAIL.label'               => 'Webmail',
 ];

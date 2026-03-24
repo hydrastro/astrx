@@ -67,4 +67,7 @@ enum Permission: string
     // ---- Webmail ------------------------------------------------------------
     case WEBMAIL_ACCESS  = 'webmail.access';   // access the webmail UI
     case WEBMAIL_SEND    = 'webmail.send';     // send emails via webmail
+
+    // ---- Audit log ----------------------------------------------------------
+    case ADMIN_AUDIT_LOG = 'admin.audit_log';  // view the admin audit log
 }

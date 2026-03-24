@@ -7,7 +7,7 @@ use AstrX\Http\Diagnostic\HeadersAlreadySentDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
-use InvalidArgumentException;
+use AstrX\Http\Exception\InvalidStatusCodeException;
 use JsonException;
 
 final class Response
@@ -25,9 +25,7 @@ final class Response
         ?HeaderBag $headers = null,
     ) {
         if (!HttpStatus::isValid($status)) {
-            throw new InvalidArgumentException(
-                sprintf('Invalid HTTP status code "%d".', $status)
-            );
+            throw new InvalidStatusCodeException($status);
         }
 
         $this->body    = $body;
@@ -42,9 +40,7 @@ final class Response
     public function setStatus(int $status): void
     {
         if (!HttpStatus::isValid($status)) {
-            throw new InvalidArgumentException(
-                sprintf('Invalid HTTP status code "%d".', $status)
-            );
+            throw new InvalidStatusCodeException($status);
         }
         $this->status = $status;
     }
@@ -64,9 +60,7 @@ final class Response
     public function withStatus(int $status): self
     {
         if (!HttpStatus::isValid($status)) {
-            throw new InvalidArgumentException(
-                sprintf('Invalid HTTP status code "%d".', $status)
-            );
+            throw new InvalidStatusCodeException($status);
         }
         $clone         = clone $this;
         $clone->status = $status;

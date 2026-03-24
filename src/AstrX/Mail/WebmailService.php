@@ -65,6 +65,50 @@ final class WebmailService
         return $this->imap->login($imapUser, $imapPassword);
     }
 
+    /**
+     * Save a draft to the Drafts folder.
+     * @return Result<true>
+     */
+    public function saveDraft(
+        string $fromAddress,
+        string $fromName,
+        string $toAddress,
+        string $subject,
+        string $bodyText,
+        string $cc = '',
+        string $bcc = '',
+    ): Result {
+        $raw = $this->buildRawMessage($fromAddress, $fromName, $toAddress, $subject, $bodyText, '', $cc, $bcc, '');
+        return $this->imap->appendToSent($raw, $this->draftsFolder);
+    }
+
+    /**
+     * Retrieve the decoded bytes of an attachment by its index within a message.
+     * @return Result<array{name:string,content_type:string,data:string}>
+     */
+    public function getAttachment(string $folder, int $uid, int $attachmentIndex): Result
+    {
+        $r = $this->getMessage($folder, $uid);
+        if (!$r->isOk()) { return $r; }
+        $msg         = $r->unwrap();
+        $attachments = $msg['attachments'] ?? [];
+        if (!isset($attachments[$attachmentIndex])) {
+            return Result::err(false);
+        }
+        $att  = $attachments[$attachmentIndex];
+        // Decode the stored raw (encoded) bytes on demand
+        $data = match ($att['encoding']) {
+            'base64'           => base64_decode(str_replace(["\r", "\n"], '', $att['raw'])),
+            'quoted-printable' => quoted_printable_decode($att['raw']),
+            default            => $att['raw'],
+        };
+        return Result::ok([
+                              'name'         => $att['name'],
+                              'content_type' => $att['content_type'],
+                              'data'         => $data,
+                          ]);
+    }
+
     public function disconnect(): void
     {
         $this->imap->logout();
@@ -189,14 +233,17 @@ final class WebmailService
         string $toAddress,
         string $subject,
         string $bodyText,
+        string $bodyHtml = '',
+        string $cc = '',
+        string $bcc = '',
         string $inReplyTo = '',
     ): Result {
-        // Send via SMTP
-        $r = $this->mailer->send($toAddress, '', $subject, $bodyText);
+        // Send via SMTP (Mailer only accepts a single To: for now)
+        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml);
         if (!$r->isOk()) { return $r; }
 
         // Build raw message for IMAP APPEND
-        $raw = $this->buildRawMessage($fromAddress, $fromName, $toAddress, $subject, $bodyText, $inReplyTo);
+        $raw = $this->buildRawMessage($fromAddress, $fromName, $toAddress, $subject, $bodyText, $bodyHtml, $cc, $bcc, $inReplyTo);
 
         // Append to Sent folder (non-fatal if it fails)
         $this->imap->appendToSent($raw, $this->sentFolder);
@@ -242,7 +289,10 @@ final class WebmailService
         string $to,
         string $subject,
         string $body,
-        string $inReplyTo,
+        string $bodyHtml = '',
+        string $cc = '',
+        string $bcc = '',
+        string $inReplyTo = '',
     ): string {
         $date    = date('r');
         $msgId   = '<' . bin2hex(random_bytes(12)) . '@' . (gethostname() ?: 'localhost') . '>';
@@ -251,6 +301,8 @@ final class WebmailService
 
         $headers  = "From: {$fromHdr}\r\n";
         $headers .= "To: {$to}\r\n";
+        if ($cc !== '') { $headers .= "Cc: {$cc}\r\n"; }
+        if ($bcc !== '') { $headers .= "Bcc: {$bcc}\r\n"; }
         $headers .= "Subject: {$subjectEncoded}\r\n";
         $headers .= "Date: {$date}\r\n";
         $headers .= "Message-ID: {$msgId}\r\n";
@@ -258,9 +310,24 @@ final class WebmailService
             $headers .= "In-Reply-To: {$inReplyTo}\r\n";
         }
         $headers .= "MIME-Version: 1.0\r\n";
+
+        if ($bodyHtml !== '') {
+            $boundary  = bin2hex(random_bytes(12));
+            $headers  .= "Content-Type: multipart/alternative; boundary=\"{$boundary}\"\r\n";
+            $bodyPart  = "--{$boundary}\r\n"
+                         . "Content-Type: text/plain; charset=UTF-8\r\n"
+                         . "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+                         . quoted_printable_encode($body) . "\r\n"
+                         . "--{$boundary}\r\n"
+                         . "Content-Type: text/html; charset=UTF-8\r\n"
+                         . "Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+                         . quoted_printable_encode($bodyHtml) . "\r\n"
+                         . "--{$boundary}--";
+            return $headers . "\r\n" . $bodyPart;
+        }
+
         $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
         $headers .= "Content-Transfer-Encoding: quoted-printable\r\n";
-
         return $headers . "\r\n" . quoted_printable_encode($body);
     }
 

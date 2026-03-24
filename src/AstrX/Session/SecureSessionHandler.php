@@ -51,7 +51,7 @@ final class SecureSessionHandler implements
         $this->encrypt = $encrypt;
     }
 
-    #[InjectConfig('max_retries')]
+    #[InjectConfig('max_sid_retries')]
     public function setMaxRetries(int $maxRetries): void
     {
         $this->maxRetries = max(1, $maxRetries);

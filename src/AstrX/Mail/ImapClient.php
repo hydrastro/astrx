@@ -706,15 +706,18 @@ final class ImapClient
             'cc'        => $this->mimeDecodeHeader($headers['cc']                ?? ''),
             'date'      => $headers['date']                                       ?? '',
             'message_id'=> $headers['message-id']                                ?? '',
-            'body_text' => '',
-            'body_html' => '',
+            'body_text'   => '',
+            'body_html'   => '',
+            'attachments' => [],
         ];
 
         if (str_starts_with($ct, 'multipart/')) {
             // Extract boundary
             if (preg_match('/boundary="?([^";]+)"?/i', $headers['content-type'] ?? '', $m)) {
-                $boundary = $m[1];
-                [$result['body_text'], $result['body_html']] = $this->parseMultipart($rawBody, $boundary, $ct);
+                $boundary    = $m[1];
+                $attachments = [];
+                [$result['body_text'], $result['body_html']] = $this->parseMultipart($rawBody, $boundary, $ct, $attachments);
+                $result['attachments'] = $attachments;
             }
         } else {
             $decoded = $this->decodeBody($rawBody, $encoding);
@@ -730,8 +733,11 @@ final class ImapClient
         return $result;
     }
 
-    /** @return array{0:string,1:string} [text_body, html_body] */
-    private function parseMultipart(string $body, string $boundary, string $parentCt): array
+    /**
+     * @param  list<array{name:string,content_type:string,size:int,encoding:string,raw:string}> $attachments
+     * @return array{0:string,1:string} [text_body, html_body]
+     */
+    private function parseMultipart(string $body, string $boundary, string $parentCt, array &$attachments = []): array
     {
         $textBody = '';
         $htmlBody = '';
@@ -739,16 +745,33 @@ final class ImapClient
         $parts = $this->splitMultipart($body, $boundary);
         foreach ($parts as $part) {
             [$partRawHeaders, $partBody] = $this->splitHeadersBody($part);
-            $partHeaders  = $this->parseHeaders($partRawHeaders);
-            $partCt       = strtolower($partHeaders['content-type'] ?? 'text/plain');
-            $partEncoding = strtolower($partHeaders['content-transfer-encoding'] ?? '7bit');
+            $partHeaders     = $this->parseHeaders($partRawHeaders);
+            $partCt          = strtolower($partHeaders['content-type'] ?? 'text/plain');
+            $partEncoding    = strtolower($partHeaders['content-transfer-encoding'] ?? '7bit');
+            $partDisposition = strtolower($partHeaders['content-disposition'] ?? '');
 
             if (str_starts_with($partCt, 'multipart/')) {
                 if (preg_match('/boundary="?([^";]+)"?/i', $partHeaders['content-type'] ?? '', $m)) {
-                    [$t, $h] = $this->parseMultipart($partBody, $m[1], $partCt);
+                    [$t, $h] = $this->parseMultipart($partBody, $m[1], $partCt, $attachments);
                     if ($textBody === '') { $textBody = $t; }
                     if ($htmlBody === '') { $htmlBody = $h; }
                 }
+            } elseif (
+                str_starts_with($partDisposition, 'attachment') ||
+                (!str_contains($partCt, 'text/plain') &&
+                 !str_contains($partCt, 'text/html') &&
+                 !str_starts_with($partCt, 'multipart/') &&
+                 !str_contains($partCt, 'message/rfc822'))
+            ) {
+                $filename      = $this->extractFilename($partHeaders);
+                $decoded       = $this->decodeBody($partBody, $partEncoding);
+                $attachments[] = [
+                    'name'         => $filename !== '' ? $filename : 'attachment',
+                    'content_type' => (string) preg_replace('/;.*$/', '', $partCt),
+                    'size'         => strlen($decoded),
+                    'encoding'     => $partEncoding,
+                    'raw'          => $partBody,
+                ];
             } elseif (str_contains($partCt, 'text/plain')) {
                 $decoded  = $this->decodeBody($partBody, $partEncoding);
                 $charset  = $this->extractCharset($partCt);
@@ -758,7 +781,6 @@ final class ImapClient
                 $charset  = $this->extractCharset($partCt);
                 $htmlBody = $this->toUtf8($decoded, $charset);
             }
-            // Attachments are ignored in this initial implementation
         }
 
         return [$textBody, $htmlBody];
@@ -824,6 +846,23 @@ final class ImapClient
             'base64'           => base64_decode(str_replace(["\r", "\n"], '', $body)),
             default            => $body,
         };
+    }
+
+    /**
+     * Extract filename from Content-Disposition or Content-Type name parameter.
+     * @param array<string,string> $headers
+     */
+    private function extractFilename(array $headers): string
+    {
+        $disposition = $headers['content-disposition'] ?? '';
+        if (preg_match('/filename\*?=["\']?([^"\'\s;]+)/i', $disposition, $m)) {
+            return $this->mimeDecodeHeader(trim($m[1], '"\''));
+        }
+        $ct = $headers['content-type'] ?? '';
+        if (preg_match('/name=["\']?([^"\'\s;]+)/i', $ct, $m)) {
+            return $this->mimeDecodeHeader(trim($m[1], '"\''));
+        }
+        return '';
     }
 
     private function extractCharset(string $contentType): string
