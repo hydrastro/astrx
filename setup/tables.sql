@@ -292,13 +292,6 @@ CREATE TABLE `captcha`
 
 -- ============================================================
 -- SECURITY: BANLIST
---
--- Route/round definitions (penalty schedules) live in Banlist.config.php,
--- edited via the admin config UI. They are compile-time configuration.
---
--- ban_route is a VARCHAR(64) key matching BanlistRepository::ROUTE_* constants
--- (e.g. 'permanent', 'bad_comment', 'failed_login'). No FK to a route table —
--- the route definition lives in PHP config, not in the DB.
 -- ============================================================
 
 CREATE TABLE `banlist`
@@ -354,6 +347,40 @@ CREATE TABLE `site_config`
 
 
 -- ============================================================
+-- WEBMAIL
+-- ============================================================
+
+CREATE TABLE `webmail_trusted_sender`
+(
+    `user_id`      BINARY(16)   NOT NULL,
+    `sender_email` VARCHAR(320) NOT NULL,
+    `created_at`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`user_id`, `sender_email`),
+    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+
+-- ============================================================
+-- ADMIN AUDIT LOG
+-- ============================================================
+
+CREATE TABLE `admin_audit_log`
+(
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`    BINARY(16)      NOT NULL,
+    `username`   VARCHAR(64)     NOT NULL,
+    `action`     VARCHAR(64)     NOT NULL,
+    `resource`   VARCHAR(128)    NOT NULL DEFAULT '',
+    `detail`     TEXT            NOT NULL DEFAULT '',
+    `ip`         VARCHAR(45)     NOT NULL DEFAULT '',
+    `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_action`     (`action`),
+    INDEX `idx_user_id`    (`user_id`),
+    INDEX `idx_created_at` (`created_at`)
+);
+
+
+-- ============================================================
 -- DATA INSERTIONS
 -- ============================================================
 
@@ -361,24 +388,27 @@ CREATE TABLE `site_config`
 -- Pages
 --
 -- ID map:
---   1  main             9  user (section root)
---   2  error           10  avatar
---   3  login           11  admin_banlist
---   4  register        12  admin_comments
---   5  recover         13  admin_navbar
---   6  profile         14  admin_news
---   7  user_settings   15  admin_notes
---   8  user_home       16  admin_pages
---                      17  admin_users
---                      18  admin (section root)
---                      19  logout
---                      20  admin_config_system
---                      21  admin_config_access
---                      22  admin_config_content
---                      23  admin_config_comments
---                      24  admin_config_captcha
---                      25  admin_config_users
---                      26  admin_config_mail
+--   1  main                    9  user (section root)
+--   2  error                  10  avatar
+--   3  login                  11  admin_banlist
+--   4  register               12  admin_comments
+--   5  recover                13  admin_navbar
+--   6  profile                14  admin_news
+--   7  user_settings          15  admin_notes
+--   8  user_home              16  admin_pages
+--                             17  admin_users
+--                             18  admin (section root)
+--                             19  logout
+--                             20  admin_config_system
+--                             21  admin_config_access
+--                             22  admin_config_content
+--                             23  admin_config_comments
+--                             24  admin_config_captcha
+--                             25  admin_config_users
+--                             26  admin_config_mail
+--                             27  webmail
+--                             28  admin_config_webmail
+--                             29  admin_audit_log
 -- ----------------------------------------------------------
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
@@ -408,14 +438,18 @@ VALUES
     ('WORDING_ADMIN_CONFIG_COMMENTS',   1, 'admin_config_comments',  1, 1, 0, 0),  -- id=23
     ('WORDING_ADMIN_CONFIG_CAPTCHA',    1, 'admin_config_captcha',   1, 1, 0, 0),  -- id=24
     ('WORDING_ADMIN_CONFIG_USERS',      1, 'admin_config_users',     1, 1, 0, 0),  -- id=25
-    ('WORDING_ADMIN_CONFIG_MAIL',       1, 'admin_config_mail',      1, 1, 0, 0);  -- id=26
+    ('WORDING_ADMIN_CONFIG_MAIL',       1, 'admin_config_mail',      1, 1, 0, 0),  -- id=26
+    ('WORDING_WEBMAIL',                 1, 'webmail',                1, 1, 0, 0),  -- id=27
+    ('WORDING_ADMIN_CONFIG_WEBMAIL',    1, 'admin_config_webmail',   1, 1, 0, 0),  -- id=28
+    ('WORDING_ADMIN_AUDIT_LOG',         1, 'admin_audit_log',        1, 1, 0, 0);  -- id=29
 
 
 INSERT INTO `page_robots` (page_id, `index`, follow)
 VALUES
     (1,1,1),(2,0,0),(3,1,1),(4,1,1),(5,1,1),(6,0,0),(7,0,0),(8,0,0),(9,1,1),
     (10,0,0),(11,0,0),(12,0,0),(13,0,0),(14,0,0),(15,0,0),(16,0,0),(17,0,0),(18,0,0),(19,0,0),
-    (20,0,0),(21,0,0),(22,0,0),(23,0,0),(24,0,0),(25,0,0),(26,0,0);
+    (20,0,0),(21,0,0),(22,0,0),(23,0,0),(24,0,0),(25,0,0),(26,0,0),
+    (27,0,0),(28,0,0),(29,0,0);
 
 
 INSERT INTO `page_meta` (page_id, title, description)
@@ -445,20 +479,25 @@ VALUES
     (23, 'Config — Comments',           'Edit comment service configuration.'),
     (24, 'Config — Captcha',            'Edit captcha settings.'),
     (25, 'Config — Users',              'Edit user service configuration.'),
-    (26, 'Config — Mail',               'Edit mail configuration.');
+    (26, 'Config — Mail',               'Edit mail configuration.'),
+    (27, 'Webmail',                     'Read and send emails from your mailbox.'),
+    (28, 'Config — Webmail / IMAP',     'Edit IMAP and webmail configuration.'),
+    (29, 'Admin — Audit Log',           'History of all admin actions.');
 
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES
-    -- Self-references
+    -- Self-references (every page is its own ancestor at depth 0)
     (1,1),(2,2),(3,3),(4,4),(5,5),(6,6),(7,7),(8,8),(9,9),(10,10),
     (11,11),(12,12),(13,13),(14,14),(15,15),(16,16),(17,17),(18,18),(19,19),
     (20,20),(21,21),(22,22),(23,23),(24,24),(25,25),(26,26),
+    (27,27),(28,28),(29,29),
     -- User section children (9 is ancestor)
-    (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),
+    (9,3),(9,4),(9,5),(9,6),(9,7),(9,8),(9,19),(9,27),
     -- Admin section children (18 is ancestor)
     (18,11),(18,12),(18,13),(18,14),(18,15),(18,16),(18,17),
-    (18,20),(18,21),(18,22),(18,23),(18,24),(18,25),(18,26);
+    (18,20),(18,21),(18,22),(18,23),(18,24),(18,25),(18,26),
+    (18,28),(18,29);
 
 
 INSERT INTO `keyword` (keyword, i18n)
@@ -472,7 +511,8 @@ VALUES
     ('Notes',               0), ('Pages',               0), ('Users',               0),
     ('Config',              0), ('System',              0), ('Access',              0),
     ('Security',            0), ('Content',             0), ('Captcha',             0),
-    ('Mail',                0);
+    ('Mail',                0), ('Webmail',             0), ('IMAP',                0),
+    ('Audit',               0), ('Log',                 0);
 
 
 INSERT INTO `page_keyword` (page_id, keyword_id)
@@ -483,11 +523,12 @@ VALUES
     (13,12),(13,13),(13,14),(13,17),(14,12),(14,13),(14,14),(14,18),
     (15,12),(15,13),(15,14),(15,19),(16,12),(16,13),(16,14),(16,20),
     (17,12),(17,13),(17,14),(17,21),
-    -- Config pages share admin + config keywords
     (20,12),(20,13),(20,22),(20,23),(21,12),(21,13),(21,22),(21,24),(21,25),
     (22,12),(22,13),(22,22),(22,26),(23,12),(23,13),(23,22),(23,16),
     (24,12),(24,13),(24,22),(24,27),(25,12),(25,13),(25,22),(25,21),
-    (26,12),(26,13),(26,22),(26,28);
+    (26,12),(26,13),(26,22),(26,28),
+    (27,3),(27,29),(27,30),(28,12),(28,13),(28,22),(28,28),(28,29),(28,30),
+    (29,12),(29,13),(29,31),(29,32);
 
 
 -- ----------------------------------------------------------
@@ -500,60 +541,56 @@ INSERT INTO `navbar_pin` (navbar_id, sort_order, sort_mode)
 VALUES
     (1, 0, 1),  -- id=1  public — custom
     (2, 0, 1),  -- id=2  user first pin (custom: User Home)
-    (2, 1, 0),  -- id=3  user middle pin (alpha: Profile, Settings)
+    (2, 1, 0),  -- id=3  user middle pin (alpha: Profile, Settings, Webmail)
     (2, 2, 1),  -- id=4  user last pin (custom: Logout)
     (3, 0, 1),  -- id=5  admin: Dashboard (custom, single entry)
     (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
 
+-- 23 navbar entries total
 INSERT INTO `navbar_entry_ids` ()
 VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
     -- Public navbar
-    (1,  1, 1, 'WORDING_HOME',                  1, 1, 0),
-    (2,  1, 1, 'WORDING_USER',                  1, 1, 1),
-    (3,  1, 0, 'Test',                           0, 0, 2),
-    (4,  1, 0, 'Ext',                            0, 0, 3),
+    (1,  1, 1, 'WORDING_HOME',                   1, 1, 0),
+    (2,  1, 1, 'WORDING_USER',                   1, 1, 1),
+    (3,  1, 0, 'Test',                            0, 0, 2),
+    (4,  1, 0, 'Ext',                             0, 0, 3),
     -- User navbar
-    (5,  2, 1, 'WORDING_USER_HOME',             1, 1, 0),
-    (6,  3, 1, 'WORDING_PROFILE',               1, 1, 0),
-    (7,  3, 1, 'WORDING_SETTINGS',              1, 1, 0),
-    (8,  4, 1, 'WORDING_LOGOUT',                1, 1, 0),
+    (5,  2, 1, 'WORDING_USER_HOME',              1, 1, 0),
+    (6,  3, 1, 'WORDING_PROFILE',                1, 1, 0),
+    (7,  3, 1, 'WORDING_SETTINGS',               1, 1, 0),
+    (8,  4, 1, 'WORDING_LOGOUT',                 1, 1, 0),
     -- Admin navbar — Dashboard (pin 5, custom)
-    (9,  5, 1, 'WORDING_ADMIN',                 1, 1, 0),
+    (9,  5, 1, 'WORDING_ADMIN',                  1, 1, 0),
     -- Admin navbar — all other pages (pin 6, alpha-sorted)
-    (10, 6, 1, 'WORDING_ADMIN_NEWS',            1, 1, 0),
-    (11, 6, 1, 'WORDING_ADMIN_COMMENTS',        1, 1, 0),
-    (12, 6, 1, 'WORDING_ADMIN_USERS',           1, 1, 0),
-    (13, 6, 1, 'WORDING_ADMIN_BANLIST',         1, 1, 0),
-    (14, 6, 1, 'WORDING_ADMIN_NAVBAR',          1, 1, 0),
-    (15, 6, 1, 'WORDING_ADMIN_PAGES',           1, 1, 0),
-    (16, 6, 1, 'WORDING_ADMIN_NOTES',           1, 1, 0),
-    (17, 6, 1, 'WORDING_ADMIN_CONFIG_SYSTEM',   1, 1, 0),
-    (18, 6, 1, 'WORDING_ADMIN_CONFIG_ACCESS',   1, 1, 0),
-    (19, 6, 1, 'WORDING_ADMIN_CONFIG_CAPTCHA',  1, 1, 0),
-    (20, 6, 1, 'WORDING_ADMIN_CONFIG_MAIL',     1, 1, 0),
-    -- Webmail user page (pin 3 = user middle, alpha-sorted)
-    (21, 3, 1, 'WORDING_WEBMAIL',               1, 1, 0),
-    -- Webmail admin config (pin 6 = admin everything, alpha-sorted)
-    (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',  1, 1, 0),
-    -- Audit log in admin navbar (pin 6, alpha-sorted)
+    (10, 6, 1, 'WORDING_ADMIN_NEWS',             1, 1, 0),
+    (11, 6, 1, 'WORDING_ADMIN_COMMENTS',         1, 1, 0),
+    (12, 6, 1, 'WORDING_ADMIN_USERS',            1, 1, 0),
+    (13, 6, 1, 'WORDING_ADMIN_BANLIST',          1, 1, 0),
+    (14, 6, 1, 'WORDING_ADMIN_NAVBAR',           1, 1, 0),
+    (15, 6, 1, 'WORDING_ADMIN_PAGES',            1, 1, 0),
+    (16, 6, 1, 'WORDING_ADMIN_NOTES',            1, 1, 0),
+    (17, 6, 1, 'WORDING_ADMIN_CONFIG_SYSTEM',    1, 1, 0),
+    (18, 6, 1, 'WORDING_ADMIN_CONFIG_ACCESS',    1, 1, 0),
+    (19, 6, 1, 'WORDING_ADMIN_CONFIG_CAPTCHA',   1, 1, 0),
+    (20, 6, 1, 'WORDING_ADMIN_CONFIG_MAIL',      1, 1, 0),
+    -- User navbar — Webmail (pin 3, alpha-sorted alongside Profile/Settings)
+    (21, 3, 1, 'WORDING_WEBMAIL',                1, 1, 0),
+    -- Admin navbar — Webmail IMAP config (pin 6, alpha-sorted)
+    (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',   1, 1, 0),
+    -- Admin navbar — Audit Log (pin 6, alpha-sorted)
     (23, 6, 1, 'WORDING_ADMIN_AUDIT_LOG',        1, 1, 0);
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
+    -- Entries with known stable page IDs
     (1,1),(2,9),(5,8),(6,6),(7,7),(8,19),
     (9,18),(10,14),(11,12),(12,17),(13,11),(14,13),(15,16),(16,15),
-    (17,20),(18,21),(19,24),(20,26);
-
--- Map new navbar entries to their pages (using url_id lookup)
-INSERT INTO `navbar_internal` (id, page_id)
-SELECT 21, p.id FROM `page` p WHERE p.url_id = 'WORDING_WEBMAIL'
-UNION ALL
-SELECT 22, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_CONFIG_WEBMAIL'
-UNION ALL
-SELECT 23, p.id FROM `page` p WHERE p.url_id = 'WORDING_ADMIN_AUDIT_LOG';
+    (17,20),(18,21),(19,24),(20,26),
+    -- New pages (ids 27, 28, 29)
+    (21,27),(22,28),(23,29);
 
 INSERT INTO `navbar_external` (id, url)
 VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
@@ -575,63 +612,6 @@ VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator',
 
 INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
-
--- ─────────────────────────────────────────────────────────────────────────
--- Webmail: trusted sender list
--- ─────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS `webmail_trusted_sender`
-(
-    `user_id`      BINARY(16)   NOT NULL,
-    `sender_email` VARCHAR(320) NOT NULL,
-    `created_at`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`user_id`, `sender_email`),
-    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-);
-
--- ─────────────────────────────────────────────────────────────────────────
--- Admin audit log (INSERT-only; never updated/deleted by the app)
--- ─────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS `admin_audit_log`
-(
-    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `user_id`    BINARY(16)      NOT NULL,
-    `username`   VARCHAR(64)     NOT NULL,
-    `action`     VARCHAR(64)     NOT NULL,
-    `resource`   VARCHAR(128)    NOT NULL DEFAULT '',
-    `detail`     TEXT            NOT NULL DEFAULT '',
-    `ip`         VARCHAR(45)     NOT NULL DEFAULT '',
-    `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_action`     (`action`),
-    INDEX `idx_user_id`    (`user_id`),
-    INDEX `idx_created_at` (`created_at`)
-);
-
--- Webmail user page (child of user, id=9)
-INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
-VALUES ('WORDING_WEBMAIL', 1, 'webmail', 1, 1, 0, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-SELECT 9, LAST_INSERT_ID()
-UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
-
--- Webmail admin config page (child of admin, id=18)
-INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
-VALUES ('WORDING_ADMIN_CONFIG_WEBMAIL', 1, 'admin_config_webmail', 1, 1, 0, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-SELECT 18, LAST_INSERT_ID()
-UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
-
--- Admin audit log page (child of admin, id=18)
-INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
-VALUES ('WORDING_ADMIN_AUDIT_LOG', 1, 'admin_audit_log', 1, 1, 0, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-SELECT 18, LAST_INSERT_ID()
-UNION ALL SELECT LAST_INSERT_ID(), LAST_INSERT_ID();
 
 INSERT INTO `page_closure` (ancestor, descendant)
 VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());

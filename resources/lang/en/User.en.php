@@ -170,6 +170,7 @@ return [
     'webmail.folders'             => 'Folders',
     'webmail.inbox'               => 'Inbox',
     'webmail.from'                => 'From',
+    'webmail.to'                  => 'To',
     'webmail.subject'             => 'Subject',
     'webmail.date'                => 'Date',
     'webmail.actions'             => 'Actions',
