@@ -14,6 +14,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Config\Config;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 
@@ -37,6 +38,7 @@ final class RegisterController extends AbstractController
         private readonly FlashBag              $flash,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly Config                $config,
     ) {
         parent::__construct($collector);
     }
@@ -164,7 +166,8 @@ final class RegisterController extends AbstractController
         $this->ctx->set('show_captcha',       $showCaptcha);
         $this->ctx->set('captcha_id',         $captchaId);
         $this->ctx->set('captcha_image',      $captchaB64);
-        $this->ctx->set('show_mailbox',       $this->userService->requireEmail());
+        $mailboxIsUsername = (bool) $this->config->getConfig('WebmailService', 'mailbox_is_username', false);
+        $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$mailboxIsUsername);
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());
         $this->ctx->set('show_display_name',  $this->userService->requireDisplayName());
         $this->ctx->set('show_birth_date',    $this->userService->requireBirthDate());

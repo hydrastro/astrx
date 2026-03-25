@@ -6,8 +6,27 @@ namespace AstrX\User;
 use AstrX\Config\Config;
 use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
-use AstrX\User\Diagnostic\UserDiagnostic;
+use AstrX\User\Diagnostic\UserLoginFailedDiagnostic;
+use AstrX\User\Diagnostic\UserLoginRestrictedDiagnostic;
+use AstrX\User\Diagnostic\UserNotVerifiedDiagnostic;
+use AstrX\User\Diagnostic\UserRegistrationClosedDiagnostic;
+use AstrX\User\Diagnostic\UserUsernameTakenDiagnostic;
+use AstrX\User\Diagnostic\UserEmailTakenDiagnostic;
+use AstrX\User\Diagnostic\UserMailboxTakenDiagnostic;
+use AstrX\User\Diagnostic\UserInvalidUsernameDiagnostic;
+use AstrX\User\Diagnostic\UserInvalidPasswordDiagnostic;
+use AstrX\User\Diagnostic\UserInvalidMailboxDiagnostic;
+use AstrX\User\Diagnostic\UserPasswordsMismatchDiagnostic;
+use AstrX\User\Diagnostic\UserInvalidDateDiagnostic;
+use AstrX\User\Diagnostic\UserTooYoungDiagnostic;
+use AstrX\User\Diagnostic\UserEmptyFieldsDiagnostic;
+use AstrX\User\Diagnostic\UserWrongPasswordDiagnostic;
+use AstrX\User\Diagnostic\UserTokenNotFoundDiagnostic;
+use AstrX\User\Diagnostic\UserTokenExpiredDiagnostic;
+use AstrX\User\Diagnostic\UserTokenAlreadySentDiagnostic;
+use AstrX\User\Diagnostic\UserNotFoundDiagnostic;
 
 /**
  * User business logic.
@@ -604,12 +623,29 @@ final class UserService
 
     private function opErr(string $operation, string $detail = ''): Result
     {
-        return Result::err(null, Diagnostics::of(new UserDiagnostic(
-                                                     UserDiagnostic::ID,
-                                                     UserDiagnostic::LEVEL,
-                                                     $operation,
-                                                     $detail,
-                                                 )));
+        $diagnostic = match ($operation) {
+            'login_failed'         => new UserLoginFailedDiagnostic('astrx.user/login_failed', DiagnosticLevel::NOTICE),
+            'login_restricted'     => new UserLoginRestrictedDiagnostic('astrx.user/login_restricted', DiagnosticLevel::WARNING),
+            'not_verified'         => new UserNotVerifiedDiagnostic('astrx.user/not_verified', DiagnosticLevel::NOTICE),
+            'registration_closed'  => new UserRegistrationClosedDiagnostic('astrx.user/registration_closed', DiagnosticLevel::NOTICE),
+            'username_taken'       => new UserUsernameTakenDiagnostic('astrx.user/username_taken', DiagnosticLevel::NOTICE),
+            'email_taken'          => new UserEmailTakenDiagnostic('astrx.user/email_taken', DiagnosticLevel::NOTICE),
+            'mailbox_taken'        => new UserMailboxTakenDiagnostic('astrx.user/mailbox_taken', DiagnosticLevel::NOTICE),
+            'invalid_username'     => new UserInvalidUsernameDiagnostic('astrx.user/invalid_username', DiagnosticLevel::NOTICE, $detail),
+            'invalid_password'     => new UserInvalidPasswordDiagnostic('astrx.user/invalid_password', DiagnosticLevel::NOTICE, $detail),
+            'invalid_mailbox'      => new UserInvalidMailboxDiagnostic('astrx.user/invalid_mailbox', DiagnosticLevel::NOTICE),
+            'passwords_mismatch'   => new UserPasswordsMismatchDiagnostic('astrx.user/passwords_mismatch', DiagnosticLevel::NOTICE),
+            'invalid_date'         => new UserInvalidDateDiagnostic('astrx.user/invalid_date', DiagnosticLevel::NOTICE),
+            'too_young'            => new UserTooYoungDiagnostic('astrx.user/too_young', DiagnosticLevel::NOTICE),
+            'empty_fields'         => new UserEmptyFieldsDiagnostic('astrx.user/empty_fields', DiagnosticLevel::NOTICE),
+            'wrong_password'       => new UserWrongPasswordDiagnostic('astrx.user/wrong_password', DiagnosticLevel::NOTICE),
+            'token_not_found'      => new UserTokenNotFoundDiagnostic('astrx.user/token_not_found', DiagnosticLevel::NOTICE),
+            'token_expired'        => new UserTokenExpiredDiagnostic('astrx.user/token_expired', DiagnosticLevel::NOTICE),
+            'token_already_sent'   => new UserTokenAlreadySentDiagnostic('astrx.user/token_already_sent', DiagnosticLevel::NOTICE),
+            'user_not_found'       => new UserNotFoundDiagnostic('astrx.user/not_found', DiagnosticLevel::NOTICE),
+            default                => new UserEmptyFieldsDiagnostic('astrx.user/unknown', DiagnosticLevel::WARNING),
+        };
+        return Result::err(null, Diagnostics::of($diagnostic));
     }
 
     /**

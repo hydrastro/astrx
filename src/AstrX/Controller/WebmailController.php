@@ -123,7 +123,8 @@ final class WebmailController extends AbstractController
 
         // ── Connect to IMAP ───────────────────────────────────────────────────
         $mailbox  = $this->session->mailbox();
-        $connectR = $this->webmail->connect($mailbox, $imapPass);
+        $username = $this->session->username();
+        $connectR = $this->webmail->connect($mailbox, $imapPass, $username);
         if (!$connectR->isOk()) {
             $connectR->drainTo($this->collector);
             $this->session->clearImapPassword();
@@ -301,8 +302,11 @@ final class WebmailController extends AbstractController
             return $selfUrl . '?compose=1&folder=' . rawurlencode($folder);
         }
 
+        $fromAddress = $this->webmail->resolveLocalPart(
+            $this->session->mailbox(), $this->session->username()
+        );
         $r = $this->webmail->sendMessage(
-            fromAddress: $this->session->mailbox(),
+            fromAddress: $fromAddress,
             fromName:    $this->session->username(),
             toAddress:   $to,
             subject:     $subject,
@@ -324,8 +328,11 @@ final class WebmailController extends AbstractController
     /** @param array<string, mixed> $posted */
     private function handleSaveDraft(array $posted, string $selfUrl, string $folder): string
     {
+        $fromAddress = $this->webmail->resolveLocalPart(
+            $this->session->mailbox(), $this->session->username()
+        );
         $r = $this->webmail->saveDraft(
-            fromAddress: $this->session->mailbox(),
+            fromAddress: $fromAddress,
             fromName:    $this->session->username(),
             toAddress:   trim((string) ($posted['to']      ?? '')),
             subject:     trim((string) ($posted['subject'] ?? '')),

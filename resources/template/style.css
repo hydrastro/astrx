@@ -300,3 +300,82 @@ h2 {
 .clear {
     clear: both;
 }
+
+/* ============================================================
+ * WEBMAIL
+ * ============================================================ */
+
+/* ── Two-column layout ───────────────────────────────────────────────────── */
+#wm-wrap        { display:table; width:calc(100% + 20px); table-layout:fixed;
+    margin: -10px; /* cancel #main 10px padding on all sides */ }
+#wm-sidebar     { display:table-cell; width:12%; vertical-align:top;
+    border-right:1px solid #fff;
+    padding:10px 0 10px 0; }
+#wm-content     { display:table-cell; vertical-align:top; padding:10px 10px 10px 1em; }
+
+/* ── Folder sidebar: same pattern as site navbar ─────────────────────────── */
+#wm-nav         { list-style:none; margin:0; padding:0; }
+#wm-nav li a    { display:block; padding:3px 8px; color:#fff;
+    text-decoration:none; }
+#wm-nav li a:hover              { background:#fff; color:#000; }
+#wm-nav li.wm-cur a             { background:#fff; color:#000;
+    pointer-events:none; cursor:default; }
+#wm-nav li.wm-unseen a          { font-weight:bold; }
+#wm-nav li.wm-cur.wm-unseen a  { font-weight:bold; }
+
+#wm-sidebar-btns { padding:4px 0 0; }
+#wm-sidebar-btns .input { display:block; width:100%; box-sizing:border-box;
+    text-align:center; margin:2px 0; }
+
+/* ── Message list ────────────────────────────────────────────────────────── */
+.wm-toolbar     { margin-bottom:4px; }
+.wm-toolbar form{ display:inline; }
+.wm-info        { font-size:0.9em; margin:3px 0 5px; }
+
+#wm-list        { width:100%; border-collapse:collapse; }
+#wm-list th     { text-align:left; border-bottom:1px solid #fff;
+    padding:2px 6px; font-size:0.85em; }
+#wm-list td     { padding:2px 6px; vertical-align:middle; }
+#wm-list tr.wm-even td { background:#111; }
+#wm-list tr.wm-unread td { font-weight:bold; }
+#wm-list td a   { color:#fff; }
+#wm-list td a:hover { text-decoration:underline; }
+
+/* ── Bulk action bar ─────────────────────────────────────────────────────── */
+.wm-bulk        { margin:5px 0; padding:3px 0; border-top:1px solid #444;
+    font-size:0.9em; }
+.wm-bulk form   { display:inline; }
+.wm-bulk select { background:#000; color:#fff; border:1px solid #fff; }
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+.wm-pager       { margin:5px 0; font-size:0.9em; }
+.wm-pager form  { display:inline; }
+
+/* ── Message view ────────────────────────────────────────────────────────── */
+.wm-msg-actions { margin-bottom:5px; }
+.wm-msg-actions form { display:inline; }
+.wm-msg-actions .input { margin:0 1px; }
+#wm-msg-hdr     { border-collapse:collapse; margin-bottom:4px; }
+#wm-msg-hdr th  { text-align:right; white-space:nowrap; padding:1px 8px 1px 0;
+    vertical-align:top; }
+.wm-notice      { padding:3px 8px; margin:3px 0; border:1px solid #888;
+    font-size:0.9em; }
+.wm-notice form { display:inline; }
+.wm-msg-body pre { white-space:pre-wrap; word-wrap:break-word;
+    font-family:monospace; max-width:72em; }
+.wm-att-table   { border-collapse:collapse; }
+.wm-att-table td { padding:1px 8px 1px 0; }
+
+/* ── Raw headers view ────────────────────────────────────────────────────── */
+.wm-raw-headers { white-space:pre-wrap; word-wrap:break-word;
+    font-family:monospace; font-size:0.85em; max-width:80em; }
+
+/* ── Compose ─────────────────────────────────────────────────────────────── */
+#wm-compose              { max-width:58em; }
+#wm-compose-hdr          { width:100%; border-collapse:collapse; margin:4px 0; }
+#wm-compose-hdr th       { white-space:nowrap; text-align:right; width:7em;
+    padding:2px 8px 2px 0; vertical-align:middle;
+    font-weight:normal; color:#aaa; }
+#wm-compose-hdr td       { padding:2px 0; }
+#wm-compose-hdr td input,
+#wm-compose-hdr td select { width:100%; box-sizing:border-box; }

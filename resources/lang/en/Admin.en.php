@@ -113,7 +113,6 @@ return [
     'admin.btn.save'       => 'Save',
     'admin.btn.clear'      => 'Clear',
     'admin.btn.toggle'     => 'Toggle',
-    'admin.btn.filter'     => 'Filter',
 
     // ---- Config — shared ----------------------------------------------------
     'admin.config.saved'   => 'Configuration saved.',
@@ -445,6 +444,11 @@ return [
     'admin.config.field.imap_timeout'       => 'Timeout (s)',
     'admin.config.field.imap_socks5_host'   => 'SOCKS5 host (Tor)',
     'admin.config.field.imap_socks5_port'   => 'SOCKS5 port',
+    'admin.config.field.mail_domain'                => 'Mail domain',
+    'admin.config.field.imap_login_use_full_address'=> 'IMAP login uses full address (user@domain)',
+    'admin.config.field.imap_verify_ssl'            => 'Verify SSL certificate',
+    'admin.config.field.mailbox_is_username'        => 'Mailbox = username',
+    'admin.config.field.mailbox_is_username_warning'=> '⚠ Dangerous: when enabled, the username is used as the mailbox local-part and the mailbox field is ignored everywhere. Only enable this if all usernames are valid email local-parts on your mail server.',
     'admin.config.field.messages_per_page'  => 'Messages per page',
     'admin.config.field.trash_folder'       => 'Trash folder name',
     'admin.config.field.sent_folder'        => 'Sent folder name',

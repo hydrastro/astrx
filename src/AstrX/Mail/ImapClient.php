@@ -4,8 +4,13 @@ declare(strict_types=1);
 namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
-use AstrX\Mail\Diagnostic\ImapDiagnostic;
+use AstrX\Mail\Diagnostic\ImapConnectDiagnostic;
+use AstrX\Mail\Diagnostic\ImapCommandFailedDiagnostic;
+use AstrX\Mail\Diagnostic\ImapFetchDiagnostic;
+use AstrX\Mail\Diagnostic\ImapAppendDiagnostic;
+use AstrX\Mail\Diagnostic\ImapStartTlsDiagnostic;
 use AstrX\Result\Diagnostics;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
 
 /**
@@ -506,11 +511,9 @@ final class ImapClient
             return Result::ok($tagged);
         }
         // NO or BAD
-        return Result::err($tagged, Diagnostics::of(new ImapDiagnostic(
-                                                        ImapDiagnostic::ID, ImapDiagnostic::LEVEL,
-                                                        strtolower(explode(' ', $cmd)[0]),
-                                                        $tagged
-                                                    )));
+        return Result::err($tagged, Diagnostics::of(
+            new ImapCommandFailedDiagnostic('astrx.mail/imap.command', DiagnosticLevel::ERROR, $tagged)
+        ));
     }
 
     /**
@@ -936,8 +939,13 @@ final class ImapClient
 
     private function err(string $op, string $detail = ''): Result
     {
-        return Result::err(false, Diagnostics::of(new ImapDiagnostic(
-                                                      ImapDiagnostic::ID, ImapDiagnostic::LEVEL, $op, $detail
-                                                  )));
+        $diagnostic = match ($op) {
+            'connect'       => new ImapConnectDiagnostic('astrx.mail/imap.connect', DiagnosticLevel::ERROR, $detail),
+            'fetch_message' => new ImapFetchDiagnostic('astrx.mail/imap.fetch', DiagnosticLevel::ERROR, $detail),
+            'append'        => new ImapAppendDiagnostic('astrx.mail/imap.append', DiagnosticLevel::ERROR, $detail),
+            'starttls'      => new ImapStartTlsDiagnostic('astrx.mail/imap.starttls', DiagnosticLevel::ERROR, $detail),
+            default         => new ImapCommandFailedDiagnostic('astrx.mail/imap.command', DiagnosticLevel::ERROR, $detail),
+        };
+        return Result::err(false, Diagnostics::of($diagnostic));
     }
 }

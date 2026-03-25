@@ -6,9 +6,19 @@ namespace AstrX\Comment;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Auth\Policy\CommentPolicy;
-use AstrX\Comment\Diagnostic\CommentDiagnostic;
+use AstrX\Comment\Diagnostic\CommentNotAllowedDiagnostic;
+use AstrX\Comment\Diagnostic\CommentEmptyContentDiagnostic;
+use AstrX\Comment\Diagnostic\CommentInvalidEmailDiagnostic;
+use AstrX\Comment\Diagnostic\CommentReplyNotFoundDiagnostic;
+use AstrX\Comment\Diagnostic\CommentReplyWrongPageDiagnostic;
+use AstrX\Comment\Diagnostic\CommentAntispamDiagnostic;
+use AstrX\Comment\Diagnostic\CommentMutedDiagnostic;
+use AstrX\Comment\Diagnostic\CommentFloodDiagnostic;
+use AstrX\Comment\Diagnostic\CommentGateDeniedDiagnostic;
+use AstrX\Comment\Diagnostic\CommentNotFoundDiagnostic;
 use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
 use AstrX\User\UserSession;
 
@@ -295,8 +305,19 @@ final class CommentService
 
     private function opErr(string $operation, string $detail = ''): Result
     {
-        return Result::err(null, Diagnostics::of(new CommentDiagnostic(
-                                                     CommentDiagnostic::ID, CommentDiagnostic::LEVEL, $operation, $detail
-                                                 )));
+        $diagnostic = match ($operation) {
+            'not_allowed'       => new CommentNotAllowedDiagnostic('astrx.comment/not_allowed', DiagnosticLevel::WARNING),
+            'empty_content'     => new CommentEmptyContentDiagnostic('astrx.comment/empty_content', DiagnosticLevel::NOTICE),
+            'invalid_email'     => new CommentInvalidEmailDiagnostic('astrx.comment/invalid_email', DiagnosticLevel::NOTICE),
+            'reply_not_found'   => new CommentReplyNotFoundDiagnostic('astrx.comment/reply_not_found', DiagnosticLevel::NOTICE),
+            'reply_wrong_page'  => new CommentReplyWrongPageDiagnostic('astrx.comment/reply_wrong_page', DiagnosticLevel::NOTICE),
+            'antispam'          => new CommentAntispamDiagnostic('astrx.comment/antispam', DiagnosticLevel::NOTICE, $detail),
+            'muted'             => new CommentMutedDiagnostic('astrx.comment/muted', DiagnosticLevel::NOTICE),
+            'flood'             => new CommentFloodDiagnostic('astrx.comment/flood', DiagnosticLevel::NOTICE),
+            'gate_denied'       => new CommentGateDeniedDiagnostic('astrx.comment/gate_denied', DiagnosticLevel::WARNING),
+            'comment_not_found' => new CommentNotFoundDiagnostic('astrx.comment/not_found', DiagnosticLevel::WARNING),
+            default             => new CommentNotFoundDiagnostic('astrx.comment/unknown', DiagnosticLevel::WARNING),
+        };
+        return Result::err(null, Diagnostics::of($diagnostic));
     }
 }

@@ -7,8 +7,13 @@
         <textarea name="notes" id="notes" rows="20" class="input">{{&notes}}</textarea><br>
         <input type="hidden" name="action" value="save">
         <input type="submit" value="{{btn_save}}" class="input">
-        <input type="submit" name="action" value="clear"
-               onclick="this.form.elements['action'].value='clear'" class="input">
-        {{btn_clear}}
+    </p>
+</form>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="clear">
+    <p>
+        <input type="submit" value="{{btn_clear}}" class="input">
     </p>
 </form>

@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 namespace AstrX\Mail;
 
-use AstrX\Mail\Diagnostic\ImapDiagnostic;
+use AstrX\Mail\Diagnostic\TrustCheckFailedDiagnostic;
+use AstrX\Mail\Diagnostic\TrustAddFailedDiagnostic;
+use AstrX\Mail\Diagnostic\TrustRemoveFailedDiagnostic;
+use AstrX\Mail\Diagnostic\TrustListFailedDiagnostic;
 use AstrX\Result\Diagnostics;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
 use PDO;
 
@@ -40,9 +44,9 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok($stmt->fetchColumn() !== false);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(new ImapDiagnostic(
-                                                          ImapDiagnostic::ID, ImapDiagnostic::LEVEL, 'db_trust_check', $e->getMessage()
-                                                      )));
+            return Result::err(false, Diagnostics::of(
+                new TrustCheckFailedDiagnostic('astrx.mail/trust.check_failed', DiagnosticLevel::ERROR, $e->getMessage())
+            ));
         }
     }
 
@@ -62,9 +66,9 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(new ImapDiagnostic(
-                                                          ImapDiagnostic::ID, ImapDiagnostic::LEVEL, 'db_trust_add', $e->getMessage()
-                                                      )));
+            return Result::err(false, Diagnostics::of(
+                new TrustAddFailedDiagnostic('astrx.mail/trust.add_failed', DiagnosticLevel::ERROR, $e->getMessage())
+            ));
         }
     }
 
@@ -83,9 +87,9 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(new ImapDiagnostic(
-                                                          ImapDiagnostic::ID, ImapDiagnostic::LEVEL, 'db_trust_remove', $e->getMessage()
-                                                      )));
+            return Result::err(false, Diagnostics::of(
+                new TrustRemoveFailedDiagnostic('astrx.mail/trust.remove_failed', DiagnosticLevel::ERROR, $e->getMessage())
+            ));
         }
     }
 
@@ -104,9 +108,9 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId]);
             return Result::ok($stmt->fetchAll(PDO::FETCH_COLUMN));
         } catch (\Throwable $e) {
-            return Result::err([], Diagnostics::of(new ImapDiagnostic(
-                                                       ImapDiagnostic::ID, ImapDiagnostic::LEVEL, 'db_trust_list', $e->getMessage()
-                                                   )));
+            return Result::err([], Diagnostics::of(
+                new TrustListFailedDiagnostic('astrx.mail/trust.list_failed', DiagnosticLevel::ERROR, $e->getMessage())
+            ));
         }
     }
 }

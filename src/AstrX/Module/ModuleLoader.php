@@ -81,6 +81,7 @@ final class ModuleLoader
         }
 
         $this->config->applyModuleConfig($instance, $domain);
+        $this->config->emitUnusedKeyDiagnostics($domain);
 
         // Wire translator if the instance opts in via TranslatorAwareInterface.
         // This replaces the previously dead TranslatorAwareInterface.

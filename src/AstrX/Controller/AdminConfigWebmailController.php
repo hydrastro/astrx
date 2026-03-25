@@ -125,17 +125,15 @@ final class AdminConfigWebmailController extends AbstractController
     : Result {
         $full = $this->loadFullImapConfig();
         $full['WebmailService'] = [
-            'messages_per_page' => max(
-                5,
-                min(
-                    200,
-                    (int)($p['messages_per_page']??25)
-                )
-            ),
-            'trash_folder' => trim((string)($p['trash_folder']??'Trash')),
-            'sent_folder' => trim((string)($p['sent_folder']??'Sent')),
-            'drafts_folder' => trim((string)($p['drafts_folder']??'Drafts')),
+            'messages_per_page'           => max(5, min(200, (int)($p['messages_per_page'] ?? 25))),
+            'trash_folder'                => trim((string)($p['trash_folder']   ?? 'Trash')),
+            'sent_folder'                 => trim((string)($p['sent_folder']    ?? 'Sent')),
+            'drafts_folder'               => trim((string)($p['drafts_folder']  ?? 'Drafts')),
+            'mail_domain'                 => trim((string)($p['mail_domain']    ?? 'localhost')),
+            'imap_login_use_full_address' => isset($p['imap_login_use_full_address']),
+            'mailbox_is_username'         => isset($p['mailbox_is_username']),
         ];
+        $full['ImapClient']['imap_verify_ssl'] = isset($p['imap_verify_ssl']);
 
         return $this->writer->write('Imap', $full);
     }
@@ -234,14 +232,16 @@ final class AdminConfigWebmailController extends AbstractController
                 'Sent'
             )
         );
-        $this->ctx->set(
-            'cfg_drafts_folder',
-            (string)$this->config->getConfig(
-                'WebmailService',
-                'drafts_folder',
-                'Drafts'
-            )
-        );
+        $this->ctx->set('cfg_drafts_folder',
+                        (string) $this->config->getConfig('WebmailService', 'drafts_folder', 'Drafts'));
+        $this->ctx->set('cfg_mail_domain',
+                        (string) $this->config->getConfig('WebmailService', 'mail_domain', 'localhost'));
+        $this->ctx->set('cfg_imap_login_use_full_address',
+                        (bool) $this->config->getConfig('WebmailService', 'imap_login_use_full_address', true));
+        $this->ctx->set('cfg_imap_verify_ssl',
+                        (bool) $this->config->getConfig('ImapClient', 'imap_verify_ssl', true));
+        $this->ctx->set('cfg_mailbox_is_username',
+                        (bool) $this->config->getConfig('WebmailService', 'mailbox_is_username', false));
 
         $this->setI18n();
     }
@@ -324,10 +324,16 @@ final class AdminConfigWebmailController extends AbstractController
             'label_sent_folder',
             $this->t->t('admin.config.field.sent_folder')
         );
-        $this->ctx->set(
-            'label_drafts_folder',
-            $this->t->t('admin.config.field.drafts_folder')
-        );
+        $this->ctx->set('label_drafts_folder',
+                        $this->t->t('admin.config.field.drafts_folder'));
+        $this->ctx->set('label_mail_domain',
+                        $this->t->t('admin.config.field.mail_domain'));
+        $this->ctx->set('label_imap_login_use_full_address',
+                        $this->t->t('admin.config.field.imap_login_use_full_address'));
+        $this->ctx->set('label_imap_verify_ssl',
+                        $this->t->t('admin.config.field.imap_verify_ssl'));
+        $this->ctx->set('label_mailbox_is_username',
+                        $this->t->t('admin.config.field.mailbox_is_username'));
         $this->ctx->set('btn_save', $this->t->t('admin.btn.save'));
     }
 }

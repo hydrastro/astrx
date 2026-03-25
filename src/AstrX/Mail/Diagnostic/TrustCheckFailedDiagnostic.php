@@ -1,0 +1,21 @@
+<?php
+declare(strict_types=1);
+
+namespace AstrX\Mail\Diagnostic;
+
+use AstrX\Result\AbstractDiagnostic;
+use AstrX\Result\DiagnosticLevel;
+
+/** PDO error while checking trusted-sender status. detail = exception message. */
+final class TrustCheckFailedDiagnostic extends AbstractDiagnostic
+{
+    public function __construct(
+        string $id,
+        DiagnosticLevel $level,
+        public readonly string $detail = '',
+    ) {
+        parent::__construct($id, $level);
+    }
+
+    public function vars(): array { return ['detail' => $this->detail]; }
+}

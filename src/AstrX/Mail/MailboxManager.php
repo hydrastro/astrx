@@ -5,7 +5,8 @@ declare(strict_types = 1);
 namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
-use AstrX\Mail\Diagnostic\MailDiagnostic;
+use AstrX\Mail\Diagnostic\MailApiErrorDiagnostic;
+use AstrX\Mail\Diagnostic\MailInvalidPayloadDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
@@ -26,8 +27,6 @@ use AstrX\Result\Result;
  */
 final class MailboxManager
 {
-    public const string          ID_MAILBOX_ERROR  = 'astrx.mail/mailbox_error';
-    public const DiagnosticLevel LVL_MAILBOX_ERROR = DiagnosticLevel::ERROR;
 
     private string $mailboxDomain = '';
     private string $mailapiUrl = '';
@@ -237,8 +236,10 @@ final class MailboxManager
 
     private function err(string $op, string $detail = ''): Result
     {
-        return Result::err(false, Diagnostics::of(new MailDiagnostic(
-                                                      self::ID_MAILBOX_ERROR, self::LVL_MAILBOX_ERROR, $op, $detail
-                                                  )));
+        $diagnostic = match ($op) {
+            'invalid_payload' => new MailInvalidPayloadDiagnostic('astrx.mail/invalid_payload', DiagnosticLevel::ERROR),
+            default           => new MailApiErrorDiagnostic('astrx.mail/mailapi_error', DiagnosticLevel::ERROR, $detail),
+        };
+        return Result::err(false, Diagnostics::of($diagnostic));
     }
 }

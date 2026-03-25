@@ -44,6 +44,21 @@
             <td><input type="text" name="sent_folder" value="{{cfg_sent_folder}}" class="input"></td></tr>
         <tr><th>{{label_drafts_folder}}</th>
             <td><input type="text" name="drafts_folder" value="{{cfg_drafts_folder}}" class="input"></td></tr>
+        <tr><th>{{label_mail_domain}}</th>
+            <td><input type="text" name="mail_domain" value="{{cfg_mail_domain}}" class="input"></td></tr>
+        <tr><th>{{label_imap_login_use_full_address}}</th>
+            <td><label><input type="checkbox" name="imap_login_use_full_address" value="1"
+                              {{#cfg_imap_login_use_full_address}}checked{{/cfg_imap_login_use_full_address}}>
+                {{label_imap_login_use_full_address}}</label></td></tr>
+        <tr><th>{{label_imap_verify_ssl}}</th>
+            <td><label><input type="checkbox" name="imap_verify_ssl" value="1"
+                              {{#cfg_imap_verify_ssl}}checked{{/cfg_imap_verify_ssl}}>
+                {{label_imap_verify_ssl}}</label></td></tr>
+        <tr><th>{{label_mailbox_is_username}}</th>
+            <td><label><input type="checkbox" name="mailbox_is_username" value="1"
+                              {{#cfg_mailbox_is_username}}checked{{/cfg_mailbox_is_username}}>
+                {{label_mailbox_is_username}}</label>
+                <p><small>{{label_mailbox_is_username_warning}}</small></p></td></tr>
         <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
     </table>
 </form>

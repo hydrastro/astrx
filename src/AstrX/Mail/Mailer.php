@@ -5,7 +5,7 @@ declare(strict_types = 1);
 namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
-use AstrX\Mail\Diagnostic\MailDiagnostic;
+use AstrX\Mail\Diagnostic\MailSendFailedDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
@@ -29,8 +29,6 @@ use AstrX\Result\Result;
  */
 final class Mailer
 {
-    public const string         ID_SEND_ERROR  = 'astrx.mail/send_error';
-    public const DiagnosticLevel LVL_SEND_ERROR = DiagnosticLevel::ERROR;
 
     public const string ID_MAIL_ERROR = 'astrx.mail/error';
     private string $host = 'localhost';
@@ -489,8 +487,8 @@ final class Mailer
 
     private function err(string $detail): Result
     {
-        return Result::err(false, Diagnostics::of(new MailDiagnostic(
-                                                      self::ID_SEND_ERROR, self::LVL_SEND_ERROR, 'send_failed', $detail
-                                                  )));
+        return Result::err(false, Diagnostics::of(
+            new MailSendFailedDiagnostic('astrx.mail/send_failed', DiagnosticLevel::ERROR, $detail)
+        ));
     }
 }

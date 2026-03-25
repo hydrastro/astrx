@@ -8,12 +8,23 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic;
 use AstrX\Config\Diagnostic\ConfigFileInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
+use AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic;
 use ReflectionObject;
 
 final class Config
 {
     /** @var array<string, array<string, mixed>> */
     private array $configuration;
+
+    /**
+     * Tracks which config keys have been consumed (either via getConfig() or
+     * applyModuleConfig/InjectConfig). Keys: 'Domain.key'. Populated lazily.
+     * @var array<string, true>
+     */
+    private array $consumedKeys = [];
+
+    /** @var array<string, true> — domains whose keys have been checked for unused */
+    private array $checkedDomains = [];
 
     public function __construct(
         private readonly DiagnosticSinkInterface $sink,
@@ -27,6 +38,7 @@ final class Config
     public function getConfig(string $domain, string $key, mixed $fallback = null): mixed
     {
         if (isset($this->configuration[$domain]) && array_key_exists($key, $this->configuration[$domain])) {
+            $this->consumedKeys[$domain . '.' . $key] = true;
             return $this->configuration[$domain][$key];
         }
 
@@ -72,11 +84,35 @@ final class Config
         if (!is_array($cfg)) {
             return;
         }
-        $this->applyConfigToInstance($instance, $cfg);
+        $this->applyConfigToInstance($instance, $cfg, $domain);
+    }
+
+    /**
+     * Emit diagnostics for any config keys in $domain that were never consumed.
+     * Call once per domain after all classes for that domain have been created.
+     * Safe to call multiple times — domains are only checked once.
+     */
+    public function emitUnusedKeyDiagnostics(string $domain): void
+    {
+        if (isset($this->checkedDomains[$domain])) {
+            return;
+        }
+        $this->checkedDomains[$domain] = true;
+        $cfg = $this->configuration[$domain] ?? [];
+        foreach (array_keys($cfg) as $key) {
+            if (!isset($this->consumedKeys[$domain . '.' . $key])) {
+                $this->sink->emit(new ConfigKeyUnusedDiagnostic(
+                                      id:     'astrx.config/key_unused',
+                                      level:  DiagnosticLevel::WARNING,
+                                      domain: $domain,
+                                      key:    $key,
+                                  ));
+            }
+        }
     }
 
     /** @param array<string, mixed> $cfg */
-    private function applyConfigToInstance(object $instance, array $cfg): void
+    private function applyConfigToInstance(object $instance, array $cfg, string $configDomain = ''): void
     {
         if ($instance instanceof ConfigurableInterface) {
             $instance->applyConfig($cfg);
@@ -95,6 +131,8 @@ final class Config
             if (!array_key_exists($key, $cfg)) {
                 continue;
             }
+            // Mark as consumed so unused-key detection doesn't flag it
+            $this->consumedKeys[$configDomain . '.' . $key] = true;
 
             if ($method->getNumberOfParameters() !== 1) {
                 $this->sink->emit(new ConfigSetterInvalidDiagnostic(

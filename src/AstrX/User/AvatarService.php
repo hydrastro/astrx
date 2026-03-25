@@ -6,8 +6,13 @@ namespace AstrX\User;
 use AstrX\Config\InjectConfig;
 use AstrX\Http\UploadedFile;
 use AstrX\Result\Diagnostics;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
-use AstrX\User\Diagnostic\UserDiagnostic;
+use AstrX\User\Diagnostic\UserAvatarSizeDiagnostic;
+use AstrX\User\Diagnostic\UserAvatarExtensionDiagnostic;
+use AstrX\User\Diagnostic\UserAvatarInvalidDiagnostic;
+use AstrX\User\Diagnostic\UserAvatarUploadErrorDiagnostic;
+use AstrX\User\Diagnostic\UserAvatarMoveFailedDiagnostic;
 
 /**
  * Filesystem avatar operations.
@@ -127,11 +132,14 @@ final class AvatarService
 
     private function opErr(string $op, string $detail = ''): Result
     {
-        return Result::err(false, Diagnostics::of(new UserDiagnostic(
-                                                      UserDiagnostic::ID,
-                                                      UserDiagnostic::LEVEL,
-                                                      $op,
-                                                      $detail,
-                                                  )));
+        $diagnostic = match ($op) {
+            'avatar_size'         => new UserAvatarSizeDiagnostic('astrx.user/avatar_size', DiagnosticLevel::NOTICE),
+            'avatar_extension'    => new UserAvatarExtensionDiagnostic('astrx.user/avatar_extension', DiagnosticLevel::NOTICE),
+            'avatar_invalid'      => new UserAvatarInvalidDiagnostic('astrx.user/avatar_invalid', DiagnosticLevel::NOTICE),
+            'avatar_upload_error' => new UserAvatarUploadErrorDiagnostic('astrx.user/avatar_upload_error', DiagnosticLevel::ERROR, $detail),
+            'avatar_move_failed'  => new UserAvatarMoveFailedDiagnostic('astrx.user/avatar_move_failed', DiagnosticLevel::ERROR),
+            default               => new UserAvatarInvalidDiagnostic('astrx.user/avatar_unknown', DiagnosticLevel::ERROR),
+        };
+        return Result::err(false, Diagnostics::of($diagnostic));
     }
 }

@@ -28,6 +28,13 @@ final class WebmailService
     private string $draftsFolder             = 'Drafts';
     private string $mailDomain               = 'localhost';
     private bool   $imapLoginUseFullAddress  = true;
+    /**
+     * When true, the IMAP login identity and From address are built from
+     * the user's username instead of their mailbox field. Useful when every
+     * user's username IS their mailbox local-part and the mailbox column
+     * is not populated (or is ignored during registration).
+     */
+    private bool   $mailboxIsUsername         = false;
 
     #[InjectConfig('messages_per_page')]
     public function setMessagesPerPage(int $v): void { $this->messagesPerPage = max(5, min(200, $v)); }
@@ -48,6 +55,9 @@ final class WebmailService
     /** When true, IMAP LOGIN uses 'localpart@domain'; when false, just 'localpart'. */
     #[InjectConfig('imap_login_use_full_address')]
     public function setImapLoginUseFullAddress(bool $v): void { $this->imapLoginUseFullAddress = $v; }
+
+    #[InjectConfig('mailbox_is_username')]
+    public function setMailboxIsUsername(bool $v): void { $this->mailboxIsUsername = $v; }
 
     public function __construct(
         private readonly ImapClient $imap,
@@ -73,17 +83,21 @@ final class WebmailService
      *   true  → 'localpart@mail_domain'  (Dovecot virtual users, most modern servers)
      *   false → 'localpart'              (single-domain or older servers)
      *
-     * @param string $mailboxLocalPart  The local-part only (from UserSession::mailbox())
+     * @param string $mailboxLocalPart  Local-part from UserSession::mailbox(),
+     *                                  or the username when mailbox_is_username=true.
+     * @param string $username          The user's login username (used when mailbox_is_username=true).
      * @return Result<true>
      */
-    public function connect(string $mailboxLocalPart, string $imapPassword): Result
+    public function connect(string $mailboxLocalPart, string $imapPassword, string $username = ''): Result
     {
         if ($this->imap->isConnected()) { return Result::ok(true); }
         $r = $this->imap->connect();
         if (!$r->isOk()) { return $r; }
-        $loginId = $this->imapLoginUseFullAddress
-            ? $mailboxLocalPart . '@' . $this->mailDomain
-            : $mailboxLocalPart;
+        // When mailbox_is_username, the username itself is the IMAP local-part.
+        $localPart = $this->mailboxIsUsername && $username !== '' ? $username : $mailboxLocalPart;
+        $loginId   = $this->imapLoginUseFullAddress
+            ? $localPart . '@' . $this->mailDomain
+            : $localPart;
         return $this->imap->login($loginId, $imapPassword);
     }
 
@@ -376,7 +390,17 @@ final class WebmailService
         return $headers . "\r\n" . quoted_printable_encode($body);
     }
 
-    public function mailDomain(): string   { return $this->mailDomain; }
+    public function mailDomain(): string        { return $this->mailDomain; }
+    public function mailboxIsUsername(): bool   { return $this->mailboxIsUsername; }
+
+    /**
+     * Return the mailbox local-part to use for From: header construction,
+     * honouring mailbox_is_username.
+     */
+    public function resolveLocalPart(string $mailboxLocalPart, string $username): string
+    {
+        return $this->mailboxIsUsername && $username !== '' ? $username : $mailboxLocalPart;
+    }
     public function trashFolder(): string  { return $this->trashFolder; }
     public function sentFolder(): string   { return $this->sentFolder; }
     public function draftsFolder(): string { return $this->draftsFolder; }
