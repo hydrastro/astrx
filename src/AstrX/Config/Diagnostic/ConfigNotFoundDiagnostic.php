@@ -19,4 +19,10 @@ final class ConfigNotFoundDiagnostic extends AbstractDiagnostic
 
     public function getClassShortName(): string { return $this->classShortName; }
     public function getConfigName(): string     { return $this->configName; }
+
+    /** @return array<string, mixed> */
+    public function vars(): array
+    {
+        return ['domain' => $this->classShortName, 'key' => $this->configName];
+    }
 }

@@ -81,7 +81,14 @@ final class ModuleLoader
         }
 
         $this->config->applyModuleConfig($instance, $domain);
-        $this->config->emitUnusedKeyDiagnostics($domain);
+        // Only check for unused config keys on classes that declare
+        // #[InjectConfig] setters. Those keys are resolved at construction
+        // time and can be checked immediately. Classes that read config via
+        // getConfig() do so at request-handling time — checking here would
+        // produce false positives for every key they haven't read yet.
+        if ($this->classHasInjectConfig($fqcn)) {
+            $this->config->emitUnusedKeyDiagnostics($domain);
+        }
 
         // Wire translator if the instance opts in via TranslatorAwareInterface.
         // This replaces the previously dead TranslatorAwareInterface.
@@ -94,5 +101,26 @@ final class ModuleLoader
         } else {
             $this->pendingLangDomains[$domain] = true;
         }
+    }
+
+    /**
+     * Returns true if the class has at least one method with an
+     * #[InjectConfig] attribute. When true, all config keys for the
+     * class's domain are resolved at construction time and we can
+     * reliably detect unused ones immediately after injection.
+     */
+    private function classHasInjectConfig(string $fqcn): bool
+    {
+        try {
+            $rc = new \ReflectionClass($fqcn);
+        } catch (\ReflectionException) {
+            return false;
+        }
+        foreach ($rc->getMethods() as $method) {
+            if ($method->getAttributes(InjectConfig::class) !== []) {
+                return true;
+            }
+        }
+        return false;
     }
 }

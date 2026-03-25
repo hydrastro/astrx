@@ -26,6 +26,9 @@ final class Config
     /** @var array<string, true> — domains whose keys have been checked for unused */
     private array $checkedDomains = [];
 
+    /** @var array<string, true> — every domain that has been loaded via loadModuleConfig() */
+    private array $loadedDomains = [];
+
     public function __construct(
         private readonly DiagnosticSinkInterface $sink,
         ?string $configFile = null,
@@ -33,6 +36,17 @@ final class Config
         $file = $configFile ?? (defined('CONFIG_DIR') ? CONFIG_DIR . 'config.php' : '');
 
         $this->configuration = (is_file($file) ? require $file : []);
+
+        // Register a shutdown function to detect unused config keys in domains
+        // that are read via getConfig() rather than #[InjectConfig] setters.
+        // Those domains are consumed lazily during the request and can only be
+        // checked reliably at script-end, after all reads have completed.
+        // ModuleLoader handles #[InjectConfig] domains eagerly; this catches the rest.
+        register_shutdown_function(function (): void {
+            foreach (array_keys($this->loadedDomains) as $domain) {
+                $this->emitUnusedKeyDiagnostics($domain);
+            }
+        });
     }
 
     public function getConfig(string $domain, string $key, mixed $fallback = null): mixed
@@ -75,6 +89,7 @@ final class Config
         }
 
         $this->configuration = array_merge($this->configuration, $loaded);
+        $this->loadedDomains[$domain] = true;
     }
 
     /** Applies the config section for $domain to $instance. */
@@ -129,6 +144,16 @@ final class Config
 
             $key = $attrs[0]->newInstance()->key;
             if (!array_key_exists($key, $cfg)) {
+                // The setter declares a key that does not exist in the loaded
+                // config for this domain. This is the mirror of an unused key:
+                // a typo in the attribute name or a removed config key whose
+                // setter was not cleaned up.
+                $this->sink->emit(new ConfigNotFoundDiagnostic(
+                                      id:             'astrx.config/setter.key_missing',
+                                      level:          DiagnosticLevel::WARNING,
+                                      classShortName: $rc->getName(),
+                                      configName:     $key,
+                                  ));
                 continue;
             }
             // Mark as consumed so unused-key detection doesn't flag it

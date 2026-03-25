@@ -15,7 +15,6 @@ return [
         'cache_templates'    => true,
 
         // compile mode
-        'php_processing'     => false,
         'parse_mode'         => 1, // 0 plain, 1 template (if you keep that switch)
     ]
 ];
