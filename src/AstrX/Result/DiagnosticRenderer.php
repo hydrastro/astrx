@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Result;
 
+use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\I18n\Translator;
 
 /**
@@ -158,22 +159,52 @@ final class DiagnosticRenderer
     /**
      * Render all diagnostics at or above $minLevel, paired with their level.
      *
+     * When $checker is provided:
+     *   - The effective level (possibly overridden in DB) is used for the
+     *     minLevel comparison instead of the class-declared level.
+     *   - Diagnostics the current user may not see are silently skipped.
+     *
      * @return list<array{message:string, level:DiagnosticLevel, level_label:string}>
      */
-    public function renderFiltered(Diagnostics $diagnostics, DiagnosticLevel $minLevel): array
-    {
+    public function renderFiltered(
+        Diagnostics                   $diagnostics,
+        DiagnosticLevel               $minLevel,
+        ?DiagnosticVisibilityChecker  $checker = null,
+    ): array {
         $out = [];
         foreach ($diagnostics as $d) {
-            if ($d->level()->value < $minLevel->value) {
+            // Apply level override (DB) if checker is available.
+            $level = $checker !== null
+                ? $checker->effectiveLevel($d)
+                : $d->level();
+
+            if ($level->value < $minLevel->value) {
                 continue;
             }
+
+            // Visibility check: skip diagnostics the current user may not see.
+            if ($checker !== null && !$checker->canSee($d)) {
+                continue;
+            }
+
             $out[] = [
                 'message'     => $this->render($d),
-                'level'       => $d->level(),
-                'level_label' => $this->renderLevelLabel($d->level()),
+                'level'       => $level,
+                'level_label' => $this->renderLevelLabel($level),
             ];
         }
         return $out;
+    }
+
+    /**
+     * Return all known diagnostic codes currently registered in the catalog.
+     * Used by the admin UI to enumerate available codes for visibility config.
+     *
+     * @return list<string>
+     */
+    public function knownCodes(): array
+    {
+        return array_keys($this->catalog);
     }
 
     // -------------------------------------------------------------------------

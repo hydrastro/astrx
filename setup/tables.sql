@@ -346,6 +346,39 @@ CREATE TABLE `site_config`
 );
 
 
+
+-- ============================================================
+-- AUTH: DIAGNOSTIC VISIBILITY
+-- ============================================================
+
+-- Which diagnostic codes are visible to each non-admin group.
+-- Presence of a row means that group can see that code.
+-- ADMIN always has full visibility (enforced in code, never stored here).
+-- All other groups default to deny; rows are added via the admin UI.
+--
+-- group_name matches UserGroup enum case names: USER, MOD, GUEST.
+CREATE TABLE `diagnostic_visibility`
+(
+    `code`       VARCHAR(100) NOT NULL,
+    `group_name` VARCHAR(20)  NOT NULL,
+    PRIMARY KEY (`code`, `group_name`),
+    INDEX idx_group (`group_name`)
+);
+
+-- Optional per-code level overrides.
+-- When a row exists for a code, the stored level replaces the level
+-- the emitting class passed to the diagnostic constructor.
+-- This lets the admin promote or demote a code's severity without
+-- touching source code.
+-- level values mirror DiagnosticLevel: DEBUG=0 INFO=1 NOTICE=2
+--   WARNING=3 ERROR=4 CRITICAL=5 ALERT=6 EMERGENCY=7
+CREATE TABLE `diagnostic_level_override`
+(
+    `code`  VARCHAR(100) NOT NULL PRIMARY KEY,
+    `level` TINYINT      NOT NULL
+);
+
+
 -- ============================================================
 -- WEBMAIL
 -- ============================================================

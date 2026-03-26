@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Auth\DiagnosticLevelOverrideRepository;
+use AstrX\Auth\DiagnosticVisibilityRepository;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
@@ -12,6 +14,8 @@ use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
+use AstrX\Result\DiagnosticLevel;
+use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
@@ -54,7 +58,10 @@ final class AdminConfigAccessController extends AbstractController
         private readonly FlashBag              $flash,
         private readonly Page                  $page,
         private readonly UrlGenerator          $urlGen,
-        private readonly Translator            $t,
+        private readonly Translator                    $t,
+        private readonly DiagnosticRenderer            $renderer,
+        private readonly DiagnosticVisibilityRepository $visibilityRepo,
+        private readonly DiagnosticLevelOverrideRepository $levelRepo,
     ) {
         parent::__construct($collector);
     }
@@ -95,10 +102,12 @@ final class AdminConfigAccessController extends AbstractController
 
         $section = (string) ($posted['section'] ?? '');
         $result  = match ($section) {
-            'grants'       => $this->saveGrants($posted),
-            'add_group'    => $this->addGroup($posted),
-            'delete_group' => $this->deleteGroup($posted),
-            default        => null,
+            'grants'           => $this->saveGrants($posted),
+            'add_group'        => $this->addGroup($posted),
+            'delete_group'     => $this->deleteGroup($posted),
+            'diag_visibility'  => $this->saveDiagVisibility($posted),
+            'diag_levels'      => $this->saveDiagLevels($posted),
+            default            => null,
         };
 
         if ($result !== null) {
@@ -177,6 +186,64 @@ final class AdminConfigAccessController extends AbstractController
         return $this->writer->write('Auth', ['Gate' => ['grants' => $existing]]);
     }
 
+    // ── Diagnostic visibility saver ──────────────────────────────────────────
+
+    /**
+     * Save diagnostic visibility checkboxes for all non-admin groups.
+     * Each checkbox field is named: diag_vis_{GROUP}_{CODE_ESCAPED}
+     * where CODE_ESCAPED replaces '/' and '.' with '__'.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function saveDiagVisibility(array $p): Result
+    {
+        $grants         = (array) $this->config->getConfig('Gate', 'grants', []);
+        $editableGroups = array_filter(array_keys($grants), fn($g) => $g !== 'ADMIN');
+        $codes          = $this->renderer->knownCodes();
+
+        foreach ($editableGroups as $group) {
+            $visible = [];
+            foreach ($codes as $code) {
+                $field = 'diag_vis_' . $group . '_' . $this->escapeCode($code);
+                if (!empty($p[$field])) {
+                    $visible[] = $code;
+                }
+            }
+            $r = $this->visibilityRepo->setForGroup($group, $visible);
+            if (!$r->isOk()) {
+                $r->drainTo($this->collector);
+                return Result::err(false);
+            }
+        }
+        return Result::ok(true);
+    }
+
+    /**
+     * Save per-code level overrides.
+     * Field name: diag_level_{CODE_ESCAPED} — value is DiagnosticLevel int or '' for none.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function saveDiagLevels(array $p): Result
+    {
+        $overrides = [];
+        foreach ($this->renderer->knownCodes() as $code) {
+            $field = 'diag_level_' . $this->escapeCode($code);
+            $raw   = (string) ($p[$field] ?? '');
+            if ($raw === '') { continue; }
+            $level = DiagnosticLevel::tryFrom((int) $raw);
+            if ($level !== null) {
+                $overrides[$code] = $level->value;
+            }
+        }
+        return $this->levelRepo->replaceAll($overrides);
+    }
+
+    private function escapeCode(string $code): string
+    {
+        return str_replace(['/', '.', '-'], '__', $code);
+    }
+
     // ── Context builder ───────────────────────────────────────────────────────
 
     private function buildContext(string $selfUrl): void
@@ -222,12 +289,61 @@ final class AdminConfigAccessController extends AbstractController
         // Groups available for deletion (all editable groups).
         $deletableGroups = array_map(fn($g) => ['name' => $g], $editableGroups);
 
+        // Diagnostic visibility matrix
+        $allCodes    = $this->renderer->knownCodes();
+        sort($allCodes);
+        $visMap      = $this->visibilityRepo->all();
+        $visMap      = $visMap->isOk() ? $visMap->unwrap() : [];
+        $levelOvr    = $this->levelRepo->all();
+        $levelOvr    = $levelOvr->isOk() ? $levelOvr->unwrap() : [];
+        $diagLevels  = DiagnosticLevel::cases();
+
+        // Group codes by prefix (before the first '/')
+        $diagSections = [];
+        foreach ($allCodes as $code) {
+            $prefix = explode('/', $code)[0];
+            $visibleGroups = $visMap[$code] ?? [];
+            $currentLevel  = $levelOvr[$code] ?? null;
+            $cells = [];
+            foreach ($editableGroups as $group) {
+                $cells[] = [
+                    'group'   => $group,
+                    'field'   => 'diag_vis_' . $group . '_' . $this->escapeCode($code),
+                    'visible' => in_array($group, $visibleGroups, true),
+                ];
+            }
+            $levelOptions = [];
+            foreach ($diagLevels as $lv) {
+                $levelOptions[] = [
+                    'value'    => $lv->value,
+                    'name'     => $lv->name,
+                    'selected' => $currentLevel !== null && $currentLevel === $lv,
+                ];
+            }
+            $diagSections[$prefix][] = [
+                'code'          => $code,
+                'field_escaped' => $this->escapeCode($code),
+                'cells'         => $cells,
+                'level_field'   => 'diag_level_' . $this->escapeCode($code),
+                'level_options' => $levelOptions,
+                'has_override'  => $currentLevel !== null,
+            ];
+        }
+        // Convert to indexed array for Mustache
+        $diagSectionsList = [];
+        foreach ($diagSections as $prefix => $rows) {
+            $diagSectionsList[] = ['prefix' => $prefix, 'rows' => $rows];
+        }
+
         $this->ctx->set('csrf_token',       $csrfToken);
         $this->ctx->set('prg_id',           $prgId);
         $this->ctx->set('base_url',         $selfUrl);
         $this->ctx->set('group_headers',    $groupHeaders);
         $this->ctx->set('prefix_sections',  $prefixSections);
-        $this->ctx->set('deletable_groups', $deletableGroups);
+        $this->ctx->set('deletable_groups',   $deletableGroups);
+        $this->ctx->set('diag_sections',      $diagSectionsList);
+        $this->ctx->set('has_diag_sections',  $diagSectionsList !== []);
+        $this->ctx->set('diag_group_headers', $groupHeaders);
         $this->setI18n();
     }
 
@@ -247,5 +363,11 @@ final class AdminConfigAccessController extends AbstractController
         foreach (self::PREFIX_LABELS as $prefix => $key) {
             $this->ctx->set('prefix_' . $prefix, $this->t->t($key, fallback: $prefix));
         }
+        $this->ctx->set('section_diag_visibility', $this->t->t('admin.config.access.diag_visibility'));
+        $this->ctx->set('section_diag_levels',     $this->t->t('admin.config.access.diag_levels'));
+        $this->ctx->set('label_diag_code',         $this->t->t('admin.config.access.diag_code'));
+        $this->ctx->set('label_diag_level',        $this->t->t('admin.config.access.diag_level'));
+        $this->ctx->set('label_diag_admin_note',   $this->t->t('admin.config.access.diag_admin_note'));
+        $this->ctx->set('label_diag_level_default',$this->t->t('admin.config.access.diag_level_default'));
     }
 }

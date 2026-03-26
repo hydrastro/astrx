@@ -15,6 +15,7 @@ use AstrX\Page\Page;
 use AstrX\Pagination\Pagination;
 use AstrX\Template\SubPageState;
 use AstrX\Template\CommentState;
+use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
@@ -73,7 +74,8 @@ final class DefaultTemplateContext
         private readonly Translator  $t,
         private readonly Request     $request,
         private readonly DiagnosticsCollector $collector,
-        private readonly DiagnosticRenderer   $renderer,
+        private readonly DiagnosticRenderer           $renderer,
+        private readonly DiagnosticVisibilityChecker  $checker,
         private readonly UserSession $userSession,
         private readonly UrlGenerator $urlGenerator,
         private readonly FlashBag    $flashBag,
@@ -397,6 +399,7 @@ final class DefaultTemplateContext
         $filtered = $this->renderer->renderFiltered(
             $this->collector->diagnostics(),
             $minLevel,
+            $this->checker,
         );
 
         if ($filtered !== []) {
