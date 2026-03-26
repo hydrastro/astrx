@@ -1,3 +1,4 @@
+USE content_manager;
 -- TABLE DEFINITIONS
 
 CREATE TABLE `page`

@@ -17,6 +17,7 @@ class Prelude
      */
     public function __construct()
     {
+        echo"asd";
         // Loading core classes.
         $ErrorHandler = new ErrorHandler();
         $config = new Config($ErrorHandler);

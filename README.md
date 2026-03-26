@@ -51,6 +51,8 @@ FLUSH
 PRIVILEGES;
 ```
 
+For setting up the `MARIADB_PASSWORD_HASH` value prompt: `SELECT PASSWORD ('`yourpassword');`
+
 Here are the golden rules for this project's database design:
 
 1. Avoid having NULL attributes in tables as much as possible.

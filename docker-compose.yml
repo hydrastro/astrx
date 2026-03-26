@@ -29,22 +29,23 @@ services:
         - ./src:/app/src
       networks:
         - php-network
-#    mariadb:
-#        tty: true
-#        restart: always
-#        container_name: container.mariadb
-#        image: mariadb
-#        ports:
-#            - '3306:3306'
-#        volumes:
-#            - './docker/mysql/config/mariadb.cnf:/etc/mysql/conf.d/custom.cnf:ro'
-#            #- './docker/mysql/dbdata:/var/lib/mysql'
-#        networks:
-#            - php-network
-#        environment:
-#            - MYSQL_PASSWORD=password
-#            - MYSQL_ROOT_PASSWORD=root_password
-#            - MYSQL_DATABASE=astrx
+    mariadb:
+        tty: true
+        restart: always
+        container_name: container.mariadb
+        image: mariadb
+        ports:
+            - '3306:3306'
+        volumes:
+            - './docker/mysql/config/mariadb.cnf:/etc/mysql/conf.d/custom.cnf:ro'
+            - './setup:/docker-entrypoint-initdb.d'
+            #- './docker/mysql/dbdata:/var/lib/mysql'
+        networks:
+            - php-network
+        environment:
+            MARIADB_ROOT_PASSWORD_HASH: "*2470C0C06DEE42FD1618BB99005ADCA2EC9D1E19"
+            MYSQL_DATABASE: astrx
+
 networks:
   php-network:
     driver: bridge
