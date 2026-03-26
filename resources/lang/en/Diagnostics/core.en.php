@@ -307,32 +307,32 @@ return [
 
     // Config — unused key / missing setter key (from fix41)
     'astrx.config/key_unused' =>
-        function (DiagnosticInterface \$d, Translator \$t): string {
-            assert(\$d instanceof \AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic);
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic);
             return "Config key \"{\$d->key()}\" in domain \"{\$d->domain()}\" is defined but never read.";
         },
 
     'astrx.config/setter.key_missing' =>
-        function (DiagnosticInterface \$d, Translator \$t): string {
-            assert(\$d instanceof \AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic);
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic);
             return "Config setter declares key \"{\$d->getConfigName()}\" but it is absent from \"{\$d->getClassShortName()}\" config.";
         },
 
     // Content — page hidden notice (admin viewing a hidden page)
     'astrx.content/page_hidden' =>
-        fn(DiagnosticInterface \$d, Translator \$t): string =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
         '\u{26A0} Admin view: this page is hidden from public visitors.',
 
     // Auth — diagnostic visibility DB errors
     'astrx.auth/diag_visibility.db_error' =>
-        function (DiagnosticInterface \$d, Translator \$t): string {
-            assert(\$d instanceof \AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic);
-            return 'Diagnostic visibility DB error: ' . \$d->detail();
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic);
+            return 'Diagnostic visibility DB error: ' . $d->detail();
         },
 
     'astrx.auth/diag_level_override.db_error' =>
-        function (DiagnosticInterface \$d, Translator \$t): string {
-            assert(\$d instanceof \AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic);
-            return 'Diagnostic level override DB error: ' . \$d->detail();
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic);
+            return 'Diagnostic level override DB error: ' . $d->detail();
         },
 ];
