@@ -400,7 +400,7 @@ final class UserRepository
             )->execute($params);
             return Result::ok(true);
         } catch (\PDOException $e) {
-            return $this->err($e);
+            return $this->dbErr($e);
         }
     }
 
@@ -433,7 +433,7 @@ final class UserRepository
             [':id' => $hexId],
         );
         if (!$result->isOk()) {
-            return $result;
+            return Result::err(null, $result->diagnostics());
         }
         $row = $result->unwrap();
         return Result::ok($row !== null ? (string) $row['password'] : null);

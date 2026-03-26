@@ -527,7 +527,7 @@ final class UserService
      * Change recovery email. If verification is required, returns
      * Result::ok('verify_required') and the caller must send a token email.
      *
-     * @return Result<true|string>
+     * @return Result<true>
      */
     public function changeRecoveryEmail(string $hexId, string $email): Result
     {

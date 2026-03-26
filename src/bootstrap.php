@@ -9,7 +9,9 @@ spl_autoload_register(static function (string $class): void {
         return;
     }
 
-    $file = CLASS_DIR . str_replace('\\', '/', substr($class, $len)) . '.php';
+    /** @var string $classDir */
+    $classDir = defined('CLASS_DIR') ? constant('CLASS_DIR') : __DIR__ . '/';
+    $file = $classDir . str_replace('\\', '/', substr($class, $len)) . '.php';
 
     if (file_exists($file)) {
         require $file;

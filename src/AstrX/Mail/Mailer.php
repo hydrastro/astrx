@@ -242,6 +242,8 @@ final class Mailer
     private function connect()
     : mixed
     {
+        $errno  = 0;
+        $errstr = '';
         if ($this->socks5Host !== '') {
             $sock = $this->connectViaSocks5();
         } elseif ($this->encryption === 'ssl') {

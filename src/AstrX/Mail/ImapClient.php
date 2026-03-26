@@ -262,7 +262,7 @@ final class ImapClient
      * Fetch the full content of a message by UID.
      * Returns decoded headers + text/html body parts.
      *
-     * @return Result<array{uid:int,subject:string,from:string,to:string,cc:string,date:string,body_text:string,body_html:string,flags:list<string>}>
+     * @return Result<array<string,mixed>>
      */
     public function fetchMessage(int $uid): Result
     {
@@ -416,6 +416,8 @@ final class ImapClient
     /** @return resource */
     private function openSocket(): mixed
     {
+        $errno  = 0;
+        $errstr = '';
         if ($this->socks5Host !== '') {
             $sock = $this->connectViaSocks5();
         } elseif ($this->encryption === 'ssl') {
@@ -721,7 +723,7 @@ final class ImapClient
     /**
      * Parse a raw RFC 2822 message into structured fields.
      * Handles text/plain, text/html, multipart/alternative, multipart/mixed.
-     * @return array<string,string>
+     * @return array<string,mixed>
      */
     private function parseMimeMessage(string $raw): array
     {
@@ -746,6 +748,7 @@ final class ImapClient
             // Extract boundary
             if (preg_match('/boundary="?([^";]+)"?/i', $headers['content-type'] ?? '', $m)) {
                 $boundary    = $m[1];
+                /** @var list<array{name:string,content_type:string,size:int,encoding:string,raw:mixed}> $attachments */
                 $attachments = [];
                 [$result['body_text'], $result['body_html']] = $this->parseMultipart($rawBody, $boundary, $ct, $attachments);
                 $result['attachments'] = $attachments;
@@ -765,7 +768,8 @@ final class ImapClient
     }
 
     /**
-     * @param  list<array{name:string,content_type:string,size:int,encoding:string,raw:string}> $attachments
+     * @param  list<array{name:string,content_type:string,size:int,encoding:string,raw:mixed}> $attachments
+     * @param-out list<array{name:string,content_type:string,size:int,encoding:string,raw:mixed}> $attachments
      * @return array{0:string,1:string} [text_body, html_body]
      */
     private function parseMultipart(string $body, string $boundary, string $parentCt, array &$attachments = []): array

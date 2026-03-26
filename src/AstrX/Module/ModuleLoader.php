@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Module;
 
 use AstrX\Config\Config;
+use AstrX\Config\InjectConfig;
 use AstrX\I18n\Translator;
 use AstrX\I18n\TranslatorAwareInterface;
 use ReflectionClass;

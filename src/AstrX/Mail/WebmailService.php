@@ -128,7 +128,7 @@ final class WebmailService
     public function getAttachment(string $folder, int $uid, int $attachmentIndex): Result
     {
         $r = $this->getMessage($folder, $uid);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         $msg         = $r->unwrap();
         $attachments = $msg['attachments'] ?? [];
         if (!isset($attachments[$attachmentIndex])) {
@@ -148,6 +148,17 @@ final class WebmailService
                           ]);
     }
 
+    /**
+     * Fetch the raw RFC 2822 header block for display.
+     * @return Result<string>
+     */
+    public function fetchRawHeaders(string $folder, int $uid): Result
+    {
+        $r = $this->imap->selectFolder($folder);
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        return $this->imap->fetchRawHeaders($uid);
+    }
+
     public function disconnect(): void
     {
         $this->imap->logout();
@@ -164,7 +175,7 @@ final class WebmailService
     public function getFolders(): Result
     {
         $r = $this->imap->listFolders();
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err([], $r->diagnostics()); }
 
         $specialFolders = [
             'INBOX'              => 'inbox',
@@ -198,13 +209,15 @@ final class WebmailService
      * List messages in a folder with pagination.
      * @return Result<array{messages:list<array<string,mixed>>,total:int,pages:int,page:int,per_page:int}>
      */
-    public function listMessages(string $folder, int $page = 1): Result
+    public function listMessages(string $folder, int $page = 1, int $perPageOverride = 0): Result
     {
         $page    = max(1, $page);
-        $perPage = $this->messagesPerPage;
+        $perPage = $perPageOverride > 0
+            ? max(5, min(200, $perPageOverride))
+            : $this->messagesPerPage;
 
         $total = $this->imap->selectFolder($folder);
-        if (!$total->isOk()) { return $total; }
+        if (!$total->isOk()) { return Result::err(false, $total->diagnostics()); }
         $totalMessages = $total->unwrap();
 
         $pages    = $totalMessages > 0 ? (int) ceil($totalMessages / $perPage) : 1;
@@ -218,7 +231,7 @@ final class WebmailService
         }
 
         $r = $this->imap->fetchHeadersPage($totalMessages, $page, $perPage);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         return Result::ok([
                               'messages' => $r->unwrap(),
@@ -240,7 +253,7 @@ final class WebmailService
     public function getMessage(string $folder, int $uid): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
 
         $r = $this->imap->fetchMessage($uid);
         if (!$r->isOk()) { return $r; }
@@ -306,7 +319,7 @@ final class WebmailService
     public function deleteMessage(string $folder, int $uid): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         return $this->imap->deleteMessage($uid, $this->trashFolder);
     }
 
@@ -314,7 +327,7 @@ final class WebmailService
     public function moveMessage(string $folder, int $uid, string $targetFolder): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         return $this->imap->moveMessage($uid, $targetFolder);
     }
 
@@ -322,7 +335,7 @@ final class WebmailService
     public function setSeenFlag(string $folder, int $uid, bool $seen): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return $r; }
+        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
         return $this->imap->setSeenFlag($uid, $seen);
     }
 

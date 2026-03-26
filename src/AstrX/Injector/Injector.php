@@ -149,7 +149,10 @@ final class Injector
     // Resolution
     // -------------------------------------------------------------------------
 
-    /** @return Result<object|null> */
+    /**
+     * @return Result<object|null>
+     * @phpstan-return Result<object|null>
+     */
     public function getClass(string $className, bool $create = true): Result
     {
         if (isset($this->classes[$className])) {

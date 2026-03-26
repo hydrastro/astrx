@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Result;
 
 /**
- * @template T
+ * @template-covariant T
  */
 final class Result
 {
@@ -35,9 +35,9 @@ final class Result
     }
 
     /**
-     * @template T
-     * @param T $value
-     * @return self<T>
+     * @template TValue
+     * @param TValue $value
+     * @return self<TValue>
      */
     public static function ok(mixed $value, ?Diagnostics $diagnostics = null): self
     {
