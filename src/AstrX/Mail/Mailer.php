@@ -116,6 +116,7 @@ final class Mailer
      *                                     Used by webmail to send as the logged-in user.
      * @param string $fromNameOverride     Paired display name override.
      */
+/** @return Result<true> */
     public function send(
         string $toAddress,
         string $toName,
@@ -358,7 +359,10 @@ final class Mailer
         return $sock;
     }
 
-    /** Send EHLO and return list of capability keywords. @return list<string> */
+    /**
+     * Send EHLO and return list of capability keywords.
+     * @return list<string>
+     */
     private function ehlo(mixed $sock, string $domain)
     : array {
         $this->cmd($sock, "EHLO {$domain}");
@@ -487,6 +491,7 @@ final class Mailer
                "--{$boundary}--";
     }
 
+    /** @return Result<never> */
     private function err(string $detail): Result
     {
         return Result::err(false, Diagnostics::of(

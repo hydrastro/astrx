@@ -86,8 +86,8 @@ final class UrlGenerator
      *   index.php?lang=en&page=main&pn=3&order=asc&show=10
      * Default values are also omitted in query mode for clean URLs.
      *
-     * @param array<string, scalar> $extraQuery Additional query-string params
-     *                                          appended in both modes.
+     * @param array<string, scalar> $extraQuery Additional query-string params.
+     * @param list<string> $pathSegments Path segments appended after page root.
      */
     public function toSubPage(
         string $resolvedUrlId,

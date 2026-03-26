@@ -404,7 +404,8 @@ final class UserRepository
         }
     }
 
-    public function softDelete(string $hexId): Result
+    /** @return Result<mixed> */
+        public function softDelete(string $hexId): Result
     {
         return $this->exec(
             'UPDATE `user`
@@ -443,7 +444,10 @@ final class UserRepository
     // Helpers
     // -------------------------------------------------------------------------
 
-    /** @return Result<list<array<string,mixed>>> */
+    /**
+     * @param array<string,mixed> $params
+     * @return Result<list<array<string,mixed>>>
+     */
     private function fetchAll(string $sql, array $params = []): Result
     {
         try {
@@ -457,7 +461,10 @@ final class UserRepository
         }
     }
 
-    /** @return Result<array<string,mixed>|null> */
+    /**
+     * @param array<string,mixed> $params
+     * @return Result<array<string,mixed>|null>
+     */
     private function fetchOne(string $sql, array $params): Result
     {
         try {
@@ -470,7 +477,10 @@ final class UserRepository
         }
     }
 
-    /** @return Result<bool> true = available (no row found) */
+    /**
+     * @param array<string,mixed> $params
+     * @return Result<bool>
+     */
     private function checkAvailability(string $sql, array $params): Result
     {
         try {
@@ -482,7 +492,10 @@ final class UserRepository
         }
     }
 
-    /** @return Result<true> */
+    /**
+     * @param array<string,mixed> $params
+     * @return Result<true>
+     */
     private function exec(string $sql, array $params): Result
     {
         try {
@@ -494,6 +507,7 @@ final class UserRepository
         }
     }
 
+    /** @return Result<never> */
     private function dbErr(PDOException $e): Result
     {
         return Result::err(false, Diagnostics::of(new UserDbDiagnostic(

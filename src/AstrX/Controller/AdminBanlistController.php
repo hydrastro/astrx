@@ -48,6 +48,7 @@ final class AdminBanlistController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->gate->cannot(Permission::ADMIN_BANLIST)) {
@@ -291,7 +292,9 @@ final class AdminBanlistController extends AbstractController
         return (array) $this->config->getConfig('BanlistRepository', 'routes', []);
     }
 
-    /** @param array<string, mixed> $routes */
+    /** @param array<string, mixed> $routes
+     * @return Result<mixed>
+     */
     private function saveRoutes(array $routes): Result
     {
         return $this->writer->write('BanlistRepository', [

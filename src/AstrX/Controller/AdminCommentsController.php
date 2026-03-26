@@ -56,6 +56,7 @@ final class AdminCommentsController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         $canModerate = $this->gate->can(Permission::ADMIN_COMMENTS);
@@ -154,7 +155,9 @@ final class AdminCommentsController extends AbstractController
 
     // ── Config savers ─────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveGeneral(array $p): Result
     {
         $current = $this->loadCurrent();
@@ -166,7 +169,9 @@ final class AdminCommentsController extends AbstractController
         return $this->writer->write('Comment', ['CommentService' => $current]);
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveAntispam(array $p): Result
     {
         $current  = $this->loadCurrent();

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Result;
 
+/** @implements \IteratorAggregate<int, DiagnosticInterface> */
 final class Diagnostics implements \IteratorAggregate, \Countable
 {
     /** @var list<DiagnosticInterface> */
@@ -57,6 +58,7 @@ final class Diagnostics implements \IteratorAggregate, \Countable
         return \count($this->items);
     }
 
+    /** @return \ArrayIterator<int, DiagnosticInterface> */
     public function getIterator(): \Traversable
     {
         return new \ArrayIterator($this->items);

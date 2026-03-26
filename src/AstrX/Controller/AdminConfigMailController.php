@@ -162,7 +162,10 @@ final class AdminConfigMailController extends AbstractController
 
     // ── Savers ────────────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveMailer(array $p)
     : Result {
         $full = $this->loadFullMailConfig();
@@ -188,7 +191,10 @@ final class AdminConfigMailController extends AbstractController
         return $this->writer->write('Mail', $full);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveMailbox(array $p)
     : Result {
         $full = $this->loadFullMailConfig();

@@ -41,6 +41,7 @@ final class RecoverController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->session->isLoggedIn()) {
@@ -65,6 +66,7 @@ final class RecoverController extends AbstractController
 
     // -------------------------------------------------------------------------
 
+    /** @return Result<mixed> */
     private function processSubmission(string $prgToken): Result
     {
         $posted = $this->prg->pull($prgToken) ?? [];
@@ -123,6 +125,7 @@ final class RecoverController extends AbstractController
         exit;
     }
 
+    /** @return Result<mixed> */
     private function renderForm(): Result
     {
         $csrfToken = $this->csrf->generate(self::FORM);

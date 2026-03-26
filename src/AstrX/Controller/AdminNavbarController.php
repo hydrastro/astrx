@@ -62,6 +62,7 @@ final class AdminNavbarController extends AbstractController
     // Handle
     // =========================================================================
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->gate->cannot(Permission::ADMIN_NAVBAR)) {
@@ -267,6 +268,7 @@ final class AdminNavbarController extends AbstractController
      * Returns data structure for all navbars:
      * [ navbar_id => [ 'name' => '...', 'pins' => [ pin_id => ['sort_order'=>..., 'sort_mode'=>..., 'entries'=>[...]] ] ] ]
      */
+    /** @return array<int,array<string,mixed>> */
     private function loadAllNavbars(): array
     {
         try {
@@ -338,6 +340,10 @@ final class AdminNavbarController extends AbstractController
         return array_values($navbars);
     }
 
+    /**
+     * @param array<int,array<string,mixed>> $navbars
+     * @return array<string,mixed>|null
+     */
     private function findPin(array $navbars, int $navbarId, int $pinId): ?array
     {
         foreach ($navbars as $nb) {
@@ -353,6 +359,7 @@ final class AdminNavbarController extends AbstractController
         return null;
     }
 
+    /** @return array<string,mixed>|null */
     private function loadEntry(int $id): ?array
     {
         try {

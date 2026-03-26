@@ -61,6 +61,7 @@ final class AdminConfigCaptchaController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->gate->cannot(Permission::ADMIN_CONFIG_CAPTCHA)) {
@@ -124,7 +125,9 @@ final class AdminConfigCaptchaController extends AbstractController
 
     // ── Savers ────────────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveService(array $p): Result
     {
         return $this->writer->write('Captcha', array_merge(
@@ -135,7 +138,9 @@ final class AdminConfigCaptchaController extends AbstractController
         ));
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveRenderer(array $p): Result
     {
         return $this->writer->write('Captcha', array_merge(
@@ -175,7 +180,10 @@ final class AdminConfigCaptchaController extends AbstractController
         return $renderer->render($text);
     }
 
-    /** @param array<string, mixed> $p @return array<string, mixed> */
+    /**
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private function rendererArrayFrom(array $p): array
     {
         return [
@@ -209,7 +217,9 @@ final class AdminConfigCaptchaController extends AbstractController
         ];
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveContextDifficulty(array $p): Result
     {
         $full = $this->loadFullCaptchaConfig();

@@ -23,7 +23,7 @@ final class Translator
 
     private string $locale;
 
-    /** @var array<string, string|callable(array, Translator): string> */
+    /** @var array<string, string|callable(array<string,mixed>, Translator): string> */
     private array $catalog = [];
 
     private ?DiagnosticSinkInterface $sink = null;
@@ -92,7 +92,7 @@ final class Translator
             $clean[$k] = $v;
         }
 
-        /** @var array<string, string|callable(array, Translator): string> $clean */
+        /** @var array<string, string|callable(array<string,mixed>, Translator): string> $clean */
         $this->catalog = array_merge($this->catalog, $clean);
     }
 

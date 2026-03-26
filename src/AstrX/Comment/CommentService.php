@@ -275,7 +275,10 @@ final class CommentService
 
     // -------------------------------------------------------------------------
 
-    /** @param list<array<string,mixed>> $nodes */
+    /**
+     * @param list<array<string,mixed>> $nodes
+     * @param list<array<string,mixed>> $out
+     */
     private function flattenTree(array &$nodes, int $depth, array &$out): void
     {
         foreach ($nodes as &$node) {
@@ -303,6 +306,7 @@ final class CommentService
         return null;
     }
 
+/** @return Result<never> */
     private function opErr(string $operation, string $detail = ''): Result
     {
         $diagnostic = match ($operation) {

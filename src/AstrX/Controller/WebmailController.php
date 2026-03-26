@@ -83,6 +83,7 @@ final class WebmailController extends AbstractController
     // Entry point
     // =========================================================================
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if (!$this->session->isLoggedIn()) {
@@ -670,7 +671,10 @@ final class WebmailController extends AbstractController
             : [];
     }
 
-    /** @param list<array<string, mixed>> $messages */
+    /**
+     * @param list<array<string,mixed>> $messages
+     * @return list<array<string,mixed>>
+     */
     private function decorateMessages(array $messages, string $folder, string $selfUrl): array
     {
         $even = false;

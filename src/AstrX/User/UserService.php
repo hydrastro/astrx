@@ -618,6 +618,7 @@ final class UserService
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    /** @return Result<never> */
     private function opErr(string $operation, string $detail = ''): Result
     {
         $diagnostic = match ($operation) {
@@ -649,6 +650,7 @@ final class UserService
      * Apply a regex filter array. Returns the first error message on failure
      * or null if all checks pass. Mirrors the old checkRegexFilter() function.
      */
+    /** @param array<int,array<string,mixed>> $rules */
     private function checkRegex(array $rules, string $value): ?string
     {
         ksort($rules);

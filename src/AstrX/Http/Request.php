@@ -272,6 +272,10 @@ final class Request
      * @param array<string, mixed> $files
      * @return array<string, UploadedFile|array>
      */
+    /**
+     * @param array<string,mixed> $files
+     * @return array<string, UploadedFile|array<string,mixed>>
+     */
     private static function normalizeFiles(array $files): array
     {
         $normalized = [];
@@ -287,6 +291,10 @@ final class Request
         return $normalized;
     }
 
+    /**
+     * @param array<string,mixed> $node
+     * @return UploadedFile|array<string,mixed>
+     */
     private static function normalizeFileNode(array $node): UploadedFile|array
     {
         $isLeaf =

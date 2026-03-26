@@ -66,6 +66,7 @@ final class AdminConfigAccessController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
@@ -125,6 +126,7 @@ final class AdminConfigAccessController extends AbstractController
      * Never adds or removes groups — that is handled by addGroup/deleteGroup.
      *
      * @param array<string, mixed> $p
+     * @return Result<mixed>
      */
     private function saveGrants(array $p): Result
     {
@@ -151,6 +153,7 @@ final class AdminConfigAccessController extends AbstractController
      * Preserves all existing group permissions unchanged.
      *
      * @param array<string, mixed> $p
+     * @return Result<mixed>
      */
     private function addGroup(array $p): Result
     {
@@ -173,6 +176,7 @@ final class AdminConfigAccessController extends AbstractController
      * Preserves all remaining group permissions unchanged.
      *
      * @param array<string, mixed> $p
+     * @return Result<mixed>
      */
     private function deleteGroup(array $p): Result
     {
@@ -194,6 +198,7 @@ final class AdminConfigAccessController extends AbstractController
      * where CODE_ESCAPED replaces '/' and '.' with '__'.
      *
      * @param array<string, mixed> $p
+     * @return Result<mixed>
      */
     private function saveDiagVisibility(array $p): Result
     {
@@ -223,6 +228,7 @@ final class AdminConfigAccessController extends AbstractController
      * Field name: diag_level_{CODE_ESCAPED} — value is DiagnosticLevel int or '' for none.
      *
      * @param array<string, mixed> $p
+     * @return Result<mixed>
      */
     private function saveDiagLevels(array $p): Result
     {

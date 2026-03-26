@@ -110,6 +110,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     // Configuration setters (InjectConfig)
     // -------------------------------------------------------------------------
 
+    /** @param array<string,mixed> $args */
     public function addGlobalArgs(array $args): void
     {
         $this->globalArgs = array_merge($this->globalArgs, $args);
@@ -433,6 +434,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     // Code generator
     // -------------------------------------------------------------------------
 
+    /** @param array<int, array<int,string>|string> $ast */
     private function compileTemplate(string $className, array $ast, bool $phpProcessing): string
     {
         $code = $this->writeCode($ast);
@@ -452,6 +454,12 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     }
 
     /** @return array<int, array<int, string>> */
+    /**
+     * @param array<int, array<int,string>|string> $ast
+     * @param list<string> $loopParents
+     * @param list<string> $functionsCode
+     * @return array<int, array<int,string>|string>
+     */
     private function writeCode(array $ast, array $loopParents = [], array &$functionsCode = [], int $iteration = 0): array
     {
         $code = '';

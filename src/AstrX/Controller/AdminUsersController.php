@@ -60,6 +60,7 @@ final class AdminUsersController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         $canManage = $this->gate->can(Permission::ADMIN_USERS);
@@ -173,7 +174,9 @@ final class AdminUsersController extends AbstractController
 
     // ── Config savers ─────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveUserService(array $p): Result
     {
         return $this->writer->write('User', array_merge(
@@ -200,7 +203,9 @@ final class AdminUsersController extends AbstractController
         ));
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveAvatar(array $p): Result
     {
         return $this->writer->write('User', array_merge(
@@ -213,7 +218,9 @@ final class AdminUsersController extends AbstractController
         ));
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveIdenticon(array $p): Result
     {
         return $this->writer->write('Identicon', [
@@ -356,7 +363,10 @@ final class AdminUsersController extends AbstractController
         return is_array($loaded) ? $loaded : [];
     }
 
-    /** @param array<int, array<string,mixed>> $rules @return list<array<string,mixed>> */
+    /**
+     * @param array<int,array<string,mixed>> $rules
+     * @return list<array<string,mixed>>
+     */
     private function flattenRegex(array $rules): array
     {
         $list = [];

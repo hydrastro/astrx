@@ -42,6 +42,7 @@ final class LoginController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         // Already logged in → redirect to home
@@ -62,6 +63,7 @@ final class LoginController extends AbstractController
 
     // -------------------------------------------------------------------------
 
+    /** @return Result<mixed> */
     private function processSubmission(string $prgToken): Result
     {
         $posted = $this->prg->pull($prgToken) ?? [];
@@ -112,6 +114,7 @@ final class LoginController extends AbstractController
         exit;
     }
 
+    /** @return Result<mixed> */
     private function renderForm(string $usernameValue = '', bool $showCaptcha = false): Result
     {
         $csrfToken    = $this->csrf->generate(self::FORM);

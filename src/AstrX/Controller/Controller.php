@@ -7,5 +7,6 @@ use AstrX\Result\Result;
 
 interface Controller
 {
+    /** @return Result<mixed> */
     public function handle(): Result;
 }

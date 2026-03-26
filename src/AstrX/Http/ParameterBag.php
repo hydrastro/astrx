@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AstrX\Http;
 
 use AstrX\Http\Diagnostic\InvalidParameterTypeDiagnostic;
-use AstrX\Http\Exception\InvalidKeyException;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
@@ -15,11 +14,14 @@ final class ParameterBag
     public const string ID_INVALID_TYPE = 'astrx.http/invalid_parameter_type';
     public const DiagnosticLevel LVL_INVALID_TYPE = DiagnosticLevel::WARNING;
 
+    /** @param array<string,mixed> $items */
     public function __construct(
         private array $items = [],
     ) {}
 
+    /** @return array<string,mixed> */
     public function all(): array  { return $this->items; }
+    /** @return list<string> */
     public function keys(): array { return array_keys($this->items); }
 
     public function has(string $key): bool
@@ -37,23 +39,18 @@ final class ParameterBag
         $this->items[$key] = $value;
     }
 
+    /** @param array<string,mixed> $items */
     public function add(array $items): void
     {
         foreach ($items as $key => $value) {
-            if (!is_string($key)) {
-                throw new InvalidKeyException($key, self::class);
-            }
             $this->items[$key] = $value;
         }
     }
 
+    /** @param array<string,mixed> $items */
     public function replace(array $items): void
     {
-        foreach (array_keys($items) as $key) {
-            if (!is_string($key)) {
-                throw new InvalidKeyException($key, self::class);
-            }
-        }
+
         $this->items = $items;
     }
 

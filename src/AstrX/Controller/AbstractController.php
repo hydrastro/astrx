@@ -15,12 +15,14 @@ abstract class AbstractController implements Controller
     {
     }
 
+    /** @return Result<null> */
     final protected function ok()
     : Result
     {
         return Result::ok(null);
     }
 
+    /** @return Result<never> */
     final protected function err(mixed $error = null, ?Diagnostics $d = null)
     : Result {
         return Result::err($error, $d);

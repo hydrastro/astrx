@@ -45,6 +45,7 @@ final class UserSettingsController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if (!$this->session->isLoggedIn()) {
@@ -171,6 +172,7 @@ final class UserSettingsController extends AbstractController
         }
     }
 
+    /** @return Result<mixed> */
     private function renderForm(): Result
     {
         $hexId   = $this->session->userId();

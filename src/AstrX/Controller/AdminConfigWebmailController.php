@@ -104,7 +104,10 @@ final class AdminConfigWebmailController extends AbstractController
         }
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveImap(array $p)
     : Result {
         $full = $this->loadFullImapConfig();
@@ -120,7 +123,10 @@ final class AdminConfigWebmailController extends AbstractController
         return $this->writer->write('Imap', $full);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveFolders(array $p)
     : Result {
         $full = $this->loadFullImapConfig();

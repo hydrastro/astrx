@@ -242,6 +242,10 @@ final class CommentRepository
     }
 
     /** @return Result<int> rows affected */
+    /**
+     * @param array<string,mixed> $filters
+     * @return Result<int>
+     */
     public function bulkSetHidden(array $filters, bool $hidden): Result
     {
         if ($filters === []) {
@@ -356,6 +360,7 @@ final class CommentRepository
 
 
 
+/** @return Result<never> */
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new CommentDbDiagnostic(

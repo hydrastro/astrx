@@ -55,6 +55,9 @@ final class BanlistRepository
         private readonly PDO    $pdo,
     ) {}
 
+    /**
+     * @param array<string, list<array<string,mixed>>> $routes
+     */
     #[InjectConfig('routes')]
     public function setRoutes(array $routes): void
     {
@@ -339,6 +342,7 @@ final class BanlistRepository
 
     // =========================================================================
 
+/** @return Result<int> */
     private function insertCore(string $reason, string $route, ?string $end): Result
     {
         try {
@@ -351,6 +355,7 @@ final class BanlistRepository
         }
     }
 
+/** @return Result<never> */
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(

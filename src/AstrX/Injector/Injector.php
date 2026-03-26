@@ -140,6 +140,7 @@ final class Injector
         }
     }
 
+    /** @param array<string,mixed> $args */
     public function setClassArgs(string $className, array $args): void
     {
         $this->classesArgs[$className] = $args;
@@ -250,7 +251,10 @@ final class Injector
         }
     }
 
-    /** @return Result<mixed> */
+    /**
+     * @param array<string,mixed> $arguments
+     * @return Result<mixed>
+     */
     public function callClassMethod(
         string $className,
         string $method,

@@ -158,6 +158,7 @@ final class MailboxManager
      * Used when the web app shares the dovecot_auth Docker volume.
      * Password is hashed with ARGON2ID (supported by Dovecot ≥ 2.3.11).
      */
+    /** @return Result<mixed> */
     private function directWrite(string $jsonBody)
     : Result {
         $data = json_decode($jsonBody, true);
@@ -234,6 +235,7 @@ final class MailboxManager
         return Result::ok(true);
     }
 
+    /** @return Result<never> */
     private function err(string $op, string $detail = ''): Result
     {
         $diagnostic = match ($op) {

@@ -22,7 +22,10 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class ConfigWriter
 {
-    /** @param array<string, array<string, mixed>> $config Full domain→keys array for the file */
+    /**
+     * @param array<string, array<string, mixed>> $config
+     * @return Result<mixed>
+     */
     public function write(string $fileBaseName, array $config): Result
     {
         $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $fileBaseName . '.config.php';
@@ -55,6 +58,7 @@ final class ConfigWriter
      * Write the main config.php file.
      * Unlike write() which appends '.config.php', this writes to 'config.php' directly.
      * @param array<string, array<string, mixed>> $config
+     * @return Result<mixed>
      */
     public function writeMainConfig(array $config): Result
     {
@@ -84,6 +88,7 @@ final class ConfigWriter
         return Result::ok(true);
     }
 
+    /** @param array<string,mixed> $config */
     private function render(array $config): string
     {
         return "<?php\ndeclare(strict_types=1);\n\nreturn " . $this->exportValue($config, 0) . ";\n";

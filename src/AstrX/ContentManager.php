@@ -489,11 +489,15 @@ final class ContentManager
         }
     }
 
-    /** @return array{Locale, ?string, string} */
+    /**
+     * @param list<string> $availableLocales
+     * @return array{Locale, ?string, string}
+     */
     private function parseRoutingHead(
         bool $urlRewrite,
         Request $request,
         string $basePath,
+        /** @param list<string> $availableLocales */
         array $availableLocales,
         Locale $defaultLocale,
         bool $sessionUseCookies,

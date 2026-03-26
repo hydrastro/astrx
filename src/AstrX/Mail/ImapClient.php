@@ -470,6 +470,7 @@ final class ImapClient
         return $proxy;
     }
 
+    /** @return Result<true> */
     private function starttls(): Result
     {
         $r = $this->command('STARTTLS');
@@ -484,9 +485,10 @@ final class ImapClient
     // Protocol layer
     // =========================================================================
 
-    /** Accumulated untagged lines from last command; cleared before each command. */
+    /** @var list<string> Accumulated untagged lines from last command; cleared before each command. */
     private array  $untaggedBuffer   = [];
     private string $lastLiteralContent = '';
+    /** @var list<string> */
     private array  $lastFlags          = [];
 
     private function nextTag(): string
@@ -820,7 +822,10 @@ final class ImapClient
         return [$textBody, $htmlBody];
     }
 
-    /** Split a raw message into headers + body at the first blank line. */
+    /**
+     * Split a raw message into headers + body at the first blank line.
+     * @return array{0:string, 1:string}
+     */
     private function splitHeadersBody(string $raw): array
     {
         $pos = strpos($raw, "\r\n\r\n");
@@ -851,7 +856,10 @@ final class ImapClient
         return $headers;
     }
 
-    /** Split a multipart body into individual part strings. */
+    /**
+     * Split a multipart body into individual part strings.
+     * @return list<string>
+     */
     private function splitMultipart(string $body, string $boundary): array
     {
         $delimiter = '--' . $boundary;
@@ -940,6 +948,7 @@ final class ImapClient
         return end($parts) ?: $name;
     }
 
+    /** @return Result<never> */
     private function err(string $op, string $detail = ''): Result
     {
         $diagnostic = match ($op) {

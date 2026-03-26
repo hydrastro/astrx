@@ -52,6 +52,7 @@ final class AdminPagesController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @return Result<mixed> */
     public function handle(): Result
     {
         if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
@@ -142,6 +143,7 @@ final class AdminPagesController extends AbstractController
     // DB operations
     // =========================================================================
 
+    /** @param array<string,mixed> $p */
     private function addPage(array $p): void
     {
         $urlId      = trim((string) ($p['url_id']    ?? ''));
@@ -198,6 +200,7 @@ final class AdminPagesController extends AbstractController
         }
     }
 
+    /** @param array<string,mixed> $p */
     private function updatePage(int $id, array $p): void
     {
         $urlId      = trim((string) ($p['url_id']    ?? ''));
@@ -272,6 +275,7 @@ final class AdminPagesController extends AbstractController
     // Data loading
     // =========================================================================
 
+    /** @return list<array<string,mixed>> */
     private function loadPages(): array
     {
         try {

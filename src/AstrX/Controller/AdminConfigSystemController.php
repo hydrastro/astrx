@@ -118,7 +118,10 @@ final class AdminConfigSystemController extends AbstractController
 
     // ── Savers ────────────────────────────────────────────────────────────────
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function savePrelude(array $p)
     : Result {
         $env = (int)($p['environment']??EnvironmentType::DEVELOPMENT->value);
@@ -147,7 +150,10 @@ final class AdminConfigSystemController extends AbstractController
         return $this->writer->writeMainConfig($current);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveRouting(array $p)
     : Result {
         return $this->writer->write('Routing', [
@@ -166,7 +172,10 @@ final class AdminConfigSystemController extends AbstractController
         ]);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveSession(array $p)
     : Result {
         return $this->writer->write('Session', [
@@ -186,7 +195,10 @@ final class AdminConfigSystemController extends AbstractController
         ]);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveTemplate(array $p)
     : Result {
         return $this->writer->write('TemplateEngine', [
@@ -205,7 +217,10 @@ final class AdminConfigSystemController extends AbstractController
         ]);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveTranslator(array $p)
     : Result {
         return $this->writer->write('Translator', [
@@ -216,7 +231,10 @@ final class AdminConfigSystemController extends AbstractController
         ]);
     }
 
-    /** @param array<string, mixed> $p */
+    /**
+     * @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveContentManager(array $p)
     : Result {
         $extraDomains = array_values(
@@ -278,7 +296,9 @@ final class AdminConfigSystemController extends AbstractController
         ]);
     }
 
-    /** @param array<string, mixed> $p */
+    /** @param array<string, mixed> $p
+     * @return Result<mixed>
+     */
     private function saveNews(array $p): Result
     {
         return $this->writer->write('News', [

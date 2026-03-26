@@ -130,6 +130,7 @@ final class AvatarService
 
     // -------------------------------------------------------------------------
 
+    /** @return Result<never> */
     private function opErr(string $op, string $detail = ''): Result
     {
         $diagnostic = match ($op) {

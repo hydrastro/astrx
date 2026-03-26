@@ -87,7 +87,7 @@ final class Result
         return $this->ok ? $this->valueOrSentinel : $default;
     }
 
-    /** Attach additional diagnostics, returning a new immutable Result. */
+    /** @return self<T> */
     public function withDiagnostics(Diagnostics $more): self
     {
         $merged = $this->diagnostics->concat($more);
@@ -133,6 +133,7 @@ final class Result
             : self::err($next->error(), $merged);
     }
 
+    /** @return self<T> */
     public function drainTo(DiagnosticSinkInterface $sink): self
     {
         $sink->emitAll($this->diagnostics);

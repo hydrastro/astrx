@@ -119,6 +119,7 @@ final class NavbarHandler
         return $result;
     }
 
+    /** @param array<string,mixed> $row */
     private function resolveName(array $row): string
     {
         $name = (string) $row['name'];
