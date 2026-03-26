@@ -166,11 +166,11 @@ final class DefaultTemplateContext
     private function buildIncludePath(Page $page): string
     {
         $ancestors = $page->ancestors;
-        usort($ancestors, fn($a, $b) => ($a['id'] ?? 0) <=> ($b['id'] ?? 0));
+        usort($ancestors, fn($a, $b) => $a['id'] <=> $b['id']);
 
         $parts = [];
         foreach ($ancestors as $anc) {
-            $fn = (string) ($anc['file_name'] ?? '');
+            $fn = $anc['file_name'];
             if ($fn !== '' && $fn !== $page->fileName) {
                 $parts[] = $fn;
             }

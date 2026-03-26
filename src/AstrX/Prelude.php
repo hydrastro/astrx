@@ -32,7 +32,6 @@ final class Prelude
                 EnvironmentType::DEVELOPMENT->value
             )
         );
-        assert($env instanceof EnvironmentType);
         $errorHandler->setEnvironment($env);
 
         $translator = new Translator($collector);

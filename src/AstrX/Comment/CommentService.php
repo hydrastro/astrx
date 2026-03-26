@@ -297,7 +297,7 @@ final class CommentService
                 continue;
             }
             if (preg_match((string) $rule['regex'], $content)) {
-                return (string) ($rule['message'] ?? 'Comment rejected by antispam filter.');
+                return (string) $rule['message'];
             }
         }
         return null;

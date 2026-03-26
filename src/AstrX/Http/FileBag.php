@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace AstrX\Http;
 
-use AstrX\Http\Exception\InvalidFileValueException;
-use AstrX\Http\Exception\InvalidKeyException;
 
 final class FileBag
 {
@@ -30,13 +28,6 @@ final class FileBag
     public function replace(array $files): void
     {
         foreach ($files as $key => $file) {
-            if (!is_string($key)) {
-                throw new InvalidKeyException($key, self::class);
-            }
-
-            if (!$file instanceof UploadedFile && !is_array($file)) {
-                throw new InvalidFileValueException($key, get_debug_type($file));
-            }
         }
 
         $this->files = $files;

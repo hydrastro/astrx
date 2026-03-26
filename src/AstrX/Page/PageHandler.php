@@ -31,7 +31,7 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row)) {
+        if ($row === false) {
             return null;
         }
 
@@ -63,7 +63,7 @@ final class PageHandler
         $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `url_id` = :u");
         $stmt->execute(['u' => $urlId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row) || !isset($row['id'])) {
+        if ($row === false || !isset($row['id'])) {
             return null;
         }
         return (int)$row['id'];
@@ -75,11 +75,9 @@ final class PageHandler
         $stmt = $this->pdo->prepare("SELECT `id`, `url_id` FROM `page` WHERE `i18n` = :i18n");
         $stmt->execute(['i18n' => true]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (!is_array($rows)) return [];
 
         $out = [];
         foreach ($rows as $r) {
-            if (!is_array($r)) continue;
             $out[] = [
                 'id' => (int)($r['id'] ?? 0),
                 'url_id' => (string)($r['url_id'] ?? ''),
@@ -99,13 +97,12 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (!is_array($rows) || $rows === []) {
+        if ($rows === []) {
             return [];
         }
 
         $out = [];
         foreach ($rows as $r) {
-            if (!is_array($r)) continue;
             $out[] = [
                 'id'        => (int)($r['id'] ?? 0),
                 'url_id'    => (string)($r['url_id'] ?? ''),
@@ -127,11 +124,9 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (!is_array($rows)) return [];
 
         $out = [];
         foreach ($rows as $r) {
-            if (!is_array($r)) continue;
             $out[] = [
                 'keyword' => (string)($r['keyword'] ?? ''),
                 'i18n' => $r['i18n'] ?? 0,
@@ -161,7 +156,7 @@ final class PageHandler
         $stmt->execute([':parent' => $parentId, ':parent2' => $parentId, ':slug' => $slug]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (!is_array($rows) || $rows === []) {
+        if ($rows === []) {
             return null;
         }
 

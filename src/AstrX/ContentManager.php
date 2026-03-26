@@ -158,7 +158,6 @@ final class ContentManager
 
         /** @var SecureSessionHandler $sessionHandler */
         $sessionHandler = $sessionResult->unwrap();
-        assert($sessionHandler instanceof SecureSessionHandler);
 
         session_set_save_handler($sessionHandler, true);
 
@@ -312,7 +311,7 @@ final class ContentManager
         $isAdminPage = $page->fileName === 'admin'
                        || array_any(
                            $page->ancestors,
-                           fn($a) => ($a['file_name'] ?? '') === 'admin'
+                           fn($a) => $a['file_name'] === 'admin'
                        );
         if ($isAdminPage && $this->gate->cannot(Permission::ADMIN_ACCESS)) {
             $loginUrlId = $this->config->getConfig('Routing', 'default_page', 'WORDING_LOGIN');
@@ -344,7 +343,7 @@ final class ContentManager
         // so the page's own domain wins on any key conflict.
         $ancestorFileNames = [];
         foreach ($page->ancestors as $ancestor) {
-            $fn = (string) ($ancestor['file_name'] ?? '');
+            $fn = $ancestor['file_name'];
             if ($fn !== '' && $fn !== $page->fileName) {
                 $ancestorFileNames[] = ucfirst($fn);
             }

@@ -43,7 +43,6 @@ final class CaptchaRenderer
     private bool   $linesColorRandom = false;
     private bool   $dotsColorRandom  = false;
 
-    private bool   $linesStartFromBorder = true;
     private int    $linesNumber          = 5;
     private int    $dotsNumber           = 100;
 
@@ -89,8 +88,6 @@ final class CaptchaRenderer
     public function setLinesColorRandom(bool $v): void { $this->linesColorRandom = $v; }
     #[InjectConfig('dots_color_random')]
     public function setDotsColorRandom(bool $v): void { $this->dotsColorRandom = $v; }
-    #[InjectConfig('lines_start_from_border')]
-    public function setLinesStartFromBorder(bool $v): void { $this->linesStartFromBorder = $v; }
     #[InjectConfig('lines_number')]
     public function setLinesNumber(int $v): void { $this->linesNumber = $v; }
     #[InjectConfig('dots_number')]
@@ -523,9 +520,9 @@ final class CaptchaRenderer
             return [random_int(0, 1) === 0 ? 0 : $w, $r - $w];
         }
 
-        return match (random_int(0, 1)) {
-            0 => [random_int(0, 1) === 0 ? 0 : $w, random_int(0, $h)],
-            1 => [random_int(0, $w), random_int(0, 1) === 0 ? 0 : $h],
-        };
+        if (random_int(0, 1) === 0) {
+            return [random_int(0, 1) === 0 ? 0 : $w, random_int(0, $h)];
+        }
+        return [random_int(0, $w), random_int(0, 1) === 0 ? 0 : $h];
     }
 }

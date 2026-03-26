@@ -84,7 +84,7 @@ final class SecureSessionHandler implements
         return true;
     }
 
-    public function gc(int $maxLifetime): int|false
+    public function gc(int $maxLifetime): int
     {
         $cutoff = time() - $maxLifetime;
 
@@ -96,7 +96,7 @@ final class SecureSessionHandler implements
         return $stmt->rowCount(); // PDO::rowCount() after DELETE is reliable on MySQL/MariaDB
     }
 
-    public function read(string $id): string|false
+    public function read(string $id): string
     {
         $row = $this->readRow($this->hashId($id));
         if ($row === false) {

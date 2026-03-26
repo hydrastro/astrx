@@ -53,7 +53,6 @@ final class BanlistRepository
 
     public function __construct(
         private readonly PDO    $pdo,
-        private readonly Config $config,
     ) {}
 
     #[InjectConfig('routes')]

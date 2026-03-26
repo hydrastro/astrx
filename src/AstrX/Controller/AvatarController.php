@@ -33,7 +33,6 @@ final class AvatarController extends AbstractController
         private readonly CurrentUrl $currentUrl,
         private readonly AvatarService $avatarService,
         private readonly IdenticonRenderer $identicon,
-        private readonly UserRepository $userRepo,
     ) {
         parent::__construct($collector);
     }

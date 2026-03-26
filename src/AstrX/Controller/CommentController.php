@@ -379,38 +379,5 @@ final class CommentController extends AbstractController
         );
     }
 
-    /**
-     * All current query params EXCEPT the given keys and internal routing keys.
-     * Used to build comment pagination URLs that preserve news pagination etc.
-     * @param list<string> $strip
-     * @return array<string,string>
-     */
-    private function currentNonCommentQuery(array $strip): array
-    {
-        // Keys managed by the routing layer — never put these in pagination URLs
-        $routingKeys = ['lang', 'page', '_sid', '_prg', '_cp', 'prg_id'];
-        $exclude     = array_merge($routingKeys, $strip);
-        $result      = [];
-        foreach ($this->request->query()->all() as $k => $v) {
-            if (!in_array($k, $exclude, true)) {
-                $result[(string) $k] = (string) $v;
-            }
-        }
-        return $result;
-    }
 
-    /**
-     * Build a string of <input type="hidden"> elements for every entry in $params.
-     * Used in the comment filter form to forward non-comment query params.
-     */
-    private function buildHiddenInputs(array $params): string
-    {
-        $out = '';
-        foreach ($params as $k => $v) {
-            $k    = htmlspecialchars((string) $k, ENT_QUOTES);
-            $v    = htmlspecialchars((string) $v, ENT_QUOTES);
-            $out .= "<input type=\"hidden\" name=\"{$k}\" value=\"{$v}\">\n";
-        }
-        return $out;
-    }
 }

@@ -272,26 +272,6 @@ final class AdminPagesController extends AbstractController
     // Data loading
     // =========================================================================
 
-    private function loadPage(int $id): ?array
-    {
-        try {
-            $stmt = $this->pdo->prepare(
-                'SELECT p.id, p.url_id, p.file_name, p.i18n, p.template, p.controller,
-                        p.hidden, p.comments, pm.title, pm.description,
-                        pr.`index` AS index_flag, pr.follow AS follow_flag
-                   FROM page p
-                   LEFT JOIN page_meta   pm ON pm.page_id = p.id
-                   LEFT JOIN page_robots pr ON pr.page_id = p.id
-                  WHERE p.id = :id LIMIT 1'
-            );
-            $stmt->execute([':id' => $id]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $row !== false ? $row : null;
-        } catch (\PDOException) {
-            return null;
-        }
-    }
-
     private function loadPages(): array
     {
         try {
@@ -304,22 +284,6 @@ final class AdminPagesController extends AbstractController
                    LEFT JOIN page_robots pr ON pr.page_id = p.id
                    ORDER BY p.id'
             );
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (\PDOException) {
-            return [];
-        }
-    }
-
-    /** Pages available as parent (excludes the page being edited) */
-    private function loadAllPagesSimple(int $excludeId): array
-    {
-        try {
-            $stmt = $this->pdo->prepare(
-                'SELECT p.id, p.url_id, pm.title FROM page p
-                   LEFT JOIN page_meta pm ON pm.page_id = p.id
-                  WHERE p.id != :ex ORDER BY p.id'
-            );
-            $stmt->execute([':ex' => $excludeId]);
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (\PDOException) {
             return [];

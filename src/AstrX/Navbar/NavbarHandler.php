@@ -73,7 +73,7 @@ final class NavbarHandler
         $stmt->execute(['navbar_id' => $navbarId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        return is_array($rows) ? $rows : [];
+        return $rows;
     }
 
     /**

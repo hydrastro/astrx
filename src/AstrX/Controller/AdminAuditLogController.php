@@ -109,7 +109,7 @@ final class AdminAuditLogController extends AbstractController
             );
             $rowStmt->execute($params);
             $rows = $rowStmt->fetchAll(\PDO::FETCH_ASSOC);
-            return [is_array($rows) ? $rows : [], $total];
+            return [$rows, $total];
         } catch (\Throwable) {
             return [[], 0];
         }

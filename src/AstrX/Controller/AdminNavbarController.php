@@ -41,11 +41,6 @@ final class AdminNavbarController extends AbstractController
 {
     private const FORM = 'admin_navbar';
 
-    private const NAVBAR_NAMES = [
-        1 => 'public',
-        2 => 'user',
-        3 => 'admin',
-    ];
 
     public function __construct(
         DiagnosticsCollector                   $collector,

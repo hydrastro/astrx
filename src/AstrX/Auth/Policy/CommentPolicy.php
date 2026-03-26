@@ -21,7 +21,6 @@ final class CommentPolicy implements PolicyInterface
     {
         $isOwner = $session->isLoggedIn()
             && isset($resource->userId)
-            && $resource->userId !== null
             && $resource->userId === $session->userId();
 
         return match ($permission) {

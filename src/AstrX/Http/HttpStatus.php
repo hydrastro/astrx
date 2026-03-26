@@ -84,9 +84,9 @@ enum HttpStatus: int
         return $status >= 100 && $status <= 599;
     }
 
-    public function isInformational(): bool { return $this->value >= 100 && $this->value <= 199; }
+    public function isInformational(): bool { return $this->value <= 199; }
     public function isSuccess(): bool       { return $this->value >= 200 && $this->value <= 299; }
     public function isRedirect(): bool      { return $this->value >= 300 && $this->value <= 399; }
     public function isClientError(): bool   { return $this->value >= 400 && $this->value <= 499; }
-    public function isServerError(): bool   { return $this->value >= 500 && $this->value <= 599; }
+    public function isServerError(): bool   { return $this->value >= 500; }
 }

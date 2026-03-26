@@ -112,11 +112,11 @@ final class MainController extends AbstractController
         // --- Data fetching ---------------------------------------------------
         $pageResult  = $this->news->fetchPage($pagination);
         $pageResult->drainTo($this->collector);
-        $items = $pageResult->isOk() ? ($pageResult->unwrap() ?? []) : [];
+        $items = $pageResult->isOk() ? $pageResult->unwrap() : [];
 
         $countResult = $this->news->countVisible();
         $countResult->drainTo($this->collector);
-        $total      = $countResult->isOk() ? ($countResult->unwrap() ?? 0) : 0;
+        $total      = $countResult->isOk() ? $countResult->unwrap() : 0;
         $pagination = $pagination->withTotal($total);
 
         // --- URL generation --------------------------------------------------

@@ -106,7 +106,6 @@ final class CaptchaService
     public function verify(string $id, string $submittedText): Result
     {
         $findResult = $this->repository->find($id);
-        $findResult->diagnostics(); // propagate any DB diagnostic
 
         if (!$findResult->isOk()) {
             return Result::err(false, $findResult->diagnostics());
@@ -136,7 +135,7 @@ final class CaptchaService
         }
 
         // Consume the token — delete by ID, not by text
-        $this->repository->delete($id)->diagnostics();
+        $this->repository->delete($id);
 
         return Result::ok(true);
     }

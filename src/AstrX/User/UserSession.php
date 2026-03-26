@@ -80,15 +80,16 @@ final class UserSession
     /**
      * Persist user data to session after successful login / token verification.
      *
-     * @param array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool} $row
+     * @param array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string} $row
      */
     public function login(array $row): void
     {
         $_SESSION[self::LOGGED_IN] = true;
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string} $_SESSION */
         $_SESSION[self::KEY] = [
             'id'           => (string)  $row['id'],
             'username'     => (string)  $row['username'],
-            'display_name' => (string) ($row['display_name'] ?? ''),
+            'display_name' => (string) $row['display_name'],
             'type'         => (int)     $row['type'],
             'verified'     => (bool)    $row['verified'],
             'avatar'       => (bool)    $row['avatar'],

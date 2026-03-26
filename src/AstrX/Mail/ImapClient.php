@@ -668,8 +668,8 @@ final class ImapClient
                 // Parenthesised group — find matching close
                 $depth = 1; $j = $i + 1;
                 while ($j < $len && $depth > 0) {
-                    if ($s[$j] === '(' && ($j === 0 || $s[$j-1] !== '\\')) { $depth++; }
-                    elseif ($s[$j] === ')' && ($j === 0 || $s[$j-1] !== '\\')) { $depth--; }
+                    if ($s[$j] === '(') { $depth++; }
+                    elseif ($s[$j] === ')') { $depth--; }
                     $j++;
                 }
                 $tokens[] = substr($s, $i + 1, $j - $i - 2);
@@ -795,7 +795,6 @@ final class ImapClient
                 str_starts_with($partDisposition, 'attachment') ||
                 (!str_contains($partCt, 'text/plain') &&
                  !str_contains($partCt, 'text/html') &&
-                 !str_starts_with($partCt, 'multipart/') &&
                  !str_contains($partCt, 'message/rfc822'))
             ) {
                 $filename      = $this->extractFilename($partHeaders);

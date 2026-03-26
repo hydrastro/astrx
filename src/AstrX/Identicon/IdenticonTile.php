@@ -99,7 +99,6 @@ final class IdenticonTile implements IdenticonTileInterface
 
         [$r, $g, $b] = $this->bgColor;
         $this->bgColorValue = imagecolorallocate($image, $r, $g, $b);
-        assert($this->bgColorValue !== false);
     }
 
     public function free()

@@ -132,16 +132,7 @@ final class Translator
 
         $replace = [];
         foreach ($vars as $k => $v) {
-            if (!is_string($k)) {
-                continue;
-            }
-
-            $replace['{' . $k . '}'] = match (true) {
-                $v === null           => '',
-                is_scalar($v)         => (string) $v,
-                $v instanceof \Stringable => (string) $v,
-                default               => '',
-            };
+            $replace['{' . $k . '}'] = $v !== null ? (string) $v : '';
         }
 
         return strtr($template, $replace);

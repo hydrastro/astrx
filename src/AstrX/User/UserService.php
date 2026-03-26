@@ -68,7 +68,6 @@ final class UserService
     private bool   $requireRecoveryEmail  = true;
     private bool   $requireBirthDate      = false;
     private bool   $requireDisplayName    = true;
-    private bool   $caseSensitiveUsernames = false;
     private int    $minimumAge            = 0;
     private int    $maximumAge            = 0;
     private int    $loginCaptchaType      = self::CAPTCHA_SHOW_ON_X_FAILED;
@@ -95,8 +94,6 @@ final class UserService
     public function setRequireBirthDate(bool $v): void { $this->requireBirthDate = $v; }
     #[InjectConfig('require_display_name')]
     public function setRequireDisplayName(bool $v): void { $this->requireDisplayName = $v; }
-    #[InjectConfig('case_sensitive_usernames')]
-    public function setCaseSensitiveUsernames(bool $v): void { $this->caseSensitiveUsernames = $v; }
     #[InjectConfig('minimum_age')]
     public function setMinimumAge(int $v): void { $this->minimumAge = max(0, $v); }
     #[InjectConfig('maximum_age')]
@@ -527,7 +524,7 @@ final class UserService
      * Change recovery email. If verification is required, returns
      * Result::ok('verify_required') and the caller must send a token email.
      *
-     * @return Result<true>
+     * @return Result<true|string>
      */
     public function changeRecoveryEmail(string $hexId, string $email): Result
     {
