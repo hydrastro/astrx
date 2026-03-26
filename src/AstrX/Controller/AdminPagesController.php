@@ -19,6 +19,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use PDO;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Full page management — listing, editing, adding, deleting.
@@ -354,7 +355,7 @@ final class AdminPagesController extends AbstractController
     private function emitDiag(\PDOException $e): void
     {
         $this->emit(new AdminDbDiagnostic(
-                        AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, $e->getMessage()
+                        'astrx.admin/db_error', DiagnosticLevel::ERROR, $e->getMessage()
                     ));
     }
 }

@@ -6,6 +6,7 @@ namespace AstrX\Config;
 use AstrX\Config\Diagnostic\ConfigWriteDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Writes a config domain array back to its PHP config file atomically.
@@ -30,7 +31,7 @@ final class ConfigWriter
 
         if (file_put_contents($tmp, $php, LOCK_EX) === false) {
             return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
-                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          'astrx.config/write_failed', DiagnosticLevel::ERROR,
                                                           $tmp, 'write_failed',
                                                       )));
         }
@@ -38,7 +39,7 @@ final class ConfigWriter
         if (!rename($tmp, $path)) {
             @unlink($tmp);
             return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
-                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          'astrx.config/write_failed', DiagnosticLevel::ERROR,
                                                           $path, 'rename_failed',
                                                       )));
         }
@@ -63,7 +64,7 @@ final class ConfigWriter
 
         if (file_put_contents($tmp, $php, LOCK_EX) === false) {
             return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
-                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          'astrx.config/write_failed', DiagnosticLevel::ERROR,
                                                           $tmp, 'write_failed',
                                                       )));
         }
@@ -71,7 +72,7 @@ final class ConfigWriter
         if (!rename($tmp, $path)) {
             @unlink($tmp);
             return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
-                                                          ConfigWriteDiagnostic::ID, ConfigWriteDiagnostic::LEVEL,
+                                                          'astrx.config/write_failed', DiagnosticLevel::ERROR,
                                                           $path, 'rename_failed',
                                                       )));
         }

@@ -15,9 +15,4 @@ final class UserLoginFailedDiagnostic extends AbstractDiagnostic
         parent::__construct($id, $level);
     }
 
-    public function vars()
-    : array
-    {
-        return [];
-    }
 }

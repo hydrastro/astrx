@@ -8,6 +8,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\User\UserSession;
 use PDO;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Writes immutable audit log entries for significant admin actions.
@@ -59,7 +60,7 @@ final class AuditLogger
             return Result::ok(true);
         } catch (\Throwable $e) {
             return Result::err(false, Diagnostics::of(new AuditLogDiagnostic(
-                                                          AuditLogDiagnostic::ID, AuditLogDiagnostic::LEVEL, $e->getMessage()
+                                                          'astrx.admin/audit_log_write_failed', DiagnosticLevel::WARNING, $e->getMessage()
                                                       )));
         }
     }

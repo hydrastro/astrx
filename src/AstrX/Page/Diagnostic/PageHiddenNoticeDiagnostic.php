@@ -1,18 +1,17 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Captcha\Diagnostic;
+namespace AstrX\Page\Diagnostic;
 
 use AstrX\Result\AbstractDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 
 /**
- * Emitted when a captcha token is found and valid but the submitted text
- * does not match the stored text.
+ * Emitted when an admin views a page that is hidden from public visitors.
+ * This is an informational notice, not an error condition.
  */
-final class CaptchaWrongDiagnostic extends AbstractDiagnostic
+final class PageHiddenNoticeDiagnostic extends AbstractDiagnostic
 {
-
     public function __construct(string $id, DiagnosticLevel $level)
     {
         parent::__construct($id, $level);

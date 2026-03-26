@@ -8,6 +8,7 @@ use AstrX\Result\Result;
 use AstrX\User\Diagnostic\UserDbDiagnostic;
 use PDO;
 use PDOException;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Pure data-access layer for the `user` table.
@@ -496,8 +497,7 @@ final class UserRepository
     private function dbErr(PDOException $e): Result
     {
         return Result::err(false, Diagnostics::of(new UserDbDiagnostic(
-                                                      UserDbDiagnostic::ID,
-                                                      UserDbDiagnostic::LEVEL,
+                                                      'astrx.user/db_error', DiagnosticLevel::ERROR,
                                                       $e->getMessage(),
                                                   )));
     }

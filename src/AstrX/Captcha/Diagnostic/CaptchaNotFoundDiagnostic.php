@@ -13,8 +13,6 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class CaptchaNotFoundDiagnostic extends AbstractDiagnostic
 {
-    public const string ID    = 'astrx.captcha/not_found';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::WARNING;
 
     public function __construct(
         string $id,
@@ -26,8 +24,4 @@ final class CaptchaNotFoundDiagnostic extends AbstractDiagnostic
 
     public function captchaId(): string { return $this->captchaId; }
 
-    public function vars(): array
-    {
-        return ['captcha_id' => $this->captchaId];
-    }
 }

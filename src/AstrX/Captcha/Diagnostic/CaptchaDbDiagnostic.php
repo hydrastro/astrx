@@ -11,8 +11,6 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class CaptchaDbDiagnostic extends AbstractDiagnostic
 {
-    public const string ID    = 'astrx.captcha/db_error';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::ERROR;
 
     public function __construct(
         string $id,
@@ -24,8 +22,4 @@ final class CaptchaDbDiagnostic extends AbstractDiagnostic
 
     public function message(): string { return $this->message; }
 
-    public function vars(): array
-    {
-        return ['message' => $this->message];
-    }
 }

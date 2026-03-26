@@ -18,15 +18,14 @@ final class ConfigKeyUnusedDiagnostic extends AbstractDiagnostic
     public function __construct(
         string $id,
         DiagnosticLevel $level,
-        public readonly string $domain,
-        public readonly string $key,
+        private readonly string $domain,
+        private readonly string $key,
     ) {
         parent::__construct($id, $level);
     }
 
-    public function vars()
-    : array
-    {
-        return ['domain' => $this->domain, 'key' => $this->key];
-    }
+
+    public function domain(): string { return $this->domain; }
+
+    public function key(): string { return $this->key; }
 }

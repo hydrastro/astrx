@@ -12,14 +12,14 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class AuditLogDiagnostic extends AbstractDiagnostic
 {
-    public const string          ID    = 'astrx.admin/audit_log_write_failed';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::WARNING;
 
     public function __construct(
         string $id,
         DiagnosticLevel $level,
-        public readonly string $detail = '',
+        private readonly string $detail = '',
     ) {
         parent::__construct($id, $level);
     }
+
+    public function detail(): string { return $this->detail; }
 }

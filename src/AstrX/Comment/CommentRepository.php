@@ -8,6 +8,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use PDO;
 use PDOException;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Pure data-access for the `comment` table.
@@ -358,8 +359,7 @@ final class CommentRepository
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new CommentDbDiagnostic(
-                                                     CommentDbDiagnostic::ID,
-                                                     CommentDbDiagnostic::LEVEL,
+                                                     'astrx.comment/db_error', DiagnosticLevel::ERROR,
                                                      $e->getMessage(),
                                                  )));
     }

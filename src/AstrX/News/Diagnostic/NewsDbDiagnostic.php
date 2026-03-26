@@ -12,8 +12,6 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class NewsDbDiagnostic extends AbstractDiagnostic
 {
-    public const string ID = 'astrx.news/db_error';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::ERROR;
 
     public function __construct(
         string $id,
@@ -29,9 +27,4 @@ final class NewsDbDiagnostic extends AbstractDiagnostic
         return $this->message;
     }
 
-    public function vars()
-    : array
-    {
-        return ['message' => $this->message];
-    }
 }

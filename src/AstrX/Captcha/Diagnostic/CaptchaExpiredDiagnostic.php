@@ -12,8 +12,6 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class CaptchaExpiredDiagnostic extends AbstractDiagnostic
 {
-    public const string ID    = 'astrx.captcha/expired';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::NOTICE;
 
     public function __construct(
         string $id,
@@ -27,8 +25,4 @@ final class CaptchaExpiredDiagnostic extends AbstractDiagnostic
     public function captchaId(): string { return $this->captchaId; }
     public function expiredAt(): int    { return $this->expiredAt; }
 
-    public function vars(): array
-    {
-        return ['captcha_id' => $this->captchaId, 'expired_at' => $this->expiredAt];
-    }
 }

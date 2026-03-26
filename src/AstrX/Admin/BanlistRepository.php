@@ -10,6 +10,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use PDO;
 use PDOException;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Banlist data-access.
@@ -207,7 +208,7 @@ final class BanlistRepository
         $parsed = self::parseCidr($cidr);
         if ($parsed === null) {
             return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(
-                                                         AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, "Invalid IP/CIDR: {$cidr}"
+                                                         'astrx.admin/db_error', DiagnosticLevel::ERROR, "Invalid IP/CIDR: {$cidr}"
                                                      )));
         }
         $coreResult = $this->insertCore($reason, $route, $end);
@@ -354,7 +355,7 @@ final class BanlistRepository
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(
-                                                     AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, $e->getMessage()
+                                                     'astrx.admin/db_error', DiagnosticLevel::ERROR, $e->getMessage()
                                                  )));
     }
 }

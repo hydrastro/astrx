@@ -16,6 +16,7 @@ use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
+use AstrX\Page\Diagnostic\PageHiddenNoticeDiagnostic;
 use AstrX\Page\PageHandler;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticRenderer;
@@ -364,7 +365,11 @@ final class ContentManager
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
         $ctx->buildBase($page);
-        if ($adminViewingHidden) { $ctx->set('admin_hidden_page_notice', true); }
+        if ($adminViewingHidden) {
+            $this->collector->emit(new PageHiddenNoticeDiagnostic(
+                                       'astrx.content/page_hidden', DiagnosticLevel::NOTICE
+                                   ));
+        }
 
         // Populate navbar. Failure is non-fatal — the template renders with an
         // empty navbar rather than taking down the whole page.

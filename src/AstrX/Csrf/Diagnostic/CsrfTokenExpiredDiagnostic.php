@@ -34,9 +34,4 @@ final class CsrfTokenExpiredDiagnostic extends AbstractDiagnostic
         return $this->expiredAt;
     }
 
-    public function vars()
-    : array
-    {
-        return ['form_id' => $this->formId, 'expired_at' => $this->expiredAt];
-    }
 }

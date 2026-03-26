@@ -8,6 +8,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use PDO;
 use PDOException;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Pure data-access layer for the `captcha` table.
@@ -60,9 +61,9 @@ final class CaptchaRepository
             }
 
             return Result::ok([
-                'text'       => (string) $row['text'],
-                'expires_at' => (int)    $row['expires_at'],
-            ]);
+                                  'text'       => (string) $row['text'],
+                                  'expires_at' => (int)    $row['expires_at'],
+                              ]);
         } catch (PDOException $e) {
             return Result::err(null, $this->diagnostic($e));
         }
@@ -108,9 +109,8 @@ final class CaptchaRepository
     private function diagnostic(PDOException $e): Diagnostics
     {
         return Diagnostics::of(new CaptchaDbDiagnostic(
-            CaptchaDbDiagnostic::ID,
-            CaptchaDbDiagnostic::LEVEL,
-            $e->getMessage(),
-        ));
+                                   'astrx.captcha/db_error', DiagnosticLevel::ERROR,
+                                   $e->getMessage(),
+                               ));
     }
 }

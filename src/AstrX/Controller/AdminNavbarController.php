@@ -19,6 +19,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use PDO;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Full management for all three navbars (public=1, user=2, admin=3).
@@ -551,7 +552,7 @@ final class AdminNavbarController extends AbstractController
     private function emitDiag(\PDOException $e): void
     {
         $this->emit(new AdminDbDiagnostic(
-                        AdminDbDiagnostic::ID, AdminDbDiagnostic::LEVEL, $e->getMessage()
+                        'astrx.admin/db_error', DiagnosticLevel::ERROR, $e->getMessage()
                     ));
     }
 }

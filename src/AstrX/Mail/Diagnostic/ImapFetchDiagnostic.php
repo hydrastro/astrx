@@ -13,14 +13,11 @@ final class ImapFetchDiagnostic extends AbstractDiagnostic
     public function __construct(
         string $id,
         DiagnosticLevel $level,
-        public readonly string $detail = '',
+        private readonly string $detail = '',
     ) {
         parent::__construct($id, $level);
     }
 
-    public function vars()
-    : array
-    {
-        return ['detail' => $this->detail];
-    }
+
+    public function detail(): string { return $this->detail; }
 }

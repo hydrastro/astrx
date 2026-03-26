@@ -54,17 +54,11 @@
         </ul>
     </div>
     {{/is_admin}}
-    {{#admin_hidden_page_notice}}
-    <div id="flash_bar">
-        <p class="flash flash-warning">&#x26A0; Admin view: this page is <strong>hidden</strong> from public visitors.</p>
+    {{#has_messages}}
+    <div id="message_bar">
+        {{#messages}}<p class="{{css_class}}">{{#level_label}}[{{level_label}}] {{/level_label}}{{message}}</p>{{/messages}}
     </div>
-    {{/admin_hidden_page_notice}}
-    {{#has_flash_messages}}
-    <div id="flash_bar">{{#flash_messages}}<p class="flash flash-{{type}}">{{text}}</p>{{/flash_messages}}</div>
-    {{/has_flash_messages}}
-    {{#got_results}}
-    <div id="status_bar">{{#results}}<p class="{{css_class}}">[{{level_label}}] {{message}}</p>{{/results}}
-    </div>{{/got_results}}
+    {{/has_messages}}
     <div id="main">
         {{>include}}
         {{#page_comments}}{{&comments_html}}{{/page_comments}}

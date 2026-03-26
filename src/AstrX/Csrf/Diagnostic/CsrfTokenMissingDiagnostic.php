@@ -22,8 +22,4 @@ final class CsrfTokenMissingDiagnostic extends AbstractDiagnostic
 
     public function formId(): string { return $this->formId; }
 
-    public function vars(): array
-    {
-        return ['form_id' => $this->formId];
-    }
 }

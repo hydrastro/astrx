@@ -9,9 +9,6 @@ use AstrX\Result\DiagnosticLevel;
 
 final class ConfigWriteDiagnostic extends AbstractDiagnostic
 {
-    // TODO MOVE THESE OUT.
-    public const string ID = 'astrx.config/write_failed';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::ERROR;
 
     public function __construct(
         string $id,

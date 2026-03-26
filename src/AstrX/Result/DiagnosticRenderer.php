@@ -20,9 +20,8 @@ use AstrX\I18n\Translator;
  * (for sub-translations, pluralization, etc.).
  *
  * Fallback (no catalog entry for a given ID):
- *   AbstractDiagnostic::vars() is dumped with a [FALLBACK:LEVEL] stamp so you
- *   immediately know which callable to write and which vars are available:
- *     [FALLBACK:NOTICE] astrx.i18n/missing_translation {locale=en, key=foo}
+ *   A [FALLBACK:LEVEL] stamp shows which callable to add to the lang file:
+ *     [FALLBACK:NOTICE] astrx.i18n/missing_translation
  *
  * Lang file convention:
  *   Single file:   resources/lang/{locale}/Diagnostics.php
@@ -129,7 +128,7 @@ final class DiagnosticRenderer
      * Render a single diagnostic.
      *
      * Primary:  catalog callable for this diagnostic's ID.
-     * Fallback: vars() dump, visually stamped as [FALLBACK:LEVEL].
+     * Fallback: stamped as [FALLBACK:LEVEL] code.
      */
     public function render(DiagnosticInterface $diagnostic): string
     {
@@ -258,18 +257,8 @@ final class DiagnosticRenderer
      */
     private function fallback(DiagnosticInterface $diagnostic): string
     {
-        $prefix = '[FALLBACK:' . $diagnostic->level()->name . '] ' . $diagnostic->id();
-
-        $vars = $diagnostic->vars();
-        if ($vars === []) {
-            return $prefix;
-        }
-
-        $pairs = [];
-        foreach ($vars as $k => $v) {
-            $pairs[] = $k . '=' . (string) $v;
-        }
-
-        return $prefix . ' {' . implode(', ', $pairs) . '}';
+        // No catalog entry for this code. Show a clearly-stamped stub
+        // so the developer knows which callable to add to the lang file.
+        return '[FALLBACK:' . $diagnostic->level()->name . '] ' . $diagnostic->id();
     }
 }

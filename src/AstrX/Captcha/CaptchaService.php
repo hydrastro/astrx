@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Captcha;
 
 use AstrX\Captcha\CaptchaType;
+use AstrX\Result\DiagnosticLevel;
 
 use AstrX\Captcha\Diagnostic\CaptchaExpiredDiagnostic;
 use AstrX\Captcha\Diagnostic\CaptchaNotFoundDiagnostic;
@@ -115,16 +116,14 @@ final class CaptchaService
 
         if ($row === null) {
             return Result::err(false, Diagnostics::of(new CaptchaNotFoundDiagnostic(
-                                                          CaptchaNotFoundDiagnostic::ID,
-                                                          CaptchaNotFoundDiagnostic::LEVEL,
+                                                          'astrx.captcha/not_found', DiagnosticLevel::WARNING,
                                                           $id,
                                                       )));
         }
 
         if (time() > $row['expires_at']) {
             return Result::err(false, Diagnostics::of(new CaptchaExpiredDiagnostic(
-                                                          CaptchaExpiredDiagnostic::ID,
-                                                          CaptchaExpiredDiagnostic::LEVEL,
+                                                          'astrx.captcha/expired', DiagnosticLevel::NOTICE,
                                                           $id,
                                                           $row['expires_at'],
                                                       )));
@@ -132,8 +131,7 @@ final class CaptchaService
 
         if (!hash_equals(strtolower($row['text']), strtolower($submittedText))) {
             return Result::err(false, Diagnostics::of(new CaptchaWrongDiagnostic(
-                                                          CaptchaWrongDiagnostic::ID,
-                                                          CaptchaWrongDiagnostic::LEVEL,
+                                                          'astrx.captcha/wrong_text', DiagnosticLevel::NOTICE,
                                                       )));
         }
 

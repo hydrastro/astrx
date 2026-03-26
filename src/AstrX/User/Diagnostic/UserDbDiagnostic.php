@@ -9,8 +9,6 @@ use AstrX\Result\DiagnosticLevel;
 /** PDO exception originating from a user-table operation. */
 final class UserDbDiagnostic extends AbstractDiagnostic
 {
-    public const string ID    = 'astrx.user/db_error';
-    public const DiagnosticLevel LEVEL = DiagnosticLevel::ERROR;
 
     public function __construct(
         string $id,
@@ -22,5 +20,4 @@ final class UserDbDiagnostic extends AbstractDiagnostic
 
     public function message(): string { return $this->message; }
 
-    public function vars(): array { return ['message' => $this->message]; }
 }

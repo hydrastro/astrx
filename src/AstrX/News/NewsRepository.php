@@ -9,6 +9,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use PDO;
 use PDOException;
+use AstrX\Result\DiagnosticLevel;
 
 /**
  * Pure data-access layer for the `news` table.
@@ -113,95 +114,94 @@ final class NewsRepository
     private function pdoDiagnostic(PDOException $e): Diagnostics
     {
         return Diagnostics::of(new NewsDbDiagnostic(
-                                   NewsDbDiagnostic::ID,
-                                   NewsDbDiagnostic::LEVEL,
+                                   'astrx.news/db_error', DiagnosticLevel::ERROR,
                                    $e->getMessage(),
                                ));
     }
 
-// =========================================================================
-// Admin write operations
-// =========================================================================
+    // =========================================================================
+    // Admin write operations
+    // =========================================================================
 
-/**
- * Fetch ALL news (including hidden) for the admin listing.
- *
- * @return Result<list<array{id:int,title:string,created_at:string,hidden:int}>>
- */
-public function fetchAllAdmin(): Result
-{
-    try {
-        $stmt = $this->pdo->query(
-            'SELECT id, title, hidden, created_at
+    /**
+     * Fetch ALL news (including hidden) for the admin listing.
+     *
+     * @return Result<list<array{id:int,title:string,created_at:string,hidden:int}>>
+     */
+    public function fetchAllAdmin(): Result
+    {
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT id, title, hidden, created_at
                    FROM news ORDER BY created_at DESC'
-        );
-        return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
-    } catch (PDOException $e) {
-        return Result::err([], $this->pdoDiagnostic($e));
+            );
+            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+        } catch (PDOException $e) {
+            return Result::err([], $this->pdoDiagnostic($e));
+        }
     }
-}
 
-/**
- * Fetch a single news item by ID regardless of hidden status.
- *
- * @return Result<array{id:int,title:string,content:string,created_at:string,hidden:int}|null>
- */
-public function findByIdAdmin(int $id): Result
-{
-    try {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, title, content, hidden, created_at FROM news WHERE id = :id'
-        );
-        $stmt->execute([':id' => $id]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return Result::ok($row !== false ? $row : null);
-    } catch (PDOException $e) {
-        return Result::err(null, $this->pdoDiagnostic($e));
+    /**
+     * Fetch a single news item by ID regardless of hidden status.
+     *
+     * @return Result<array{id:int,title:string,content:string,created_at:string,hidden:int}|null>
+     */
+    public function findByIdAdmin(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT id, title, content, hidden, created_at FROM news WHERE id = :id'
+            );
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return Result::ok($row !== false ? $row : null);
+        } catch (PDOException $e) {
+            return Result::err(null, $this->pdoDiagnostic($e));
+        }
     }
-}
 
-/**
- * Create a new news post. Returns the new id.
- *
- * @return Result<int>
- */
-public function create(string $title, string $content, bool $hidden = false): Result
-{
-    try {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO news (title, content, hidden) VALUES (:title, :content, :hidden)'
-        );
-        $stmt->execute([':title' => $title, ':content' => $content, ':hidden' => (int) $hidden]);
-        return Result::ok((int) $this->pdo->lastInsertId());
-    } catch (PDOException $e) {
-        return Result::err(0, $this->pdoDiagnostic($e));
+    /**
+     * Create a new news post. Returns the new id.
+     *
+     * @return Result<int>
+     */
+    public function create(string $title, string $content, bool $hidden = false): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO news (title, content, hidden) VALUES (:title, :content, :hidden)'
+            );
+            $stmt->execute([':title' => $title, ':content' => $content, ':hidden' => (int) $hidden]);
+            return Result::ok((int) $this->pdo->lastInsertId());
+        } catch (PDOException $e) {
+            return Result::err(0, $this->pdoDiagnostic($e));
+        }
     }
-}
 
-/** @return Result<true> */
-public function update(int $id, string $title, string $content, bool $hidden): Result
-{
-    try {
-        $stmt = $this->pdo->prepare(
-            'UPDATE news SET title = :title, content = :content, hidden = :hidden WHERE id = :id'
-        );
-        $stmt->execute([':title' => $title, ':content' => $content,
-                        ':hidden' => (int) $hidden, ':id' => $id]);
-        return Result::ok(true);
-    } catch (PDOException $e) {
-        return Result::err(false, $this->pdoDiagnostic($e));
+    /** @return Result<true> */
+    public function update(int $id, string $title, string $content, bool $hidden): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE news SET title = :title, content = :content, hidden = :hidden WHERE id = :id'
+            );
+            $stmt->execute([':title' => $title, ':content' => $content,
+                            ':hidden' => (int) $hidden, ':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return Result::err(false, $this->pdoDiagnostic($e));
+        }
     }
-}
 
-/** @return Result<true> */
-public function delete(int $id): Result
-{
-    try {
-        $stmt = $this->pdo->prepare('DELETE FROM news WHERE id = :id');
-        $stmt->execute([':id' => $id]);
-        return Result::ok(true);
-    } catch (PDOException $e) {
-        return Result::err(false, $this->pdoDiagnostic($e));
+    /** @return Result<true> */
+    public function delete(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare('DELETE FROM news WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return Result::err(false, $this->pdoDiagnostic($e));
+        }
     }
-}
 }
