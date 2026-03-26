@@ -15,7 +15,7 @@ final class UrlStack
     /** @param list<string> $segments */
     private function __construct(array $segments)
     {
-        $this->segments = array_values($segments);
+        $this->segments = $segments;
     }
 
     public static function fromRequest(string $requestUri, string $basePath = '/'): self

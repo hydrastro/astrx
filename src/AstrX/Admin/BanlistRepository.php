@@ -78,7 +78,7 @@ final class BanlistRepository
             $result[] = [
                 'key'    => $key,
                 'name'   => $key,   // display name = key; can be i18n'd in template
-                'rounds' => array_values($rounds),
+                'rounds' => $rounds,
             ];
         }
         return $result;
@@ -94,7 +94,7 @@ final class BanlistRepository
         if (!isset($this->routes[$routeKey])) {
             return null;
         }
-        return array_values($this->routes[$routeKey]);
+        return $this->routes[$routeKey];
     }
 
     // =========================================================================

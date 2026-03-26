@@ -86,7 +86,7 @@ final class PageHandler
         return $out;
     }
 
-    /** @return list<array{id:int,url_id:string,i18n:bool}> */
+    /** @return list<array{id:int,url_id:string,i18n:bool,file_name:string}> */
     public function getPageAncestors(int $id): array
     {
         $stmt = $this->pdo->prepare(

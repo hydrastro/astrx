@@ -58,7 +58,7 @@ final class CurrentUrl
      */
     public function setTail(array $segments): void
     {
-        $this->tail = array_values($segments);
+        $this->tail = $segments;
     }
 
     /**
