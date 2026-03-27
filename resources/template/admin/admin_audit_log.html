@@ -1,0 +1,53 @@
+<h2>{{heading}}</h2>
+
+{{! ── Filter form ──────────────────────────────────────────────────────── }}
+<form method="GET" action="{{filter_url}}">
+  <table>
+    <tr>
+      <th>{{label_user}}</th>
+      <td><input type="text" name="user" value="{{filter_user}}" class="input"></td>
+      <th>{{label_action}}</th>
+      <td><input type="text" name="action" value="{{filter_action}}" class="input" placeholder="e.g. config"></td>
+      <td>
+        <input type="submit" value="{{label_filter}}" class="input">
+        <a href="{{filter_url}}" class="input">{{label_clear}}</a>
+      </td>
+    </tr>
+  </table>
+</form>
+
+<p><small>{{label_total}}: {{audit_total}}</small></p>
+
+{{^audit_rows}}<p><em>{{label_no_entries}}</em></p>{{/audit_rows}}
+{{#audit_rows}}
+<table style="width:100%;border-collapse:collapse;font-size:0.9em">
+  <thead>
+  <tr>
+    <th style="text-align:left">{{label_time}}</th>
+    <th style="text-align:left">{{label_user}}</th>
+    <th style="text-align:left">{{label_action}}</th>
+    <th style="text-align:left">{{label_resource}}</th>
+    <th style="text-align:left">{{label_detail}}</th>
+    <th style="text-align:left">{{label_ip}}</th>
+  </tr>
+  </thead>
+  <tbody>
+  {{#audit_rows}}
+  <tr style="border-bottom:1px solid #eee">
+    <td><small>{{created_at}}</small></td>
+    <td>{{username}}</td>
+    <td><code>{{action}}</code></td>
+    <td><code>{{resource}}</code></td>
+    <td>{{detail}}</td>
+    <td><small>{{ip}}</small></td>
+  </tr>
+  {{/audit_rows}}
+  </tbody>
+</table>
+{{/audit_rows}}
+
+<p>
+  {{#has_prev}}<a href="{{prev_url}}" class="input">{{label_prev}}</a>{{/has_prev}}
+  {{audit_page}} / {{audit_pages}}
+  {{#has_next}}<a href="{{next_url}}" class="input">{{label_next}}</a>{{/has_next}}
+</p>

@@ -1,0 +1,45 @@
+<h2>{{reg_heading}}</h2>
+<p>{{reg_description}}</p>
+<hr>
+{{#registrations_closed}}
+<p>{{reg_closed_msg}}</p>
+{{/registrations_closed}}
+{{^registrations_closed}}
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <p>
+    <label for="reg_user">{{reg_username}}: </label>
+    <input type="text" name="username" class="input" id="reg_user" value="{{username_value}}" autocomplete="username"><br>
+    <label for="reg_pass">{{reg_password}}: </label>
+    <input type="password" name="password" class="input" id="reg_pass" autocomplete="new-password"><br>
+    <label for="reg_repeat">{{reg_repeat}}: </label>
+    <input type="password" name="repeat" class="input" id="reg_repeat" autocomplete="new-password"><br>
+    {{#show_mailbox}}
+    <label for="reg_mailbox">{{reg_mailbox}}: </label>
+    <input type="text" name="mailbox" class="input" id="reg_mailbox"
+           value="{{mailbox_value}}" autocomplete="username"
+           placeholder="{{reg_mailbox_hint}}"
+           pattern="[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}"
+           title="{{reg_mailbox_hint}}"><br>
+    {{/show_mailbox}}
+    {{#show_email}}
+    <label for="reg_email">{{reg_email}}: </label>
+    <input type="email" name="email" class="input" id="reg_email" value="{{email_value}}" autocomplete="email"><br>
+    {{/show_email}}
+    {{#show_display_name}}
+    <label for="reg_dname">{{reg_display_name}}: </label>
+    <input type="text" name="display_name" class="input" id="reg_dname" value="{{display_name_value}}"><br>
+    {{/show_display_name}}
+    {{#show_birth_date}}
+    <label>{{reg_birth_date}}: </label>
+    <input type="number" name="day"   class="input" min="1" max="31"  style="width:3.5em" placeholder="DD">
+    <input type="number" name="month" class="input" min="1" max="12"  style="width:3.5em" placeholder="MM">
+    <input type="number" name="year"  class="input" style="width:5em" placeholder="YYYY"><br>
+    {{/show_birth_date}}
+    {{> captcha}}
+    <input type="submit" value="{{reg_submit}}" class="input"><br>
+    <a href="{{login_url}}">{{reg_back}}</a>.
+  </p>
+</form>
+{{/registrations_closed}}

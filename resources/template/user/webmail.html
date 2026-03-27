@@ -1,0 +1,375 @@
+{{! ══════════════════════════════════════════════════════════════ WEBMAIL ══ }}
+
+{{! ── 403 ────────────────────────────────────────────────────────────────── }}
+{{#webmail_forbidden}}<h2>403</h2><p>Access denied.</p>{{/webmail_forbidden}}
+{{^webmail_forbidden}}
+
+{{! ── IMAP login prompt ──────────────────────────────────────────────────── }}
+{{#webmail_view_login}}
+<h2>{{webmail_login_heading}}</h2>
+<p>{{webmail_login_body}}</p>
+{{#webmail_imap_error}}<p class="diag-error">{{webmail_login_error}}</p>{{/webmail_imap_error}}
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="action" value="imap_login">
+    <table>
+        <tr>
+            <th>{{webmail_login_password}}</th>
+            <td><input type="password" name="imap_password" class="input"
+                       autocomplete="current-password" style="width:20em"></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td><input type="submit" value="{{webmail_login_btn}}" class="input"></td>
+        </tr>
+    </table>
+</form>
+{{/webmail_view_login}}
+
+{{! ── Authenticated two-column layout ────────────────────────────────────── }}
+{{^webmail_view_login}}
+<div id="wm-wrap">
+
+    {{! ── Folder sidebar ───────────────────────────────────────────────────────── }}
+    <div id="wm-sidebar">
+        <ul id="wm-nav">
+            {{#folders}}
+            <li class="{{#is_current}}wm-cur {{/is_current}}{{#has_unseen}}wm-unseen{{/has_unseen}}">
+                <a href="{{url}}">{{display}}{{#has_unseen}}&nbsp;({{unseen}}){{/has_unseen}}</a>
+            </li>
+            {{/folders}}
+        </ul>
+        <div id="wm-sidebar-btns">
+            <a href="{{compose_url}}" class="input">{{btn_compose}}</a>
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="disconnect">
+                <input type="submit" value="{{btn_disconnect}}" class="input">
+            </form>
+        </div>
+    </div>
+
+    {{! ── Content area ─────────────────────────────────────────────────────────── }}
+    <div id="wm-content">
+
+        {{! ════════════════════════════════════════ FOLDER / MESSAGE LIST ════════════ }}
+        {{#webmail_view_list}}
+
+        {{! ── Filter toolbar (show + sort) — plain form, no JS ─────────────────── }}
+        <div class="wm-toolbar">
+            <form method="GET" action="{{filter_action}}">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                {{label_show}}: <input type="text" name="show" class="input" size="4"
+                                       value="{{current_per_page}}">
+                &nbsp;
+                {{label_sort}}:
+                <select name="sort" class="input">
+                    <option value="newest"{{#sort_newest}} selected{{/sort_newest}}>{{label_sort_newest}}</option>
+                    <option value="oldest"{{#sort_oldest}} selected{{/sort_oldest}}>{{label_sort_oldest}}</option>
+                </select>
+                &nbsp;
+                <input type="submit" value="{{label_go}}" class="input">
+            </form>
+        </div>
+
+        {{! ── "Viewing Messages: X to Y (Z total)" ──────────────────────────────── }}
+        <p class="wm-info">{{label_viewing}}: <strong>{{msg_from}}</strong>
+            {{label_to}} <strong>{{msg_to}}</strong> ({{msg_total}} {{label_total}})</p>
+
+        {{! ── Message table wrapped in the bulk-action form ─────────────────────── }}
+        {{! The outer form wraps the table so all checkboxes post to the same form. }}
+        {{! Bulk-action buttons inside submit this same form with different actions. }}
+        <form method="POST" id="wm-bulk-form">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="folder"  value="{{current_folder}}">
+
+            {{^has_messages}}<p><em>{{label_no_messages}}</em></p>{{/has_messages}}
+            {{#has_messages}}
+            <table id="wm-list">
+                <thead>
+                <tr>
+                    <th style="width:1.5em">&#x2610;</th>
+                    <th>{{label_from}}</th>
+                    <th>{{label_subject}}</th>
+                    <th>{{label_date}}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{#messages}}
+                <tr class="{{#row_even}}wm-even {{/row_even}}{{#unread}}wm-unread{{/unread}}">
+                    <td><input type="checkbox" name="uid[]" value="{{uid}}"></td>
+                    <td>{{from_display}}</td>
+                    <td><a href="{{view_url}}">{{subject}}</a></td>
+                    <td>{{date_fmt}}</td>
+                </tr>
+                {{/messages}}
+                </tbody>
+            </table>
+            {{/has_messages}}
+
+            {{! ── Bulk action bar ────────────────────────────────────────────────────── }}
+        </form>{{! /wm-bulk-form — table + checkboxes }}
+        <div class="wm-bulk">
+            {{label_transform}}:
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_seen_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_mark_read_bulk}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_unseen_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_mark_unread_bulk}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="delete_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <input type="submit" value="{{btn_delete_bulk}}" class="input">
+            </form>
+            &nbsp;|&nbsp;
+            {{label_move_selected}}:
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="move_bulk">
+                <input type="hidden" name="folder" value="{{current_folder}}">
+                <select name="target_folder" class="input">
+                    {{#move_options}}<option value="{{name}}">{{display}}</option>{{/move_options}}
+                </select>
+                <input type="submit" value="{{btn_move_bulk}}" class="input">
+            </form>
+        </div>
+
+        {{! ── Pagination (text input like news) ──────────────────────────────────── }}
+        <div class="wm-pager">
+            {{#has_prev}}<a href="{{prev_url}}" class="input">{{label_prev}}</a>{{/has_prev}}
+            <form method="GET" action="{{filter_action}}">
+                <input type="hidden" name="folder"  value="{{current_folder}}">
+                <input type="hidden" name="show"    value="{{current_per_page}}">
+                <input type="hidden" name="sort"    value="{{current_sort}}">
+                <input type="text" name="pn" class="input" size="3" value="{{msg_page}}">
+                / {{msg_pages}}
+                <input type="submit" value="{{label_go}}" class="input">
+            </form>
+            {{#has_next}}<a href="{{next_url}}" class="input">{{label_next}}</a>{{/has_next}}
+        </div>
+
+        {{/webmail_view_list}}
+
+        {{! ════════════════════════════════════════ SINGLE MESSAGE ═══════════════════ }}
+        {{#webmail_view_message}}
+        {{#message_found}}
+
+        <div class="wm-msg-actions">
+            <a href="{{back_url}}"    class="input">{{btn_back}}</a>
+            <a href="{{reply_url}}"   class="input">{{btn_reply}}</a>
+            <a href="{{forward_url}}" class="input">{{btn_forward}}</a>
+            <a href="{{headers_url}}" class="input">{{label_view_headers}}</a>
+            {{! Delete }}
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="folder" value="{{msg_folder}}">
+                <input type="hidden" name="uid"    value="{{msg_uid}}">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+            {{! Mark read/unread }}
+            {{#message.seen}}
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_unseen">
+                <input type="hidden" name="folder" value="{{msg_folder}}">
+                <input type="hidden" name="uid"    value="{{msg_uid}}">
+                <input type="submit" value="{{btn_mark_unread}}" class="input">
+            </form>
+            {{/message.seen}}
+            {{^message.seen}}
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="mark_seen">
+                <input type="hidden" name="folder" value="{{msg_folder}}">
+                <input type="hidden" name="uid"    value="{{msg_uid}}">
+                <input type="submit" value="{{btn_mark_read}}" class="input">
+            </form>
+            {{/message.seen}}
+            {{! Move — single select, single form }}
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="move">
+                <input type="hidden" name="folder" value="{{msg_folder}}">
+                <input type="hidden" name="uid"    value="{{msg_uid}}">
+                <select name="target_folder" class="input">
+                    {{#move_options}}<option value="{{name}}">{{display}}</option>{{/move_options}}
+                </select>
+                <input type="submit" value="{{btn_move}}" class="input">
+            </form>
+        </div>
+
+        {{! Images blocked / sender trusted notices }}
+        {{#images_blocked}}
+        <div class="wm-notice">
+            {{label_images_blocked}}
+            <form method="POST">
+                <input type="hidden" name="prg_id"      value="{{prg_id}}">
+                <input type="hidden" name="_csrf"        value="{{csrf_token}}">
+                <input type="hidden" name="action"       value="trust_sender">
+                <input type="hidden" name="folder"       value="{{msg_folder}}">
+                <input type="hidden" name="uid"          value="{{msg_uid}}">
+                <input type="hidden" name="sender_email" value="{{sender_email}}">
+                <input type="submit" value="{{label_trust_sender}}" class="input">
+            </form>
+        </div>
+        {{/images_blocked}}
+        {{#sender_trusted}}
+        <div class="wm-notice">
+            {{label_sender_trusted}}
+            <form method="POST">
+                <input type="hidden" name="prg_id"      value="{{prg_id}}">
+                <input type="hidden" name="_csrf"        value="{{csrf_token}}">
+                <input type="hidden" name="action"       value="untrust_sender">
+                <input type="hidden" name="folder"       value="{{msg_folder}}">
+                <input type="hidden" name="uid"          value="{{msg_uid}}">
+                <input type="hidden" name="sender_email" value="{{sender_email}}">
+                <input type="submit" value="{{label_untrust_sender}}" class="input">
+            </form>
+        </div>
+        {{/sender_trusted}}
+
+        {{! Message headers table }}
+        <table id="wm-msg-hdr">
+            <tr><th>{{label_from}}:</th><td>{{message.from}}</td></tr>
+            <tr><th>{{label_to}}:</th>  <td>{{message.to}}</td></tr>
+            {{#message.cc}}<tr><th>CC:</th><td>{{message.cc}}</td></tr>{{/message.cc}}
+            <tr><th>{{label_subject}}:</th><td><strong>{{message.subject}}</strong></td></tr>
+            <tr><th>{{label_date}}:</th>   <td>{{message.date}}</td></tr>
+        </table>
+        <hr>
+
+        {{! Body: plain text preferred; fall back to sanitised HTML }}
+        <div class="wm-msg-body">
+            {{#message.body_text}}
+            <pre>{{message.body_text}}</pre>
+            {{/message.body_text}}
+            {{^message.body_text}}
+            {{#has_html_body}}{{&body_html_safe}}{{/has_html_body}}
+            {{/message.body_text}}
+        </div>
+
+        {{! Attachments }}
+        {{#has_attachments}}
+        <hr>
+        <strong>{{label_attachments}}:</strong>
+        <table class="wm-att-table">
+            {{#attachments}}
+            <tr>
+                <td>{{name}}</td>
+                <td><small>{{content_type}}</small></td>
+                <td><small>{{size_fmt}}</small></td>
+                <td><a href="{{download_url}}" class="input">{{label_download}}</a></td>
+            </tr>
+            {{/attachments}}
+        </table>
+        {{/has_attachments}}
+
+        {{/message_found}}
+        {{^message_found}}
+        <p><em>Message not found.</em></p>
+        <a href="{{back_url}}" class="input">{{btn_back}}</a>
+        {{/message_found}}
+        {{/webmail_view_message}}
+
+        {{! ════════════════════════════════════════ RAW HEADERS ═══════════════════════ }}
+        {{#webmail_view_headers}}
+        <p>
+            <a href="{{back_url}}" class="input">{{btn_back}}</a>
+        </p>
+        <h3>{{label_raw_headers_heading}}</h3>
+        <pre class="wm-raw-headers">{{raw_headers}}</pre>
+        {{/webmail_view_headers}}
+
+        {{! ════════════════════════════════════════ COMPOSE ══════════════════════════ }}
+        {{#webmail_view_compose}}
+        <h3>{{webmail_compose_heading}}</h3>
+        <form method="POST" id="wm-compose">
+            <input type="hidden" name="prg_id"     value="{{prg_id}}">
+            <input type="hidden" name="_csrf"       value="{{csrf_token}}">
+            <input type="hidden" name="folder"      value="{{current_folder}}">
+            <input type="hidden" name="in_reply_to" value="{{compose_in_reply_to}}">
+
+            <p style="margin:0 0 5px">
+                <input type="hidden" name="action" value="send">
+                <input type="submit" value="{{webmail_compose_send}}" class="input">
+                <button type="submit" name="action" value="save_draft" class="input">{{webmail_compose_save_draft}}</button>
+                <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
+            </p>
+
+            <table id="wm-compose-hdr">
+                <tr>
+                    <th>{{webmail_compose_from}}</th>
+                    <td><em>{{user_mailbox}}</em></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_to}}</th>
+                    <td><input type="email" name="to" class="input" value="{{compose_to}}"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_cc}}</th>
+                    <td><input type="text" name="cc" class="input" value="{{compose_cc}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_bcc}}</th>
+                    <td><input type="text" name="bcc" class="input" value="{{compose_bcc}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{label_reply_to_field}}</th>
+                    <td><input type="email" name="reply_to" class="input" value="{{compose_reply_to}}" placeholder="optional"></td>
+                </tr>
+                <tr>
+                    <th>{{webmail_compose_subject}}</th>
+                    <td><input type="text" name="subject" class="input" value="{{compose_subject}}"></td>
+                </tr>
+                <tr>
+                    <th>{{label_priority}}</th>
+                    <td>
+                        <select name="priority" class="input">
+                            <option value="high">{{label_priority_high}}</option>
+                            <option value="normal" selected>{{label_priority_normal}}</option>
+                            <option value="low">{{label_priority_low}}</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th></th>
+                    <td><label><input type="checkbox" name="read_receipt" value="1"> {{label_read_receipt}}</label></td>
+                </tr>
+            </table>
+
+            <textarea name="body" class="input"
+                      style="width:100%;box-sizing:border-box;height:18em;margin-top:4px;resize:vertical"
+            >{{compose_body}}</textarea>
+
+            <p style="margin:4px 0 0">
+                <input type="submit" value="{{webmail_compose_send}}" class="input">
+                <button type="submit" name="action" value="save_draft" class="input">{{webmail_compose_save_draft}}</button>
+                <a href="{{back_url}}" class="input">{{webmail_compose_cancel}}</a>
+            </p>
+        </form>
+        {{/webmail_view_compose}}
+
+    </div>{{! #wm-content }}
+</div>{{! #wm-wrap }}
+{{/webmail_view_login}}
+
+{{/webmail_forbidden}}

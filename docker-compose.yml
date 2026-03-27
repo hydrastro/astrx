@@ -27,6 +27,7 @@ services:
       volumes:
         - ./public:/app/public
         - ./src:/app/src
+        - ./resources:/app/resources
       networks:
         - php-network
     mariadb:

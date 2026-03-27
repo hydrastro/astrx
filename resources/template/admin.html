@@ -1,0 +1,14 @@
+{{#admin_forbidden}}
+<h2>403 — Forbidden</h2>
+<p>You do not have permission to access the administration panel.</p>
+{{/admin_forbidden}}
+{{^admin_forbidden}}
+<h2>{{admin_heading}}</h2>
+<p>{{admin_welcome}}</p>
+<hr>
+{{#admin_sections}}
+<h3><a href="{{url}}">{{name}}</a></h3>
+<p>{{desc}}</p>
+<hr>
+{{/admin_sections}}
+{{/admin_forbidden}}

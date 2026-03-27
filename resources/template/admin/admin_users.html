@@ -1,0 +1,237 @@
+<h2>{{admin_users_heading}}</h2>
+
+{{! ── User Management (requires ADMIN_USERS) ──────────────────────────── }}
+{{#can_manage}}
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_username}}</th>
+        <th>{{label_mailbox}}</th>
+        <th>{{label_type}}</th>
+        <th>{{label_verified}}</th>
+        <th>{{label_deleted}}</th>
+        <th>{{label_created_at}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+
+    {{#user_list}}
+    {{^editing}}
+    <tr{{#deleted}} style="opacity:0.4"{{/deleted}}>
+    <td><code>{{id}}</code></td>
+    <td>{{username}}</td>
+    <td>{{mailbox}}</td>
+    <td>{{type}}</td>
+    <td><input type="checkbox" disabled {{#verified}}checked{{/verified}}></td>
+    <td><input type="checkbox" disabled {{#deleted}}checked{{/deleted}}></td>
+    <td>{{created_at}}</td>
+    <td>
+        <a href="{{base_url}}?edit={{id}}" class="input">{{btn_edit}}</a>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"   value="{{prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+            <input type="hidden" name="section"   value="manage">
+            <input type="hidden" name="action"    value="delete">
+            <input type="hidden" name="user_id"   value="{{id}}">
+            <input type="submit" value="{{btn_delete}}" class="input">
+        </form>
+    </td>
+    </tr>
+    {{/editing}}
+
+    {{#editing}}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id"   value="{{prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+            <input type="hidden" name="section"   value="manage">
+            <input type="hidden" name="action"    value="update">
+            <input type="hidden" name="user_id"   value="{{id}}">
+
+            <td><code>{{id}}</code></td>
+            <td>
+                <small>{{label_username}}</small><br>
+                <input type="text" name="username" class="input" value="{{username}}"><br>
+                <small>{{label_display_name}}</small><br>
+                <input type="text" name="display_name" class="input" value="{{display_name}}">
+            </td>
+            <td>
+                <small>{{label_mailbox}}</small><br>
+                <input type="text" name="mailbox" class="input" value="{{mailbox}}"><br>
+                <small>{{label_email}}</small><br>
+                <input type="text" name="email" class="input" value="{{email}}">
+            </td>
+            <td>
+                <select name="type" class="input">
+                    {{#type_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{name}}</option>{{/type_options}}
+                </select><br>
+                <small>{{label_birth}}</small><br>
+                <input type="text" name="birth" class="input" value="{{birth}}" placeholder="YYYY-MM-DD">
+            </td>
+            <td>
+                <label><input type="checkbox" name="verified" value="1"{{#verified}} checked{{/verified}}> {{label_verified}}</label><br>
+                <label><input type="checkbox" name="deleted"  value="1"{{#deleted}}  checked{{/deleted}}>  {{label_deleted}}</label><br>
+                <small>{{label_login_attempts}}</small><br>
+                <input type="number" name="login_attempts" class="input" value="{{login_attempts}}" style="width:5em" min="0">
+            </td>
+            <td>
+                <small>{{label_created_at}}</small><br>
+                <input type="text" name="created_at" class="input" value="{{created_at}}" placeholder="YYYY-MM-DD HH:MM:SS"><br>
+                <small>{{label_last_access}}</small><br>
+                <input type="text" name="last_access" class="input" value="{{last_access}}" placeholder="YYYY-MM-DD HH:MM:SS">
+            </td>
+            <td colspan="2">
+                <small>{{label_password}} — {{label_password_hint}}</small><br>
+                <input type="text" name="password" class="input" value="" placeholder="argon2id hash or plain text"><br>
+                <label><input type="checkbox" name="hash_password" value="1"> {{label_hash_password}}</label>
+                <fieldset style="margin-top:8px;font-size:0.85em">
+                    <legend>Token</legend>
+                    <small>{{label_token_hash}}</small><br>
+                    <input type="text" name="token_hash" class="input" value="{{token_hash}}" style="width:100%"><br>
+                    <small>{{label_token_type}}: </small>
+                    <input type="number" name="token_type" class="input" value="{{token_type}}" style="width:4em">
+                    &nbsp;
+                    <label><input type="checkbox" name="token_used" value="1"{{#token_used}} checked{{/token_used}}> {{label_token_used}}</label><br>
+                    <small>{{label_token_expires}}: </small>
+                    <input type="text" name="token_expires_at" class="input" value="{{token_expires_at}}" placeholder="YYYY-MM-DD HH:MM:SS">
+                </fieldset>
+                <p>
+                    <input type="submit" value="{{btn_update}}" class="input">
+                    <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
+                </p>
+            </td>
+        </form>
+    </tr>
+    {{/editing}}
+    {{/user_list}}
+
+    </tbody>
+</table>
+{{/can_manage}}
+
+{{! ── User Service Config (requires ADMIN_CONFIG_USERS) ───────────────── }}
+{{#can_config}}
+<hr>
+<h3>{{section_config_heading}}</h3>
+
+<h4>{{section_userservice}}</h4>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="userservice">
+    <table>
+        <tr><th>{{label_token_expiration_time}}</th>
+            <td><input type="number" name="token_expiration_time" value="{{cfg_token_expiration_time}}" min="60" class="input"> s</td></tr>
+        <tr><th>{{label_allow_register}}</th>
+            <td><input type="checkbox" name="allow_register" value="1"{{#cfg_allow_register}} checked{{/cfg_allow_register}}></td></tr>
+        <tr><th>{{label_allow_login_non_verified_users}}</th>
+            <td><input type="checkbox" name="allow_login_non_verified_users" value="1"{{#cfg_allow_login_non_verified_users}} checked{{/cfg_allow_login_non_verified_users}}></td></tr>
+        <tr><th>{{label_require_email}}</th>
+            <td><input type="checkbox" name="require_email" value="1"{{#cfg_require_email}} checked{{/cfg_require_email}}></td></tr>
+        <tr><th>{{label_require_recovery_email}}</th>
+            <td><input type="checkbox" name="require_recovery_email" value="1"{{#cfg_require_recovery_email}} checked{{/cfg_require_recovery_email}}></td></tr>
+        <tr><th>{{label_require_display_name}}</th>
+            <td><input type="checkbox" name="require_display_name" value="1"{{#cfg_require_display_name}} checked{{/cfg_require_display_name}}></td></tr>
+        <tr><th>{{label_require_birth_date}}</th>
+            <td><input type="checkbox" name="require_birth_date" value="1"{{#cfg_require_birth_date}} checked{{/cfg_require_birth_date}}></td></tr>
+        <tr><th>{{label_case_sensitive_usernames}}</th>
+            <td><input type="checkbox" name="case_sensitive_usernames" value="1"{{#cfg_case_sensitive_usernames}} checked{{/cfg_case_sensitive_usernames}}></td></tr>
+        <tr><th>{{label_minimum_age}}</th>
+            <td><input type="number" name="minimum_age" value="{{cfg_minimum_age}}" min="0" class="input"> s</td></tr>
+        <tr><th>{{label_maximum_age}}</th>
+            <td><input type="number" name="maximum_age" value="{{cfg_maximum_age}}" min="0" class="input"> s</td></tr>
+        <tr><th>{{label_login_captcha_type}}</th><td>
+            <select name="login_captcha_type" class="input">
+                {{#login_captcha_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/login_captcha_options}}
+            </select></td></tr>
+        <tr><th>{{label_login_captcha_attempts}}</th>
+            <td><input type="number" name="login_captcha_attempts" value="{{cfg_login_captcha_attempts}}" min="1" class="input"></td></tr>
+        <tr><th>{{label_register_captcha_type}}</th><td>
+            <select name="register_captcha_type" class="input">
+                {{#register_captcha_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/register_captcha_options}}
+            </select></td></tr>
+        <tr><th>{{label_recover_captcha_type}}</th><td>
+            <select name="recover_captcha_type" class="input">
+                {{#recover_captcha_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/recover_captcha_options}}
+            </select></td></tr>
+        <tr><th>{{label_remember_me_time}}</th>
+            <td><input type="number" name="remember_me_time" value="{{cfg_remember_me_time}}" min="0" class="input"> s</td></tr>
+    </table>
+
+    <h5>{{label_username_regex}}</h5>
+    <table>
+        <thead><tr>
+            <th>{{label_regex_key}}</th><th>{{label_regex_pattern}}</th>
+            <th>{{label_regex_checking_for}}</th><th>{{label_regex_enabled}}</th><th>{{label_regex_message}}</th>
+        </tr></thead>
+        <tbody>
+        {{#username_regex_list}}
+        <tr>
+            <td><input type="number" name="username_regex_key[]"          value="{{key}}"  min="1" style="width:4em" class="input"></td>
+            <td><input type="text"   name="username_regex_pattern[]"      value="{{regex}}" style="width:20em" class="input"></td>
+            <td style="text-align:center"><input type="checkbox" name="username_regex_checking_for[]" value="1"{{#checking_for}} checked{{/checking_for}}></td>
+            <td style="text-align:center"><input type="checkbox" name="username_regex_enabled[]"      value="1"{{#enabled}} checked{{/enabled}}></td>
+            <td><input type="text"   name="username_regex_message[]"      value="{{message}}" style="width:18em" class="input"></td>
+        </tr>
+        {{/username_regex_list}}
+        {{^has_username_regex}}<tr><td colspan="5"><em>No rules.</em></td></tr>{{/has_username_regex}}
+        </tbody>
+    </table>
+
+    <h5>{{label_password_regex}}</h5>
+    <table>
+        <thead><tr>
+            <th>{{label_regex_key}}</th><th>{{label_regex_pattern}}</th>
+            <th>{{label_regex_checking_for}}</th><th>{{label_regex_enabled}}</th><th>{{label_regex_message}}</th>
+        </tr></thead>
+        <tbody>
+        {{#password_regex_list}}
+        <tr>
+            <td><input type="number" name="password_regex_key[]"          value="{{key}}"  min="1" style="width:4em" class="input"></td>
+            <td><input type="text"   name="password_regex_pattern[]"      value="{{regex}}" style="width:20em" class="input"></td>
+            <td style="text-align:center"><input type="checkbox" name="password_regex_checking_for[]" value="1"{{#checking_for}} checked{{/checking_for}}></td>
+            <td style="text-align:center"><input type="checkbox" name="password_regex_enabled[]"      value="1"{{#enabled}} checked{{/enabled}}></td>
+            <td><input type="text"   name="password_regex_message[]"      value="{{message}}" style="width:18em" class="input"></td>
+        </tr>
+        {{/password_regex_list}}
+        {{^has_password_regex}}<tr><td colspan="5"><em>No rules.</em></td></tr>{{/has_password_regex}}
+        </tbody>
+    </table>
+
+    <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+
+<h4>{{section_avatar}}</h4>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="avatar">
+    <table>
+        <tr><th>{{label_avatar_dir}}</th>
+            <td><input type="text" name="avatar_dir" value="{{cfg_avatar_dir}}" style="width:30em" class="input"></td></tr>
+        <tr><th>{{label_avatar_file_size}}</th>
+            <td><input type="number" name="avatar_file_size" value="{{cfg_avatar_file_size}}" min="1024" class="input"> bytes</td></tr>
+        <tr><th>{{label_use_identicons}}</th>
+            <td><input type="checkbox" name="use_identicons" value="1"{{#cfg_use_identicons}} checked{{/cfg_use_identicons}}></td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>
+
+<h4>{{section_identicon}}</h4>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="identicon">
+    <table>
+        <tr><th>{{label_identicon_size}}</th>
+            <td><input type="number" name="size" value="{{cfg_identicon_size}}" min="16" class="input"> px</td></tr>
+        <tr><th>{{label_identicon_tiles}}</th>
+            <td><input type="number" name="tiles" value="{{cfg_identicon_tiles}}" min="2" class="input"></td></tr>
+        <tr><th>{{label_identicon_colors}}</th>
+            <td><input type="number" name="colors" value="{{cfg_identicon_colors}}" min="1" class="input"></td></tr>
+        <tr><th>{{label_identicon_high_quality}}</th>
+            <td><input type="checkbox" name="high_quality" value="1"{{#cfg_identicon_high_quality}} checked{{/cfg_identicon_high_quality}}></td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>
+{{/can_config}}

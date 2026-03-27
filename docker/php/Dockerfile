@@ -1,10 +1,14 @@
-FROM php:8.1-fpm-alpine
+FROM php:8.4-fpm-alpine
 
 WORKDIR /app
 
 COPY /docker/php/php.ini /usr/local/etc/php/php.ini
-#COPY /docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/php-fpm.conf
 
-RUN docker-php-ext-install pdo pdo_mysql
+RUN apk add --no-cache \
+        freetype-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif
 
 CMD [ "php-fpm"]

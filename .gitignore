@@ -1,2 +1,5 @@
 /vendor
 /src/test
+.idea
+public/0
+readme

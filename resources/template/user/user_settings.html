@@ -1,0 +1,96 @@
+<h2>{{settings_heading}}</h2>
+<hr>
+{{#show_avatar}}
+<h3>{{settings_avatar}}</h3>
+<form method="POST" enctype="multipart/form-data">
+  <input type="hidden" name="prg_id" value="{{&prg.set_avatar}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.set_avatar}}">
+  <input type="hidden" name="action" value="set_avatar">
+  <p>
+    <img src="{{avatar_url}}" alt="avatar" style="width:80px;height:80px;display:block;margin-bottom:6px"><br>
+    <input type="file" name="image"> {{settings_max_size}}: {{max_avatar_mb}} MB<br>
+    <input type="submit" value="{{settings_set_avatar}}" class="input">
+  </p>
+</form>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.remove_avatar}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.remove_avatar}}">
+  <input type="hidden" name="action" value="remove_avatar">
+  <p><input type="submit" value="{{settings_remove_avatar}}" class="input"></p>
+</form>
+<hr>
+{{/show_avatar}}
+{{#show_display_name}}
+<h3>{{settings_display_name}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.change_display_name}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.change_display_name}}">
+  <input type="hidden" name="action" value="change_display_name">
+  <p>
+    {{field_current_value}}: {{display_name}}<br>
+    <label>{{settings_new_display_name}}: <input type="text" name="display_name" class="input"></label><br>
+    <input type="submit" value="{{settings_submit}}" class="input">
+  </p>
+</form>
+<hr>
+{{/show_display_name}}
+{{#show_email}}
+<h3>{{settings_recovery_email}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.change_recovery_email}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.change_recovery_email}}">
+  <input type="hidden" name="action" value="change_recovery_email">
+  <p>
+    <label>{{settings_new_email}}: <input type="email" name="email" class="input"></label><br>
+    <input type="submit" value="{{settings_submit}}" class="input">
+  </p>
+</form>
+<hr>
+{{/show_email}}
+<h3>{{settings_username}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.change_username}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.change_username}}">
+  <input type="hidden" name="action" value="change_username">
+  <p>
+    {{field_current_value}}: {{username}}<br>
+    <label>{{settings_new_username}}: <input type="text" name="username" class="input"></label><br>
+    <input type="submit" value="{{settings_submit}}" class="input">
+  </p>
+</form>
+<hr>
+<h3>{{settings_password}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.change_password}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.change_password}}">
+  <input type="hidden" name="action" value="change_password">
+  <p>
+    {{^token_unlock}}<label>{{settings_old_password}}: <input type="password" name="old_password" class="input"></label><br>{{/token_unlock}}
+    <label>{{settings_new_password}}: <input type="password" name="password" class="input" autocomplete="new-password"></label><br>
+    <label>{{settings_repeat}}: <input type="password" name="repeat" class="input" autocomplete="new-password"></label><br>
+    <input type="submit" value="{{settings_submit}}" class="input">
+  </p>
+</form>
+<hr>
+{{^is_verified}}
+<h3>{{settings_verify_email}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.verify_email}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.verify_email}}">
+  <input type="hidden" name="action" value="verify_email">
+  <p>{{settings_verify_desc}}<br>
+    <input type="submit" value="{{settings_verify_email}}" class="input"></p>
+</form>
+<hr>
+{{/is_verified}}
+<h3>{{settings_delete}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.delete_account}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.delete_account}}">
+  <input type="hidden" name="action" value="delete_account">
+  <p>
+    {{settings_delete_confirm}}<br>
+    <label>{{settings_old_password}}: <input type="password" name="password" class="input"></label>
+    <input type="submit" value="{{settings_submit}}" class="input">
+  </p>
+</form>

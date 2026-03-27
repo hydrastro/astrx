@@ -1,28 +1,22 @@
 <?php
 
 declare(strict_types = 1);
+define(
+    "INDEX_DIR",
+    realpath(__DIR__ . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR
+);
+const RESOURCES_DIR = INDEX_DIR . "resources" . DIRECTORY_SEPARATOR;
+const LANG_DIR = RESOURCES_DIR . "lang" . DIRECTORY_SEPARATOR;
+const CONFIG_DIR = RESOURCES_DIR . "config" . DIRECTORY_SEPARATOR;
+const TEMPLATE_DIR = RESOURCES_DIR . "template" . DIRECTORY_SEPARATOR;
+const TEMPLATE_CACHE_DIR = TEMPLATE_DIR . "cache" . DIRECTORY_SEPARATOR;
 
-// Directory definitions
-// These constants are meant to be used into the core classes (Autoloader,
-// Config and ErrorHandler).
-// Other classes needing to access directories should set those through their
-// configuration.
-const INDEX_DIR
-= __DIR__ .
-  DIRECTORY_SEPARATOR .
-  ".." .
-  DIRECTORY_SEPARATOR .
-  "src" .
-  DIRECTORY_SEPARATOR;
-const CLASS_DIR = INDEX_DIR . "class" . DIRECTORY_SEPARATOR;
-const LANG_DIR = INDEX_DIR . "lang" . DIRECTORY_SEPARATOR;
-const CONFIG_DIR = INDEX_DIR . "config" . DIRECTORY_SEPARATOR;
-const TEMPLATE_DIR = INDEX_DIR . "template" . DIRECTORY_SEPARATOR;
-const TEMPLATE_CACHE_DIR = INDEX_DIR . "cache" . DIRECTORY_SEPARATOR;
-const CONTROLLER_DIR = INDEX_DIR . "controller" . DIRECTORY_SEPARATOR;
+const SRC_DIR = INDEX_DIR . "src" . DIRECTORY_SEPARATOR;
+const CLASS_DIR = SRC_DIR . "AstrX" . DIRECTORY_SEPARATOR;
+const CONTROLLER_DIR = SRC_DIR . "controller" . DIRECTORY_SEPARATOR;
 const TEMPLATE_HANDLER_DIR
-= INDEX_DIR . "template_handler" . DIRECTORY_SEPARATOR;
+= SRC_DIR . "template_handler" . DIRECTORY_SEPARATOR;
 
 set_include_path(__DIR__);
 
-require INDEX_DIR . "bootstrap.php";
+require SRC_DIR . "bootstrap.php";

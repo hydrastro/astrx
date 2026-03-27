@@ -1,0 +1,26 @@
+<h2>{{news_heading}}</h2>
+{{#has_news}}
+<form id="news_filter" method="GET" action="{{news_form_action}}">
+    {{&news_comment_inputs}}
+    <p><label>{{news_filter_show}}: <input type="text" name="{{news_show_key}}" class="input" size="4" value="{{per_page}}"></label> {{news_filter_order}} <select name="{{news_order_key}}" class="input"><option value="{{news_word_desc}}"{{#news_desc_selected}} selected{{/news_desc_selected}}>{{news_filter_desc}}</option><option value="{{news_word_asc}}"{{#news_asc_selected}} selected{{/news_asc_selected}}>{{news_filter_asc}}</option></select> <input type="submit" value="{{news_filter_submit}}" class="input"></p>
+</form>
+<div id="news_list">
+    {{#news}}
+    <hr>
+    <div class="news_post" id="news_{{id}}">
+        <div class="news_header">
+            <p class="left"><b>{{title}}</b></p>
+            <p class="right"><small>{{created_at}}</small></p>
+            <div class="clear"></div>
+        </div>
+        <p>{{content}}</p>
+    </div>
+    {{/news}}
+</div>
+{{#has_pagination}}
+<p class="news_nav"><small>{{news_older}} {{#has_first}}<a href="{{first_url}}">{{news_first}}</a> {{/has_first}}{{#has_prev}}<a href="{{prev_url}}">{{news_prev}}</a> {{/has_prev}}{{#pages}} {{&link}}{{^url}}{{number}}{{/url}}{{/pages}}{{#has_next}} <a href="{{next_url}}">{{news_next}}</a>{{/has_next}}{{#has_last}} <a href="{{last_url}}">{{news_last}}</a>{{/has_last}}</small></p>
+{{/has_pagination}}
+{{/has_news}}
+{{^has_news}}
+<p>{{news_empty}}</p>
+{{/has_news}}

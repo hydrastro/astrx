@@ -1,0 +1,30 @@
+<h2>Captcha Test</h2>
+
+{{#has_result}}
+<div id="captcha_result" class="{{#result_ok}}captcha_ok{{/result_ok}}{{#result_fail}}captcha_fail{{/result_fail}}">
+    <p><b>{{result_label}}:</b> {{#result_ok}}✓ Correct{{/result_ok}}{{#result_fail}}✗ Wrong{{/result_fail}}</p>
+</div>
+{{/has_result}}
+
+{{#has_captchas}}
+<div id="captcha_tests">
+{{#captchas}}
+<div class="captcha_box">
+    <h3>{{type_label}}</h3>
+    <p><img src="data:image/gif;base64,{{&image_b64}}" alt="captcha"></p>
+    <form method="POST">
+        <input type="hidden" name="prg_id"      value="{{prg_id}}">
+        <input type="hidden" name="captcha_id"  value="{{captcha_id}}">
+        <input type="hidden" name="type_label"  value="{{type_label}}">
+        <p>
+            <input type="text" name="captcha_text" class="input" size="10" autocomplete="off" placeholder="type here">
+            <input type="submit" value="Verify" class="input">
+        </p>
+    </form>
+</div>
+{{/captchas}}
+</div>
+{{/has_captchas}}
+{{^has_captchas}}
+<p>Could not generate captchas — check diagnostics above.</p>
+{{/has_captchas}}

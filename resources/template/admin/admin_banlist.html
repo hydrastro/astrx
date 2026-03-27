@@ -1,0 +1,227 @@
+<h2>{{admin_banlist_heading}}</h2>
+
+{{! ══════════════════════════════════════════════════════════════ BANS ══ }}
+<table>
+    <thead><tr>
+        <th>{{label_id}}</th>
+        <th>{{label_type}}</th>
+        <th>{{label_value}}</th>
+        <th>{{label_reason}}</th>
+        <th>{{label_route}}</th>
+        <th>{{label_end}}</th>
+        <th>{{label_active}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+
+    {{#ban_list}}
+    {{^editing}}
+    <tr{{^active}} style="opacity:0.5"{{/active}}>
+    <td>{{id}}</td>
+    <td>{{type}}</td>
+    <td>{{value}}</td>
+    <td>{{reason}}</td>
+    <td><code>{{route_name}}</code></td>
+    <td>{{end}}</td>
+    <td><input type="checkbox" disabled {{#active}}checked{{/active}}></td>
+    <td>
+        <a href="{{base_url}}?edit={{id}}" class="input">{{btn_edit}}</a>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="ban_id"  value="{{id}}">
+            {{#active}}
+            <input type="hidden" name="action" value="deactivate">
+            <input type="submit" value="{{btn_deactivate}}" class="input">
+            {{/active}}
+            {{^active}}
+            <input type="hidden" name="action" value="activate">
+            <input type="submit" value="{{btn_activate}}" class="input">
+            {{/active}}
+        </form>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="ban_id"  value="{{id}}">
+            <input type="hidden" name="action"  value="delete_ban">
+            <input type="submit" value="{{btn_mercy}}" class="input">
+        </form>
+    </td>
+    </tr>
+    {{/editing}}
+
+    {{#editing}}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="update_ban">
+            <input type="hidden" name="ban_id"  value="{{id}}">
+            <td>{{id}}</td>
+            <td>{{type}}</td>
+            <td>{{value}}</td>
+            <td><input type="text" name="reason" class="input" value="{{reason}}"></td>
+            <td>
+                <select name="route" class="input">
+                    {{#route_options}}<option value="{{key}}"{{#selected}} selected{{/selected}}>{{name}}</option>{{/route_options}}
+                </select>
+            </td>
+            <td><input type="text" name="end" class="input" value="{{end}}" placeholder="YYYY-MM-DD HH:MM:SS"></td>
+            <td><input type="checkbox" name="active" value="1"{{#active}} checked{{/active}}></td>
+            <td>
+                <input type="submit" value="{{btn_update}}" class="input">
+                <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
+            </td>
+        </form>
+    </tr>
+    {{/editing}}
+    {{/ban_list}}
+
+    {{! ── Add ban ─────────────────────────────────────────────────────── }}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="ban">
+            <td><em>new</em></td>
+            <td>
+                <select name="type" class="input">
+                    <option value="ip">{{type_ip}}</option>
+                    <option value="email">{{type_email}}</option>
+                    <option value="user">{{type_user}}</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" name="value" class="input" placeholder="IP / CIDR / email / user id"><br>
+                <small>{{label_ip_hint}}</small>
+            </td>
+            <td><input type="text" name="reason" class="input" placeholder="{{label_reason}}"></td>
+            <td>
+                <select name="route" class="input">
+                    {{#add_ban_routes}}<option value="{{key}}">{{name}}</option>{{/add_ban_routes}}
+                </select>
+            </td>
+            <td><input type="text" name="end" class="input" placeholder="YYYY-MM-DD HH:MM:SS"></td>
+            <td><input type="checkbox" name="active" value="1" checked></td>
+            <td><input type="submit" value="{{btn_ban}}" class="input"></td>
+        </form>
+    </tr>
+
+    </tbody>
+</table>
+<hr>
+
+{{! ══════════════════════════════════════════════════════════════ ROUTES ══ }}
+<h3>Routes</h3>
+
+{{#ban_routes}}
+<fieldset style="margin:12px 0">
+    <legend>
+        <strong>{{key}}</strong>
+        &nbsp;
+        {{^is_editing}}
+        <a href="{{edit_url}}" class="input">{{btn_edit}}</a>
+        {{/is_editing}}
+        {{#is_editing}}
+        <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
+        {{/is_editing}}
+        &nbsp;
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"    value="{{prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+            <input type="hidden" name="action"    value="delete_route">
+            <input type="hidden" name="route_key" value="{{key}}">
+            <input type="submit" value="{{btn_delete}}" class="input">
+        </form>
+    </legend>
+
+    <table>
+        <thead><tr>
+            <th>Round</th>
+            <th>{{label_penalty}}</th>
+            <th>{{label_max_tries}}</th>
+            <th>{{label_check_win}}</th>
+            <th>{{label_enabled}}</th>
+            <th>{{label_actions}}</th>
+        </tr></thead>
+        <tbody>
+
+        {{#rounds}}
+        {{^editing}}
+        <tr{{^enabled}} style="opacity:0.5"{{/enabled}}>
+        <td>#{{index}}</td>
+        <td>{{penalty}} <small>({{penalty_fmt}})</small></td>
+        <td>{{max_tries_fmt}}</td>
+        <td>{{check_time}} <small>({{check_time_fmt}})</small></td>
+        <td><input type="checkbox" disabled {{#enabled}}checked{{/enabled}}></td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="delete_round">
+                <input type="hidden" name="route_key" value="{{route_key_val}}">
+                <input type="hidden" name="round_idx" value="{{index}}">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+        </tr>
+        {{/editing}}
+
+        {{#editing}}
+        <tr>
+            <form method="POST">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="update_round">
+                <input type="hidden" name="route_key" value="{{route_key_val}}">
+                <input type="hidden" name="round_idx" value="{{index}}">
+                <td>#{{index}}</td>
+                <td><input type="number" name="penalty"    class="input" value="{{penalty}}"    min="0" style="width:7em"><br><small>s, 0=∞</small></td>
+                <td><input type="number" name="max_tries"  class="input" value="{{max_tries}}"  min="0" style="width:5em"><br><small>0=∞</small></td>
+                <td><input type="number" name="check_time" class="input" value="{{check_time}}" min="0" style="width:7em"><br><small>s, 0=—</small></td>
+                <td><input type="checkbox" name="enabled" value="1"{{#enabled}} checked{{/enabled}}></td>
+                <td>
+                    <input type="submit" value="{{btn_update}}" class="input">
+                    <a href="{{base_url}}" class="input">{{btn_cancel}}</a>
+                </td>
+            </form>
+        </tr>
+        {{/editing}}
+        {{/rounds}}
+
+        {{! Add round — only visible when this route is being edited }}
+        {{#is_editing}}
+        <tr>
+            <form method="POST">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="add_round">
+                <input type="hidden" name="route_key" value="{{key}}">
+                <td><em>new</em></td>
+                <td><input type="number" name="penalty"    class="input" value="0"    min="0" style="width:7em"><br><small>s, 0=∞</small></td>
+                <td><input type="number" name="max_tries"  class="input" value="3"    min="0" style="width:5em"><br><small>0=∞</small></td>
+                <td><input type="number" name="check_time" class="input" value="3600" min="0" style="width:7em"><br><small>s, 0=—</small></td>
+                <td><input type="checkbox" name="enabled" value="1" checked></td>
+                <td><input type="submit" value="+ {{btn_add}}" class="input"></td>
+            </form>
+        </tr>
+        {{/is_editing}}
+
+        </tbody>
+    </table>
+</fieldset>
+{{/ban_routes}}
+{{^has_routes}}<p><em>No routes defined.</em></p>{{/has_routes}}
+
+{{! Add route }}
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="add_route">
+    <p>
+        <label>{{label_new_route}}:
+            <input type="text" name="route_key" class="input" placeholder="e.g. spam_link">
+        </label>
+        <input type="submit" value="+ {{btn_add}} route" class="input">
+    </p>
+</form>

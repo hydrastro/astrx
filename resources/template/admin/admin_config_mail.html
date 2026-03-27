@@ -1,0 +1,88 @@
+<h2>{{heading}}</h2>
+
+{{! ── Mailer ──────────────────────────────────────────────────────────── }}
+<h3>{{section_mailer}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="mailer">
+    <table>
+        <tr><th>{{label_host}}</th>
+            <td><input type="text" name="host" value="{{cfg_host}}" class="input"></td></tr>
+        <tr><th>{{label_port}}</th>
+            <td><input type="number" name="port" value="{{cfg_port}}" min="1" max="65535" class="input"></td></tr>
+        <tr><th>{{label_encryption}}</th><td>
+            <select name="encryption" class="input" >
+                {{#encryption_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/encryption_options}}
+            </select>
+        </td></tr>
+        <tr><th>{{label_username}}</th>
+            <td><input type="text" name="username" value="{{cfg_username}}" autocomplete="off" class="input"></td></tr>
+        <tr><th>{{label_password}}</th>
+            <td>
+                {{#cfg_password_set}}<em>{{label_password_set}}</em>{{/cfg_password_set}}
+                {{^cfg_password_set}}<em>{{label_password_not_set}}</em>{{/cfg_password_set}}
+                <br><input type="password" name="password" placeholder="leave blank to keep current" autocomplete="new-password" class="input">
+            </td></tr>
+        <tr><th>{{label_from_address}}</th>
+            <td><input type="email" name="from_address" value="{{cfg_from_address}}" class="input"></td></tr>
+        <tr><th>{{label_from_name}}</th>
+            <td><input type="text" name="from_name" value="{{cfg_from_name}}" class="input"></td></tr>
+        <tr><th>{{label_timeout}}</th>
+            <td><input type="number" name="timeout" value="{{cfg_timeout}}" min="5" class="input"> s</td></tr>
+
+        <tr><th colspan="2">Tor / SOCKS5</th></tr>
+        <tr><th>{{label_socks5_host}}</th>
+            <td><input type="text" name="socks5_host" value="{{cfg_socks5_host}}" class="input"></td></tr>
+        <tr><th>{{label_socks5_port}}</th>
+            <td><input type="number" name="socks5_port" value="{{cfg_socks5_port}}" min="1" max="65535" class="input"></td></tr>
+
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>
+<hr>
+
+{{! ── MailboxManager ──────────────────────────────────────────────────── }}
+<h3>{{section_mailbox}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="mailbox">
+    <table>
+        <tr><th>{{label_mailbox_domain}}</th>
+            <td><input type="text" name="mailbox_domain" value="{{cfg_mailbox_domain}}" class="input"></td></tr>
+        <tr><th>{{label_mailapi_url}}</th>
+            <td><input type="text" name="mailapi_url" value="{{cfg_mailapi_url}}" class="input"></td></tr>
+        <tr><th>{{label_mailapi_secret}}</th>
+            <td>
+                {{#cfg_mailapi_secret_set}}<em>{{label_secret_set}}</em>{{/cfg_mailapi_secret_set}}
+                {{^cfg_mailapi_secret_set}}<em>{{label_secret_not_set}}</em>{{/cfg_mailapi_secret_set}}
+                <br><input type="password" name="mailapi_secret" placeholder="leave blank to keep current" autocomplete="new-password" class="input">
+            </td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
+    </table>
+</form>
+<hr>
+
+{{! ── Test Send ───────────────────────────────────────────────────────── }}
+<h3>{{section_test}}</h3>
+
+<h4>{{label_test_recipient}}</h4>
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="test_recipient">
+    <table>
+        <tr><th>{{label_test_recipient}}</th>
+            <td><input type="email" name="test_recipient" value="{{cfg_test_recipient}}" class="input"></td></tr>
+        <tr><td colspan="2"><input type="submit" value="{{btn_save_recipient}}" class="input"></td></tr>
+    </table>
+</form>
+
+<form method="POST">
+    <input type="hidden" name="prg_id"  value="{{prg_id}}">
+    <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+    <input type="hidden" name="section" value="test">
+    <input type="hidden" name="test_recipient" value="{{cfg_test_recipient}}">
+    <input type="submit" value="{{btn_send_test}}" class="input">
+</form>

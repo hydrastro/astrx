@@ -1,0 +1,28 @@
+{{#logged_in}}
+<h2>{{user_welcome_heading}}, {{username}}!</h2>
+<p>{{user_welcome_body}}</p>
+<hr>
+<h3><a href="{{profile_url}}">{{user_profile_heading}}</a></h3>
+<p>{{user_profile_text}}</p>
+<hr>
+<h3><a href="{{settings_url}}">{{user_settings_heading}}</a></h3>
+<p>{{user_settings_text}}</p>
+{{/logged_in}}
+{{^logged_in}}
+<h2>{{login_heading}}</h2>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <p>
+    <label for="username">{{login_username}}: </label>
+    <input type="text" name="username" class="input" id="username" value="{{username_value}}" autocomplete="username"><br>
+    <label for="password">{{login_password}}: </label>
+    <input type="password" name="password" class="input" id="password" autocomplete="current-password"><br>
+    {{> captcha}}
+    <input type="submit" value="{{login_submit}}" class="input">
+    {{#show_recover}} <a href="{{recover_url}}">{{login_lost_password}}</a>{{/show_recover}}<br>
+    <label><input type="checkbox" name="remember_me" value="1"> {{login_remember_me}}</label><br>
+    {{login_need_account}} <a href="{{register_url}}">{{login_register}}</a>.
+  </p>
+</form>
+{{/logged_in}}

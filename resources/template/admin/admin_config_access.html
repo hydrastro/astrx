@@ -1,0 +1,151 @@
+<h2>{{heading}}</h2>
+
+{{! ── Auth Grants ─────────────────────────────────────────────────────── }}
+<h3>{{section_grants}}</h3>
+<p><em>{{label_admin_note}}</em></p>
+
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="grants">
+  <table>
+    <thead>
+    <tr>
+      <th>{{label_permission}}</th>
+      {{#group_headers}}<th>{{name}}</th>{{/group_headers}}
+      <th>ADMIN</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{#prefix_sections}}
+    <tr>
+      <th colspan="10" style="text-align:left;padding-top:8px">
+        <strong>{{prefix_label}}</strong>
+      </th>
+    </tr>
+    {{#rows}}
+    <tr>
+      <td><code>{{perm_value}}</code></td>
+      {{#cells}}
+      <td style="text-align:center">
+        <input type="checkbox" name="{{field}}" value="1"{{#granted}} checked{{/granted}}>
+      </td>
+      {{/cells}}
+      <td style="text-align:center">*</td>
+    </tr>
+    {{/rows}}
+    {{/prefix_sections}}
+    </tbody>
+  </table>
+  <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+
+{{! ── Group management ────────────────────────────────────────────────── }}
+<table>
+  <tr>
+    <td>
+      <form method="POST">
+        <input type="hidden" name="prg_id"  value="{{prg_id}}">
+        <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+        <input type="hidden" name="section" value="add_group">
+        <label>{{label_new_group_name}}:
+          <input type="text" name="new_group_name" class="input" placeholder="e.g. EDITOR">
+        </label>
+        <input type="submit" value="{{btn_add_group}}" class="input">
+      </form>
+    </td>
+    <td style="padding-left:2em">
+      <form method="POST">
+        <input type="hidden" name="prg_id"  value="{{prg_id}}">
+        <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+        <input type="hidden" name="section" value="delete_group">
+        <label>{{label_delete_group}}:
+          <select name="delete_group" class="input">
+            {{#deletable_groups}}<option value="{{name}}">{{name}}</option>{{/deletable_groups}}
+          </select>
+        </label>
+        <input type="submit" value="{{btn_delete_group}}" class="input">
+      </form>
+    </td>
+  </tr>
+</table>
+
+{{! ── Diagnostic Visibility ─────────────────────────────────────────────── }}
+{{#has_diag_sections}}
+<h3>{{section_diag_visibility}}</h3>
+<p><em>{{label_diag_admin_note}}</em></p>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="diag_visibility">
+  <table>
+    <thead>
+    <tr>
+      <th>{{label_diag_code}}</th>
+      {{#diag_group_headers}}<th>{{name}}</th>{{/diag_group_headers}}
+      <th>ADMIN</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{#diag_sections}}
+    <tr>
+      <th colspan="10" style="text-align:left;padding-top:8px">
+        <strong>{{prefix}}</strong>
+      </th>
+    </tr>
+    {{#rows}}
+    <tr>
+      <td><code>{{code}}</code></td>
+      {{#cells}}
+      <td style="text-align:center">
+        <input type="checkbox" name="{{field}}" value="1"{{#visible}} checked{{/visible}}>
+      </td>
+      {{/cells}}
+      <td style="text-align:center">*</td>
+    </tr>
+    {{/rows}}
+    {{/diag_sections}}
+    </tbody>
+  </table>
+  <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+
+{{! ── Diagnostic Level Overrides ─────────────────────────────────────────── }}
+<h3>{{section_diag_levels}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="diag_levels">
+  <table>
+    <thead>
+    <tr>
+      <th>{{label_diag_code}}</th>
+      <th>{{label_diag_level}}</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{#diag_sections}}
+    <tr>
+      <th colspan="2" style="text-align:left;padding-top:8px">
+        <strong>{{prefix}}</strong>
+      </th>
+    </tr>
+    {{#rows}}
+    <tr>
+      <td><code>{{code}}</code></td>
+      <td>
+        <select name="{{level_field}}" class="input">
+          <option value="">{{label_diag_level_default}}{{#has_override}} (override active){{/has_override}}</option>
+          {{#level_options}}
+          <option value="{{value}}"{{#selected}} selected{{/selected}}>{{name}}</option>
+          {{/level_options}}
+        </select>
+      </td>
+    </tr>
+    {{/rows}}
+    {{/diag_sections}}
+    </tbody>
+  </table>
+  <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+{{/has_diag_sections}}

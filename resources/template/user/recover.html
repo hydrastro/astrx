@@ -1,0 +1,19 @@
+<h2>{{recover_heading}}</h2>
+{{#recovery_unavailable}}
+<p>{{recover_unavailable_msg}}</p>
+{{/recovery_unavailable}}
+{{^recovery_unavailable}}
+<p>{{recover_description}}</p>
+<hr>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="rec_id">{{recover_identifier}}: </label>
+        <input type="text" name="username_or_email" class="input" id="rec_id"><br>
+        {{> captcha}}
+        <input type="submit" value="{{recover_submit}}" class="input">
+    </p>
+</form>
+{{/recovery_unavailable}}
+<p><a href="{{login_url}}">{{recover_back}}</a>.</p>

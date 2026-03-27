@@ -1,0 +1,117 @@
+<h2>{{admin_pages_heading}}</h2>
+
+<table>
+    <thead><tr>
+        <th>ID</th>
+        <th>{{label_url_id}}</th>
+        <th>{{label_file_name}}</th>
+        <th>{{label_title}}</th>
+        <th>i18n</th>
+        <th>tpl</th>
+        <th>ctrl</th>
+        <th>{{label_hidden}}</th>
+        <th>{{label_comments}}</th>
+        <th>{{label_actions}}</th>
+    </tr></thead>
+    <tbody>
+
+    {{#page_list}}
+    {{^editing}}
+    <tr{{#hidden}} style="opacity:0.5"{{/hidden}}>
+    <td>{{id}}</td>
+    <td><code>{{url_id}}</code></td>
+    <td>{{file_name}}</td>
+    <td>{{title}}</td>
+    <td><input type="checkbox" disabled {{#i18n}}checked{{/i18n}}></td>
+    <td><input type="checkbox" disabled {{#template}}checked{{/template}}></td>
+    <td><input type="checkbox" disabled {{#controller}}checked{{/controller}}></td>
+    <td>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="toggle_hidden">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{#hidden}}✓{{/hidden}}{{^hidden}}—{{/hidden}}" class="input">
+        </form>
+    </td>
+    <td>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="toggle_comments">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{#comments}}✓{{/comments}}{{^comments}}—{{/comments}}" class="input">
+        </form>
+    </td>
+    <td>
+        <a href="{{base_url}}?edit={{id}}" class="input">{{btn_edit}}</a>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="delete">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <input type="submit" value="{{btn_delete}}" class="input"
+            >
+        </form>
+    </td>
+    </tr>
+    {{/editing}}
+
+    {{#editing}}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id"  value="{{prg_id}}">
+            <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+            <input type="hidden" name="action"  value="update">
+            <input type="hidden" name="page_id" value="{{id}}">
+            <td>{{id}}</td>
+            <td>
+                <small style="color:#c00">⚠ {{pages_routing_warning}}</small><br>
+                <input type="text" name="url_id" class="input" value="{{url_id}}">
+            </td>
+            <td><input type="text" name="file_name" class="input" value="{{file_name}}"></td>
+            <td>
+                <input type="text" name="title" class="input" value="{{title}}"><br>
+                <textarea name="description" rows="2" class="input">{{description}}</textarea>
+            </td>
+            <td><input type="checkbox" name="i18n"       value="1"{{#i18n}}       checked{{/i18n}}></td>
+            <td><input type="checkbox" name="template"   value="1"{{#template}}   checked{{/template}}></td>
+            <td><input type="checkbox" name="controller" value="1"{{#controller}} checked{{/controller}}></td>
+            <td><input type="checkbox" name="hidden"     value="1"{{#hidden}}     checked{{/hidden}}></td>
+            <td><input type="checkbox" name="comments"   value="1"{{#comments}}   checked{{/comments}}></td>
+            <td>
+                <input type="submit" value="{{btn_update}}" class="input"><br>
+                <a href="{{base_url}}">{{btn_cancel}}</a>
+            </td>
+        </form>
+    </tr>
+    {{/editing}}
+    {{/page_list}}
+
+    {{! Add row }}
+    <tr>
+        <form method="POST">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="add">
+            <td><em>new</em></td>
+            <td>
+                <small style="color:#c00">⚠ {{pages_routing_warning}}</small><br>
+                <input type="text" name="url_id" class="input" required placeholder="WORDING_…">
+            </td>
+            <td><input type="text" name="file_name" class="input" required placeholder="file_name"></td>
+            <td>
+                <input type="text" name="title" class="input" placeholder="{{label_title}}"><br>
+                <textarea name="description" rows="2" class="input" placeholder="{{label_description}}"></textarea>
+            </td>
+            <td><input type="checkbox" name="i18n"       value="1" checked></td>
+            <td><input type="checkbox" name="template"   value="1" checked></td>
+            <td><input type="checkbox" name="controller" value="1" checked></td>
+            <td><input type="checkbox" name="hidden"     value="1"></td>
+            <td><input type="checkbox" name="comments"   value="1"></td>
+            <td><input type="submit" value="{{btn_add}}" class="input"></td>
+        </form>
+    </tr>
+
+    </tbody>
+</table>
