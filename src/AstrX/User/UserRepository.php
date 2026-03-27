@@ -437,7 +437,7 @@ final class UserRepository
             return Result::err(null, $result->diagnostics());
         }
         $row = $result->unwrap();
-        return Result::ok($row !== null ? (string) $row['password'] : null);
+        return Result::ok($row !== null ? (is_scalar($row['password']) ? (string)$row['password'] : '') : null);
     }
 
     // -------------------------------------------------------------------------
@@ -453,7 +453,7 @@ final class UserRepository
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-            /** @var list<array<string,mixed>> */
+            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             return Result::ok($rows);
         } catch (PDOException $e) {
@@ -470,8 +470,10 @@ final class UserRepository
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row === false ? null : $row);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok($fetched);
         } catch (PDOException $e) {
             return $this->dbErr($e);
         }

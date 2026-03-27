@@ -32,14 +32,16 @@ final class DiagnosticLevelOverrideRepository
                 'SELECT `code`, `level` FROM `diagnostic_level_override`'
             );
             assert($stmt !== false);
-            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var list<array<string,mixed>> $rows */
             /** @var array<string, DiagnosticLevel> $map */
             $map  = [];
             foreach ($rows as $row) {
-                $level = DiagnosticLevel::tryFrom((int) $row['level']);
+                $rowLevel = $row['level'] ?? null;
+                $rowCode  = $row['code'] ?? null;
+                $level = DiagnosticLevel::tryFrom(is_int($rowLevel) ? $rowLevel : (int)$rowLevel);
                 if ($level !== null) {
-                    $map[(string)$row['code']] = $level;
+                    $map[is_string($rowCode) ? $rowCode : (string)$rowCode] = $level;
                 }
             }
             return Result::ok($map);

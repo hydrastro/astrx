@@ -31,35 +31,45 @@ final class UserSession
         return ($_SESSION[self::LOGGED_IN] ?? false) === true;
     }
 
+    /** @return array<string,mixed> */
+    private function sessionData(): array
+    {
+        $raw = $_SESSION[self::KEY] ?? null;
+        if (!is_array($raw)) { return []; }
+        /** @var array<string,mixed> $raw */
+        return $raw;
+    }
+
     public function userId(): string
     {
-        return (string) (($_SESSION[self::KEY] ?? [])['id'] ?? '');
+        $v = $this->sessionData()['id'] ?? ''; return is_scalar($v) ? (string)$v : '';
     }
 
     public function username(): string
     {
-        return (string) (($_SESSION[self::KEY] ?? [])['username'] ?? '');
+        $v = $this->sessionData()['username'] ?? ''; return is_scalar($v) ? (string)$v : '';
     }
 
     public function displayName(): string
     {
-        return (string) (($_SESSION[self::KEY] ?? [])['display_name'] ?? '');
+        $v = $this->sessionData()['display_name'] ?? ''; return is_scalar($v) ? (string)$v : '';
     }
 
     public function userType(): UserGroup
     {
-        $raw = (int) (($_SESSION[self::KEY] ?? [])['type'] ?? UserGroup::GUEST->value);
+        $t = $this->sessionData()['type'] ?? UserGroup::GUEST->value;
+        $raw = is_int($t) ? $t : (is_numeric($t) ? (int)$t : UserGroup::GUEST->value);
         return UserGroup::tryFrom($raw) ?? UserGroup::GUEST;
     }
 
     public function isVerified(): bool
     {
-        return (bool) (($_SESSION[self::KEY] ?? [])['verified'] ?? false);
+        return (bool) ($this->sessionData()['verified'] ?? false);
     }
 
     public function hasAvatar(): bool
     {
-        return (bool) (($_SESSION[self::KEY] ?? [])['avatar'] ?? false);
+        return (bool) ($this->sessionData()['avatar'] ?? false);
     }
 
     public function isAdmin(): bool
@@ -100,7 +110,7 @@ final class UserSession
     /** The user's mailbox address (e.g. username@domain.onion). */
     public function mailbox(): string
     {
-        return (string) (($_SESSION[self::KEY] ?? [])['mailbox'] ?? '');
+        $v = $this->sessionData()['mailbox'] ?? ''; return is_scalar($v) ? (string)$v : '';
     }
 
     /**
@@ -116,7 +126,7 @@ final class UserSession
     /** Retrieve the stored IMAP password, or '' if not set. */
     public function imapPassword(): string
     {
-        return (string) ($_SESSION['_webmail_pass'] ?? '');
+        $pw = $_SESSION['_webmail_pass'] ?? ''; return is_string($pw) ? $pw : '';
     }
 
     /** Remove the stored IMAP password (on logout or failed auth). */
@@ -135,32 +145,40 @@ final class UserSession
     /** Called after a successful username change. */
     public function updateUsername(string $username): void
     {
-        if (isset($_SESSION[self::KEY])) {
-            $_SESSION[self::KEY]['username'] = $username;
-        }
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['username'] = $username;
+        $_SESSION[self::KEY] = $sess;
     }
 
     /** Called after a successful display_name change. */
     public function updateDisplayName(string $displayName): void
     {
-        if (isset($_SESSION[self::KEY])) {
-            $_SESSION[self::KEY]['display_name'] = $displayName;
-        }
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['display_name'] = $displayName;
+        $_SESSION[self::KEY] = $sess;
     }
 
     /** Called after email verification. */
     public function markVerified(): void
     {
-        if (isset($_SESSION[self::KEY])) {
-            $_SESSION[self::KEY]['verified'] = true;
-        }
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['verified'] = true;
+        $_SESSION[self::KEY] = $sess;
     }
 
     /** Called after avatar upload / removal. */
     public function updateAvatar(bool $hasAvatar): void
     {
-        if (isset($_SESSION[self::KEY])) {
-            $_SESSION[self::KEY]['avatar'] = $hasAvatar;
-        }
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['avatar'] = $hasAvatar;
+        $_SESSION[self::KEY] = $sess;
     }
 }

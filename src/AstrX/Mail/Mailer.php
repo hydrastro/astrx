@@ -365,6 +365,7 @@ final class Mailer
      */
     private function ehlo(mixed $sock, string $domain)
     : array {
+        assert(is_resource($sock));
         $this->cmd($sock, "EHLO {$domain}");
         $caps = [];
         while (true) {
@@ -387,11 +388,14 @@ final class Mailer
         return $caps;
     }
 
+    /** @param resource $sock */
+    /** @param resource $sock */
     private function cmd(mixed $sock, string $line)
     : void {
         fwrite($sock, $line . "\r\n");
     }
 
+    /** @param resource $sock */
     private function read(mixed $sock, string $expectedCode = '')
     : string {
         $response = '';

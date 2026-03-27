@@ -46,9 +46,9 @@ final class AdminAuditLogController extends AbstractController
             return $this->ok();
         }
 
-        $page       = max(1, (int) ($this->request->query()->get('page')   ?? 1));
-        $filterUser = trim((string) ($this->request->query()->get('user')   ?? ''));
-        $filterAct  = trim((string) ($this->request->query()->get('action') ?? ''));
+        $page       = max(1, (is_numeric($vq_page = $this->request->query()->get('page')) ? (int)$vq_page : 1));
+        $filterUser = trim((is_scalar($vuser = $this->request->query()->get('user') ?? '') ? (string)$vuser : ''));
+        $filterAct  = trim((is_scalar($vaction = $this->request->query()->get('action') ?? '') ? (string)$vaction : ''));
 
         [$rows, $total] = $this->fetchRows($page, $filterUser, $filterAct);
 

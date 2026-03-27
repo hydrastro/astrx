@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
+use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -87,7 +88,7 @@ final class AdminConfigSystemController extends AbstractController
         $posted = $this->prg->pull($prgToken)??[];
         $csrfResult = $this->csrf->verify(
             self::FORM,
-            (string)($posted['_csrf']??'')
+            self::mStr($posted, '_csrf', '')
         );
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
@@ -95,7 +96,7 @@ final class AdminConfigSystemController extends AbstractController
             return;
         }
 
-        $section = (string)($posted['section']??'');
+        $section = self::mStr($posted, 'section', '');
 
         $result = match ($section) {
             'prelude' => $this->savePrelude($posted),
@@ -131,13 +132,13 @@ final class AdminConfigSystemController extends AbstractController
                     'trim',
                     explode(
                         ',',
-                        (string)($p['available_languages']??'en')
+                        self::mStr($p, 'available_languages', 'en')
                     )
                 ),
                 fn($v) => $v !== ''
             )
         );
-        $default = trim((string)($p['default_language']??'en'));
+        $default = trim(self::mStr($p, 'default_language', 'en'));
 
         $current = $this->loadFile('config');
         $current['Prelude'] = [
@@ -158,14 +159,14 @@ final class AdminConfigSystemController extends AbstractController
     : Result {
         return $this->writer->write('Routing', [
             'Routing' => [
-                'url_rewrite' => !empty($p['url_rewrite']),
-                'base_path' => trim((string)($p['base_path']??'/')),
-                'entry_point' => trim((string)($p['entry_point']??'index.php')),
-                'locale_key' => trim((string)($p['locale_key']??'lang')),
-                'session_key' => trim((string)($p['session_key']??'sid')),
-                'page_key' => trim((string)($p['page_key']??'page')),
+                'url_rewrite' => self::mBool($p, 'url_rewrite'),
+                'base_path' => trim(self::mStr($p, 'base_path', '/')),
+                'entry_point' => trim(self::mStr($p, 'entry_point', 'index.php')),
+                'locale_key' => trim(self::mStr($p, 'locale_key', 'lang')),
+                'session_key' => trim(self::mStr($p, 'session_key', 'sid')),
+                'page_key' => trim(self::mStr($p, 'page_key', 'page')),
                 'default_page' => trim(
-                    (string)($p['default_page']??'WORDING_MAIN')
+                    self::mStr($p, 'default_page', 'WORDING_MAIN')
                 ),
                 'default_keys' => ['locale_key', 'session_key', 'page_key'],
             ],
@@ -180,17 +181,17 @@ final class AdminConfigSystemController extends AbstractController
     : Result {
         return $this->writer->write('Session', [
             'Session' => [
-                'use_cookies' => !empty($p['use_cookies']),
-                'sid_bytes' => max(32, (int)($p['sid_bytes']??128)),
+                'use_cookies' => self::mBool($p, 'use_cookies'),
+                'sid_bytes' => max(32, self::mInt($p, 'sid_bytes', 128)),
                 'session_id_regex' => trim(
-                    (string)($p['session_id_regex']??'')
+                    self::mStr($p, 'session_id_regex', '')
                 ),
-                'encrypt' => !empty($p['encrypt']),
-                'cipher' => trim((string)($p['cipher']??'aes-256-ctr')),
-                'hmac_algo' => trim((string)($p['hmac_algo']??'sha256')),
-                'prg_token_key' => trim((string)($p['prg_token_key']??'prg')),
-                'prg_token_regex' => trim((string)($p['prg_token_regex']??'')),
-                'max_sid_retries' => max(1, (int)($p['max_sid_retries']??8)),
+                'encrypt' => self::mBool($p, 'encrypt'),
+                'cipher' => trim(self::mStr($p, 'cipher', 'aes-256-ctr')),
+                'hmac_algo' => trim(self::mStr($p, 'hmac_algo', 'sha256')),
+                'prg_token_key' => trim(self::mStr($p, 'prg_token_key', 'prg')),
+                'prg_token_regex' => trim(self::mStr($p, 'prg_token_regex', '')),
+                'max_sid_retries' => max(1, self::mInt($p, 'max_sid_retries', 8)),
             ],
         ]);
     }
@@ -203,16 +204,16 @@ final class AdminConfigSystemController extends AbstractController
     : Result {
         return $this->writer->write('TemplateEngine', [
             'TemplateEngine' => [
-                'template_dir' => trim((string)($p['template_dir']??'')),
+                'template_dir' => trim(self::mStr($p, 'template_dir', '')),
                 'template_extension' => trim(
-                    (string)($p['template_extension']??'.html')
+                    self::mStr($p, 'template_extension', '.html')
                 ),
                 'template_cache_dir' => trim(
-                    (string)($p['template_cache_dir']??'')
+                    self::mStr($p, 'template_cache_dir', '')
                 ),
-                'cache_templates' => !empty($p['cache_templates']),
-                'php_processing' => !empty($p['php_processing']),
-                'parse_mode' => (int)($p['parse_mode']??1),
+                'cache_templates' => self::mBool($p, 'cache_templates'),
+                'php_processing' => self::mBool($p, 'php_processing'),
+                'parse_mode' => self::mInt($p, 'parse_mode', 1),
             ],
         ]);
     }
@@ -225,8 +226,8 @@ final class AdminConfigSystemController extends AbstractController
     : Result {
         return $this->writer->write('Translator', [
             'Translator' => [
-                'lang_dir' => trim((string)($p['lang_dir']??'')),
-                'fallback_to_key' => !empty($p['fallback_to_key']),
+                'lang_dir' => trim(self::mStr($p, 'lang_dir', '')),
+                'fallback_to_key' => self::mBool($p, 'fallback_to_key'),
             ],
         ]);
     }
@@ -241,7 +242,7 @@ final class AdminConfigSystemController extends AbstractController
             array_filter(
                 array_map(
                     'trim',
-                    explode(',', (string)($p['extra_lang_domains']??''))
+                    explode(',', self::mStr($p, 'extra_lang_domains', ''))
                 ),
                 fn($v) => $v !== ''
             )
@@ -269,28 +270,28 @@ final class AdminConfigSystemController extends AbstractController
         return $this->writer->write('ContentManager', [
             'ContentManager' => [
                 'default_template' => trim(
-                    (string)($p['default_template']??'default')
+                    self::mStr($p, 'default_template', 'default')
                 ),
                 'error_page_url_id' => trim(
-                    (string)($p['error_page_url_id']??'WORDING_ERROR')
+                    self::mStr($p, 'error_page_url_id', 'WORDING_ERROR')
                 ),
                 'main_page_id' => trim(
-                    (string)($p['main_page_id']??'WORDING_MAIN')
+                    self::mStr($p, 'main_page_id', 'WORDING_MAIN')
                 ),
                 'pages_lang_domain' => trim(
-                    (string)($p['pages_lang_domain']??'pages')
+                    self::mStr($p, 'pages_lang_domain', 'pages')
                 ),
                 'navbar_lang_domain' => trim(
-                    (string)($p['navbar_lang_domain']??'Navbar')
+                    self::mStr($p, 'navbar_lang_domain', 'Navbar')
                 ),
                 'diagnostics_lang_domain' => trim(
-                    (string)($p['diagnostics_lang_domain']??'Diagnostics')
+                    self::mStr($p, 'diagnostics_lang_domain', 'Diagnostics')
                 ),
-                'public_navbar_id' => (int)($p['public_navbar_id']??1),
-                'user_navbar_id' => (int)($p['user_navbar_id']??2),
-                'admin_navbar_id' => (int)($p['admin_navbar_id']??3),
+                'public_navbar_id' => self::mInt($p, 'public_navbar_id', 1),
+                'user_navbar_id' => self::mInt($p, 'user_navbar_id', 2),
+                'admin_navbar_id' => self::mInt($p, 'admin_navbar_id', 3),
                 'extra_lang_domains' => $extraDomains,
-                'status_bar_min_level' => (int)($p['status_bar_min_level']??2),
+                'status_bar_min_level' => self::mInt($p, 'status_bar_min_level', 2),
                 'status_bar_level_classes' => $levelClasses,
             ],
         ]);
@@ -303,12 +304,12 @@ final class AdminConfigSystemController extends AbstractController
     {
         return $this->writer->write('News', [
             'News' => [
-                'per_page'    => max(1, (int) ($p['per_page']   ?? 20)),
-                'descending'  => !empty($p['descending']),
-                'pn_key'      => trim((string) ($p['pn_key']    ?? 'pn')),
-                'show_key'    => trim((string) ($p['show_key']  ?? 'show')),
-                'order_key'   => trim((string) ($p['order_key'] ?? 'order')),
-                'page_window' => max(1, (int) ($p['page_window'] ?? 3)),
+                'per_page'    => max(1, self::mInt($p, 'per_page', 20)),
+                'descending'  => self::mBool($p, 'descending'),
+                'pn_key'      => trim(self::mStr($p, 'pn_key', 'pn')),
+                'show_key'    => trim(self::mStr($p, 'show_key', 'show')),
+                'order_key'   => trim(self::mStr($p, 'order_key', 'order')),
+                'page_window' => max(1, self::mInt($p, 'page_window', 3)),
             ],
         ]);
     }
@@ -332,7 +333,7 @@ final class AdminConfigSystemController extends AbstractController
         // Prelude / ModuleLoader / ErrorHandler / Injector (from config.php)
         $this->ctx->set(
             'cfg_env',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'Prelude',
                 'environment',
                 0
@@ -352,7 +353,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_default_language',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Prelude',
                 'default_language',
                 'en'
@@ -362,7 +363,7 @@ final class AdminConfigSystemController extends AbstractController
         // Routing
         $this->ctx->set(
             'cfg_url_rewrite',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'Routing',
                 'url_rewrite',
                 true
@@ -370,7 +371,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_base_path',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'base_path',
                 '/'
@@ -378,7 +379,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_entry_point',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'entry_point',
                 'index.php'
@@ -386,7 +387,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_locale_key',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'locale_key',
                 'lang'
@@ -394,7 +395,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_session_key',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'session_key',
                 'sid'
@@ -402,7 +403,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_page_key',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'page_key',
                 'page'
@@ -410,7 +411,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_default_page',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Routing',
                 'default_page',
                 'WORDING_MAIN'
@@ -420,7 +421,7 @@ final class AdminConfigSystemController extends AbstractController
         // Session
         $this->ctx->set(
             'cfg_use_cookies',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'Session',
                 'use_cookies',
                 true
@@ -428,7 +429,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_sid_bytes',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'Session',
                 'sid_bytes',
                 128
@@ -436,7 +437,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_session_id_regex',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Session',
                 'session_id_regex',
                 ''
@@ -444,7 +445,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_encrypt',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'Session',
                 'encrypt',
                 true
@@ -452,7 +453,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_cipher',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Session',
                 'cipher',
                 'aes-256-ctr'
@@ -460,7 +461,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_hmac_algo',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Session',
                 'hmac_algo',
                 'sha256'
@@ -468,7 +469,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_prg_token_key',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Session',
                 'prg_token_key',
                 'prg'
@@ -476,7 +477,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_prg_token_regex',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Session',
                 'prg_token_regex',
                 ''
@@ -484,7 +485,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_max_sid_retries',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'Session',
                 'max_sid_retries',
                 8
@@ -494,7 +495,7 @@ final class AdminConfigSystemController extends AbstractController
         // TemplateEngine
         $this->ctx->set(
             'cfg_template_dir',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'TemplateEngine',
                 'template_dir',
                 ''
@@ -502,7 +503,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_template_extension',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'TemplateEngine',
                 'template_extension',
                 '.html'
@@ -510,7 +511,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_template_cache_dir',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'TemplateEngine',
                 'template_cache_dir',
                 ''
@@ -518,7 +519,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_cache_templates',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'TemplateEngine',
                 'cache_templates',
                 true
@@ -526,7 +527,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_php_processing',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'TemplateEngine',
                 'php_processing',
                 false
@@ -534,7 +535,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_parse_mode',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'TemplateEngine',
                 'parse_mode',
                 1
@@ -544,7 +545,7 @@ final class AdminConfigSystemController extends AbstractController
         // Translator
         $this->ctx->set(
             'cfg_lang_dir',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Translator',
                 'lang_dir',
                 ''
@@ -552,7 +553,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_fallback_to_key',
-            (bool)$this->config->getConfig(
+            $this->config->getConfigBool(
                 'Translator',
                 'fallback_to_key',
                 true
@@ -562,7 +563,7 @@ final class AdminConfigSystemController extends AbstractController
         // ContentManager
         $this->ctx->set(
             'cfg_default_template',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'default_template',
                 'default'
@@ -570,7 +571,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_error_page_url_id',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'error_page_url_id',
                 'WORDING_ERROR'
@@ -578,7 +579,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_main_page_id',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'main_page_id',
                 'WORDING_MAIN'
@@ -586,7 +587,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_pages_lang_domain',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'pages_lang_domain',
                 'pages'
@@ -594,7 +595,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_navbar_lang_domain',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'navbar_lang_domain',
                 'Navbar'
@@ -602,7 +603,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_diagnostics_lang_domain',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ContentManager',
                 'diagnostics_lang_domain',
                 'Diagnostics'
@@ -610,7 +611,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_public_navbar_id',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ContentManager',
                 'public_navbar_id',
                 1
@@ -618,7 +619,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_user_navbar_id',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ContentManager',
                 'user_navbar_id',
                 2
@@ -626,7 +627,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_admin_navbar_id',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ContentManager',
                 'admin_navbar_id',
                 3
@@ -645,7 +646,7 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_status_bar_min_level',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ContentManager',
                 'status_bar_min_level',
                 2
@@ -676,12 +677,12 @@ final class AdminConfigSystemController extends AbstractController
         }
 
         // ── News (News.config.php) ────────────────────────────────────────
-        $this->ctx->set('cfg_per_page',    (int)  $this->config->getConfig('News', 'per_page',    20));
-        $this->ctx->set('cfg_descending',  (bool) $this->config->getConfig('News', 'descending',  true));
-        $this->ctx->set('cfg_pn_key',      (string) $this->config->getConfig('News', 'pn_key',    'pn'));
-        $this->ctx->set('cfg_show_key',    (string) $this->config->getConfig('News', 'show_key',  'show'));
-        $this->ctx->set('cfg_order_key',   (string) $this->config->getConfig('News', 'order_key', 'order'));
-        $this->ctx->set('cfg_page_window', (int)  $this->config->getConfig('News', 'page_window', 3));
+        $this->ctx->set('cfg_per_page',    $this->config->getConfigInt('News', 'per_page',    20));
+        $this->ctx->set('cfg_descending',  $this->config->getConfigBool('News', 'descending',  true));
+        $this->ctx->set('cfg_pn_key',      $this->config->getConfigString('News', 'pn_key',    'pn'));
+        $this->ctx->set('cfg_show_key',    $this->config->getConfigString('News', 'show_key',  'show'));
+        $this->ctx->set('cfg_order_key',   $this->config->getConfigString('News', 'order_key', 'order'));
+        $this->ctx->set('cfg_page_window', $this->config->getConfigInt('News', 'page_window', 3));
 
         $this->ctx->set('csrf_token', $csrfToken);
         $this->ctx->set('prg_id', $prgId);
@@ -699,17 +700,19 @@ final class AdminConfigSystemController extends AbstractController
     {
         // 'config' is the main config.php, not a module config file.
         $suffix = $baseName === 'config' ? '.php' : '.config.php';
-        $path   = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $baseName . $suffix;
+        $path   = (configDir() . $baseName . $suffix);
         if (!is_file($path)) { return []; }
         $loaded = @include $path;
-        return is_array($loaded) ? $loaded : [];
+        if (!is_array($loaded)) { return []; }
+        /** @var array<string,array<string,mixed>> $loaded */
+        return $loaded;
     }
 
     /** @return list<array{value:int,label:string,selected:bool}> */
     private function envOptions()
     : array
     {
-        $current = (int)$this->config->getConfig('Prelude', 'environment', 0);
+        $current = $this->config->getConfigInt('Prelude', 'environment', 0);
         $opts = [];
         foreach (EnvironmentType::cases() as $case) {
             $opts[] = [

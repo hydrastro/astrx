@@ -67,18 +67,18 @@ final class RegisterController extends AbstractController
     {
         $posted = $this->prg->pull($prgToken) ?? [];
 
-        $username    = (string) ($posted['username']    ?? '');
-        $password    = (string) ($posted['password']    ?? '');
-        $repeat      = (string) ($posted['repeat']      ?? '');
-        $mailbox     = (string) ($posted['mailbox']     ?? '');
-        $email       = (string) ($posted['email']       ?? '');
-        $displayName = (string) ($posted['display_name']?? '');
+        $username    = self::mStr($posted, 'username', '');
+        $password    = self::mStr($posted, 'password', '');
+        $repeat      = self::mStr($posted, 'repeat', '');
+        $mailbox     = self::mStr($posted, 'mailbox', '');
+        $email       = self::mStr($posted, 'email', '');
+        $displayName = self::mStr($posted, 'display_name', '');
         $month       = is_numeric($posted['month'] ?? null) ? (int) $posted['month'] : null;
         $day         = is_numeric($posted['day']   ?? null) ? (int) $posted['day']   : null;
         $year        = is_numeric($posted['year']  ?? null) ? (int) $posted['year']  : null;
-        $csrfToken   = (string) ($posted['_csrf']       ?? '');
-        $captchaId   = (string) ($posted['captcha_id']  ?? '');
-        $captchaText = (string) ($posted['captcha_text']?? '');
+        $csrfToken   = self::mStr($posted, '_csrf', '');
+        $captchaId   = self::mStr($posted, 'captcha_id', '');
+        $captchaText = self::mStr($posted, 'captcha_text', '');
 
         $csrfResult = $this->csrf->verify(self::FORM, $csrfToken);
         if (!$csrfResult->isOk()) {
@@ -106,7 +106,6 @@ final class RegisterController extends AbstractController
             $registerResult->drainTo($this->collector);
             return $this->renderForm($username, $mailbox, $email, $displayName);
         }
-
         $newHexId = $registerResult->unwrap();
 
         // --- Email verification token ---
@@ -116,7 +115,8 @@ final class RegisterController extends AbstractController
             $tokenResult = $this->userService->generateToken($newHexId, \AstrX\User\UserService::TOKEN_EMAIL_VERIFY);
             $tokenResult->drainTo($this->collector);
             // if ($tokenResult->isOk()) {
-            //     $data = $tokenResult->unwrap();
+            //     /** @var array<string,mixed> */
+     $data = $tokenResult->unwrap();
             //     $link = ... build verify URL from $data['token'] and $data['user_id'] ...
             //     $mailer->send($email, $link);
             // }
@@ -169,7 +169,7 @@ final class RegisterController extends AbstractController
         $this->ctx->set('show_captcha',       $showCaptcha);
         $this->ctx->set('captcha_id',         $captchaId);
         $this->ctx->set('captcha_image',      $captchaB64);
-        $mailboxIsUsername = (bool) $this->config->getConfig('WebmailService', 'mailbox_is_username', false);
+        $mailboxIsUsername = $this->config->getConfigBool('WebmailService', 'mailbox_is_username', false);
         $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$mailboxIsUsername);
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());
         $this->ctx->set('show_display_name',  $this->userService->requireDisplayName());

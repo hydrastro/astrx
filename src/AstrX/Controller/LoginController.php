@@ -70,7 +70,7 @@ final class LoginController extends AbstractController
 
         $username   = is_string($posted['username']   ?? null) ? (string) $posted['username']   : '';
         $password   = is_string($posted['password']   ?? null) ? (string) $posted['password']   : '';
-        $rememberMe = !empty($posted['remember_me']);
+        $rememberMe = self::mBool($posted, 'remember_me');
         $csrfToken  = is_string($posted['_csrf']      ?? null) ? (string) $posted['_csrf']      : '';
         $captchaId  = is_string($posted['captcha_id'] ?? null) ? (string) $posted['captcha_id'] : '';
         $captchaText= is_string($posted['captcha_text']?? null) ? (string) $posted['captcha_text'] : '';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
+use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -96,13 +97,13 @@ final class AdminUsersController extends AbstractController
         bool   $canConfig,
     ): void {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $section = (string) ($posted['section'] ?? 'manage');
+        $section = self::mStr($posted, 'section', 'manage');
 
         if ($section === 'manage' && $canManage) {
             $this->processManagement($posted);
@@ -125,8 +126,8 @@ final class AdminUsersController extends AbstractController
     /** @param array<string, mixed> $posted */
     private function processManagement(array $posted): void
     {
-        $action = (string) ($posted['action']  ?? '');
-        $hexId  = (string) ($posted['user_id'] ?? '');
+        $action = self::mStr($posted, 'action', '');
+        $hexId  = self::mStr($posted, 'user_id', '');
         if ($hexId === '') { return; }
 
         $targetResult = $this->userRepo->findById($hexId);
@@ -140,23 +141,23 @@ final class AdminUsersController extends AbstractController
 
         switch ($action) {
             case 'update':
-                $rawPassword = trim((string) ($posted['password'] ?? ''));
-                $hashIt      = !empty($posted['hash_password']);
+                $rawPassword = trim(self::mStr($posted, 'password', ''));
+                $hashIt      = self::mBool($posted, 'hash_password');
                 $password    = $rawPassword !== ''
                     ? ($hashIt ? password_hash($rawPassword, PASSWORD_ARGON2ID) : $rawPassword)
                     : null;
                 $r = $this->userRepo->adminUpdate(
                     $hexId,
-                    trim((string) ($posted['username']      ?? '')),
+                    trim(self::mStr($posted, 'username', '')),
                     $password,
                     ($posted['mailbox']      ?? '') !== '' ? trim((string) $posted['mailbox'])      : null,
                     ($posted['email']        ?? '') !== '' ? trim((string) $posted['email'])        : null,
                     ($posted['display_name'] ?? '') !== '' ? trim((string) $posted['display_name']) : null,
-                    (int) ($posted['type']           ?? 0),
+                    self::mInt($posted, 'type', 0),
                     ($posted['birth']        ?? '') !== '' ? trim((string) $posted['birth'])        : null,
-                    (int) ($posted['login_attempts'] ?? 0),
-                    !empty($posted['verified']),
-                    !empty($posted['deleted']),
+                    self::mInt($posted, 'login_attempts', 0),
+                    self::mBool($posted, 'verified'),
+                    self::mBool($posted, 'deleted'),
                     ($posted['created_at']  ?? '') !== '' ? trim((string) $posted['created_at'])  : null,
                     ($posted['last_access'] ?? '') !== '' ? trim((string) $posted['last_access']) : null,
                 );
@@ -182,21 +183,21 @@ final class AdminUsersController extends AbstractController
         return $this->writer->write('User', array_merge(
             $this->loadUserConfig(),
             ['UserService' => [
-                'token_expiration_time'          => max(60, (int) ($p['token_expiration_time'] ?? 21600)),
-                'allow_register'                 => !empty($p['allow_register']),
-                'allow_login_non_verified_users' => !empty($p['allow_login_non_verified_users']),
-                'require_email'                  => !empty($p['require_email']),
-                'require_recovery_email'         => !empty($p['require_recovery_email']),
-                'require_display_name'           => !empty($p['require_display_name']),
-                'require_birth_date'             => !empty($p['require_birth_date']),
-                'case_sensitive_usernames'       => !empty($p['case_sensitive_usernames']),
-                'minimum_age'                    => max(0, (int) ($p['minimum_age'] ?? 0)),
-                'maximum_age'                    => max(0, (int) ($p['maximum_age'] ?? 0)),
+                'token_expiration_time'          => max(60, self::mInt($p, 'token_expiration_time', 21600)),
+                'allow_register'                 => self::mBool($p, 'allow_register'),
+                'allow_login_non_verified_users' => self::mBool($p, 'allow_login_non_verified_users'),
+                'require_email'                  => self::mBool($p, 'require_email'),
+                'require_recovery_email'         => self::mBool($p, 'require_recovery_email'),
+                'require_display_name'           => self::mBool($p, 'require_display_name'),
+                'require_birth_date'             => self::mBool($p, 'require_birth_date'),
+                'case_sensitive_usernames'       => self::mBool($p, 'case_sensitive_usernames'),
+                'minimum_age'                    => max(0, self::mInt($p, 'minimum_age', 0)),
+                'maximum_age'                    => max(0, self::mInt($p, 'maximum_age', 0)),
                 'login_captcha_type'             => (int) ($p['login_captcha_type']    ?? UserService::CAPTCHA_SHOW_ON_X_FAILED),
-                'login_captcha_attempts'         => max(1, (int) ($p['login_captcha_attempts'] ?? 3)),
+                'login_captcha_attempts'         => max(1, self::mInt($p, 'login_captcha_attempts', 3)),
                 'register_captcha_type'          => (int) ($p['register_captcha_type'] ?? UserService::CAPTCHA_SHOW_ALWAYS),
                 'recover_captcha_type'           => (int) ($p['recover_captcha_type']  ?? UserService::CAPTCHA_SHOW_ALWAYS),
-                'remember_me_time'               => max(0, (int) ($p['remember_me_time'] ?? 2592000)),
+                'remember_me_time'               => max(0, self::mInt($p, 'remember_me_time', 2592000)),
                 'username_regex'                 => $this->parseRegexTable($p, 'username'),
                 'password_regex'                 => $this->parseRegexTable($p, 'password'),
             ]]
@@ -211,9 +212,9 @@ final class AdminUsersController extends AbstractController
         return $this->writer->write('User', array_merge(
             $this->loadUserConfig(),
             ['AvatarService' => [
-                'avatar_dir'       => trim((string) ($p['avatar_dir']       ?? '')),
-                'avatar_file_size' => max(1024, (int) ($p['avatar_file_size'] ?? 1048576)),
-                'use_identicons'   => !empty($p['use_identicons']),
+                'avatar_dir'       => trim(self::mStr($p, 'avatar_dir', '')),
+                'avatar_file_size' => max(1024, self::mInt($p, 'avatar_file_size', 1048576)),
+                'use_identicons'   => self::mBool($p, 'use_identicons'),
             ]]
         ));
     }
@@ -225,10 +226,10 @@ final class AdminUsersController extends AbstractController
     {
         return $this->writer->write('Identicon', [
             'IdenticonRenderer' => [
-                'size'         => max(16, (int) ($p['size']   ?? 256)),
-                'tiles'        => max(2,  (int) ($p['tiles']  ?? 6)),
-                'colors'       => max(1,  (int) ($p['colors'] ?? 1)),
-                'high_quality' => !empty($p['high_quality']),
+                'size'         => max(16, self::mInt($p, 'size', 256)),
+                'tiles'        => max(2,  self::mInt($p, 'tiles', 6)),
+                'colors'       => max(1,  self::mInt($p, 'colors', 1)),
+                'high_quality' => self::mBool($p, 'high_quality'),
             ],
         ]);
     }
@@ -247,7 +248,7 @@ final class AdminUsersController extends AbstractController
         $this->ctx->set('prg_id',      $prgId);
 
         if ($canManage) {
-            $editId     = (string) ($this->request->query()->get('edit') ?? '');
+            $editId     = (is_scalar($vedit = $this->request->query()->get('edit') ?? '') ? (string)$vedit : '');
             $listResult = $this->userRepo->listAll();
             $listResult->drainTo($this->collector);
             $rawList  = $listResult->isOk() ? $listResult->unwrap() : [];
@@ -275,41 +276,50 @@ final class AdminUsersController extends AbstractController
                 ['value' => UserService::CAPTCHA_SHOW_NEVER,       'label' => $this->t->t('admin.config.users.captcha_never')],
                 ['value' => UserService::CAPTCHA_SHOW_ON_X_FAILED, 'label' => $this->t->t('admin.config.users.captcha_on_fail')],
             ];
-            $loginType    = (int) $this->config->getConfig('UserService', 'login_captcha_type',    UserService::CAPTCHA_SHOW_ON_X_FAILED);
-            $registerType = (int) $this->config->getConfig('UserService', 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS);
-            $recoverType  = (int) $this->config->getConfig('UserService', 'recover_captcha_type',  UserService::CAPTCHA_SHOW_ALWAYS);
-            $sel          = fn($v, $o) => array_map(fn($x) => array_merge($x, ['selected' => $x['value'] === $v]), $o);
+            $loginType    = $this->config->getConfigInt('UserService', 'login_captcha_type',    UserService::CAPTCHA_SHOW_ON_X_FAILED);
+            $registerType = $this->config->getConfigInt('UserService', 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS);
+            $recoverType  = $this->config->getConfigInt('UserService', 'recover_captcha_type',  UserService::CAPTCHA_SHOW_ALWAYS);
+            /** @phpstan-var callable(mixed, list<array<string,mixed>>): list<array<string,mixed>> $sel */
+            $sel          = function($v, array $o) { return array_map(function($x) use ($v) {
+                if (!is_array($x)) { return $x; }
+                /** @phpstan-var array<string,mixed> $x */
+                return array_merge($x, ['selected' => $x['value'] === $v]);
+            }, $o); };
 
-            $this->ctx->set('cfg_token_expiration_time',          (int)  $this->config->getConfig('UserService', 'token_expiration_time',          21600));
-            $this->ctx->set('cfg_allow_register',                 (bool) $this->config->getConfig('UserService', 'allow_register',                 true));
-            $this->ctx->set('cfg_allow_login_non_verified_users', (bool) $this->config->getConfig('UserService', 'allow_login_non_verified_users', true));
-            $this->ctx->set('cfg_require_email',                  (bool) $this->config->getConfig('UserService', 'require_email',                  true));
-            $this->ctx->set('cfg_require_recovery_email',         (bool) $this->config->getConfig('UserService', 'require_recovery_email',         true));
-            $this->ctx->set('cfg_require_display_name',           (bool) $this->config->getConfig('UserService', 'require_display_name',           true));
-            $this->ctx->set('cfg_require_birth_date',             (bool) $this->config->getConfig('UserService', 'require_birth_date',             false));
-            $this->ctx->set('cfg_case_sensitive_usernames',       (bool) $this->config->getConfig('UserService', 'case_sensitive_usernames',       false));
-            $this->ctx->set('cfg_minimum_age',                    (int)  $this->config->getConfig('UserService', 'minimum_age',                    0));
-            $this->ctx->set('cfg_maximum_age',                    (int)  $this->config->getConfig('UserService', 'maximum_age',                    0));
-            $this->ctx->set('cfg_login_captcha_attempts',         (int)  $this->config->getConfig('UserService', 'login_captcha_attempts',         3));
-            $this->ctx->set('cfg_remember_me_time',               (int)  $this->config->getConfig('UserService', 'remember_me_time',               2592000));
+            $this->ctx->set('cfg_token_expiration_time',          $this->config->getConfigInt('UserService', 'token_expiration_time',          21600));
+            $this->ctx->set('cfg_allow_register',                 $this->config->getConfigBool('UserService', 'allow_register',                 true));
+            $this->ctx->set('cfg_allow_login_non_verified_users', $this->config->getConfigBool('UserService', 'allow_login_non_verified_users', true));
+            $this->ctx->set('cfg_require_email',                  $this->config->getConfigBool('UserService', 'require_email',                  true));
+            $this->ctx->set('cfg_require_recovery_email',         $this->config->getConfigBool('UserService', 'require_recovery_email',         true));
+            $this->ctx->set('cfg_require_display_name',           $this->config->getConfigBool('UserService', 'require_display_name',           true));
+            $this->ctx->set('cfg_require_birth_date',             $this->config->getConfigBool('UserService', 'require_birth_date',             false));
+            $this->ctx->set('cfg_case_sensitive_usernames',       $this->config->getConfigBool('UserService', 'case_sensitive_usernames',       false));
+            $this->ctx->set('cfg_minimum_age',                    $this->config->getConfigInt('UserService', 'minimum_age',                    0));
+            $this->ctx->set('cfg_maximum_age',                    $this->config->getConfigInt('UserService', 'maximum_age',                    0));
+            $this->ctx->set('cfg_login_captcha_attempts',         $this->config->getConfigInt('UserService', 'login_captcha_attempts',         3));
+            $this->ctx->set('cfg_remember_me_time',               $this->config->getConfigInt('UserService', 'remember_me_time',               2592000));
             $this->ctx->set('login_captcha_options',    $sel($loginType,    $captchaOpts));
             $this->ctx->set('register_captcha_options', $sel($registerType, $captchaOpts));
             $this->ctx->set('recover_captcha_options',  $sel($recoverType,  $captchaOpts));
 
-            $usernameRules = (array) $this->config->getConfig('UserService', 'username_regex', []);
-            $passwordRules = (array) $this->config->getConfig('UserService', 'password_regex', []);
-            $this->ctx->set('username_regex_list', $this->flattenRegex($usernameRules));
-            $this->ctx->set('password_regex_list', $this->flattenRegex($passwordRules));
+            $usernameRulesRaw = $this->config->getConfigArray('UserService', 'username_regex');
+            $passwordRulesRaw = $this->config->getConfigArray('UserService', 'password_regex');
+            /** @phpstan-var array<int,array<string,mixed>> $usernameRulesTyped */
+            $usernameRulesTyped = $usernameRulesRaw;
+            /** @phpstan-var array<int,array<string,mixed>> $passwordRulesTyped */
+            $passwordRulesTyped = $passwordRulesRaw;
+            $this->ctx->set('username_regex_list', $this->flattenRegex($usernameRulesTyped));
+            $this->ctx->set('password_regex_list', $this->flattenRegex($passwordRulesTyped));
             $this->ctx->set('has_username_regex',  $usernameRules !== []);
             $this->ctx->set('has_password_regex',  $passwordRules !== []);
 
-            $this->ctx->set('cfg_avatar_dir',            (string) $this->config->getConfig('AvatarService',      'avatar_dir',       ''));
-            $this->ctx->set('cfg_avatar_file_size',      (int)    $this->config->getConfig('AvatarService',      'avatar_file_size',  1048576));
-            $this->ctx->set('cfg_use_identicons',        (bool)   $this->config->getConfig('AvatarService',      'use_identicons',    true));
-            $this->ctx->set('cfg_identicon_size',        (int)    $this->config->getConfig('IdenticonRenderer',  'size',              256));
-            $this->ctx->set('cfg_identicon_tiles',       (int)    $this->config->getConfig('IdenticonRenderer',  'tiles',             6));
-            $this->ctx->set('cfg_identicon_colors',      (int)    $this->config->getConfig('IdenticonRenderer',  'colors',            1));
-            $this->ctx->set('cfg_identicon_high_quality',(bool)   $this->config->getConfig('IdenticonRenderer',  'high_quality',      true));
+            $this->ctx->set('cfg_avatar_dir',            $this->config->getConfigString('AvatarService',      'avatar_dir',       ''));
+            $this->ctx->set('cfg_avatar_file_size',      $this->config->getConfigInt('AvatarService',      'avatar_file_size',  1048576));
+            $this->ctx->set('cfg_use_identicons',        $this->config->getConfigBool('AvatarService',      'use_identicons',    true));
+            $this->ctx->set('cfg_identicon_size',        $this->config->getConfigInt('IdenticonRenderer',  'size',              256));
+            $this->ctx->set('cfg_identicon_tiles',       $this->config->getConfigInt('IdenticonRenderer',  'tiles',             6));
+            $this->ctx->set('cfg_identicon_colors',      $this->config->getConfigInt('IdenticonRenderer',  'colors',            1));
+            $this->ctx->set('cfg_identicon_high_quality',$this->config->getConfigBool('IdenticonRenderer',  'high_quality',      true));
         }
 
         $this->setI18n($canManage, $canConfig);
@@ -357,10 +367,12 @@ final class AdminUsersController extends AbstractController
     /** @return array<string, array<string, mixed>> */
     private function loadUserConfig(): array
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'User.config.php';
+        $path = (configDir() . 'User.config.php');
         if (!is_file($path)) { return []; }
         $loaded = @include $path;
-        return is_array($loaded) ? $loaded : [];
+        if (!is_array($loaded)) { return []; }
+        /** @var array<string,array<string,mixed>> $loaded */
+        return $loaded;
     }
 
     /**
@@ -373,10 +385,10 @@ final class AdminUsersController extends AbstractController
         foreach ($rules as $key => $rule) {
             $list[] = [
                 'key'          => $key,
-                'regex'        => (string) ($rule['regex']        ?? ''),
+                'regex'        => self::mStr($rule, 'regex', ''),
                 'enabled'      => (bool)   ($rule['enabled']      ?? true),
-                'checking_for' => (bool)   ($rule['checking_for'] ?? false),
-                'message'      => (string) ($rule['message']      ?? ''),
+                'checking_for' => self::mBool($rule, 'checking_for'),
+                'message'      => self::mStr($rule, 'message', ''),
             ];
         }
         return $list;

@@ -73,22 +73,22 @@ final class AdminBanlistController extends AbstractController
     private function processForm(string $prgToken): string
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return '';
         }
 
-        $action = (string) ($posted['action'] ?? '');
+        $action = self::mStr($posted, 'action', '');
 
         switch ($action) {
             // ── Bans ──────────────────────────────────────────────────────────
             case 'ban':
-                $type   = (string) ($posted['type']   ?? '');
-                $value  = trim((string) ($posted['value']  ?? ''));
-                $reason = trim((string) ($posted['reason'] ?? ''));
-                $route  = trim((string) ($posted['route']  ?? ''));
-                $end    = ($posted['end'] ?? '') !== '' ? (string) $posted['end'] : null;
+                $type   = self::mStr($posted, 'type', '');
+                $value  = trim(self::mStr($posted, 'value', ''));
+                $reason = trim(self::mStr($posted, 'reason', ''));
+                $route  = trim(self::mStr($posted, 'route', ''));
+                $end    = ($posted['end'] ?? '') !== '' ? (is_scalar($posted['end']) ? (string)$posted['end'] : '') : null;
                 if ($value === '' || $reason === '' || $route === '') { break; }
                 $r = match ($type) {
                     'ip'    => $this->banlist->banCidr($value, $reason, $route, $end),
@@ -103,11 +103,11 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'update_ban':
-                $banId  = (int)    ($posted['ban_id']  ?? 0);
-                $reason = trim((string) ($posted['reason'] ?? ''));
-                $route  = trim((string) ($posted['route']  ?? ''));
-                $end    = ($posted['end'] ?? '') !== '' ? (string) $posted['end'] : null;
-                $active = !empty($posted['active']);
+                $banId  = self::mInt($posted, 'ban_id', 0);
+                $reason = trim(self::mStr($posted, 'reason', ''));
+                $route  = trim(self::mStr($posted, 'route', ''));
+                $end    = ($posted['end'] ?? '') !== '' ? (is_scalar($posted['end']) ? (string)$posted['end'] : '') : null;
+                $active = self::mBool($posted, 'active');
                 if ($banId === 0 || $reason === '' || $route === '') { break; }
                 $r = $this->banlist->updateBan($banId, $reason, $route, $end, $active);
                 $r->drainTo($this->collector);
@@ -115,24 +115,24 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'activate':
-                $this->banlist->setActive((int) ($posted['ban_id'] ?? 0), true)
+                $this->banlist->setActive(self::mInt($posted, 'ban_id', 0), true)
                     ->drainTo($this->collector);
                 break;
 
             case 'deactivate':
-                $this->banlist->setActive((int) ($posted['ban_id'] ?? 0), false)
+                $this->banlist->setActive(self::mInt($posted, 'ban_id', 0), false)
                     ->drainTo($this->collector);
                 break;
 
             case 'delete_ban':
-                $this->banlist->delete((int) ($posted['ban_id'] ?? 0))
+                $this->banlist->delete(self::mInt($posted, 'ban_id', 0))
                     ->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.banlist.deleted'));
                 break;
 
             // ── Routes ────────────────────────────────────────────────────────
             case 'add_route':
-                $key = trim((string) ($posted['route_key'] ?? ''));
+                $key = trim(self::mStr($posted, 'route_key', ''));
                 if ($key === '') { break; }
                 $routes = $this->loadRoutes();
                 if (!isset($routes[$key])) {
@@ -143,7 +143,7 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'delete_route':
-                $key    = trim((string) ($posted['route_key'] ?? ''));
+                $key    = trim(self::mStr($posted, 'route_key', ''));
                 $routes = $this->loadRoutes();
                 unset($routes[$key]);
                 $this->saveRoutes($routes)->drainTo($this->collector);
@@ -151,15 +151,15 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'add_round':
-                $key    = trim((string) ($posted['route_key'] ?? ''));
+                $key    = trim(self::mStr($posted, 'route_key', ''));
                 $routes = $this->loadRoutes();
                 if ($key !== '' && isset($routes[$key])) {
                     $next = $routes[$key] !== [] ? max(array_keys($routes[$key])) + 1 : 0;
                     $routes[$key][$next] = [
-                        'penalty'    => max(0, (int) ($posted['penalty']    ?? 0)),
-                        'max_tries'  => max(0, (int) ($posted['max_tries']  ?? 0)),
-                        'check_time' => max(0, (int) ($posted['check_time'] ?? 0)),
-                        'enabled'    => !empty($posted['enabled']),
+                        'penalty'    => max(0, self::mInt($posted, 'penalty', 0)),
+                        'max_tries'  => max(0, self::mInt($posted, 'max_tries', 0)),
+                        'check_time' => max(0, self::mInt($posted, 'check_time', 0)),
+                        'enabled'    => self::mBool($posted, 'enabled'),
                     ];
                     $this->saveRoutes($routes)->drainTo($this->collector);
                     $this->flash->set('success', $this->t->t('admin.banlist.round_added'));
@@ -168,15 +168,15 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'update_round':
-                $key      = trim((string) ($posted['route_key'] ?? ''));
+                $key      = trim(self::mStr($posted, 'route_key', ''));
                 $roundIdx = (int) ($posted['round_idx'] ?? -1);
                 $routes   = $this->loadRoutes();
                 if ($key !== '' && isset($routes[$key][$roundIdx])) {
                     $routes[$key][$roundIdx] = [
-                        'penalty'    => max(0, (int) ($posted['penalty']    ?? 0)),
-                        'max_tries'  => max(0, (int) ($posted['max_tries']  ?? 0)),
-                        'check_time' => max(0, (int) ($posted['check_time'] ?? 0)),
-                        'enabled'    => !empty($posted['enabled']),
+                        'penalty'    => max(0, self::mInt($posted, 'penalty', 0)),
+                        'max_tries'  => max(0, self::mInt($posted, 'max_tries', 0)),
+                        'check_time' => max(0, self::mInt($posted, 'check_time', 0)),
+                        'enabled'    => self::mBool($posted, 'enabled'),
                     ];
                     $this->saveRoutes($routes)->drainTo($this->collector);
                     $this->flash->set('success', $this->t->t('admin.banlist.round_updated'));
@@ -185,7 +185,7 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'delete_round':
-                $key      = trim((string) ($posted['route_key'] ?? ''));
+                $key      = trim(self::mStr($posted, 'route_key', ''));
                 $roundIdx = (int) ($posted['round_idx'] ?? -1);
                 $routes   = $this->loadRoutes();
                 if ($key !== '' && isset($routes[$key][$roundIdx])) {
@@ -205,8 +205,8 @@ final class AdminBanlistController extends AbstractController
 
     private function buildContext(): void
     {
-        $banEditId   = (int) ($this->request->query()->get('edit')       ?? 0);
-        $routeEditId = trim((string) ($this->request->query()->get('route_edit') ?? ''));
+        $banEditId   = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
+        $routeEditId = trim((is_scalar($vroute_edit = $this->request->query()->get('route_edit') ?? '') ? (string)$vroute_edit : ''));
 
         $listResult = $this->banlist->listAll();
         $listResult->drainTo($this->collector);
@@ -218,8 +218,8 @@ final class AdminBanlistController extends AbstractController
         // Decorate bans.
         $banList = [];
         foreach ($rawBans as $ban) {
-            $ban['route_name'] = (string) ($ban['ban_route'] ?? '');
-            $isEditing         = ($banEditId > 0 && (int) $ban['id'] === $banEditId);
+            $ban['route_name'] = self::mStr($ban, 'ban_route', '');
+            $isEditing         = ($banEditId > 0 && (is_int($ban['id']) ? $ban['id'] : 0) === $banEditId);
             if ($isEditing) {
                 $editCtx                  = $ban;
                 $editCtx['route_options'] = array_map(
@@ -240,9 +240,9 @@ final class AdminBanlistController extends AbstractController
             $isEditing = ($routeEditId !== '' && $routeEditId === $key);
             $rounds    = [];
             foreach ($route['rounds'] as $idx => $rd) {
-                $penalty   = (int)  ($rd['penalty']    ?? 0);
-                $maxTries  = (int)  ($rd['max_tries']  ?? 0);
-                $checkTime = (int)  ($rd['check_time'] ?? 0);
+                $penalty   = self::mInt($rd, 'penalty', 0);
+                $maxTries  = self::mInt($rd, 'max_tries', 0);
+                $checkTime = self::mInt($rd, 'check_time', 0);
                 $enabled   = (bool) ($rd['enabled']    ?? true);
                 $rounds[] = [
                     'index'          => $idx,
@@ -289,7 +289,10 @@ final class AdminBanlistController extends AbstractController
     /** @return array<string, list<array<string,mixed>>> */
     private function loadRoutes(): array
     {
-        return (array) $this->config->getConfig('BanlistRepository', 'routes', []);
+        $raw = $this->config->getConfigArray('BanlistRepository', 'routes');
+        /** @var array<string, list<array<string,mixed>>> $typed */
+        $typed = $raw;
+        return $typed;
     }
 
     /** @param array<string, mixed> $routes

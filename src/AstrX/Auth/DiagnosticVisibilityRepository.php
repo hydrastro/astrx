@@ -70,7 +70,11 @@ final class DiagnosticVisibilityRepository
             /** @var array<string, list<string>> $map */
             $map = [];
             foreach ($rows as $row) {
-                $map[(string)$row['code']][] = (string)$row['group_name'];
+                $code = $row['code'] ?? '';
+                $grp  = $row['group_name'] ?? '';
+                if (is_string($code) && is_string($grp)) {
+                    $map[$code][] = $grp;
+                }
             }
 
             return Result::ok($map);

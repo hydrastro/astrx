@@ -104,10 +104,12 @@ final class SecureSessionHandler implements
         }
 
         if (!$this->encrypt) {
-            return (string) $row['data'];
+            $dataVal = $row['data'] ?? '';
+            return is_scalar($dataVal) ? (string)$dataVal : '';
         }
 
-        return $this->decrypt($id, (string) $row['data']);
+        $dataVal2 = $row['data'] ?? '';
+        return $this->decrypt($id, is_scalar($dataVal2) ? (string)$dataVal2 : '');
     }
 
     public function write(string $id, string $data): bool
@@ -184,7 +186,9 @@ final class SecureSessionHandler implements
         $stmt = $this->pdo->prepare('SELECT `data` FROM `session` WHERE `id` = :id');
         $stmt->execute(['id' => $hashedId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return is_array($row) ? $row : false;
+        if (!is_array($row)) { return false; }
+        /** @var array<string,mixed> $row */
+        return $row;
     }
 
     /** Returns the database key for a raw session ID. */

@@ -74,7 +74,7 @@ final class AdminPagesController extends AbstractController
             exit;
         }
 
-        $editId    = (int) ($this->request->query()->get('edit') ?? 0);
+        $editId    = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
         $pages     = $this->loadPages();
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($selfUrl);
@@ -83,7 +83,7 @@ final class AdminPagesController extends AbstractController
         // editing must be an ARRAY (not bool) so Mustache keeps the row's data as context.
         $pageList = [];
         foreach ($pages as $row) {
-            if ($editId > 0 && (int) $row['id'] === $editId) {
+            if ($editId > 0 && (is_int($row['id']) ? $row['id'] : 0) === $editId) {
                 $row['editing'] = [$row]; // [$data] → Mustache iterates exactly once
             } else {
                 $row['editing'] = false;
@@ -106,35 +106,35 @@ final class AdminPagesController extends AbstractController
     private function processForm(string $prgToken): void
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $action = (string) ($posted['action'] ?? '');
+        $action = self::mStr($posted, 'action', '');
 
         switch ($action) {
             case 'add':
                 $this->addPage($posted);
                 break;
             case 'update':
-                $id = (int) ($posted['page_id'] ?? 0);
+                $id = self::mInt($posted, 'page_id', 0);
                 if ($id > 0) {
                     $this->updatePage($id, $posted);
                 }
                 break;
             case 'delete':
-                $id = (int) ($posted['page_id'] ?? 0);
+                $id = self::mInt($posted, 'page_id', 0);
                 if ($id > 0) {
                     $this->deletePage($id);
                 }
                 break;
             case 'toggle_hidden':
-                $this->toggleFlag((int) ($posted['page_id'] ?? 0), 'hidden');
+                $this->toggleFlag(self::mInt($posted, 'page_id', 0), 'hidden');
                 break;
             case 'toggle_comments':
-                $this->toggleFlag((int) ($posted['page_id'] ?? 0), 'comments');
+                $this->toggleFlag(self::mInt($posted, 'page_id', 0), 'comments');
                 break;
         }
     }
@@ -146,22 +146,22 @@ final class AdminPagesController extends AbstractController
     /** @param array<string,mixed> $p */
     private function addPage(array $p): void
     {
-        $urlId      = trim((string) ($p['url_id']    ?? ''));
-        $fileName   = trim((string) ($p['file_name'] ?? ''));
+        $urlId      = trim(self::mStr($p, 'url_id', ''));
+        $fileName   = trim(self::mStr($p, 'file_name', ''));
         if ($urlId === '' || $fileName === '') {
             $this->flash->set('error', $this->t->t('admin.pages.url_file_required'));
             return;
         }
-        $i18n       = !empty($p['i18n'])       ? 1 : 0;
-        $template   = !empty($p['template'])   ? 1 : 0;
-        $controller = !empty($p['controller']) ? 1 : 0;
-        $hidden     = !empty($p['hidden'])     ? 1 : 0;
-        $comments   = !empty($p['comments'])   ? 1 : 0;
-        $title       = trim((string) ($p['title']       ?? ''));
-        $description = trim((string) ($p['description'] ?? ''));
-        $parentId    = (int) ($p['parent_id'] ?? 0);
-        $indexFlag   = !empty($p['index_flag'])  ? 1 : 0;
-        $followFlag  = !empty($p['follow_flag']) ? 1 : 0;
+        $i18n       = self::mBool($p, 'i18n')       ? 1 : 0;
+        $template   = self::mBool($p, 'template')   ? 1 : 0;
+        $controller = self::mBool($p, 'controller') ? 1 : 0;
+        $hidden     = self::mBool($p, 'hidden')     ? 1 : 0;
+        $comments   = self::mBool($p, 'comments')   ? 1 : 0;
+        $title       = trim(self::mStr($p, 'title', ''));
+        $description = trim(self::mStr($p, 'description', ''));
+        $parentId    = self::mInt($p, 'parent_id', 0);
+        $indexFlag   = self::mBool($p, 'index_flag')  ? 1 : 0;
+        $followFlag  = self::mBool($p, 'follow_flag') ? 1 : 0;
 
         try {
             $this->pdo->beginTransaction();
@@ -203,21 +203,21 @@ final class AdminPagesController extends AbstractController
     /** @param array<string,mixed> $p */
     private function updatePage(int $id, array $p): void
     {
-        $urlId      = trim((string) ($p['url_id']    ?? ''));
-        $fileName   = trim((string) ($p['file_name'] ?? ''));
+        $urlId      = trim(self::mStr($p, 'url_id', ''));
+        $fileName   = trim(self::mStr($p, 'file_name', ''));
         if ($urlId === '' || $fileName === '') {
             $this->flash->set('error', $this->t->t('admin.pages.url_file_required'));
             return;
         }
-        $i18n       = !empty($p['i18n'])       ? 1 : 0;
-        $template   = !empty($p['template'])   ? 1 : 0;
-        $controller = !empty($p['controller']) ? 1 : 0;
-        $hidden     = !empty($p['hidden'])     ? 1 : 0;
-        $comments   = !empty($p['comments'])   ? 1 : 0;
-        $title       = trim((string) ($p['title']       ?? ''));
-        $description = trim((string) ($p['description'] ?? ''));
-        $indexFlag   = !empty($p['index_flag'])  ? 1 : 0;
-        $followFlag  = !empty($p['follow_flag']) ? 1 : 0;
+        $i18n       = self::mBool($p, 'i18n')       ? 1 : 0;
+        $template   = self::mBool($p, 'template')   ? 1 : 0;
+        $controller = self::mBool($p, 'controller') ? 1 : 0;
+        $hidden     = self::mBool($p, 'hidden')     ? 1 : 0;
+        $comments   = self::mBool($p, 'comments')   ? 1 : 0;
+        $title       = trim(self::mStr($p, 'title', ''));
+        $description = trim(self::mStr($p, 'description', ''));
+        $indexFlag   = self::mBool($p, 'index_flag')  ? 1 : 0;
+        $followFlag  = self::mBool($p, 'follow_flag') ? 1 : 0;
 
         try {
             $this->pdo->prepare(

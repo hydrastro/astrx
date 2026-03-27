@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
+use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -87,7 +88,7 @@ final class AdminConfigMailController extends AbstractController
         $posted = $this->prg->pull($prgToken)??[];
         $csrfResult = $this->csrf->verify(
             self::FORM,
-            (string)($posted['_csrf']??'')
+            self::mStr($posted, '_csrf', '')
         );
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
@@ -95,7 +96,7 @@ final class AdminConfigMailController extends AbstractController
             return;
         }
 
-        $section = (string)($posted['section']??'');
+        $section = self::mStr($posted, 'section', '');
 
         switch ($section) {
             case 'mailer':
@@ -121,7 +122,7 @@ final class AdminConfigMailController extends AbstractController
                 break;
 
             case 'test':
-                $recipient = trim((string)($posted['test_recipient']??''));
+                $recipient = trim(self::mStr($posted, 'test_recipient', ''));
                 if ($recipient === '') {
                     break;
                 }
@@ -152,7 +153,7 @@ final class AdminConfigMailController extends AbstractController
                 // dedicated key in Mailer section so it travels with the file.
                 $full = $this->loadFullMailConfig();
                 $full['Mailer']['test_recipient'] = trim(
-                    (string)($posted['test_recipient']??'')
+                    self::mStr($posted, 'test_recipient', '')
                 );
                 $this->writer->write('Mail', $full)->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('admin.config.saved'));
@@ -170,18 +171,18 @@ final class AdminConfigMailController extends AbstractController
     : Result {
         $full = $this->loadFullMailConfig();
         $full['Mailer'] = array_merge($full['Mailer'] ?? [], [
-            'host'         => trim((string) ($p['host']         ?? 'localhost')),
-            'port'         => max(1, (int)  ($p['port']         ?? 587)),
-            'username'     => trim((string) ($p['username']     ?? '')),
-            'from_address' => trim((string) ($p['from_address'] ?? '')),
-            'from_name'    => trim((string) ($p['from_name']    ?? '')),
-            'encryption'   => trim((string) ($p['encryption']   ?? 'tls')),
-            'timeout'      => max(5, (int)  ($p['timeout']      ?? 30)),
-            'socks5_host'  => trim((string) ($p['socks5_host']  ?? '')),
-            'socks5_port'  => max(1, (int)  ($p['socks5_port']  ?? 9050)),
+            'host'         => trim(self::mStr($p, 'host', 'localhost')),
+            'port'         => max(1, self::mInt($p, 'port', 587)),
+            'username'     => trim(self::mStr($p, 'username', '')),
+            'from_address' => trim(self::mStr($p, 'from_address', '')),
+            'from_name'    => trim(self::mStr($p, 'from_name', '')),
+            'encryption'   => trim(self::mStr($p, 'encryption', 'tls')),
+            'timeout'      => max(5, self::mInt($p, 'timeout', 30)),
+            'socks5_host'  => trim(self::mStr($p, 'socks5_host', '')),
+            'socks5_port'  => max(1, self::mInt($p, 'socks5_port', 9050)),
         ]);
         // Preserve existing password when blank is submitted (placeholder = keep current).
-        $newPw = trim((string) ($p['password'] ?? ''));
+        $newPw = trim(self::mStr($p, 'password', ''));
         if ($newPw !== '') {
             $full['Mailer']['password'] = $newPw;
         } elseif (!array_key_exists('password', $full['Mailer'])) {
@@ -199,11 +200,11 @@ final class AdminConfigMailController extends AbstractController
     : Result {
         $full = $this->loadFullMailConfig();
         $full['MailboxManager'] = array_merge($full['MailboxManager'] ?? [], [
-            'mailbox_domain' => trim((string) ($p['mailbox_domain'] ?? '')),
-            'mailapi_url'    => trim((string) ($p['mailapi_url']    ?? '')),
+            'mailbox_domain' => trim(self::mStr($p, 'mailbox_domain', '')),
+            'mailapi_url'    => trim(self::mStr($p, 'mailapi_url', '')),
         ]);
         // Preserve existing secret when blank is submitted.
-        $newSecret = trim((string) ($p['mailapi_secret'] ?? ''));
+        $newSecret = trim(self::mStr($p, 'mailapi_secret', ''));
         if ($newSecret !== '') {
             $full['MailboxManager']['mailapi_secret'] = $newSecret;
         } elseif (!array_key_exists('mailapi_secret', $full['MailboxManager'])) {
@@ -225,7 +226,7 @@ final class AdminConfigMailController extends AbstractController
             ['value' => 'ssl', 'label' => 'Implicit TLS (SMTPS)'],
             ['value' => '', 'label' => 'Plain (none)'],
         ];
-        $currentEnc = (string)$this->config->getConfig(
+        $currentEnc = $this->config->getConfigString(
             'Mailer',
             'encryption',
             'tls'
@@ -244,7 +245,7 @@ final class AdminConfigMailController extends AbstractController
         // Mailer
         $this->ctx->set(
             'cfg_host',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'host',
                 'localhost'
@@ -252,11 +253,11 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_port',
-            (int)$this->config->getConfig('Mailer', 'port', 587)
+            $this->config->getConfigInt('Mailer', 'port', 587)
         );
         $this->ctx->set(
             'cfg_username',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'username',
                 ''
@@ -265,7 +266,7 @@ final class AdminConfigMailController extends AbstractController
         // Never expose the stored password in the form — show placeholder instead.
         $this->ctx->set(
             'cfg_password_set',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'password',
                 ''
@@ -273,7 +274,7 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_from_address',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'from_address',
                 ''
@@ -281,7 +282,7 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_from_name',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'from_name',
                 ''
@@ -290,11 +291,11 @@ final class AdminConfigMailController extends AbstractController
         $this->ctx->set('cfg_encryption', $currentEnc);
         $this->ctx->set(
             'cfg_timeout',
-            (int)$this->config->getConfig('Mailer', 'timeout', 30)
+            $this->config->getConfigInt('Mailer', 'timeout', 30)
         );
         $this->ctx->set(
             'cfg_socks5_host',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'socks5_host',
                 ''
@@ -302,7 +303,7 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_socks5_port',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'Mailer',
                 'socks5_port',
                 9050
@@ -310,7 +311,7 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_test_recipient',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'Mailer',
                 'test_recipient',
                 ''
@@ -321,7 +322,7 @@ final class AdminConfigMailController extends AbstractController
         // MailboxManager
         $this->ctx->set(
             'cfg_mailbox_domain',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'MailboxManager',
                 'mailbox_domain',
                 ''
@@ -329,7 +330,7 @@ final class AdminConfigMailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_mailapi_url',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'MailboxManager',
                 'mailapi_url',
                 ''
@@ -338,7 +339,7 @@ final class AdminConfigMailController extends AbstractController
         // Never expose the API secret — show a "set/not set" indicator.
         $this->ctx->set(
             'cfg_mailapi_secret_set',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'MailboxManager',
                 'mailapi_secret',
                 ''
@@ -352,13 +353,15 @@ final class AdminConfigMailController extends AbstractController
     private function loadFullMailConfig()
     : array
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'Mail.config.php';
+        $path = (configDir() . 'Mail.config.php');
         if (!is_file($path)) {
             return [];
         }
         $loaded = @include $path;
 
-        return is_array($loaded) ? $loaded : [];
+        if (!is_array($loaded)) { return []; }
+        /** @var array<string,array<string,mixed>> $loaded */
+        return $loaded;
     }
 
     private function setI18n()

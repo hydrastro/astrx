@@ -69,7 +69,7 @@ final class AdminNewsController extends AbstractController
 
         $this->ctx->set('csrf_token',  $csrfToken);
         $this->ctx->set('prg_id',      $prgId);
-        $editId = (int) ($this->request->query()->get('edit') ?? 0);
+        $editId = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
         $rawList = $listResult->isOk() ? $listResult->unwrap() : [];
         $newsList = [];
         foreach ($rawList as $item) {
@@ -90,17 +90,17 @@ final class AdminNewsController extends AbstractController
     private function processForm(string $prgToken): void
     {
         $posted = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $action  = (string) ($posted['action']  ?? '');
-        $id      = (int)    ($posted['id']      ?? 0);
-        $title   = trim((string) ($posted['title']   ?? ''));
-        $content = trim((string) ($posted['content'] ?? ''));
-        $hidden  = !empty($posted['hidden']);
+        $action  = self::mStr($posted, 'action', '');
+        $id      = self::mInt($posted, 'id', 0);
+        $title   = trim(self::mStr($posted, 'title', ''));
+        $content = trim(self::mStr($posted, 'content', ''));
+        $hidden  = self::mBool($posted, 'hidden');
 
         switch ($action) {
             case 'create':

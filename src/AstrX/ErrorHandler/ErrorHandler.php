@@ -8,6 +8,7 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\Result\DiagnosticsCollector;
 use Throwable;
 use ErrorException;
+use function AstrX\Support\templateDir;
 
 final class ErrorHandler
 {
@@ -125,7 +126,7 @@ final class ErrorHandler
 
         http_response_code(500);
 
-        $failsafe = defined('TEMPLATE_DIR') ? (TEMPLATE_DIR . 'failsafe.html') : null;
+        $failsafe = templateDir() !== '' ? (templateDir() . 'failsafe.html') : null;
 
         if ($failsafe !== null && file_exists($failsafe)) {
             require $failsafe;

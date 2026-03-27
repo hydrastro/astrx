@@ -63,17 +63,17 @@ final class ProfileController extends AbstractController
             return $this->ok();
         }
 
-        $hexId = (string)$userData['id'];
+        $hexId = (is_scalar($userData['id']) ? (string)$userData['id'] : '');
         $hasAvatar = (bool)$userData['avatar'];
         $avatarSrc = $this->resolveAvatarSrc($hexId, $hasAvatar);
 
-        $groupLabel = $this->resolveGroupLabel((int)$userData['type']);
+        $groupLabel = $this->resolveGroupLabel((is_int($userData['type']) ? $userData['type'] : 0));
         $isOwnProfile = $this->session->isLoggedIn() &&
                         $this->session->userId() === $hexId;
 
         $this->ctx->set('profile_not_found', false);
         $this->ctx->set('profile_id', $hexId);
-        $this->ctx->set('profile_username', (string)$userData['username']);
+        $this->ctx->set('profile_username', (is_scalar($userData['username']) ? (string)$userData['username'] : ''));
         $this->ctx->set(
             'profile_display_name',
             (string)($userData['display_name']
@@ -86,7 +86,7 @@ final class ProfileController extends AbstractController
         $this->ctx->set('profile_has_avatar', $avatarSrc !== '');
         $this->ctx->set(
             'profile_joined',
-            (string)($userData['created_at']??'')
+            self::mStr($userData, 'created_at', '')
         );
         $this->ctx->set('profile_is_own', $isOwnProfile);
 

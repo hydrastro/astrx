@@ -68,12 +68,12 @@ final class UserSettingsController extends AbstractController
     private function processSubmission(string $prgToken): void
     {
         $posted = $this->prg->pull($prgToken) ?? [];
-        $action = (string) ($posted['action'] ?? '');
+        $action = self::mStr($posted, 'action', '');
         $hexId  = $this->session->userId();
 
         // CSRF is scoped per action
         $csrfKey   = 'settings_' . $action;
-        $csrfToken = (string) ($posted['_csrf'] ?? '');
+        $csrfToken = self::mStr($posted, '_csrf', '');
         $csrfResult = $this->csrf->verify($csrfKey, $csrfToken);
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
@@ -83,27 +83,27 @@ final class UserSettingsController extends AbstractController
         switch ($action) {
             case 'change_username':
                 $result = $this->userService->changeUsername(
-                    $hexId, (string) ($posted['username'] ?? ''),
+                    $hexId, self::mStr($posted, 'username', ''),
                 );
                 $result->drainTo($this->collector);
                 if ($result->isOk()) {
-                    $this->session->updateUsername((string) ($posted['username'] ?? ''));
+                    $this->session->updateUsername(self::mStr($posted, 'username', ''));
                 }
                 break;
 
             case 'change_display_name':
                 $result = $this->userService->changeDisplayName(
-                    $hexId, (string) ($posted['display_name'] ?? ''),
+                    $hexId, self::mStr($posted, 'display_name', ''),
                 );
                 $result->drainTo($this->collector);
                 if ($result->isOk()) {
-                    $this->session->updateDisplayName((string) ($posted['display_name'] ?? ''));
+                    $this->session->updateDisplayName(self::mStr($posted, 'display_name', ''));
                 }
                 break;
 
             case 'change_recovery_email':
                 $result = $this->userService->changeRecoveryEmail(
-                    $hexId, (string) ($posted['email'] ?? ''),
+                    $hexId, self::mStr($posted, 'email', ''),
                 );
                 $result->drainTo($this->collector);
                 if ($result->isOk()) {
@@ -115,9 +115,9 @@ final class UserSettingsController extends AbstractController
                 $tokenUnlock = $this->userService->hasUsedToken($hexId, UserService::TOKEN_RECOVER);
                 $result = $this->userService->changePassword(
                     $hexId,
-                    (string) ($posted['old_password'] ?? ''),
-                    (string) ($posted['password']     ?? ''),
-                    (string) ($posted['repeat']       ?? ''),
+                    self::mStr($posted, 'old_password', ''),
+                    self::mStr($posted, 'password', ''),
+                    self::mStr($posted, 'repeat', ''),
                     $tokenUnlock,
                 );
                 $result->drainTo($this->collector);
@@ -128,6 +128,8 @@ final class UserSettingsController extends AbstractController
                 $tokenResult = $this->userService->generateToken($hexId, UserService::TOKEN_EMAIL_VERIFY);
                 $tokenResult->drainTo($this->collector);
                 if ($tokenResult->isOk()) {
+                    /** @var array<string,mixed> */
+
                     $tokenData = $tokenResult->unwrap();
                     // TODO: send email. Dev notice: link below
                     // $link = urlGen->toPage('WORDING_USER') . '?_token=...'
@@ -157,7 +159,7 @@ final class UserSettingsController extends AbstractController
             case 'delete_account':
                 $result = $this->userService->delete(
                                  $hexId,
-                                 (string) ($posted['password'] ?? ''),
+                                 self::mStr($posted, 'password', ''),
                     tokenUnlock: false,
                 );
                 $result->drainTo($this->collector);

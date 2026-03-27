@@ -23,23 +23,33 @@ final class Request
     {
         $server = $_SERVER;
 
-        $methodResult = RequestMethod::fromString((string) ($server['REQUEST_METHOD'] ?? 'GET'));
+        $methodStr = $server['REQUEST_METHOD'] ?? 'GET';
+        $methodResult = RequestMethod::fromString(is_string($methodStr) ? $methodStr : 'GET');
 
         // An unknown method is not fatal — fall back to GET and carry the diagnostic forward.
         $method = $methodResult->isOk()
             ? $methodResult->unwrap()
             : RequestMethod::Get;
 
+        /** @var array<string,mixed> $server */
+        /** @var array<string,mixed> $get */
+        $get = $_GET;
+        /** @var array<string,mixed> $post */
+        $post = $_POST;
+        /** @var array<string,mixed> $cookies */
+        $cookies = $_COOKIE;
+        /** @var array<string,mixed> $files */
+        $files = $_FILES;
         $request = new self(
             method:     $method,
             uri:        self::buildUriFromServer($server),
             headers:    new HeaderBag(self::extractHeadersFromServer($server)),
-            query:      new ParameterBag($_GET),
-            body:       new ParameterBag($_POST),
-            cookies:    new ParameterBag($_COOKIE),
+            query:      new ParameterBag($get),
+            body:       new ParameterBag($post),
+            cookies:    new ParameterBag($cookies),
             server:     new ParameterBag($server),
             attributes: new ParameterBag(),
-            files:      new FileBag(self::normalizeFiles($_FILES)),
+            files:      new FileBag(self::normalizeFiles($files)),
         );
 
         // Always ok — method fallback means we never hard-fail here.
@@ -141,12 +151,14 @@ final class Request
             return true;
         }
 
-        return (string) $this->server->get('SERVER_PORT', '') === '443';
+        $portVal = $this->server->get('SERVER_PORT', '');
+        return (is_string($portVal) ? $portVal : '') === '443';
     }
 
     public function ip(bool $trustProxyHeaders = false): string
     {
-        $remoteAddr = (string) $this->server->get('REMOTE_ADDR', '0.0.0.0');
+        $remoteRaw = $this->server->get('REMOTE_ADDR', '0.0.0.0');
+        $remoteAddr = is_string($remoteRaw) ? $remoteRaw : '0.0.0.0';
 
         if (!$trustProxyHeaders) {
             return $remoteAddr;
@@ -281,11 +293,11 @@ final class Request
         $normalized = [];
 
         foreach ($files as $key => $file) {
-            if (!is_array($file)) {
-                continue;
-            }
-
-            $normalized[$key] = self::normalizeFileNode($file);
+            if (!is_array($file)) { continue; }
+            /** @var array<string,mixed> $file */
+            /** @var array<string,mixed> $fileTyped */
+            $fileTyped = $file;
+            $normalized[$key] = self::normalizeFileNode($fileTyped);
         }
 
         return $normalized;
@@ -293,7 +305,7 @@ final class Request
 
     /**
      * @param array<string,mixed> $node
-     * @return UploadedFile|array<string,mixed>
+     * @return UploadedFile|array<string, UploadedFile|array<string,mixed>>
      */
     private static function normalizeFileNode(array $node): UploadedFile|array
     {
@@ -308,25 +320,29 @@ final class Request
             if (is_array($node['name'])) {
                 $result = [];
 
-                foreach (array_keys($node['name']) as $index) {
-                    $result[$index] = self::normalizeFileNode([
-                                                                  'name' => $node['name'][$index],
-                                                                  'type' => $node['type'][$index],
-                                                                  'tmp_name' => $node['tmp_name'][$index],
-                                                                  'error' => $node['error'][$index],
-                                                                  'size' => $node['size'][$index],
-                                                              ]);
+                /** @var array<int|string, mixed> $nameArr */
+                $nameArr = $node['name'];
+                foreach (array_keys($nameArr) as $index) {
+                    /** @var array<string,mixed> $nodeSlice */
+                    $nodeSlice = [
+                        'name'     => is_array($node['name'])     ? ($node['name'][$index] ?? '')  : '',
+                        'type'     => is_array($node['type'])     ? ($node['type'][$index] ?? '')  : '',
+                        'tmp_name' => is_array($node['tmp_name']) ? ($node['tmp_name'][$index] ?? '') : '',
+                        'error'    => is_array($node['error'])    ? ($node['error'][$index] ?? 0)  : 0,
+                        'size'     => is_array($node['size'])     ? ($node['size'][$index] ?? 0)   : 0,
+                    ];
+                    $result[$index] = self::normalizeFileNode($nodeSlice);
                 }
-
+                /** @var array<string, UploadedFile|array<string,mixed>> $result */
                 return $result;
             }
 
             return new UploadedFile(
-                clientFilename: (string) $node['name'],
-                clientMediaType: (string) $node['type'],
-                tempPath: (string) $node['tmp_name'],
-                size: (int) $node['size'],
-                error: (int) $node['error'],
+                clientFilename: is_string($node['name'] ?? null) ? (string)$node['name'] : '',
+                clientMediaType: is_string($node['type'] ?? null) ? (string)$node['type'] : '',
+                tempPath: is_string($node['tmp_name'] ?? null) ? (string)$node['tmp_name'] : '',
+                size: is_int($node['size'] ?? null) ? (int)$node['size'] : 0,
+                error: is_int($node['error'] ?? null) ? (int)$node['error'] : 0,
             );
         }
 

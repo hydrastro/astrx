@@ -156,8 +156,10 @@ final class NewsRepository
                 'SELECT id, title, content, hidden, created_at FROM news WHERE id = :id'
             );
             $stmt->execute([':id' => $id]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row !== false ? $row : null);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok($fetched);
         } catch (PDOException $e) {
             return Result::err(null, $this->pdoDiagnostic($e));
         }

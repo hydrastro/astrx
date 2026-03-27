@@ -44,7 +44,8 @@ final class LogoutController extends AbstractController
             exit;
         }
 
-        $provided = (string) ($this->request->query()->get('_lt') ?? '');
+        $ltRaw = $this->request->query()->get('_lt');
+        $provided = is_string($ltRaw) ? $ltRaw : '';
         $expected = $this->getOrCreateToken();
 
         if ($provided === '' || !hash_equals($expected, $provided)) {

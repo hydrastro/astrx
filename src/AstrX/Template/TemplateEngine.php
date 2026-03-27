@@ -15,6 +15,8 @@ use AstrX\Template\Diagnostic\TemplateFileNotFoundDiagnostic;
 use AstrX\Template\Diagnostic\TemplateFileReadFailedDiagnostic;
 use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
 use Throwable;
+use function AstrX\Support\cacheDir;
+use function AstrX\Support\templateDir;
 
 /**
  * Mustache-inspired template engine with optional PHP post-processing.
@@ -94,10 +96,9 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     {
         $this->sink = $sink??new DiagnosticsCollector();
 
-        $this->templateDir = defined('TEMPLATE_DIR') ? TEMPLATE_DIR :
+        $this->templateDir = defined('TEMPLATE_DIR') ? templateDir() :
             __DIR__ . '/../template/';
-        $this->templateCacheDir = defined('TEMPLATE_CACHE_DIR') ?
-            TEMPLATE_CACHE_DIR : __DIR__ . '/../cache/';
+        $this->templateCacheDir = defined('TEMPLATE_CACHE_DIR') ? cacheDir() : __DIR__ . '/../cache/';
     }
 
     // DiagnosticSinkAwareInterface
@@ -164,7 +165,8 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             // local args win over global
             $mergedArgs = array_merge($this->globalArgs, $args);
             assert(method_exists($tpl, 'render'));
-            return Result::ok((string) $tpl->render($mergedArgs, []), $collector->diagnostics());
+            $rendered = $tpl->render($mergedArgs, []);
+            return Result::ok(is_scalar($rendered) ? (string)$rendered : '', $collector->diagnostics());
         } finally {
             $this->sink = $prevSink;
         }
@@ -189,9 +191,15 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
         if (is_array($parent) && $parent !== []) {
             if (array_key_exists(0, $parent) && is_array($parent[0])) {
-                $parent = $parent[$loopIndex] ?? $parent;
+                $parentSlice = $parent[$loopIndex] ?? $parent;
+                if (is_array($parentSlice)) {
+                    /** @var array<string,mixed> $parentSlice */
+                    $result = $this->resolveValueHelper($parentSlice, $value);
+                }
+            } else {
+                /** @phpstan-var array<string,mixed> $parent */
+                $result = $this->resolveValueHelper($parent, $value);
             }
-            $result = $this->resolveValueHelper($parent, $value);
         }
 
         if ($result === null) {
@@ -249,6 +257,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         if ($parseMode === self::PARSE_MODE_TEMPLATE) {
             $tokenized = $this->tokenizeTemplate($content);
             $ast       = $this->parseTemplate($tokenized);
+            /** @var array<int, array<int,string>|string> $ast */
             $code      = $this->compileTemplate($className, $ast, $phpProcessing);
         } else {
             $code = '<?php class ' . $className

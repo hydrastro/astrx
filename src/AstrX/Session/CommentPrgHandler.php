@@ -44,7 +44,9 @@ final class CommentPrgHandler
         $value = $_SESSION[$key]??null;
         unset($_SESSION[$key]);
 
-        return is_array($value) ? $value : null;
+        if (!is_array($value)) { return null; }
+        /** @var array<string,mixed> $value */
+        return $value;
     }
 
     public function has(string $token)
@@ -72,9 +74,11 @@ final class CommentPrgHandler
 
     public function getTarget(string $id)
     : ?string {
-        $val = $_SESSION[self::TARGET_PREFIX . $id]??null;
-
-        return is_array($val) ? ($val['url']??null) : null;
+        $val = $_SESSION[self::TARGET_PREFIX . $id] ?? null;
+        if (!is_array($val)) { return null; }
+        /** @var array<string,mixed> $val */
+        $url = $val['url'] ?? null;
+        return is_string($url) ? $url : null;
     }
 
     public function forgetTarget(string $id)
@@ -111,7 +115,11 @@ final class CommentPrgHandler
                 continue;
             }
             $count++;
-            $ts = is_array($value) ? (int)($value['ts']??0) : 0;
+            if (is_array($value)) {
+                /** @var array<string,mixed> $value */
+                $tsV = $value['ts'] ?? 0;
+                $ts = is_int($tsV) ? $tsV : 0;
+            } else { $ts = 0; }
             if ($ts < $cutoff) {
                 unset($_SESSION[$key]);
                 $count--;
@@ -121,8 +129,11 @@ final class CommentPrgHandler
             $entries = [];
             foreach ($_SESSION as $key => $value) {
                 if (str_starts_with($key, self::TARGET_PREFIX)) {
-                    $entries[$key] = is_array($value) ? (int)($value['ts']??0) :
-                        0;
+                    if (is_array($value)) {
+                        /** @var array<string,mixed> $value */
+                        $ts4 = $value['ts'] ?? 0;
+                        $entries[$key] = is_int($ts4) ? $ts4 : 0;
+                    } else { $entries[$key] = 0; }
                 }
             }
             asort($entries);

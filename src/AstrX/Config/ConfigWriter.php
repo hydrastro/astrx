@@ -7,6 +7,7 @@ use AstrX\Config\Diagnostic\ConfigWriteDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\Result\DiagnosticLevel;
+use function AstrX\Support\configDir;
 
 /**
  * Writes a config domain array back to its PHP config file atomically.
@@ -28,7 +29,7 @@ final class ConfigWriter
      */
     public function write(string $fileBaseName, array $config): Result
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $fileBaseName . '.config.php';
+        $path = (configDir()) . $fileBaseName . '.config.php';
         $php  = $this->render($config);
         $tmp  = $path . '.tmp.' . bin2hex(random_bytes(4));
 
@@ -62,7 +63,7 @@ final class ConfigWriter
      */
     public function writeMainConfig(array $config): Result
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'config.php';
+        $path = (configDir()) . 'config.php';
         $php  = $this->render($config);
         $tmp  = $path . '.tmp.' . bin2hex(random_bytes(4));
 

@@ -97,7 +97,9 @@ final class CommentService
         if (!$result->isOk()) {
             return $result;
         }
-        return Result::ok($this->assembleTree($result->unwrap()));
+        /** @var list<array<string,mixed>> $flatRows */
+        $flatRows = $result->unwrap();
+        return Result::ok($this->assembleTree($flatRows));
     }
 
     /** @return Result<int> */
@@ -148,8 +150,11 @@ final class CommentService
             if (!$parentResult->isOk() || $parentResult->unwrap() === null) {
                 return $this->opErr('reply_not_found');
             }
+            /** @var array<string,mixed> $parent */
             $parent = $parentResult->unwrap();
-            if ((int) $parent['page_id'] !== $pageId) {
+            $ppid = $parent['page_id'] ?? 0;
+            $parentPageId = is_int($ppid) ? $ppid : 0;
+            if ($parentPageId !== $pageId) {
                 return $this->opErr('reply_wrong_page');
             }
         }
@@ -179,7 +184,8 @@ final class CommentService
         if ($this->minimumFloodSecs > 0) {
             $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
-                $elapsed = time() - $lastResult->unwrap();
+                $lastTs = $lastResult->unwrap();
+                $elapsed = time() - (is_int($lastTs) ? $lastTs : 0);
                 if ($elapsed < $this->minimumFloodSecs) {
                     if ($this->antispamTimeSecs > 0) {
                         $this->repo->addMute($hexUserId, $ip, null, $this->antispamTimeSecs);
@@ -253,22 +259,29 @@ final class CommentService
         // Index by id
         $byId = [];
         foreach ($flat as $row) {
-            $byId[(int) $row['id']] = $row + ['depth' => 0, 'children' => []];
+            /** @var array<string,mixed> $row */
+            $rawId = $row['id'] ?? 0;
+            $rowId = is_int($rawId) ? $rawId : 0;
+            $byId[$rowId] = $row + ['depth' => 0, 'children' => []];
         }
 
         $roots = [];
         foreach ($byId as $id => &$row) {
-            $replyTo = $row['reply_to'] !== null ? (int) $row['reply_to'] : null;
+            $rtRaw = $row['reply_to'] ?? null;
+            $replyTo = ($rtRaw !== null && is_int($rtRaw)) ? $rtRaw : null;
             if ($replyTo === null || !isset($byId[$replyTo])) {
                 $roots[] = &$row;
             } else {
-                $byId[$replyTo]['children'][] = &$row;
+                if (is_array($byId[$replyTo])) {
+                    $byId[$replyTo]['children'][] = &$row;
+                }
             }
         }
         unset($row);
 
         // Flatten back to a list with depth
         $result = [];
+        /** @phpstan-var list<array<string,mixed>> $roots */
         $this->flattenTree($roots, 0, $result);
         return $result;
     }
@@ -282,9 +295,11 @@ final class CommentService
     private function flattenTree(array &$nodes, int $depth, array &$out): void
     {
         foreach ($nodes as &$node) {
+            /** @var array<string,mixed> $node */
             $node['depth']        = $depth;
             $node['has_children'] = !empty($node['children']);
-            $children             = $node['children'];
+            $rawChildren = $node['children'] ?? [];
+            $children    = is_array($rawChildren) ? $rawChildren : [];
             unset($node['children']);
             $out[] = $node;
             if ($children !== []) {

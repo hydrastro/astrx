@@ -127,12 +127,13 @@ final class UrlGenerator
     /** @return array{bool, string, string, string, string, string} */
     private function routingConfig(): array
     {
-        $urlRewrite  = (bool)   $this->config->getConfig('Routing', 'url_rewrite',  true);
-        $basePath    = (string) $this->config->getConfig('Routing', 'base_path',    '/');
-        $localeKey   = (string) $this->config->getConfig('Routing', 'locale_key',   'lang');
-        $pageKey     = (string) $this->config->getConfig('Routing', 'page_key',     'page');
-        $entryPoint  = (string) $this->config->getConfig('Routing', 'entry_point',  'index.php');
-        $locale      = (string) $this->currentUrl->get($localeKey, '');
+        $urlRewrite  = $this->config->getConfigBool('Routing', 'url_rewrite',  true);
+        $basePath    = $this->config->getConfigString('Routing', 'base_path',    '/');
+        $localeKey   = $this->config->getConfigString('Routing', 'locale_key',   'lang');
+        $pageKey     = $this->config->getConfigString('Routing', 'page_key',     'page');
+        $entryPoint  = $this->config->getConfigString('Routing', 'entry_point',  'index.php');
+        $localeRaw   = $this->currentUrl->get($localeKey, '');
+        $locale      = is_string($localeRaw) ? $localeRaw : '';
 
         return [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale];
     }

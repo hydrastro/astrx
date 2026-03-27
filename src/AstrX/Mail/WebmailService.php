@@ -129,21 +129,26 @@ final class WebmailService
     {
         $r = $this->getMessage($folder, $uid);
         if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
+        /** @var array<string,mixed> $msg */
         $msg         = $r->unwrap();
-        $attachments = $msg['attachments'] ?? [];
+        $rawAtts = $msg['attachments'] ?? [];
+        $attachments = is_array($rawAtts) ? $rawAtts : [];
         if (!isset($attachments[$attachmentIndex])) {
-            return Result::err(false);
+            return Result::err(null);
         }
+        /** @var array<string,mixed> $att */
         $att  = $attachments[$attachmentIndex];
         // Decode the stored raw (encoded) bytes on demand
-        $data = match ($att['encoding']) {
-            'base64'           => base64_decode(str_replace(["\r", "\n"], '', $att['raw'])),
-            'quoted-printable' => quoted_printable_decode($att['raw']),
-            default            => $att['raw'],
+        $attEncoding = is_string($att['encoding'] ?? null) ? (string)$att['encoding'] : '';
+        $attRaw      = is_string($att['raw'] ?? null) ? (string)$att['raw'] : '';
+        $data = match ($attEncoding) {
+            'base64'           => base64_decode(str_replace(["\r", "\n"], '', $attRaw)),
+            'quoted-printable' => quoted_printable_decode($attRaw),
+            default            => $attRaw,
         };
         return Result::ok([
-                              'name'         => (string) $att['name'],
-                              'content_type' => (string) $att['content_type'],
+                              'name'         => is_scalar($att['name'] ?? null) ? (string)$att['name'] : '',
+                              'content_type' => is_scalar($att['content_type'] ?? null) ? (string)$att['content_type'] : '',
                               'data'         => (string) $data,
                           ]);
     }

@@ -10,6 +10,7 @@ use AstrX\Config\Diagnostic\ConfigFileInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic;
 use ReflectionObject;
+use function AstrX\Support\configDir;
 
 final class Config
 {
@@ -33,9 +34,13 @@ final class Config
         private readonly DiagnosticSinkInterface $sink,
         ?string $configFile = null,
     ) {
-        $file = $configFile ?? (defined('CONFIG_DIR') ? CONFIG_DIR . 'config.php' : '');
+        $file = $configFile ?? (configDir() . 'config.php');
 
-        $this->configuration = (is_file($file) ? require $file : []);
+        $loaded = is_file($file) ? require $file : [];
+        if (is_array($loaded)) {
+            /** @var array<string, array<string, mixed>> $loaded */
+            $this->configuration = $loaded;
+        }
 
         // Register a shutdown function to detect unused config keys in domains
         // that are read via getConfig() rather than #[InjectConfig] setters.
@@ -73,7 +78,7 @@ final class Config
     /** Loads optional per-module config file: CONFIG_DIR/{Domain}.config.php */
     public function loadModuleConfig(string $domain): void
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . $domain . '.config.php';
+        $path = (configDir()) . $domain . '.config.php';
         if (!file_exists($path)) {
             return;
         }
@@ -88,6 +93,7 @@ final class Config
             return;
         }
 
+        /** @var array<string, array<string, mixed>> $loaded */
         $this->configuration = array_merge($this->configuration, $loaded);
         $this->loadedDomains[$domain] = true;
     }
@@ -124,6 +130,44 @@ final class Config
                                   ));
             }
         }
+    }
+
+    public function getConfigString(string $domain, string $key, string $default = ''): string
+    {
+        $v = $this->getConfig($domain, $key, $default);
+        return is_string($v) ? $v : (is_scalar($v) ? (string)$v : $default);
+    }
+
+    public function getConfigInt(string $domain, string $key, int $default = 0): int
+    {
+        $v = $this->getConfig($domain, $key, $default);
+        return is_int($v) ? $v : (is_numeric($v) ? (int)$v : $default);
+    }
+
+    public function getConfigBool(string $domain, string $key, bool $default = false): bool
+    {
+        $v = $this->getConfig($domain, $key, $default);
+        return is_bool($v) ? $v : (bool)$v;
+    }
+
+    /**
+     * @param array<string,mixed> $default
+     * @return array<string,mixed>
+     */
+    public function getConfigArray(string $domain, string $key, array $default = []): array
+    {
+        $v = $this->getConfig($domain, $key, $default);
+        if (!is_array($v)) { return $default; }
+        /** @var array<string,mixed> $v */
+        return $v;
+    }
+
+    /** @return array<string,array<string,mixed>> */
+    public function getConfigSection(string $domain): array
+    {
+        $section = $this->configuration[$domain] ?? [];
+        /** @var array<string,array<string,mixed>> $section */
+        return $section;
     }
 
     /** @param array<string, mixed> $cfg */

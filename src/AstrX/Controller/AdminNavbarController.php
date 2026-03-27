@@ -81,17 +81,22 @@ final class AdminNavbarController extends AbstractController
         if (is_string($prgToken) && $prgToken !== '') {
             $this->processForm($prgToken);
             // Preserve the active navbar tab on redirect
-            $nb  = (int) ($this->request->query()->get('nb') ?? 1);
-            $pin = (int) ($this->request->query()->get('pin') ?? 0);
+            $nbRaw = $this->request->query()->get('nb');
+            $nb    = is_int($nbRaw) ? $nbRaw : (is_numeric($nbRaw) ? (int)$nbRaw : 1);
+            $pinRaw = $this->request->query()->get('pin');
+            $pin    = is_int($pinRaw) ? $pinRaw : (is_numeric($pinRaw) ? (int)$pinRaw : 0);
             $qs  = '?nb=' . $nb . ($pin > 0 ? '&pin=' . $pin : '');
             Response::redirect($selfUrl . $qs)
                 ->send()->drainTo($this->collector);
             exit;
         }
 
-        $activeNavbar = max(1, min(3, (int) ($this->request->query()->get('nb')  ?? 1)));
-        $activePin    = (int) ($this->request->query()->get('pin')   ?? 0);
-        $activeEntry  = (int) ($this->request->query()->get('entry') ?? 0);
+        $nbRaw2 = $this->request->query()->get('nb');
+        $activeNavbar = max(1, min(3, is_int($nbRaw2) ? $nbRaw2 : (is_numeric($nbRaw2) ? (int)$nbRaw2 : 1)));
+        $pinRaw2 = $this->request->query()->get('pin');
+        $activePin    = is_int($pinRaw2) ? $pinRaw2 : (is_numeric($pinRaw2) ? (int)$pinRaw2 : 0);
+        $entryRaw2 = $this->request->query()->get('entry');
+        $activeEntry  = is_int($entryRaw2) ? $entryRaw2 : (is_numeric($entryRaw2) ? (int)$entryRaw2 : 0);
 
         // Build full data tree for all three navbars
         $navbars = $this->loadAllNavbars();
@@ -105,7 +110,7 @@ final class AdminNavbarController extends AbstractController
                 $editingPin = true;
                 $this->ctx->set('ep_id',         $activePin);
                 $this->ctx->set('ep_sort_order', $pinRow['sort_order']);
-                $this->ctx->set('ep_sort_mode',  (int) $pinRow['sort_mode']);
+                $this->ctx->set('ep_sort_mode',  (is_int($pinRow['sort_mode'] ?? null) ? (int)$pinRow['sort_mode'] : 0));
                 $this->ctx->set('ep_alpha',       $pinRow['sort_mode'] === 0);
                 $this->ctx->set('ep_custom',      $pinRow['sort_mode'] === 1);
             }
@@ -120,10 +125,10 @@ final class AdminNavbarController extends AbstractController
                 $this->ctx->set('ee_internal',   (bool) $entryRow['internal']);
                 $this->ctx->set('ee_external',   !(bool) $entryRow['internal']);
                 $this->ctx->set('ee_url',        $entryRow['url'] ?? '');
-                $this->ctx->set('ee_page_id',    (int) ($entryRow['page_id'] ?? 0));
-                $this->ctx->set('ee_sort_order', (int) $entryRow['sort_order']);
+                $this->ctx->set('ee_page_id',    self::mInt($entryRow, 'page_id', 0));
+                $this->ctx->set('ee_sort_order', (is_int($entryRow['sort_order'] ?? null) ? (int)$entryRow['sort_order'] : 0));
                 $this->ctx->set('ee_active',     (bool) $entryRow['active']);
-                $this->ctx->set('ee_pin_id',     (int) $entryRow['pin_id']);
+                $this->ctx->set('ee_pin_id',     (is_int($entryRow['pin_id'] ?? null) ? (int)$entryRow['pin_id'] : 0));
             }
         }
 
@@ -143,22 +148,29 @@ final class AdminNavbarController extends AbstractController
         $this->ctx->set('base_url',       $selfUrl);
 
         // Decorate navbars: active flag, navbar_id, pin_id, editing flags
+        /** @var list<array<string,mixed>> $navbars */
         foreach ($navbars as &$nb) {
+            /** @var array<string,mixed> $nb */
             $nb['active'] = ($nb['id'] === $activeNavbar);
-            foreach ($nb['pins'] as &$pin) {
+            $pins = is_array($nb['pins'] ?? null) ? $nb['pins'] : [];
+            /** @var array<string,mixed> $pin */
+            foreach ($pins as &$pin) {
+                /** @var array<string,mixed> $pin */
                 $pin['navbar_id'] = $nb['id'];
                 $pinIsEditing = ($pin['id'] === $activePin && $nb['id'] === $activeNavbar);
                 $pin['editing'] = $pinIsEditing ? [$pin] : false;
-                foreach ($pin['entries'] as &$entry) {
+                $entries = is_array($pin['entries'] ?? null) ? $pin['entries'] : [];
+                foreach ($entries as &$entry) {
+                    /** @var array<string,mixed> $entry */
                     $entry['navbar_id'] = $nb['id'];
                     $entry['pin_id']    = $pin['id'];
                     if ($entry['id'] === $activeEntry) {
                         $entryCtx = $entry;
                         // Mark the selected page option
-                        $editingPageId = (int) ($entry['page_id'] ?? 0);
+                        $editingPageId = self::mInt($entry, 'page_id', 0);
                         $pagesWithSel = [];
                         foreach ($this->loadPages() as $pg) {
-                            $pg['selected'] = ((int) $pg['id'] === $editingPageId);
+                            $pg['selected'] = ((is_int($pg['id']) ? $pg['id'] : 0) === $editingPageId);
                             $pagesWithSel[] = $pg;
                         }
                         $entryCtx['available_pages'] = $pagesWithSel;
@@ -190,29 +202,29 @@ final class AdminNavbarController extends AbstractController
     private function processForm(string $prgToken): void
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $action    = (string) ($posted['action']    ?? '');
-        $navbarId  = max(1, min(3, (int) ($posted['navbar_id'] ?? 1)));
-        $pinId     = (int) ($posted['pin_id']     ?? 0);
-        $entryId   = (int) ($posted['entry_id']   ?? 0);
+        $action    = self::mStr($posted, 'action', '');
+        $navbarId  = max(1, min(3, self::mInt($posted, 'navbar_id', 1)));
+        $pinId     = self::mInt($posted, 'pin_id', 0);
+        $entryId   = self::mInt($posted, 'entry_id', 0);
 
         switch ($action) {
             // ── Pin actions ───────────────────────────────────────────────────
             case 'add_pin':
-                $sortOrder = (int) ($posted['sort_order'] ?? 0);
-                $sortMode  = (int) ($posted['sort_mode']  ?? 0);
+                $sortOrder = self::mInt($posted, 'sort_order', 0);
+                $sortMode  = self::mInt($posted, 'sort_mode', 0);
                 $this->addPin($navbarId, $sortOrder, $sortMode);
                 $this->flash->set('success', $this->t->t('admin.navbar.pin_added'));
                 break;
 
             case 'update_pin':
-                $sortOrder = (int) ($posted['sort_order'] ?? 0);
-                $sortMode  = (int) ($posted['sort_mode']  ?? 0);
+                $sortOrder = self::mInt($posted, 'sort_order', 0);
+                $sortMode  = self::mInt($posted, 'sort_mode', 0);
                 $this->updatePin($pinId, $sortOrder, $sortMode);
                 $this->flash->set('success', $this->t->t('admin.navbar.pin_updated'));
                 break;
@@ -224,13 +236,13 @@ final class AdminNavbarController extends AbstractController
 
             // ── Entry actions ─────────────────────────────────────────────────
             case 'add_entry':
-                $name      = trim((string) ($posted['name']       ?? ''));
-                $type      = (string) ($posted['type']            ?? 'external');
-                $url       = trim((string) ($posted['url']        ?? ''));
-                $pageId    = (int) ($posted['page_id']            ?? 0);
-                $sortOrder = (int) ($posted['sort_order']         ?? 0);
-                $active    = !empty($posted['active']) ? 1 : 0;
-                $i18n      = !empty($posted['i18n'])   ? 1 : 0;
+                $name      = trim(self::mStr($posted, 'name', ''));
+                $type      = self::mStr($posted, 'type', 'external');
+                $url       = trim(self::mStr($posted, 'url', ''));
+                $pageId    = self::mInt($posted, 'page_id', 0);
+                $sortOrder = self::mInt($posted, 'sort_order', 0);
+                $active    = self::mBool($posted, 'active') ? 1 : 0;
+                $i18n      = self::mBool($posted, 'i18n')   ? 1 : 0;
                 if ($name !== '') {
                     $this->addEntry($pinId, $name, $i18n, $type, $url, $pageId, $sortOrder, $active);
                     $this->flash->set('success', $this->t->t('admin.navbar.added'));
@@ -238,13 +250,13 @@ final class AdminNavbarController extends AbstractController
                 break;
 
             case 'update_entry':
-                $name      = trim((string) ($posted['name']       ?? ''));
-                $type      = (string) ($posted['type']            ?? 'external');
-                $url       = trim((string) ($posted['url']        ?? ''));
-                $pageId    = (int) ($posted['page_id']            ?? 0);
-                $sortOrder = (int) ($posted['sort_order']         ?? 0);
-                $active    = !empty($posted['active']) ? 1 : 0;
-                $i18n      = !empty($posted['i18n'])   ? 1 : 0;
+                $name      = trim(self::mStr($posted, 'name', ''));
+                $type      = self::mStr($posted, 'type', 'external');
+                $url       = trim(self::mStr($posted, 'url', ''));
+                $pageId    = self::mInt($posted, 'page_id', 0);
+                $sortOrder = self::mInt($posted, 'sort_order', 0);
+                $active    = self::mBool($posted, 'active') ? 1 : 0;
+                $i18n      = self::mBool($posted, 'i18n')   ? 1 : 0;
                 $this->updateEntry($entryId, $name, $i18n, $type, $url, $pageId, $sortOrder, $active);
                 $this->flash->set('success', $this->t->t('admin.navbar.updated'));
                 break;
@@ -296,9 +308,11 @@ final class AdminNavbarController extends AbstractController
 
         $navbars = [];
         foreach ($rows as $row) {
-            $nid = (int) $row['navbar_id'];
-            $pid = $row['pin_id'] !== null ? (int) $row['pin_id'] : null;
-            $eid = $row['entry_id'] !== null ? (int) $row['entry_id'] : null;
+            $nid = (is_int($row['navbar_id']) ? $row['navbar_id'] : 0);
+            $rawPinId = $row['pin_id'];
+            $pid = $rawPinId !== null ? (is_int($rawPinId) ? $rawPinId : (int)$rawPinId) : null;
+            $rawEntryId = $row['entry_id'];
+            $eid = $rawEntryId !== null ? (is_int($rawEntryId) ? $rawEntryId : (int)$rawEntryId) : null;
 
             if (!isset($navbars[$nid])) {
                 $navbars[$nid] = [
@@ -310,10 +324,10 @@ final class AdminNavbarController extends AbstractController
             if ($pid !== null && !isset($navbars[$nid]['pins'][$pid])) {
                 $navbars[$nid]['pins'][$pid] = [
                     'id'         => $pid,
-                    'sort_order' => (int) $row['pin_sort_order'],
-                    'sort_mode'  => (int) $row['sort_mode'],
-                    'alpha'      => (int) $row['sort_mode'] === 0,
-                    'custom'     => (int) $row['sort_mode'] === 1,
+                    'sort_order' => (is_int($row['pin_sort_order']) ? (is_int($row['pin_sort_order']) ? $row['pin_sort_order'] : 0) : 0),
+                    'sort_mode'  => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0),
+                    'alpha'      => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0) === 0,
+                    'custom'     => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0) === 1,
                     'entries'    => [],
                 ];
             }
@@ -325,8 +339,8 @@ final class AdminNavbarController extends AbstractController
                     'internal'   => (bool) $row['internal'],
                     'external'   => !(bool) $row['internal'],
                     'active'     => (bool) $row['active'],
-                    'sort_order' => (int) $row['entry_sort_order'],
-                    'page_id'    => $row['page_id'] !== null ? (int) $row['page_id'] : null,
+                    'sort_order' => (is_int($row['entry_sort_order']) ? (is_int($row['entry_sort_order']) ? $row['entry_sort_order'] : 0) : 0),
+                    'page_id'    => $row['page_id'] !== null ? (is_int($row['page_id']) ? (is_int($row['page_id']) ? $row['page_id'] : 0) : 0) : null,
                     'page_url_id'=> $row['page_url_id'],
                     'url'        => $row['url'],
                 ];
@@ -352,7 +366,9 @@ final class AdminNavbarController extends AbstractController
             if ($nb['id'] !== $navbarId) {
                 continue;
             }
-            foreach ($nb['pins'] as $pin) {
+            $pinsArr = is_array($nb['pins'] ?? null) ? $nb['pins'] : [];
+            foreach ($pinsArr as $pin) {
+                /** @var array<string,mixed> $pin */
                 if ($pin['id'] === $pinId) {
                     return $pin;
                 }

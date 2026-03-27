@@ -9,6 +9,8 @@ use AstrX\I18n\Translator;
 use AstrX\I18n\TranslatorAwareInterface;
 use ReflectionClass;
 use ReflectionException;
+use function AstrX\Support\configDir;
+use function AstrX\Support\langDir;
 
 final class ModuleLoader
 {
@@ -28,7 +30,7 @@ final class ModuleLoader
         private string $langDir = '',
     ) {
         if ($this->langDir === '' && defined('LANG_DIR')) {
-            $this->langDir = LANG_DIR;
+            $this->langDir = langDir();
         }
     }
 
@@ -69,7 +71,7 @@ final class ModuleLoader
         // This allows grouping related classes (CaptchaRenderer, CaptchaService)
         // under a single config file without touching ContentManager or adding
         // per-class annotations.
-        $configDir = defined('CONFIG_DIR') ? CONFIG_DIR : '';
+        $configDir = configDir();
         if (!file_exists($configDir . $domain . '.config.php')) {
             $namespaceParts = explode('\\', $fqcn);
             // [0]=AstrX [1]=Captcha [2]=CaptchaRenderer → parent = 'Captcha'

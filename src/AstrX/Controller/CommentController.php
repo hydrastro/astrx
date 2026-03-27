@@ -104,18 +104,18 @@ final class CommentController extends AbstractController
     private function processSubmission(string $cpToken): void
     {
         $posted     = $this->commentPrg->pull($cpToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $action = (string) ($posted['action'] ?? 'post');
+        $action = self::mStr($posted, 'action', 'post');
 
         // Admin quick-moderation
         if (in_array($action, ['hide', 'unhide', 'delete'], true)) {
             if ($this->gate->can(Permission::ADMIN_COMMENTS)) {
-                $id = (int) ($posted['id'] ?? 0);
+                $id = self::mInt($posted, 'id', 0);
                 if ($id > 0) {
                     match ($action) {
                         'hide'   => $this->commentService->hide($id)->drainTo($this->collector),
@@ -130,8 +130,8 @@ final class CommentController extends AbstractController
         // Captcha for guests
         if (!$this->session->isLoggedIn()) {
             $captchaResult = $this->captchaService->verify(
-                (string) ($posted['captcha_id']   ?? ''),
-                (string) ($posted['captcha_text'] ?? '')
+                self::mStr($posted, 'captcha_id', ''),
+                self::mStr($posted, 'captcha_text', '')
             );
             if (!$captchaResult->isOk()) {
                 $captchaResult->drainTo($this->collector);
@@ -139,10 +139,10 @@ final class CommentController extends AbstractController
             }
         }
 
-        $content  = (string) ($posted['content']  ?? '');
-        $name     = ($posted['name']  ?? '') !== '' ? (string) $posted['name']  : null;
-        $email    = ($posted['email'] ?? '') !== '' ? (string) $posted['email'] : null;
-        $replyTo  = is_numeric($posted['reply_to'] ?? null) ? (int) $posted['reply_to'] : null;
+        $content  = self::mStr($posted, 'content', '');
+        $name     = ($posted['name']  ?? '') !== '' ? (is_scalar($posted['name']) ? (string)$posted['name'] : '')  : null;
+        $email    = ($posted['email'] ?? '') !== '' ? (is_scalar($posted['email']) ? (string)$posted['email'] : '') : null;
+        $replyTo  = is_numeric($posted['reply_to'] ?? null) ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
         $remoteIp = (string) ($this->request->server()->get('REMOTE_ADDR') ?? '');
 
         $this->commentService->post(
@@ -158,7 +158,8 @@ final class CommentController extends AbstractController
     {
         // ── Read comment display parameters from query string ─────────────────
         $pageNum    = max(1, (int) ($this->request->query()->get(self::CP_PAGE) ?? 1));
-        $order      = $this->request->query()->get(self::CP_ORDER) ?? self::DEFAULT_ORDER;
+        $orderRaw   = $this->request->query()->get(self::CP_ORDER);
+        $order      = is_string($orderRaw) ? $orderRaw : self::DEFAULT_ORDER;
         $descending = ($order === 'desc');
         $perPage    = $this->commentService->commentsPerPage();
         $csPerPage  = ($this->request->query()->get(self::CP_SHOW) !== null)
@@ -214,21 +215,21 @@ final class CommentController extends AbstractController
         );
 
         // Build reply_to pre-fill URL (strips reply_to, keeps other params)
-        $replyToPreFill  = (int) ($this->request->query()->get('reply_to') ?? 0);
+        $replyToPreFill  = (is_numeric($vq_reply_to = $this->request->query()->get('reply_to')) ? (int)$vq_reply_to : 0);
         $cancelReplyUrl  = $pageBase;
 
         $comments = [];
         foreach ($flat as $i => $row) {
-            $isHidden = (bool) ($row['hidden'] ?? false);
-            $replyTo  = isset($row['reply_to']) && (int) $row['reply_to'] > 0
-                ? (int) $row['reply_to'] : null;
+            $isHidden = self::mBool($row, 'hidden');
+            $replyTo  = isset($row['reply_to']) && (is_int($row['reply_to']) ? $row['reply_to'] : 0) > 0
+                ? (is_int($row['reply_to']) ? $row['reply_to'] : 0) : null;
 
             if ($row['user_id'] !== null) {
                 $displayName = (string) ($row['user_display_name'] ?? $row['name'] ?? 'Anonymous');
-                $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (string) $row['user_id']]);
-                $profileUrl  = $profileBase . '?uid=' . rawurlencode((string) $row['user_id']);
+                $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (is_scalar($row['user_id']) ? (string)$row['user_id'] : '')]);
+                $profileUrl  = $profileBase . '?uid=' . rawurlencode((is_scalar($row['user_id']) ? (string)$row['user_id'] : ''));
             } else {
-                $displayName = ($row['name'] ?? '') !== '' ? (string) $row['name'] : 'Anonymous';
+                $displayName = ($row['name'] ?? '') !== '' ? (is_scalar($row['name']) ? (string)$row['name'] : '') : 'Anonymous';
                 $profileUrl  = '';
                 $avatarSrc   = $useIdenticons
                     ? $this->urlGen->toPage('avatar', [
@@ -249,7 +250,7 @@ final class CommentController extends AbstractController
             // reply_url MUST be set before the section wrappers below.
             // The snapshot [$enriched] is taken by value — any key added after
             // reply_section is assigned will NOT appear inside {{#reply_section}}.
-            $enriched['reply_url'] = $pageBase . '?reply_to=' . (int) $row['id'] . '#comment_form';
+            $enriched['reply_url'] = $pageBase . '?reply_to=' . (is_int($row['id']) ? $row['id'] : 0) . '#comment_form';
 
             // ── Section wrappers ──────────────────────────────────────────────
             // RULE: no section that reads row fields may be nested inside another.
@@ -267,7 +268,7 @@ final class CommentController extends AbstractController
             $enriched['admin_delete_section']    = $isAdmin                    ? [$enriched] : false;
 
             // close_divs_html: closes outer comment div(s) to produce nesting
-            $d  = (int) ($row['depth'] ?? 0);
+            $d  = self::mInt($row, 'depth', 0);
             $nd = isset($flat[$i + 1]) ? (int) ($flat[$i + 1]['depth'] ?? 0) : -1;
             if ($nd > $d)       { $close = 0; }
             elseif ($nd === $d) { $close = 1; }
@@ -301,7 +302,7 @@ final class CommentController extends AbstractController
         $captchaImage = '';
         if (!$this->session->isLoggedIn()) {
             $commentDifficulty = CaptchaType::from(
-                (int) $this->config->getConfig('CaptchaRenderer', 'comment_captcha_difficulty', CaptchaType::MEDIUM->value)
+                $this->config->getConfigInt('CaptchaRenderer', 'comment_captcha_difficulty', CaptchaType::MEDIUM->value)
             );
             $captchaGen = $this->captchaService->generateWithType($commentDifficulty);
             if ($captchaGen->isOk()) {

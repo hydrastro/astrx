@@ -32,11 +32,13 @@ final class PrgHandler
     }
 
     /** @return array<string,mixed>|null */
+    /** @return array<string,mixed>|null */
     public function get(string $token): ?array
     {
         $value = $_SESSION[self::POST_PREFIX . $token] ?? null;
-
-        return is_array($value) ? $value : null;
+        if (!is_array($value)) { return null; }
+        /** @var array<string,mixed> $value */
+        return $value;
     }
 
     /** @return array<string,mixed>|null */
@@ -46,8 +48,9 @@ final class PrgHandler
 
         $value = $_SESSION[$key] ?? null;
         unset($_SESSION[$key]);
-
-        return is_array($value) ? $value : null;
+        if (!is_array($value)) { return null; }
+        /** @var array<string,mixed> $value */
+        return $value;
     }
 
     public function forget(string $token): void
@@ -80,7 +83,11 @@ final class PrgHandler
         foreach ($_SESSION as $key => $value) {
             if (!str_starts_with($key, self::TARGET_PREFIX)) { continue; }
             $count++;
-            $ts = is_array($value) ? (int) ($value['ts'] ?? 0) : 0;
+            if (is_array($value)) {
+                /** @var array<string,mixed> $value */
+                $tsRaw = $value['ts'] ?? 0;
+                $ts = is_int($tsRaw) ? $tsRaw : 0;
+            } else { $ts = 0; }
             if ($ts < $cutoff) {
                 unset($_SESSION[$key]);
                 $count--;
@@ -91,7 +98,11 @@ final class PrgHandler
             $entries = [];
             foreach ($_SESSION as $key => $value) {
                 if (str_starts_with($key, self::TARGET_PREFIX)) {
-                    $entries[$key] = is_array($value) ? (int) ($value['ts'] ?? 0) : 0;
+                    if (is_array($value)) {
+                        /** @var array<string,mixed> $value */
+                        $tsRaw2 = $value['ts'] ?? 0;
+                        $entries[$key] = is_int($tsRaw2) ? $tsRaw2 : 0;
+                    } else { $entries[$key] = 0; }
                 }
             }
             asort($entries); // oldest first
@@ -118,7 +129,8 @@ final class PrgHandler
         $value = $_SESSION[self::TARGET_PREFIX . $prgId] ?? null;
         if (is_string($value)) { return $value; }               // legacy
         if (is_array($value) && isset($value['url'])) {
-            return (string) $value['url'];
+            $urlVal = $value['url'];
+            return is_scalar($urlVal) ? (string)$urlVal : '';
         }
         return null;
     }

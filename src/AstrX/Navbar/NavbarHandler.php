@@ -48,6 +48,7 @@ final class NavbarHandler
         $entries = [];
         foreach ($pins as $pin) {
             foreach ($pin as $row) {
+                /** @var array<string,mixed> $row */
                 $entries[] = $this->buildEntry($row, $ancestorIds);
             }
         }
@@ -73,6 +74,7 @@ final class NavbarHandler
         $stmt->execute(['navbar_id' => $navbarId]);
         /** @var list<array<string,mixed>> $rows */
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var list<array<string,mixed>> $rows */
 
         return $rows;
     }
@@ -87,11 +89,12 @@ final class NavbarHandler
         $pins = [];
 
         foreach ($rows as $row) {
-            $pinId = (int) $row['pin_id'];
+            /** @var array<string,mixed> $row */
+            $pinIdV = $row['pin_id'] ?? 0; $pinId = is_int($pinIdV) ? $pinIdV : 0;
             if (!isset($pins[$pinId])) {
                 $pins[$pinId] = [
-                    'sort_order' => (int) $row['pin_sort_order'],
-                    'sort_mode'  => (int) $row['pin_sort_mode'],
+                    'sort_order' => (is_int($row['pin_sort_order'] ?? null) ? $row['pin_sort_order'] : 0),
+                    'sort_mode'  => (is_int($row['pin_sort_mode'] ?? null) ? $row['pin_sort_mode'] : 0),
                     'entries'    => [],
                 ];
             }
@@ -110,7 +113,7 @@ final class NavbarHandler
                 );
             } else {
                 usort($entries, static fn(array $a, array $b): int =>
-                    (int) $a['entry_sort_order'] <=> (int) $b['entry_sort_order']
+                    (is_int($a['entry_sort_order']) ? $a['entry_sort_order'] : 0) <=> (is_int($b['entry_sort_order']) ? $b['entry_sort_order'] : 0)
                 );
             }
 
@@ -123,7 +126,7 @@ final class NavbarHandler
     /** @param array<string,mixed> $row */
     private function resolveName(array $row): string
     {
-        $name = (string) $row['name'];
+        $name = (is_scalar($row['name']) ? (string)$row['name'] : '');
         if (!(bool) $row['i18n']) {
             return $name;
         }
@@ -143,15 +146,16 @@ final class NavbarHandler
         $name = $this->resolveName($row);
 
         if ((bool) $row['internal']) {
-            $urlId    = (string) $row['url_id'];
+            $urlId    = (is_scalar($row['url_id']) ? (string)$row['url_id'] : '');
             $resolved = ((bool) $row['page_i18n'])
                 ? $this->translator->t($urlId, fallback: $urlId)
                 : $urlId;
 
             $url       = $this->urlGenerator->toPage($resolved);
-            $highlight = in_array((int) $row['page_id'], $ancestorIds, true);
+            $pageIdV = $row['page_id'] ?? 0;
+            $highlight = in_array(is_int($pageIdV) ? $pageIdV : 0, $ancestorIds, true);
         } else {
-            $url       = (string) $row['url'];
+            $url       = (is_scalar($row['url']) ? (string)$row['url'] : '');
             $highlight = false;
         }
 

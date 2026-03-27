@@ -26,7 +26,7 @@ final class Prelude
         // Environment setup — must happen before anything else so that PHP error
         // reporting and assert behaviour are configured for the right environment.
         $env = EnvironmentType::from(
-            $config->getConfig(
+            $config->getConfigInt(
                 'Prelude',
                 'environment',
                 EnvironmentType::DEVELOPMENT->value

@@ -57,6 +57,7 @@ final class MailboxManager
      * Called by UserController after successful registration.
      * @return Result<array{address: string}>
      */
+    /** @phpstan-return Result<array{address: string}> */
     public function createMailbox(string $username, string $password)
     : Result {
         $address = $username . '@' . $this->mailboxDomain;
@@ -87,11 +88,13 @@ final class MailboxManager
                                    'username' => $username,
                                ]);
 
-        return $this->apiCall(
+        /** @var Result<true> $r */
+        $r = $this->apiCall(
             'DELETE',
             '/mailbox/' . urlencode($username),
             (string)$payload
         );
+        return $r;
     }
 
     /**
@@ -99,6 +102,7 @@ final class MailboxManager
      * Called when the user changes their password in settings.
      * @return Result<true>
      */
+    /** @phpstan-return Result<true> */
     public function changePassword(string $username, string $newPassword)
     : Result {
         $payload = json_encode([
@@ -146,10 +150,13 @@ final class MailboxManager
         }
 
         $data = json_decode($response, true);
-        if (!is_array($data) || ($data['ok']??false) !== true) {
-            return $this->err('mailapi_error', $data['error']??'');
+        if (!is_array($data) || ($data['ok'] ?? false) !== true) {
+            /** @var array<string,mixed> $errData */
+            $errData = is_array($data) ? $data : [];
+            $errMsg = is_string($errData['error'] ?? null) ? (string)$errData['error'] : '';
+            return $this->err('mailapi_error', $errMsg);
         }
-
+        /** @var array<string,mixed> $data */
         return Result::ok($data);
     }
 
@@ -161,13 +168,15 @@ final class MailboxManager
     /** @return Result<mixed> */
     private function directWrite(string $jsonBody)
     : Result {
-        $data = json_decode($jsonBody, true);
-        if (!is_array($data)) {
+        $rawData = json_decode($jsonBody, true);
+        if (!is_array($rawData)) {
             return $this->err('invalid_payload');
         }
+        /** @var array<string,mixed> $data */
+        $data = $rawData;
 
-        $action = (string)($data['action']??'');
-        $username = (string)($data['username']??'');
+        $action = is_string($data['action'] ?? null) ? (string)$data['action'] : '';
+        $username = is_string($data['username'] ?? null) ? (string)$data['username'] : '';
         $domain = $this->mailboxDomain;
         $address = $username . '@' . $domain;
 
@@ -176,7 +185,7 @@ final class MailboxManager
 
         if ($action === 'create') {
             $hash = password_hash(
-                (string)($data['password']??''),
+                (is_scalar($data['password'] ?? null) ? (string)($data['password'] ?? '') : ''),
                 PASSWORD_ARGON2ID
             );
             $passwdLine = "{$address}:{ARGON2ID}{$hash}\n";
@@ -217,7 +226,7 @@ final class MailboxManager
             }
         } elseif ($action === 'passwd') {
             $hash = password_hash(
-                (string)($data['password']??''),
+                (is_scalar($data['password'] ?? null) ? (string)($data['password'] ?? '') : ''),
                 PASSWORD_ARGON2ID
             );
             $lines = file($passwdFile, FILE_IGNORE_NEW_LINES) ?: [];

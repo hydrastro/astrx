@@ -71,10 +71,10 @@ final class RecoverController extends AbstractController
     {
         $posted = $this->prg->pull($prgToken) ?? [];
 
-        $identifier  = (string) ($posted['username_or_email'] ?? '');
-        $csrfToken   = (string) ($posted['_csrf']             ?? '');
-        $captchaId   = (string) ($posted['captcha_id']        ?? '');
-        $captchaText = (string) ($posted['captcha_text']      ?? '');
+        $identifier  = self::mStr($posted, 'username_or_email', '');
+        $csrfToken   = self::mStr($posted, '_csrf', '');
+        $captchaId   = self::mStr($posted, 'captcha_id', '');
+        $captchaText = self::mStr($posted, 'captcha_text', '');
 
         $csrfResult = $this->csrf->verify(self::FORM, $csrfToken);
         if (!$csrfResult->isOk()) {
@@ -96,10 +96,9 @@ final class RecoverController extends AbstractController
             $recoveryResult->drainTo($this->collector);
             return $this->renderForm();
         }
-
         $userRow = $recoveryResult->unwrap();
         $tokenResult = $this->userService->generateToken(
-            (string) $userRow['id'],
+            (is_scalar($userRow['id']) ? (string)$userRow['id'] : ''),
             UserService::TOKEN_RECOVER,
         );
         $tokenResult->drainTo($this->collector);
@@ -110,8 +109,8 @@ final class RecoverController extends AbstractController
             // /en/user?_token={token}&_uid={user_id}
             // For development: the token link is emitted as a NOTICE diagnostic.
             $link = $this->urlGen->toPage($this->t->t('WORDING_USER')) .
-                    '?_token=' . rawurlencode($tokenData['token']) .
-                    '&_uid=' . rawurlencode($tokenData['user_id']);
+                    '?_token=' . rawurlencode((string)$tokenData['token']) .
+                    '&_uid=' . rawurlencode((string)$tokenData['user_id']);
             // Emit as notice so it shows in the status bar during development
             // (remove / replace with real email sending before production)
             // $this->emitMailerNotice($link); — placeholder

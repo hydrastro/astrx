@@ -95,13 +95,13 @@ final class AdminConfigAccessController extends AbstractController
     private function processForm(string $prgToken): void
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return;
         }
 
-        $section = (string) ($posted['section'] ?? '');
+        $section = self::mStr($posted, 'section', '');
         $result  = match ($section) {
             'grants'           => $this->saveGrants($posted),
             'add_group'        => $this->addGroup($posted),
@@ -157,7 +157,7 @@ final class AdminConfigAccessController extends AbstractController
      */
     private function addGroup(array $p): Result
     {
-        $newGroup = strtoupper(trim((string) ($p['new_group_name'] ?? '')));
+        $newGroup = strtoupper(trim(self::mStr($p, 'new_group_name', '')));
         if ($newGroup === '' || $newGroup === 'ADMIN') {
             return Result::ok(false); // no-op
         }
@@ -180,7 +180,7 @@ final class AdminConfigAccessController extends AbstractController
      */
     private function deleteGroup(array $p): Result
     {
-        $group = strtoupper(trim((string) ($p['delete_group'] ?? '')));
+        $group = strtoupper(trim(self::mStr($p, 'delete_group', '')));
         if ($group === '' || $group === 'ADMIN') {
             return Result::ok(false); // no-op
         }

@@ -19,6 +19,7 @@ use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
+use function AstrX\Support\templateDir;
 
 /**
  * Mutable template variable bag.
@@ -198,25 +199,25 @@ final class DefaultTemplateContext
         }
         $keywords = implode(', ', $keywordParts);
 
-        $cssPath = (string) $this->config->getConfig(
-            'ContentManager',   // ← correct: loaded at the very top of init()
+        $cssPath = $this->config->getConfigString(
+            'ContentManager',
             'css_file',
-            defined('TEMPLATE_DIR') ? TEMPLATE_DIR . 'style.css' : '',
+            templateDir() . 'style.css',
         );
-        $css = ($cssPath !== '' && is_file($cssPath)) ? (string)
-        str_replace(
+        $cssRawMid = ($cssPath !== '' && is_file($cssPath)) ? str_replace(
             array("\r\n", "\r", "\n", "\t", '  ', '    ', '    '),
             '',
             str_replace(
                 ': ',
                 ':',
-                (string) preg_replace(
+                preg_replace(
                     '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
                     '',
                     (string) file_get_contents($cssPath)
-                )
+                ) ?? ''
             )
-        ) : '';
+        ) : null;
+        $css = is_string($cssRawMid) ? $cssRawMid : '';
 
         $this->vars = [
             'lang'         => $this->t->getLocale(),
@@ -229,9 +230,9 @@ final class DefaultTemplateContext
             'include'      => $this->buildIncludePath($page),
             'captcha'      => 'partials/captcha',  // partial name — {{> captcha}} resolves to captcha.html
 
-            'website_name' => (string) $this->config->getConfig('ContentManager', 'website_name', 'AstrX'),
-            'title_url'    => (string) $this->config->getConfig('ContentManager', 'title_url', '/'),
-            'icon'         => (string) $this->config->getConfig('ContentManager', 'icon', '/favicon.ico'),
+            'website_name' => $this->config->getConfigString('ContentManager', 'website_name', 'AstrX'),
+            'title_url'    => $this->config->getConfigString('ContentManager', 'title_url', '/'),
+            'icon'         => $this->config->getConfigString('ContentManager', 'icon', '/favicon.ico'),
 
             'ip'           => (string) $this->request->ip(),
             'css'          => $css,
@@ -286,14 +287,17 @@ final class DefaultTemplateContext
         // DB-driven user nav (populated by ContentManager from navbar id=2).
         // When logged in, use the DB entries. When logged out, use an empty list
         // so the template falls through to the guest link branch.
-        $dbUserNav = $this->vars['db_user_nav'] ?? [];
+        $dbUserNavRaw = $this->vars['db_user_nav'] ?? [];
+        $dbUserNav = is_array($dbUserNavRaw) ? $dbUserNavRaw : [];
+        /** @var list<array<string,mixed>> $dbUserNav */
 
         if ($this->userSession->isLoggedIn() && $dbUserNav !== []) {
             // If on the user section root with no child entry highlighted,
             // force-highlight the first nav entry (User Home).
             $anyUserChildHighlighted = false;
             foreach ($dbUserNav as $i => $e) {
-                if ($i > 0 && $e['highlight']) {
+                /** @var array<string,mixed> $e */
+                if ($i > 0 && !empty($e['highlight'])) {
                     $anyUserChildHighlighted = true;
                     break;
                 }
@@ -302,6 +306,7 @@ final class DefaultTemplateContext
                           && !$anyUserChildHighlighted;
             $processedUserNav = [];
             foreach ($dbUserNav as $i => $e) {
+                /** @var array<string,mixed> $e */
                 if ($i === 0 && $onUserRoot) {
                     $e['highlight'] = true;
                 }
@@ -312,10 +317,12 @@ final class DefaultTemplateContext
             $logoutToken = \AstrX\Controller\LogoutController::getOrCreateToken();
             $navWithToken = [];
             foreach ($processedUserNav as $entry) {
-                if (str_contains((string) ($entry['url'] ?? ''), 'logout')
-                    || str_contains((string) ($entry['name'] ?? ''), 'ogout')) {
-                    $sep = str_contains((string) $entry['url'], '?') ? '&' : '?';
-                    $entry['url'] = $entry['url'] . $sep . '_lt=' . rawurlencode($logoutToken);
+                /** @var array<string,mixed> $entry */
+                $entryUrl  = is_string($entry['url'] ?? null) ? (string)$entry['url'] : '';
+                $entryName = is_string($entry['name'] ?? null) ? (string)$entry['name'] : '';
+                if (str_contains($entryUrl, 'logout') || str_contains($entryName, 'ogout')) {
+                    $sep = str_contains($entryUrl, '?') ? '&' : '?';
+                    $entry['url'] = $entryUrl . $sep . '_lt=' . rawurlencode($logoutToken);
                 }
                 $navWithToken[] = $entry;
             }
@@ -331,23 +338,27 @@ final class DefaultTemplateContext
         $this->vars['is_admin'] = $isAdmin;
 
         if ($isAdmin) {
-            $rawAdminNav = $this->vars['db_admin_nav'] ?? [];
+            $rawAdminNavRaw = $this->vars['db_admin_nav'] ?? [];
+        $rawAdminNav = is_array($rawAdminNavRaw) ? $rawAdminNavRaw : [];
+        /** @var list<array<string,mixed>> $rawAdminNav */
             // Dashboard (admin root, page_id=18) is an ancestor of every admin page,
             // so NavbarHandler always marks it highlighted. Override: highlight Dashboard
             // only when no other admin nav entry is also highlighted (i.e. we are
             // actually on the root itself, not a child page).
             $anyChildHighlighted = false;
             foreach ($rawAdminNav as $i => $entry) {
-                if ($i > 0 && $entry['highlight']) {
+                /** @var array<string,mixed> $entry */
+                if ($i > 0 && !empty($entry['highlight'])) {
                     $anyChildHighlighted = true;
                     break;
                 }
             }
             $adminNav = [];
             foreach ($rawAdminNav as $i => $entry) {
+                /** @var array<string,mixed> $entry */
                 if ($i === 0) {
                     // First entry is always Dashboard
-                    $entry['highlight'] = $entry['highlight'] && !$anyChildHighlighted;
+                    $entry['highlight'] = !empty($entry['highlight']) && !$anyChildHighlighted;
                 }
                 $adminNav[] = $entry;
             }
@@ -357,17 +368,16 @@ final class DefaultTemplateContext
         }
 
         $this->vars['time'] = isset($_SERVER['REQUEST_TIME_FLOAT'])
-            ? round((microtime(true) - (float) $_SERVER['REQUEST_TIME_FLOAT']), 4)
+            ? round((microtime(true) - (is_float($rtf = $_SERVER['REQUEST_TIME_FLOAT']) ? $rtf : 0.0)), 4)
             : null;
 
         // Minimum level — controls which diagnostics appear in the message bar.
-        $minLevelValue = $this->config->getConfig(
+        $minLevelVal = $this->config->getConfigInt(
             'ContentManager',
             'status_bar_min_level',
             DiagnosticLevel::NOTICE->value,
         );
-        assert(is_int($minLevelValue));
-        $minLevel = DiagnosticLevel::from($minLevelValue);
+        $minLevel = DiagnosticLevel::from($minLevelVal);
 
         // Level → CSS class map.
         $levelClasses = $this->config->getConfig(
@@ -412,7 +422,7 @@ final class DefaultTemplateContext
                 'message'     => $entry['message'],
                 'level'       => $levelName,
                 'level_label' => $entry['level_label'],
-                'css_class'   => (string) ($levelClasses[$levelName] ?? 'diag-unknown'),
+                'css_class'   => is_scalar($levelClasses[$levelName] ?? null) ? (string)($levelClasses[$levelName]) : 'diag-unknown',
             ];
         }
 

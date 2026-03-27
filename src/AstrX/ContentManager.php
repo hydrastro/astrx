@@ -31,6 +31,7 @@ use AstrX\Session\SecureSessionHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
+use function AstrX\Support\langDir;
 
 final class ContentManager
 {
@@ -127,24 +128,23 @@ final class ContentManager
 
         $pagesDomain = $this->config->getConfig('ContentManager', 'pages_lang_domain', 'pages');
         assert(is_string($pagesDomain));
-        $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $pagesDomain);
+        $this->translator->loadDomain(langDir(), $pagesDomain);
 
         // Navbar display labels — loaded globally so NavbarHandler can resolve
         // WORDING_ entry names regardless of which page is being rendered.
         $navbarDomain = $this->config->getConfig('ContentManager', 'navbar_lang_domain', 'Navbar');
         assert(is_string($navbarDomain));
-        $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $navbarDomain);
+        $this->translator->loadDomain(langDir(), $navbarDomain);
 
         // Diagnostic messages — loaded into DiagnosticRenderer's own catalog,
         // NOT into the Translator, to prevent the recursion where rendering a
         // MissingTranslationDiagnostic would emit another MissingTranslationDiagnostic.
-        $diagnosticsDomain = $this->config->getConfig('ContentManager', 'diagnostics_lang_domain', 'Diagnostics');
-        assert(is_string($diagnosticsDomain));
+        $diagnosticsDomain = $this->config->getConfigString('ContentManager', 'diagnostics_lang_domain', 'Diagnostics');
         $rendererResult = $this->injector->getClass(DiagnosticRenderer::class);
         if ($rendererResult->isOk()) {
             /** @var DiagnosticRenderer $renderer */
             $renderer = $rendererResult->unwrap();
-            $renderer->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', $diagnosticsDomain);
+            $renderer->loadDomain(langDir(), $diagnosticsDomain);
         }
 
         $this->initPDO();
@@ -191,7 +191,8 @@ final class ContentManager
 
         if ($request->body()->all() !== [] && $request->body()->has('prg_id')) {
             $prgIdResult = $request->body()->getString('prg_id')->drainTo($this->collector);
-            $prgId = $prgIdResult->valueOr(null);
+            $prgIdRaw = $prgIdResult->valueOr(null);
+            $prgId = is_string($prgIdRaw) ? $prgIdRaw : null;
 
             // Comment forms include '_comment=1' in their body — route them through
             // CommentPrgHandler (separate session namespace + _cp query key) so that
@@ -263,19 +264,29 @@ final class ContentManager
         $prgTokenForFiles = $request->query()->get($prgHandler->tokenQueryKey());
         if (is_string($prgTokenForFiles) && $prgTokenForFiles !== '') {
             $peeked = $prgHandler->get($prgTokenForFiles);
-            if (is_array($peeked) && isset($peeked['__files__']) && is_array($peeked['__files__'])) {
-                foreach ($peeked['__files__'] as $fieldName => $meta) {
-                    if (!is_array($meta) || !isset($meta['temp_path'])) { continue; }
-                    if (!file_exists((string) $meta['temp_path'])) { continue; }
-                    $request->files()->set(
-                        (string) $fieldName,
-                        UploadedFile::fromTempPath(
-                            (string) ($meta['client_filename']   ?? ''),
-                            (string) ($meta['client_media_type'] ?? 'application/octet-stream'),
-                            (string)  $meta['temp_path'],
-                            (int)    ($meta['size']              ?? 0),
-                        )
-                    );
+            if (is_array($peeked) && isset($peeked['__files__'])) {
+                $filesRaw = $peeked['__files__'];
+                {
+                    /** @var array<string,array<string,mixed>> $filesArr */
+                    $filesArr = $filesRaw;
+                    foreach ($filesArr as $fieldName => $rawMeta) {
+                        if (!is_array($rawMeta)) { continue; }
+                        $meta = $rawMeta;
+                        if (!isset($meta['temp_path'])) { continue; }
+                        $tmpPathRaw = $meta['temp_path'] ?? '';
+                        if (!is_string($tmpPathRaw) || !file_exists($tmpPathRaw)) { continue; }
+                        $tmpPath   = $tmpPathRaw;
+                        $clientFnR = $meta['client_filename'] ?? '';
+                        $clientFn  = is_string($clientFnR) ? $clientFnR : '';
+                        $mediaTypeR = $meta['client_media_type'] ?? 'application/octet-stream';
+                        $mediaType = is_string($mediaTypeR) ? $mediaTypeR : 'application/octet-stream';
+                        $szR = $meta['size'] ?? 0;
+                        $sz  = is_int($szR) ? $szR : 0;
+                        $request->files()->set(
+                            (string)$fieldName,
+                            UploadedFile::fromTempPath($clientFn, $mediaType, $tmpPath, $sz),
+                        );
+                    }
                 }
             }
         }
@@ -319,9 +330,9 @@ final class ContentManager
             // resolve the login URL properly through the translator
             $loginSlug  = $this->translator->t('WORDING_LOGIN', fallback: 'login');
             $locale     = $this->translator->getLocale();
-            $basePath   = (string) $this->config->getConfig('Routing', 'base_path', '/');
-            $urlRewrite = (bool)   $this->config->getConfig('Routing', 'url_rewrite', true);
-            $localeKey  = (string) $this->config->getConfig('Routing', 'locale_key', 'lang');
+            $basePath   = $this->config->getConfigString('Routing', 'base_path', '/');
+            $urlRewrite = $this->config->getConfigBool('Routing', 'url_rewrite', true);
+            $localeKey  = $this->config->getConfigString('Routing', 'locale_key', 'lang');
             if ($urlRewrite) {
                 $loginUrl = rtrim($basePath, '/') . '/' . $locale . '/' . $loginSlug;
             } else {
@@ -338,7 +349,7 @@ final class ContentManager
         // e.g. login → ancestor 'user' → loads User.en.php automatically.
         // Must happen before DefaultTemplateContext::buildBase() so that title/description
         // and keyword translations are already in the catalog.
-        $langDir = defined('LANG_DIR') ? LANG_DIR : '';
+        $langDir = langDir();
 
         // Ancestors first (most general → most specific), then the page itself last
         // so the page's own domain wins on any key conflict.
@@ -373,7 +384,7 @@ final class ContentManager
 
         // Populate navbar. Failure is non-fatal — the template renders with an
         // empty navbar rather than taking down the whole page.
-        $navbarId = (int) $this->config->getConfig('ContentManager', 'public_navbar_id', 1);
+        $navbarId = $this->config->getConfigInt('ContentManager', 'public_navbar_id', 1);
         $navbarResult = $this->injector->createClass(NavbarHandler::class)
             ->drainTo($this->collector);
         if ($navbarResult->isOk()) {
@@ -384,8 +395,8 @@ final class ContentManager
             // User navbar (id=2) and admin navbar (id=3) are also DB-driven.
             // DefaultTemplateContext::finalise() reads these from ctx vars instead of
             // hardcoding the entries, so the admin can manage them via the navbar editor.
-            $userNavbarId  = (int) $this->config->getConfig('ContentManager', 'user_navbar_id',  2);
-            $adminNavbarId = (int) $this->config->getConfig('ContentManager', 'admin_navbar_id', 3);
+            $userNavbarId  = $this->config->getConfigInt('ContentManager', 'user_navbar_id',  2);
+            $adminNavbarId = $this->config->getConfigInt('ContentManager', 'admin_navbar_id', 3);
             $ctx->set('db_user_nav',  $navbarHandler->getNavbarEntries($userNavbarId,  $page->ancestors));
             $ctx->set('db_admin_nav', $navbarHandler->getNavbarEntries($adminNavbarId, $page->ancestors));
         }
@@ -420,7 +431,7 @@ final class ContentManager
         if ($page->comments) {
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
-            $this->translator->loadDomain(defined('LANG_DIR') ? LANG_DIR : '', 'Comment');
+            $this->translator->loadDomain(langDir(), 'Comment');
             $commentFqcn   = 'AstrX\\Controller\\CommentController';
             if (class_exists($commentFqcn)) {
                 $commentResult = $this->injector->createClass($commentFqcn)
@@ -448,7 +459,7 @@ final class ContentManager
 
             $templateName = $page->templateFileName !== ''
                 ? $page->templateFileName
-                : (string) $this->config->getConfig('ContentManager', 'default_template', 'default');
+                : $this->config->getConfigString('ContentManager', 'default_template', 'default');
 
             // Resolve deferred pagination URLs (SubPageState + CommentState → URLs).
             // Must happen before comments are pre-rendered because comments.html
@@ -512,7 +523,8 @@ final class ContentManager
         $sidCandidate = null;
 
         if ($urlRewrite) {
-            $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+            $uriRaw = $_SERVER['REQUEST_URI'] ?? '/';
+            $requestUri = is_string($uriRaw) ? $uriRaw : '/';
             $stack      = UrlStack::fromRequest($requestUri, $basePath);
 
             $a = $stack->pop();

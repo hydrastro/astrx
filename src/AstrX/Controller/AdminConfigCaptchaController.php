@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
+use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaRenderer;
 use AstrX\Captcha\CaptchaType;
@@ -92,13 +93,13 @@ final class AdminConfigCaptchaController extends AbstractController
     private function processForm(string $prgToken): string
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return '';
         }
 
-        $section = (string) ($posted['section'] ?? '');
+        $section = self::mStr($posted, 'section', '');
 
         if ($section === 'preview') {
             // Render a preview image with the posted settings WITHOUT saving.
@@ -133,7 +134,7 @@ final class AdminConfigCaptchaController extends AbstractController
         return $this->writer->write('Captcha', array_merge(
             $this->loadFullCaptchaConfig(),
             ['CaptchaService' => [
-                'captcha_expiration' => max(60, (int) ($p['captcha_expiration'] ?? 600)),
+                'captcha_expiration' => max(60, self::mInt($p, 'captcha_expiration', 600)),
             ]]
         ));
     }
@@ -176,7 +177,7 @@ final class AdminConfigCaptchaController extends AbstractController
 
         // Use a simple test string as the preview text.
         $text = substr(str_shuffle('ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'), 0,
-                       max(1, (int) ($cfg['captcha_length'] ?? 5)));
+                       max(1, self::mInt($cfg, 'captcha_length', 5)));
         return $renderer->render($text);
     }
 
@@ -187,33 +188,33 @@ final class AdminConfigCaptchaController extends AbstractController
     private function rendererArrayFrom(array $p): array
     {
         return [
-            'image_width'                 => max(1, (int) ($p['image_width']  ?? 1)),
-            'image_height'                => max(1, (int) ($p['image_height'] ?? 1)),
-            'background_color'            => $this->sanitiseHex((string) ($p['background_color'] ?? '000000')),
-            'text_color'                  => $this->sanitiseHex((string) ($p['text_color']       ?? 'ffffff')),
-            'lines_color'                 => $this->sanitiseHex((string) ($p['lines_color']      ?? 'ffffff')),
-            'dots_color'                  => $this->sanitiseHex((string) ($p['dots_color']       ?? 'ffffff')),
-            'text_color_random'           => !empty($p['text_color_random']),
-            'lines_color_random'          => !empty($p['lines_color_random']),
-            'dots_color_random'           => !empty($p['dots_color_random']),
-            'lines_start_from_border'     => !empty($p['lines_start_from_border']),
-            'lines_number'                => max(0, (int) ($p['lines_number'] ?? 10)),
-            'dots_number'                 => max(0, (int) ($p['dots_number']  ?? 100)),
-            'char_list'                   => trim((string) ($p['char_list']  ?? '')),
-            'captcha_length'              => max(1, (int) ($p['captcha_length'] ?? 5)),
+            'image_width'                 => max(1, self::mInt($p, 'image_width', 1)),
+            'image_height'                => max(1, self::mInt($p, 'image_height', 1)),
+            'background_color'            => $this->sanitiseHex(self::mStr($p, 'background_color', '000000')),
+            'text_color'                  => $this->sanitiseHex(self::mStr($p, 'text_color', 'ffffff')),
+            'lines_color'                 => $this->sanitiseHex(self::mStr($p, 'lines_color', 'ffffff')),
+            'dots_color'                  => $this->sanitiseHex(self::mStr($p, 'dots_color', 'ffffff')),
+            'text_color_random'           => self::mBool($p, 'text_color_random'),
+            'lines_color_random'          => self::mBool($p, 'lines_color_random'),
+            'dots_color_random'           => self::mBool($p, 'dots_color_random'),
+            'lines_start_from_border'     => self::mBool($p, 'lines_start_from_border'),
+            'lines_number'                => max(0, self::mInt($p, 'lines_number', 10)),
+            'dots_number'                 => max(0, self::mInt($p, 'dots_number', 100)),
+            'char_list'                   => trim(self::mStr($p, 'char_list', '')),
+            'captcha_length'              => max(1, self::mInt($p, 'captcha_length', 5)),
             'captcha_type'                => (int) ($p['captcha_type'] ?? CaptchaType::MEDIUM->value),
-            'font_size'                   => max(8, (int) ($p['font_size'] ?? 20)),
-            'font_file'                   => trim((string) ($p['font_file'] ?? '')),
-            'font_min_distance'           => (int) ($p['font_min_distance'] ?? 0),
-            'font_max_distance'           => (int) ($p['font_max_distance'] ?? 10),
+            'font_size'                   => max(8, self::mInt($p, 'font_size', 20)),
+            'font_file'                   => trim(self::mStr($p, 'font_file', '')),
+            'font_min_distance'           => self::mInt($p, 'font_min_distance', 0),
+            'font_max_distance'           => self::mInt($p, 'font_max_distance', 10),
             'font_min_angle'              => (int) ($p['font_min_angle'] ?? -45),
-            'font_max_angle'              => (int) ($p['font_max_angle'] ?? 45),
-            'font_x_border'               => max(0, (int) ($p['font_x_border'] ?? 5)),
-            'font_y_border'               => max(0, (int) ($p['font_y_border'] ?? 5)),
-            'trace_line_color'            => $this->sanitiseHex((string) ($p['trace_line_color'] ?? 'ff0000')),
-            'non_captcha_char_number'     => max(0, (int) ($p['non_captcha_char_number'] ?? 5)),
-            'use_border_linear_randomness'=> !empty($p['use_border_linear_randomness']),
-            'max_rounds_number'           => max(100, (int) ($p['max_rounds_number'] ?? 5000)),
+            'font_max_angle'              => self::mInt($p, 'font_max_angle', 45),
+            'font_x_border'               => max(0, self::mInt($p, 'font_x_border', 5)),
+            'font_y_border'               => max(0, self::mInt($p, 'font_y_border', 5)),
+            'trace_line_color'            => $this->sanitiseHex(self::mStr($p, 'trace_line_color', 'ff0000')),
+            'non_captcha_char_number'     => max(0, self::mInt($p, 'non_captcha_char_number', 5)),
+            'use_border_linear_randomness'=> self::mBool($p, 'use_border_linear_randomness'),
+            'max_rounds_number'           => max(100, self::mInt($p, 'max_rounds_number', 5000)),
         ];
     }
 
@@ -239,10 +240,12 @@ final class AdminConfigCaptchaController extends AbstractController
     /** @return array<string, array<string, mixed>> */
     private function loadFullCaptchaConfig(): array
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'Captcha.config.php';
+        $path = (configDir() . 'Captcha.config.php');
         if (!is_file($path)) { return []; }
         $loaded = @include $path;
-        return is_array($loaded) ? $loaded : [];
+        if (!is_array($loaded)) { return []; }
+        /** @var array<string,array<string,mixed>> $loaded */
+        return $loaded;
     }
 
     // ── Context builder ───────────────────────────────────────────────────────
@@ -254,7 +257,7 @@ final class AdminConfigCaptchaController extends AbstractController
 
         // Live preview: render with current config.
         $previewText = substr(str_shuffle('ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'), 0,
-                              max(1, (int) $this->config->getConfig('CaptchaRenderer', 'captcha_length', 5)));
+                              max(1, $this->config->getConfigInt('CaptchaRenderer', 'captcha_length', 5)));
         $previewB64  = $this->renderer->render($previewText);
 
         // Replace with preview image from a recent preview-only POST.
@@ -264,7 +267,7 @@ final class AdminConfigCaptchaController extends AbstractController
         }
 
         // Difficulty options
-        $currentType = (int) $this->config->getConfig('CaptchaRenderer', 'captcha_type', CaptchaType::MEDIUM->value);
+        $currentType = $this->config->getConfigInt('CaptchaRenderer', 'captcha_type', CaptchaType::MEDIUM->value);
         $typeOptions = [];
         foreach (CaptchaType::cases() as $type) {
             $typeOptions[] = [
@@ -283,7 +286,7 @@ final class AdminConfigCaptchaController extends AbstractController
         // Per-context difficulty option lists
         foreach (['login', 'register', 'recover', 'comment'] as $ctx) {
             $cfgKey  = $ctx . '_captcha_difficulty';
-            $current = (int) $this->config->getConfig('CaptchaRenderer', $cfgKey, CaptchaType::MEDIUM->value);
+            $current = $this->config->getConfigInt('CaptchaRenderer', $cfgKey, CaptchaType::MEDIUM->value);
             $opts    = [];
             foreach (CaptchaType::cases() as $type) {
                 $opts[] = ['value' => $type->value, 'label' => $type->name, 'selected' => $type->value === $current];
@@ -292,7 +295,7 @@ final class AdminConfigCaptchaController extends AbstractController
         }
 
         // Service
-        $this->ctx->set('cfg_captcha_expiration', (int) $this->config->getConfig('CaptchaService', 'captcha_expiration', 600));
+        $this->ctx->set('cfg_captcha_expiration', $this->config->getConfigInt('CaptchaService', 'captcha_expiration', 600));
 
         // Renderer
         foreach ([

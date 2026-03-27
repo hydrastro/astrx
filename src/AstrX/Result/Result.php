@@ -41,13 +41,17 @@ final class Result
      */
     public static function ok(mixed $value, ?Diagnostics $diagnostics = null): self
     {
-        return new self($value, self::sentinel(), $diagnostics ?? Diagnostics::empty(), true);
+        /** @var self<TValue> $result */
+        $result = new self($value, self::sentinel(), $diagnostics ?? Diagnostics::empty(), true);
+        return $result;
     }
 
     /** @return self<never> */
     public static function err(mixed $error, ?Diagnostics $diagnostics = null): self
     {
-        return new self(self::sentinel(), $error, $diagnostics ?? Diagnostics::empty(), false);
+        /** @var self<never> $result */
+        $result = new self(self::sentinel(), $error, $diagnostics ?? Diagnostics::empty(), false);
+        return $result;
     }
 
     public function isOk(): bool

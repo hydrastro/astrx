@@ -31,19 +31,20 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) {
+        if ($row === false || !is_array($row)) {
             return null;
         }
+        /** @var array<string,mixed> $row */
 
-        $pid = (int)$row['id'];
+        $pid = (is_int($row['id']) ? $row['id'] : 0);
         $anc = $this->getPageAncestors($pid);
         $kw  = $this->getPageKeywords($pid);
 
         return new Page(
             id: $pid,
-            urlId: (string)$row['url_id'],
+            urlId: (is_scalar($row['url_id']) ? (string)$row['url_id'] : ''),
             i18n: (bool)$row['i18n'],
-            fileName: (string)$row['file_name'],
+            fileName: (is_scalar($row['file_name']) ? (string)$row['file_name'] : ''),
             template: (bool)$row['template'],
             controller: (bool)$row['controller'],
             hidden: (bool)$row['hidden'],
@@ -51,10 +52,10 @@ final class PageHandler
             ancestors: $anc,
             index: (bool)$row['index'],
             follow: (bool)$row['follow'],
-            title: (string)$row['title'],
-            description: (string)$row['description'],
+            title: (is_scalar($row['title']) ? (string)$row['title'] : ''),
+            description: (is_scalar($row['description']) ? (string)$row['description'] : ''),
             keywords: $kw,
-            templateFileName: (string)$row['template_file_name'],
+            templateFileName: (is_scalar($row['template_file_name']) ? (string)$row['template_file_name'] : ''),
         );
     }
 
@@ -63,10 +64,14 @@ final class PageHandler
         $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `url_id` = :u");
         $stmt->execute(['u' => $urlId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false || !isset($row['id'])) {
+        if ($row === false || !is_array($row)) {
             return null;
         }
-        return (int)$row['id'];
+        /** @var array<string,mixed> $row */
+        if (!isset($row['id'])) {
+            return null;
+        }
+        return (is_int($row['id']) ? $row['id'] : 0);
     }
 
     /** @return list<array{id:int,url_id:string}> */
@@ -75,12 +80,13 @@ final class PageHandler
         $stmt = $this->pdo->prepare("SELECT `id`, `url_id` FROM `page` WHERE `i18n` = :i18n");
         $stmt->execute(['i18n' => true]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        /** @var list<array<string,mixed>> $rows */
 
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
-                'id' => (int)($r['id'] ?? 0),
-                'url_id' => (string)($r['url_id'] ?? ''),
+                'id' => (is_int($r['id']) ? $r['id'] : 0),
+                'url_id' => (is_scalar($r['url_id']) ? (string)$r['url_id'] : ''),
             ];
         }
         return $out;
@@ -97,6 +103,7 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        /** @var list<array<string,mixed>> $rows */
         if ($rows === []) {
             return [];
         }
@@ -104,10 +111,10 @@ final class PageHandler
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
-                'id'        => (int)($r['id'] ?? 0),
-                'url_id'    => (string)($r['url_id'] ?? ''),
+                'id'        => (is_int($r['id']) ? $r['id'] : 0),
+                'url_id'    => (is_scalar($r['url_id']) ? (string)$r['url_id'] : ''),
                 'i18n'      => (bool)($r['i18n'] ?? false),
-                'file_name' => (string)($r['file_name'] ?? ''),
+                'file_name' => (is_scalar($r['file_name']) ? (string)$r['file_name'] : ''),
             ];
         }
         return $out;
@@ -124,12 +131,13 @@ final class PageHandler
         );
         $stmt->execute(['id' => $id]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        /** @var list<array<string,mixed>> $rows */
 
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
-                'keyword' => (string)($r['keyword'] ?? ''),
-                'i18n' => $r['i18n'] ?? 0,
+                'keyword' => (is_scalar($r['keyword']) ? (string)$r['keyword'] : ''),
+                'i18n' => is_bool($r['i18n'] ?? null) ? (int)$r['i18n'] : (is_int($r['i18n'] ?? null) ? $r['i18n'] : 0),
             ];
         }
         return $out;
@@ -155,6 +163,7 @@ final class PageHandler
         );
         $stmt->execute([':parent' => $parentId, ':parent2' => $parentId, ':slug' => $slug]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        /** @var list<array<string,mixed>> $rows */
 
         if ($rows === []) {
             return null;
@@ -165,7 +174,7 @@ final class PageHandler
         // exactly one ancestor that is itself a descendant of $parentId:
         // $parentId itself.
         foreach ($rows as $row) {
-            $id = (int) $row['id'];
+            $idV = $row['id'] ?? 0; $id = is_int($idV) ? $idV : 0;
             $depthStmt = $this->pdo->prepare(
                 "SELECT COUNT(*) AS cnt
                    FROM `page_closure`
@@ -178,7 +187,7 @@ final class PageHandler
             $depthStmt->execute([':desc' => $id, ':desc2' => $id, ':anc' => $parentId]);
             $depthRow = $depthStmt->fetch(PDO::FETCH_ASSOC);
             // cnt=1 means only $parentId sits between root and this page → direct child
-            if (is_array($depthRow) && (int) $depthRow['cnt'] === 1) {
+            if (is_array($depthRow) && (is_int($depthRow['cnt'] ?? null) ? $depthRow['cnt'] : 0) === 1) {
                 return $this->getPage($id);
             }
         }

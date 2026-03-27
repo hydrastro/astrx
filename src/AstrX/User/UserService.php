@@ -162,11 +162,12 @@ final class UserService
             if (!$findResult->isOk()) {
                 return Result::ok(true); // safe default: show captcha on DB error
             }
-            $row = $findResult->unwrap();
-            if ($row === null) {
+            /** @var array<string,mixed>|null $row */
+                        $row = $findResult->unwrap();
+                        if ($row === null) {
                 return Result::ok(false); // user not found — don't reveal existence
             }
-            return Result::ok((int) $row['login_attempts'] >= $this->loginCaptchaAttempts);
+            return Result::ok((is_int($row['login_attempts']) ? $row['login_attempts'] : 0) >= $this->loginCaptchaAttempts);
         }
 
         return Result::ok(false);
@@ -200,12 +201,12 @@ final class UserService
             return Result::err(null, $findResult->diagnostics());
         }
 
+        /** @var array<string,mixed>|null $row */
         $row = $findResult->unwrap();
-
-        if ($row === null || !password_verify($password, (string) $row['password'])) {
+        if ($row === null || !password_verify($password, (is_scalar($row['password']) ? (string)$row['password'] : ''))) {
             // Increment attempts if we found a user (don't leak existence otherwise)
             if ($row !== null) {
-                $this->repo->updateLoginAttempts((string) $row['id'], +1);
+                $this->repo->updateLoginAttempts((is_scalar($row['id']) ? (string)$row['id'] : ''), +1);
             }
             return $this->opErr('login_failed');
         }
@@ -215,7 +216,7 @@ final class UserService
         }
 
         // Success: update DB, set session
-        $hexId = (string) $row['id'];
+        $hexId = (is_scalar($row['id']) ? (string)$row['id'] : '');
         $this->repo->updateLoginAttempts($hexId, -1); // reset to 0
         $this->repo->updateLastAccess($hexId);
 
@@ -378,12 +379,15 @@ final class UserService
         // Check if a valid non-expired token of the same type already exists.
         // Re-issuing too quickly wastes the user's inbox and indicates abuse.
         $existing = $this->repo->findTokenData($hexId);
-        if ($existing->isOk() && $existing->unwrap() !== null) {
-            $row = $existing->unwrap();
+        /** @var array<string,mixed>|null $existingToken */
+        $existingToken = $existing->isOk() ? $existing->unwrap() : null;
+        if ($existingToken !== null) {
+            /** @var array<string,mixed> $row */
+            $row = $existingToken;
             if (
-                (int) $row['token_type']  === $tokenType &&
-                (int) $row['token_used']  === 0 &&
-                (int) $row['token_expires_at'] > time()
+                (is_int($row['token_type']) ? $row['token_type'] : 0)  === $tokenType &&
+                (is_int($row['token_used']) ? $row['token_used'] : 0)  === 0 &&
+                (is_int($row['token_expires_at']) ? $row['token_expires_at'] : 0) > time()
             ) {
                 return $this->opErr('token_already_sent');
             }
@@ -420,25 +424,25 @@ final class UserService
             return Result::err(null, $findResult->diagnostics());
         }
 
+        /** @var array<string,mixed>|null $row */
         $row = $findResult->unwrap();
-
         if ($row === null || (bool) $row['deleted']) {
             return $this->opErr('token_not_found');
         }
 
         if (
             $row['token_hash'] === null ||
-            (int) $row['token_used'] === 1 ||
-            !password_verify($rawToken, (string) $row['token_hash'])
+            (is_int($row['token_used']) ? $row['token_used'] : 0) === 1 ||
+            !password_verify($rawToken, (is_scalar($row['token_hash']) ? (string)$row['token_hash'] : ''))
         ) {
             return $this->opErr('token_not_found');
         }
 
-        if ((int) $row['token_expires_at'] < time()) {
+        if ((is_int($row['token_expires_at']) ? $row['token_expires_at'] : 0) < time()) {
             return $this->opErr('token_expired');
         }
 
-        $tokenType = (int) $row['token_type'];
+        $tokenType = (is_int($row['token_type']) ? $row['token_type'] : 0);
 
         // Mark token as used
         $this->repo->markTokenUsed($hexId);
@@ -481,8 +485,13 @@ final class UserService
             if (!$findResult->isOk()) {
                 return Result::err(null, $findResult->diagnostics());
             }
+            /** @var array<string,mixed>|null $row */
             $row = $findResult->unwrap();
-            if ($row === null || !password_verify($oldPassword, (string) ($row['password'] ?? ''))) {
+        if ($row === null) {
+                return $this->opErr('wrong_password');
+            }
+            $pwHash = is_scalar($row['password']) ? (string)$row['password'] : '';
+        if (!password_verify($oldPassword, $pwHash)) {
                 return $this->opErr('wrong_password');
             }
         }
@@ -562,12 +571,14 @@ final class UserService
                 return Result::err(null, $hashResult->diagnostics());
             }
             $hash = $hashResult->unwrap();
-            if ($hash === null || !password_verify($password, $hash)) {
+            if ($hash === null || !password_verify((string)$hash, $password)) {
                 return $this->opErr('wrong_password');
             }
         }
 
-        return $this->repo->softDelete($hexId);
+        /** @var \AstrX\Result\Result<bool> $deleteResult */
+        $deleteResult = $this->repo->softDelete($hexId);
+        return $deleteResult;
     }
 
     /**
@@ -586,6 +597,8 @@ final class UserService
         if (!$findResult->isOk()) {
             return Result::err(null, $findResult->diagnostics());
         }
+
+        /** @var array<string,mixed>|null $row */
 
         $row = $findResult->unwrap();
         if ($row === null) {
@@ -610,8 +623,9 @@ final class UserService
         if (!$result->isOk() || $result->unwrap() === null) {
             return false;
         }
+        /** @var array<string,mixed> $row */
         $row = $result->unwrap();
-        return (int) $row['token_type'] === $tokenType && (int) $row['token_used'] === 1;
+        return (is_int($row['token_type']) ? $row['token_type'] : 0) === $tokenType && (is_int($row['token_used']) ? $row['token_used'] : 0) === 1;
     }
 
     // -------------------------------------------------------------------------
@@ -658,9 +672,10 @@ final class UserService
             if (!(bool) ($rule['enabled'] ?? false)) {
                 continue;
             }
-            $regex       = (string) ($rule['regex'] ?? '');
+            /** @var array<string,mixed> $rule */
+            $regex       = is_string($rule['regex'] ?? null) ? (string)$rule['regex'] : '';
             $checkingFor = (bool) ($rule['checking_for'] ?? true);
-            $message     = (string) ($rule['message'] ?? '');
+            $message     = is_string($rule['message'] ?? null) ? (string)$rule['message'] : '';
             if ($regex === '') {
                 continue;
             }

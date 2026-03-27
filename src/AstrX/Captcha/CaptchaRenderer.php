@@ -467,6 +467,7 @@ final class CaptchaRenderer
     {
         $box = imagettfbbox($this->fontSize, 0, $this->fontFile, $text);
         assert($box !== false);
+        /** @var array<int,int> $box */
         return $box;
     }
 

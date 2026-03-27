@@ -111,7 +111,7 @@ final class UserController extends AbstractController
 
         $username    = is_string($posted['username']    ?? null) ? (string) $posted['username']    : '';
         $password    = is_string($posted['password']    ?? null) ? (string) $posted['password']    : '';
-        $rememberMe  = !empty($posted['remember_me']);
+        $rememberMe  = self::mBool($posted, 'remember_me');
         $csrfToken   = is_string($posted['_csrf']       ?? null) ? (string) $posted['_csrf']       : '';
         $captchaId   = is_string($posted['captcha_id']  ?? null) ? (string) $posted['captcha_id']  : '';
         $captchaText = is_string($posted['captcha_text']?? null) ? (string) $posted['captcha_text']: '';
@@ -153,7 +153,7 @@ final class UserController extends AbstractController
         $captchaId = ''; $captchaB64 = '';
         if ($showCaptcha) {
             $loginDifficulty = CaptchaType::from(
-                (int) $this->config->getConfig('CaptchaRenderer', 'login_captcha_difficulty', CaptchaType::MEDIUM->value)
+                $this->config->getConfigInt('CaptchaRenderer', 'login_captcha_difficulty', CaptchaType::MEDIUM->value)
             );
             $gen = $this->captchaService->generateWithType($loginDifficulty);
             $gen->drainTo($this->collector);

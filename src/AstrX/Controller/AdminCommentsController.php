@@ -88,13 +88,13 @@ final class AdminCommentsController extends AbstractController
     private function processForm(string $prgToken, bool $canModerate, bool $canConfig): string
     {
         $posted     = $this->prg->pull($prgToken) ?? [];
-        $csrfResult = $this->csrf->verify(self::FORM, (string) ($posted['_csrf'] ?? ''));
+        $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
             return '';
         }
 
-        $section = (string) ($posted['section'] ?? 'moderation');
+        $section = self::mStr($posted, 'section', 'moderation');
 
         if ($section === 'moderation' && $canModerate) {
             $this->processModeration($posted);
@@ -115,17 +115,17 @@ final class AdminCommentsController extends AbstractController
     /** @param array<string, mixed> $posted */
     private function processModeration(array $posted): void
     {
-        $action = (string) ($posted['action'] ?? '');
-        $id     = (int)    ($posted['id']     ?? 0);
+        $action = self::mStr($posted, 'action', '');
+        $id     = self::mInt($posted, 'id', 0);
 
         switch ($action) {
             case 'update':
-                $content = trim((string) ($posted['content'] ?? ''));
-                $name    = trim((string) ($posted['name']    ?? ''));
-                $email   = ($posted['email']    ?? '') !== '' ? trim((string) $posted['email'])    : null;
-                $replyTo = ($posted['reply_to'] ?? '') !== '' ? (int)  $posted['reply_to'] : null;
-                $hidden  = !empty($posted['hidden']);
-                $flagged = !empty($posted['flagged']);
+                $content = trim(self::mStr($posted, 'content', ''));
+                $name    = trim(self::mStr($posted, 'name', ''));
+                $email   = ($posted['email']    ?? '') !== '' ? trim((is_scalar($posted['email']) ? (string)$posted['email'] : ''))    : null;
+                $replyTo = ($posted['reply_to'] ?? '') !== '' ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
+                $hidden  = self::mBool($posted, 'hidden');
+                $flagged = self::mBool($posted, 'flagged');
                 if ($content !== '') {
                     $r = $this->comments->update($id, $content, $name, $email, $replyTo, $hidden, $flagged);
                     $r->drainTo($this->collector);
@@ -161,11 +161,11 @@ final class AdminCommentsController extends AbstractController
     private function saveGeneral(array $p): Result
     {
         $current = $this->loadCurrent();
-        $current['comments_per_page']  = max(1, (int) ($p['comments_per_page'] ?? 20));
-        $current['allow_replies']      = !empty($p['allow_replies']);
-        $current['require_email']      = !empty($p['require_email']);
-        $current['minimum_flood_secs'] = max(0, (int) ($p['minimum_flood_secs'] ?? 10));
-        $current['antispam_time_secs'] = max(0, (int) ($p['antispam_time_secs'] ?? 30));
+        $current['comments_per_page']  = max(1, self::mInt($p, 'comments_per_page', 20));
+        $current['allow_replies']      = self::mBool($p, 'allow_replies');
+        $current['require_email']      = self::mBool($p, 'require_email');
+        $current['minimum_flood_secs'] = max(0, self::mInt($p, 'minimum_flood_secs', 10));
+        $current['antispam_time_secs'] = max(0, self::mInt($p, 'antispam_time_secs', 30));
         return $this->writer->write('Comment', ['CommentService' => $current]);
     }
 
@@ -189,7 +189,7 @@ final class AdminCommentsController extends AbstractController
             $antispam[$k] = [
                 'regex'   => $pattern,
                 'enabled' => isset($enabled[$i]),
-                'message' => trim((string) ($messages[$i] ?? '')),
+                'message' => trim(is_scalar($messages[$i] ?? null) ? (string)($messages[$i] ?? '') : ''),
             ];
         }
         $current['antispam_regex'] = $antispam;
@@ -213,10 +213,11 @@ final class AdminCommentsController extends AbstractController
             $qPageId  = $this->request->query()->get('page_id');
             $qFlagged = $this->request->query()->get('flagged');
             $qHidden  = $this->request->query()->get('show_hidden');
-            $editId   = (int) ($this->request->query()->get('edit') ?? 0);
+            $editRaw  = $this->request->query()->get('edit');
+        $editId   = is_int($editRaw) ? $editRaw : (int)($editRaw ?? 0);
 
             $filters = [];
-            if ($qPageId  !== null)   { $filters['page_id'] = (int) $qPageId; }
+            if ($qPageId !== null) { $filters['page_id'] = is_int($qPageId) ? $qPageId : (int)$qPageId; }
             if ($qFlagged === '1')    { $filters['flagged']  = 1; }
             if ($qHidden  === '0')    { $filters['hidden']   = 0; }
             elseif ($qHidden === '1') { $filters['hidden']   = 1; }
@@ -227,7 +228,7 @@ final class AdminCommentsController extends AbstractController
 
             $commentList = [];
             foreach ($rawList as $row) {
-                $row['editing'] = ($editId > 0 && (int) $row['id'] === $editId) ? [$row] : false;
+                $row['editing'] = ($editId > 0 && (is_int($row['id']) ? $row['id'] : 0) === $editId) ? [$row] : false;
                 $commentList[]  = $row;
             }
 
@@ -247,16 +248,16 @@ final class AdminCommentsController extends AbstractController
             foreach ((array) ($current['antispam_regex'] ?? []) as $key => $rule) {
                 $antispamList[] = [
                     'key'     => $key,
-                    'regex'   => (string) ($rule['regex']   ?? ''),
-                    'enabled' => (bool)   ($rule['enabled'] ?? true),
-                    'message' => (string) ($rule['message'] ?? ''),
+                    'regex'   => self::mStr($rule, 'regex', ''),
+                    'enabled' => is_array($rule) ? !empty($rule['enabled']) : true,
+                    'message' => self::mStr($rule, 'message', ''),
                 ];
             }
-            $this->ctx->set('cfg_comments_per_page',   (int)  ($current['comments_per_page']  ?? 20));
+            $this->ctx->set('cfg_comments_per_page',   self::mInt($current, 'comments_per_page', 20));
             $this->ctx->set('cfg_allow_replies',       (bool) ($current['allow_replies']      ?? true));
-            $this->ctx->set('cfg_require_email',       (bool) ($current['require_email']      ?? false));
-            $this->ctx->set('cfg_minimum_flood_secs',  (int)  ($current['minimum_flood_secs'] ?? 10));
-            $this->ctx->set('cfg_antispam_time_secs',  (int)  ($current['antispam_time_secs'] ?? 30));
+            $this->ctx->set('cfg_require_email',       self::mBool($current, 'require_email'));
+            $this->ctx->set('cfg_minimum_flood_secs',  self::mInt($current, 'minimum_flood_secs', 10));
+            $this->ctx->set('cfg_antispam_time_secs',  self::mInt($current, 'antispam_time_secs', 30));
             $this->ctx->set('antispam_list',           $antispamList);
             $this->ctx->set('has_antispam',            $antispamList !== []);
         }
@@ -272,9 +273,9 @@ final class AdminCommentsController extends AbstractController
         $pageId  = $this->request->query()->get('page_id');
         $flagged = $this->request->query()->get('flagged');
         $hidden  = $this->request->query()->get('show_hidden');
-        if ($pageId  !== null) { $parts[] = 'page_id='     . rawurlencode($pageId); }
-        if ($flagged !== null) { $parts[] = 'flagged='     . rawurlencode($flagged); }
-        if ($hidden  !== null) { $parts[] = 'show_hidden=' . rawurlencode($hidden); }
+        if ($pageId  !== null) { $parts[] = 'page_id='     . rawurlencode(is_scalar($pageId) ? (string)$pageId : ''); }
+        if ($flagged !== null) { $parts[] = 'flagged='     . rawurlencode(is_scalar($flagged) ? (string)$flagged : ''); }
+        if ($hidden  !== null) { $parts[] = 'show_hidden=' . rawurlencode(is_scalar($hidden) ? (string)$hidden : ''); }
         return $parts !== [] ? '?' . implode('&', $parts) : '';
     }
 

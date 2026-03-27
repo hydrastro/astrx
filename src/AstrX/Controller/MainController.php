@@ -35,12 +35,12 @@ final class MainController extends AbstractController
     public function handle(): Result
     {
         // --- Config ----------------------------------------------------------
-        $defaultPerPage    = (int)  $this->config->getConfig('News', 'per_page',    20);
-        $defaultDescending = (bool) $this->config->getConfig('News', 'descending',  true);
-        $pageWindow        = (int)  $this->config->getConfig('News', 'page_window', 3);
-        $pnKey             = (string) $this->config->getConfig('News', 'pn_key',    'pn');
-        $showKey           = (string) $this->config->getConfig('News', 'show_key',  'show');
-        $orderKey          = (string) $this->config->getConfig('News', 'order_key', 'order');
+        $defaultPerPage    = $this->config->getConfigInt('News', 'per_page',    20);
+        $defaultDescending = $this->config->getConfigBool('News', 'descending',  true);
+        $pageWindow        = $this->config->getConfigInt('News', 'page_window', 3);
+        $pnKey             = $this->config->getConfigString('News', 'pn_key',    'pn');
+        $showKey           = $this->config->getConfigString('News', 'show_key',  'show');
+        $orderKey          = $this->config->getConfigString('News', 'order_key', 'order');
 
         // --- Translatable order words ----------------------------------------
         $wordAsc  = $this->t->t('news.order.asc',  fallback: 'asc');

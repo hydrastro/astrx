@@ -155,8 +155,10 @@ final class BanlistRepository
                   WHERE b.id = :id LIMIT 1'
             );
             $stmt->execute([':id' => $id]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row !== false ? $row : null);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok($fetched);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -177,9 +179,10 @@ final class BanlistRepository
             );
             assert($banStmt !== false);
             $rows = $banStmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var list<array<string,mixed>> $rows */
             foreach ($rows as $row) {
-                if (self::ipMatchesCidr($packedIp, (string) $row['network'], (int) $row['prefix_len'])) {
-                    return Result::ok((int) $row['id']);
+                if (self::ipMatchesCidr($packedIp, is_scalar($row['network']) ? (string)$row['network'] : '', is_int($row['prefix_len']) ? $row['prefix_len'] : 0)) {
+                    return Result::ok(is_int($row['id']) ? $row['id'] : 0);
                 }
             }
             return Result::ok(null);
@@ -198,8 +201,10 @@ final class BanlistRepository
                   WHERE b.active = 1 AND LOWER(be.email) = LOWER(:email) LIMIT 1'
             );
             $stmt->execute([':email' => $email]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row !== false ? (int) $row['id'] : null);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok(is_int($fetched['id']) ? $fetched['id'] : (int)$fetched['id']);
         } catch (PDOException $e) {
             return $this->err($e);
         }

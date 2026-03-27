@@ -59,10 +59,10 @@ final class CaptchaRepository
             if ($row === false) {
                 return Result::ok(null);
             }
-
+            /** @var array<string,mixed> $row */
             return Result::ok([
-                                  'text'       => (string) $row['text'],
-                                  'expires_at' => (int)    $row['expires_at'],
+                                  'text'       => is_scalar($row['text']) ? (string)$row['text'] : '',
+                                  'expires_at' => is_int($row['expires_at']) ? $row['expires_at'] : 0,
                               ]);
         } catch (PDOException $e) {
             return Result::err(null, $this->diagnostic($e));

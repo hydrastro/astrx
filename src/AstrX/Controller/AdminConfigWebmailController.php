@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
+use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -81,7 +82,7 @@ final class AdminConfigWebmailController extends AbstractController
         $posted = $this->prg->pull($prgToken)??[];
         $csrfResult = $this->csrf->verify(
             self::FORM,
-            (string)($posted['_csrf']??'')
+            self::mStr($posted, '_csrf', '')
         );
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
@@ -89,7 +90,7 @@ final class AdminConfigWebmailController extends AbstractController
             return;
         }
 
-        $section = (string)($posted['section']??'');
+        $section = self::mStr($posted, 'section', '');
         $result = match ($section) {
             'imap' => $this->saveImap($posted),
             'folders' => $this->saveFolders($posted),
@@ -112,12 +113,12 @@ final class AdminConfigWebmailController extends AbstractController
     : Result {
         $full = $this->loadFullImapConfig();
         $full['ImapClient'] = [
-            'imap_host' => trim((string)($p['imap_host']??'localhost')),
-            'imap_port' => max(1, (int)($p['imap_port']??993)),
-            'imap_encryption' => trim((string)($p['imap_encryption']??'ssl')),
-            'imap_timeout' => max(5, (int)($p['imap_timeout']??30)),
-            'imap_socks5_host' => trim((string)($p['imap_socks5_host']??'')),
-            'imap_socks5_port' => max(1, (int)($p['imap_socks5_port']??9050)),
+            'imap_host' => trim(self::mStr($p, 'imap_host', 'localhost')),
+            'imap_port' => max(1, self::mInt($p, 'imap_port', 993)),
+            'imap_encryption' => trim(self::mStr($p, 'imap_encryption', 'ssl')),
+            'imap_timeout' => max(5, self::mInt($p, 'imap_timeout', 30)),
+            'imap_socks5_host' => trim(self::mStr($p, 'imap_socks5_host', '')),
+            'imap_socks5_port' => max(1, self::mInt($p, 'imap_socks5_port', 9050)),
         ];
 
         return $this->writer->write('Imap', $full);
@@ -131,11 +132,11 @@ final class AdminConfigWebmailController extends AbstractController
     : Result {
         $full = $this->loadFullImapConfig();
         $full['WebmailService'] = [
-            'messages_per_page'           => max(5, min(200, (int)($p['messages_per_page'] ?? 25))),
-            'trash_folder'                => trim((string)($p['trash_folder']   ?? 'Trash')),
-            'sent_folder'                 => trim((string)($p['sent_folder']    ?? 'Sent')),
-            'drafts_folder'               => trim((string)($p['drafts_folder']  ?? 'Drafts')),
-            'mail_domain'                 => trim((string)($p['mail_domain']    ?? 'localhost')),
+            'messages_per_page'           => max(5, min(200, self::mInt($p, 'messages_per_page', 25))),
+            'trash_folder'                => trim(self::mStr($p, 'trash_folder', 'Trash')),
+            'sent_folder'                 => trim(self::mStr($p, 'sent_folder', 'Sent')),
+            'drafts_folder'               => trim(self::mStr($p, 'drafts_folder', 'Drafts')),
+            'mail_domain'                 => trim(self::mStr($p, 'mail_domain', 'localhost')),
             'imap_login_use_full_address' => isset($p['imap_login_use_full_address']),
             'mailbox_is_username'         => isset($p['mailbox_is_username']),
         ];
@@ -152,7 +153,7 @@ final class AdminConfigWebmailController extends AbstractController
         $prgId = $this->prg->createId($selfUrl);
 
         $encOptions = $this->buildEncryptionOptions(
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ImapClient',
                 'imap_encryption',
                 'ssl'
@@ -165,7 +166,7 @@ final class AdminConfigWebmailController extends AbstractController
         // ImapClient
         $this->ctx->set(
             'cfg_imap_host',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ImapClient',
                 'imap_host',
                 'dovecot'
@@ -173,7 +174,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_imap_port',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ImapClient',
                 'imap_port',
                 993
@@ -181,7 +182,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_imap_encryption',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ImapClient',
                 'imap_encryption',
                 'ssl'
@@ -189,7 +190,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_imap_timeout',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ImapClient',
                 'imap_timeout',
                 30
@@ -197,7 +198,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_imap_socks5_host',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'ImapClient',
                 'imap_socks5_host',
                 ''
@@ -205,7 +206,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_imap_socks5_port',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'ImapClient',
                 'imap_socks5_port',
                 9050
@@ -216,7 +217,7 @@ final class AdminConfigWebmailController extends AbstractController
         // WebmailService
         $this->ctx->set(
             'cfg_messages_per_page',
-            (int)$this->config->getConfig(
+            $this->config->getConfigInt(
                 'WebmailService',
                 'messages_per_page',
                 25
@@ -224,7 +225,7 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_trash_folder',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'WebmailService',
                 'trash_folder',
                 'Trash'
@@ -232,22 +233,22 @@ final class AdminConfigWebmailController extends AbstractController
         );
         $this->ctx->set(
             'cfg_sent_folder',
-            (string)$this->config->getConfig(
+            $this->config->getConfigString(
                 'WebmailService',
                 'sent_folder',
                 'Sent'
             )
         );
         $this->ctx->set('cfg_drafts_folder',
-                        (string) $this->config->getConfig('WebmailService', 'drafts_folder', 'Drafts'));
+                        $this->config->getConfigString('WebmailService', 'drafts_folder', 'Drafts'));
         $this->ctx->set('cfg_mail_domain',
-                        (string) $this->config->getConfig('WebmailService', 'mail_domain', 'localhost'));
+                        $this->config->getConfigString('WebmailService', 'mail_domain', 'localhost'));
         $this->ctx->set('cfg_imap_login_use_full_address',
-                        (bool) $this->config->getConfig('WebmailService', 'imap_login_use_full_address', true));
+                        $this->config->getConfigBool('WebmailService', 'imap_login_use_full_address', true));
         $this->ctx->set('cfg_imap_verify_ssl',
-                        (bool) $this->config->getConfig('ImapClient', 'imap_verify_ssl', true));
+                        $this->config->getConfigBool('ImapClient', 'imap_verify_ssl', true));
         $this->ctx->set('cfg_mailbox_is_username',
-                        (bool) $this->config->getConfig('WebmailService', 'mailbox_is_username', false));
+                        $this->config->getConfigBool('WebmailService', 'mailbox_is_username', false));
 
         $this->setI18n();
     }
@@ -258,13 +259,15 @@ final class AdminConfigWebmailController extends AbstractController
     private function loadFullImapConfig()
     : array
     {
-        $path = (defined('CONFIG_DIR') ? CONFIG_DIR : '') . 'Imap.config.php';
+        $path = (configDir() . 'Imap.config.php');
         if (!is_file($path)) {
             return [];
         }
         $loaded = @include $path;
 
-        return is_array($loaded) ? $loaded : [];
+        if (!is_array($loaded)) { return []; }
+        /** @var array<string,array<string,mixed>> $loaded */
+        return $loaded;
     }
 
     /** @return list<array{value:string,label:string,selected:bool}> */

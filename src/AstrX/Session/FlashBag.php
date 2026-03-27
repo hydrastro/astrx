@@ -46,7 +46,10 @@ final class FlashBag
     {
         $messages = $_SESSION[self::SESSION_KEY] ?? [];
         unset($_SESSION[self::SESSION_KEY]);
-        return is_array($messages) ? array_values($messages) : [];
+        if (!is_array($messages)) { return []; }
+        /** @var list<array{type:string,text:string}> $result */
+        $result = array_values($messages);
+        return $result;
     }
 
     /**

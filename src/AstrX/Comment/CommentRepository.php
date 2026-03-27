@@ -101,8 +101,10 @@ final class CommentRepository
                    FROM comment WHERE id = :id'
             );
             $stmt->execute([':id' => $id]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row !== false ? $row : null);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok($fetched);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -293,8 +295,10 @@ final class CommentRepository
             } else {
                 return Result::ok(null);
             }
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return Result::ok($row !== false ? (int) $row['ts'] : null);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok(is_int($fetched['ts']) ? $fetched['ts'] : 0);
         } catch (PDOException $e) { return $this->err($e); }
     }
 
@@ -344,11 +348,12 @@ final class CommentRepository
                   WHERE m.expires_at > NOW() ORDER BY m.expires_at DESC"
             );
             assert($stmt !== false);
-            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var list<array<string,mixed>> $rows */
             foreach ($rows as &$row) {
-                $row['ip_display'] = $row['ip'] !== null
-                    ? (inet_ntop($row['ip']) ?: bin2hex($row['ip'])) : null;
+                $ipVal = $row['ip'] ?? null;
+                $row['ip_display'] = ($ipVal !== null && is_string($ipVal))
+                    ? (inet_ntop($ipVal) ?: bin2hex($ipVal)) : null;
             }
             unset($row);
             return Result::ok($rows);

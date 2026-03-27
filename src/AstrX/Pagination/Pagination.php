@@ -56,11 +56,11 @@ final class Pagination
         string  $showKey           = 'show',
         string  $orderKey          = 'order',
     ): self {
-        $page    = $request->query()->getInt($pnKey, 1)->valueOr(1) ?? 1;
-        $page    = max(1, $page);
-        $perPage = $request->query()->getInt($showKey, $defaultPerPage)
-                       ->valueOr($defaultPerPage) ?? $defaultPerPage;
-        $perPage = max(0, $perPage);
+        $pageVal    = $request->query()->getInt($pnKey, 1)->valueOr(1);
+        $page    = max(1, is_int($pageVal) ? $pageVal : 1);
+        $perPageVal = $request->query()->getInt($showKey, $defaultPerPage)
+                          ->valueOr($defaultPerPage);
+        $perPage = max(0, is_int($perPageVal) ? $perPageVal : $defaultPerPage);
 
         $rawOrder   = $request->query()->get($orderKey);
         $descending = match (is_string($rawOrder) ? strtolower($rawOrder) : '') {
