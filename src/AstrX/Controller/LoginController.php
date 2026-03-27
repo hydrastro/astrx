@@ -104,7 +104,9 @@ final class LoginController extends AbstractController
             return $this->renderForm($username, $showAfter);
         }
 
-        $this->session->login($loginResult->unwrap());
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
+        $userData = $loginResult->unwrap();
+        $this->session->login($userData);
         // Store cleartext password in the AES-encrypted session so webmail
         // can connect to IMAP without re-prompting the user.
         $this->session->storeImapPassword($password);

@@ -64,10 +64,13 @@ final class DiagnosticVisibilityRepository
             $stmt = $this->pdo->query(
                 'SELECT `code`, `group_name` FROM `diagnostic_visibility` ORDER BY `code`, `group_name`'
             );
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var array<string, list<string>> $map */
             $map = [];
             foreach ($rows as $row) {
-                $map[$row['code']][] = $row['group_name'];
+                $map[(string)$row['code']][] = (string)$row['group_name'];
             }
 
             return Result::ok($map);
@@ -89,7 +92,7 @@ final class DiagnosticVisibilityRepository
      *
      * @param list<string> $codes
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function setForGroup(string $groupName, array $codes)
     : Result {

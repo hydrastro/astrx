@@ -61,13 +61,15 @@ final class HtmlEmailSanitizer
 
         // ── 1. Remove dangerous tags entirely ────────────────────────────────
         foreach (self::REMOVE_WITH_CONTENT as $tag) {
-            foreach (iterator_to_array($xpath->query("//{$tag}")) as $node) {
-                $node->parentNode?->removeChild($node);
+            foreach (iterator_to_array($xpath->query("//{$tag}") ?: new \ArrayIterator()) as $node) {
+                if ($node instanceof \DOMNode && $node->parentNode instanceof \DOMNode) {
+                    $node->parentNode->removeChild($node);
+                }
             }
         }
 
         // ── 2. Strip all event handlers from every remaining element ─────────
-        foreach (iterator_to_array($xpath->query('//*[@*]')) as $element) {
+        foreach (iterator_to_array($xpath->query('//*[@*]') ?: new \ArrayIterator()) as $element) {
             if (!($element instanceof \DOMElement)) { continue; }
             $toRemove = [];
             foreach ($element->attributes as $attr) {
@@ -85,7 +87,7 @@ final class HtmlEmailSanitizer
         }
 
         // ── 3. Strip inline style url() references ───────────────────────────
-        foreach (iterator_to_array($xpath->query('//*[@style]')) as $element) {
+        foreach (iterator_to_array($xpath->query('//*[@style]') ?: new \ArrayIterator()) as $element) {
             if (!($element instanceof \DOMElement)) { continue; }
             $style = $element->getAttribute('style');
             // Remove url(...) occurrences
@@ -94,7 +96,7 @@ final class HtmlEmailSanitizer
         }
 
         // ── 4. Handle images ─────────────────────────────────────────────────
-        foreach (iterator_to_array($xpath->query('//img')) as $img) {
+        foreach (iterator_to_array($xpath->query('//img') ?: new \ArrayIterator()) as $img) {
             if (!($img instanceof \DOMElement)) { continue; }
             if ($trusted) {
                 // Allow src but block non-http(s) schemes
@@ -119,7 +121,7 @@ final class HtmlEmailSanitizer
         foreach (self::RESOURCE_ATTRS as $attr) {
             if ($attr === 'src') { continue; } // handled above for img
             if ($attr === 'href') { continue; } // handled below for <a>
-            foreach (iterator_to_array($xpath->query("//*[@{$attr}]")) as $element) {
+            foreach (iterator_to_array(($xpath->query("//*[@{$attr}]") ?: new \ArrayIterator())) as $element) {
                 if (!($element instanceof \DOMElement)) { continue; }
                 $val = $element->getAttribute($attr);
                 // Allow cid: and data: URIs on non-src attributes
@@ -131,7 +133,7 @@ final class HtmlEmailSanitizer
         }
 
         // ── 6. Harden all links ───────────────────────────────────────────────
-        foreach (iterator_to_array($xpath->query('//a[@href]')) as $link) {
+        foreach (iterator_to_array(($xpath->query('//a[@href]') ?: new \ArrayIterator())) as $link) {
             if (!($link instanceof \DOMElement)) { continue; }
             $href = $link->getAttribute('href');
             // Block javascript: and vbscript: links

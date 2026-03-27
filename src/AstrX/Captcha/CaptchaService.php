@@ -101,27 +101,27 @@ final class CaptchaService
      *
      * Comparison is case-insensitive to reduce friction.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function verify(string $id, string $submittedText): Result
     {
         $findResult = $this->repository->find($id);
 
         if (!$findResult->isOk()) {
-            return Result::err(false, $findResult->diagnostics());
+            return Result::err(null, $findResult->diagnostics());
         }
 
         $row = $findResult->unwrap();
 
         if ($row === null) {
-            return Result::err(false, Diagnostics::of(new CaptchaNotFoundDiagnostic(
+            return Result::err(null, Diagnostics::of(new CaptchaNotFoundDiagnostic(
                                                           'astrx.captcha/not_found', DiagnosticLevel::WARNING,
                                                           $id,
                                                       )));
         }
 
         if (time() > $row['expires_at']) {
-            return Result::err(false, Diagnostics::of(new CaptchaExpiredDiagnostic(
+            return Result::err(null, Diagnostics::of(new CaptchaExpiredDiagnostic(
                                                           'astrx.captcha/expired', DiagnosticLevel::NOTICE,
                                                           $id,
                                                           $row['expires_at'],
@@ -129,7 +129,7 @@ final class CaptchaService
         }
 
         if (!hash_equals(strtolower($row['text']), strtolower($submittedText))) {
-            return Result::err(false, Diagnostics::of(new CaptchaWrongDiagnostic(
+            return Result::err(null, Diagnostics::of(new CaptchaWrongDiagnostic(
                                                           'astrx.captcha/wrong_text', DiagnosticLevel::NOTICE,
                                                       )));
         }

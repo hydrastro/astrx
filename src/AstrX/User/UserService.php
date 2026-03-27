@@ -222,7 +222,7 @@ final class UserService
         if ($rememberMe && $this->rememberMeTime > 0) {
             $params = session_get_cookie_params();
             setcookie(
-                session_name(),
+                (string) session_name(),
                 (string) session_id(),
                 time() + $this->rememberMeTime,
                 $params['path'],
@@ -455,7 +455,7 @@ final class UserService
     // Settings changes
     // -------------------------------------------------------------------------
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function changePassword(
         string $hexId,
         string $oldPassword,
@@ -491,7 +491,7 @@ final class UserService
         return $this->repo->updatePassword($hexId, $hash);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function changeUsername(string $hexId, string $username): Result
     {
         if ($username === '') {
@@ -511,7 +511,7 @@ final class UserService
         return $this->repo->updateUsername($hexId, $username);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function changeDisplayName(string $hexId, string $displayName): Result
     {
         if ($displayName === '') {
@@ -524,7 +524,7 @@ final class UserService
      * Change recovery email. If verification is required, returns
      * Result::ok('verify_required') and the caller must send a token email.
      *
-     * @return Result<true|string>
+     * @return Result<bool|string>
      */
     public function changeRecoveryEmail(string $hexId, string $email): Result
     {
@@ -540,7 +540,7 @@ final class UserService
         }
         $r = $this->repo->updateRecoveryEmail($hexId, $email);
         if (!$r->isOk()) {
-            return $r;
+            return Result::err(null, $r->diagnostics());
         }
         return Result::ok(true);
     }
@@ -549,7 +549,7 @@ final class UserService
      * Soft-delete the user's account. Requires correct password unless a
      * delete token has already been verified (tokenUnlock=true).
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function delete(string $hexId, ?string $password, bool $tokenUnlock = false): Result
     {

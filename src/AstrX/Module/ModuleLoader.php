@@ -52,6 +52,7 @@ final class ModuleLoader
     public function onClassCreated(object $instance, string $fqcn): void
     {
         try {
+            /** @var class-string $fqcn */
             $ref    = new ReflectionClass($fqcn);
             $domain = $ref->getShortName();
         } catch (ReflectionException) {
@@ -113,6 +114,7 @@ final class ModuleLoader
     private function classHasInjectConfig(string $fqcn): bool
     {
         try {
+            /** @phpstan-ignore argument.type */
             $rc = new \ReflectionClass($fqcn);
         } catch (\ReflectionException) {
             return false;

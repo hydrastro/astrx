@@ -50,7 +50,7 @@ final class AvatarService
     /**
      * Upload and store a new avatar for the given user.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function setAvatar(string $hexId, UploadedFile $file): Result
     {
@@ -101,7 +101,7 @@ final class AvatarService
     /**
      * Remove the custom avatar file and update the DB flag.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function removeAvatar(string $hexId): Result
     {

@@ -126,7 +126,7 @@ final class NewsRepository
     /**
      * Fetch ALL news (including hidden) for the admin listing.
      *
-     * @return Result<list<array{id:int,title:string,created_at:string,hidden:int}>>
+     * @return Result<list<array<string,mixed>>>
      */
     public function fetchAllAdmin(): Result
     {
@@ -135,7 +135,10 @@ final class NewsRepository
                 'SELECT id, title, hidden, created_at
                    FROM news ORDER BY created_at DESC'
             );
-            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
         } catch (PDOException $e) {
             return Result::err([], $this->pdoDiagnostic($e));
         }
@@ -178,7 +181,7 @@ final class NewsRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function update(int $id, string $title, string $content, bool $hidden): Result
     {
         try {
@@ -189,11 +192,11 @@ final class NewsRepository
                             ':hidden' => (int) $hidden, ':id' => $id]);
             return Result::ok(true);
         } catch (PDOException $e) {
-            return Result::err(false, $this->pdoDiagnostic($e));
+            return Result::err(null, $this->pdoDiagnostic($e));
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function delete(int $id): Result
     {
         try {
@@ -201,7 +204,7 @@ final class NewsRepository
             $stmt->execute([':id' => $id]);
             return Result::ok(true);
         } catch (PDOException $e) {
-            return Result::err(false, $this->pdoDiagnostic($e));
+            return Result::err(null, $this->pdoDiagnostic($e));
         }
     }
 }

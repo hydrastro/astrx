@@ -149,7 +149,7 @@ final class IdenticonRenderer
         $this->tile->allocate($tileSize);
 
         $canvasSize = $tileSize * $tiles;
-        $canvas = imagecreatetruecolor($canvasSize, $canvasSize);
+        $canvas = imagecreatetruecolor(max(1, $canvasSize), max(1, $canvasSize));
         assert($canvas !== false);
         $white = imagecolorallocate($canvas, 255, 255, 255);
         assert($white !== false);
@@ -266,7 +266,7 @@ final class IdenticonRenderer
         }
 
         // Resample to the requested output size
-        $output = imagecreatetruecolor($this->size, $this->size);
+        $output = imagecreatetruecolor(max(1, $this->size), max(1, $this->size));
         assert($output !== false);
         imagecopyresampled(
             $output,

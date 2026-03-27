@@ -39,7 +39,7 @@ final class AuditLogger
      * @param string $action   e.g. 'config.save', 'user.ban', 'page.delete'
      * @param string $resource e.g. 'Mail', 'user:abc123', 'page:42'
      * @param string $detail   optional human-readable summary
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function log(string $action, string $resource, string $detail = ''): Result
     {
@@ -59,7 +59,7 @@ final class AuditLogger
                            ]);
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(new AuditLogDiagnostic(
+            return Result::err(null, Diagnostics::of(new AuditLogDiagnostic(
                                                           'astrx.admin/audit_log_write_failed', DiagnosticLevel::WARNING, $e->getMessage()
                                                       )));
         }

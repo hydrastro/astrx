@@ -90,7 +90,7 @@ final class BanlistRepository
     /**
      * Look up a single route's round schedule by key.
      *
-     * @return list<array{penalty:int,max_tries:int,check_time:int,enabled:bool}>|null
+     * @return list<array<string,mixed>>|null
      */
     public function routeRounds(string $routeKey): ?array
     {
@@ -130,7 +130,10 @@ final class BanlistRepository
                    JOIN banlist_ip bi ON bi.ban_id = b.id
                  ORDER BY id DESC"
             );
-            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -167,11 +170,13 @@ final class BanlistRepository
         $packedIp = $parsed['network'];
 
         try {
-            $rows = $this->pdo->query(
+            $banStmt = $this->pdo->query(
                 'SELECT b.id, bi.network, bi.prefix_len
                    FROM banlist b JOIN banlist_ip bi ON bi.ban_id = b.id
                   WHERE b.active = 1'
-            )->fetchAll(PDO::FETCH_ASSOC);
+            );
+            assert($banStmt !== false);
+            $rows = $banStmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as $row) {
                 if (self::ipMatchesCidr($packedIp, (string) $row['network'], (int) $row['prefix_len'])) {
                     return Result::ok((int) $row['id']);
@@ -258,7 +263,7 @@ final class BanlistRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateBan(int $id, string $reason, string $route, ?string $end, bool $active): Result
     {
         try {
@@ -273,7 +278,7 @@ final class BanlistRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setActive(int $id, bool $active): Result
     {
         try {
@@ -285,7 +290,7 @@ final class BanlistRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function delete(int $id): Result
     {
         try {
@@ -342,7 +347,7 @@ final class BanlistRepository
 
     // =========================================================================
 
-/** @return Result<int> */
+    /** @return Result<int> */
     private function insertCore(string $reason, string $route, ?string $end): Result
     {
         try {
@@ -355,7 +360,7 @@ final class BanlistRepository
         }
     }
 
-/** @return Result<never> */
+    /** @return Result<never> */
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new AdminDbDiagnostic(

@@ -44,7 +44,7 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok($stmt->fetchColumn() !== false);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(
+            return Result::err(null, Diagnostics::of(
                 new TrustCheckFailedDiagnostic('astrx.mail/trust.check_failed', DiagnosticLevel::ERROR, $e->getMessage())
             ));
         }
@@ -53,7 +53,7 @@ final class WebmailTrustedSenderRepository
     /**
      * Add a sender to the trust list for this user.
      * Idempotent — no error if already trusted.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function trust(string $userId, string $senderEmail): Result
     {
@@ -66,7 +66,7 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(
+            return Result::err(null, Diagnostics::of(
                 new TrustAddFailedDiagnostic('astrx.mail/trust.add_failed', DiagnosticLevel::ERROR, $e->getMessage())
             ));
         }
@@ -74,7 +74,7 @@ final class WebmailTrustedSenderRepository
 
     /**
      * Remove a sender from the trust list.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function untrust(string $userId, string $senderEmail): Result
     {
@@ -87,7 +87,7 @@ final class WebmailTrustedSenderRepository
             $stmt->execute([':uid' => $userId, ':email' => $senderEmail]);
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(
+            return Result::err(null, Diagnostics::of(
                 new TrustRemoveFailedDiagnostic('astrx.mail/trust.remove_failed', DiagnosticLevel::ERROR, $e->getMessage())
             ));
         }
@@ -106,7 +106,9 @@ final class WebmailTrustedSenderRepository
                  ORDER BY `created_at` DESC'
             );
             $stmt->execute([':uid' => $userId]);
-            return Result::ok($stmt->fetchAll(PDO::FETCH_COLUMN));
+            /** @var list<string> $trusted */
+            $trusted = array_values($stmt->fetchAll(PDO::FETCH_COLUMN));
+            return Result::ok($trusted);
         } catch (\Throwable $e) {
             return Result::err([], Diagnostics::of(
                 new TrustListFailedDiagnostic('astrx.mail/trust.list_failed', DiagnosticLevel::ERROR, $e->getMessage())

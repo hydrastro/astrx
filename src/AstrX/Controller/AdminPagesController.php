@@ -288,7 +288,10 @@ final class AdminPagesController extends AbstractController
                    LEFT JOIN page_robots pr ON pr.page_id = p.id
                    ORDER BY p.id'
             );
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $rows;
         } catch (\PDOException) {
             return [];
         }

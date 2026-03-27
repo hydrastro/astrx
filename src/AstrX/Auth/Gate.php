@@ -43,7 +43,7 @@ final class Gate
     /** @var array<string, list<string>> role name → list of permission patterns */
     private array $grants = [];
 
-    /** @var array<class-string, PolicyInterface> resource FQCN → policy instance */
+    /** @var array<string, PolicyInterface> resource FQCN → policy instance */
     private array $policies = [];
 
     public function __construct(

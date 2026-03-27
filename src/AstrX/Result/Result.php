@@ -10,7 +10,7 @@ final class Result
 {
     private static ?object $SENTINEL = null;
 
-    /** @var T|object */
+    /** @var T */
     private mixed $valueOrSentinel;
 
     /** Domain-defined error value (string/enum/object/etc.), or the sentinel when ok. */
@@ -74,12 +74,15 @@ final class Result
      * @return T
      * @throws \LogicException if the result is an error
      */
+    /** @return T */
     public function unwrap(): mixed
     {
         if (!$this->ok) {
             throw new \LogicException('Called unwrap() on a failed Result.');
         }
-        return $this->valueOrSentinel;
+        /** @var T $value */
+        $value = $this->valueOrSentinel;
+        return $value;
     }
 
     public function valueOr(mixed $default): mixed

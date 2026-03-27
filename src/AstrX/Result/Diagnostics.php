@@ -24,7 +24,7 @@ final class Diagnostics implements \IteratorAggregate, \Countable
 
     public static function of(DiagnosticInterface ...$items): self
     {
-        return $items === [] ? self::empty() : new self($items);
+        return $items === [] ? self::empty() : new self(array_values($items));
     }
 
     public function with(DiagnosticInterface $d): self

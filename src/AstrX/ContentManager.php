@@ -73,6 +73,7 @@ final class ContentManager
 
         $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
         assert(is_array($availableLocales));
+        $availableLocales = array_values(array_filter($availableLocales, 'is_string'));
 
         $defaultLocaleStr = $this->config->getConfig('Prelude', 'default_language', 'en');
         assert(is_string($defaultLocaleStr));

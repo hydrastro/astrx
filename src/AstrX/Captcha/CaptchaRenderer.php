@@ -139,7 +139,7 @@ final class CaptchaRenderer
         $result = '';
 
         while (strlen($result) < $this->captchaLength) {
-            $result .= $chars[random_int(0, $len)];
+            $result .= $chars[random_int(0, max(0, $len))];
         }
 
         return $result;
@@ -340,7 +340,7 @@ final class CaptchaRenderer
             }
 
             $angle     = random_int($this->fontMinAngle, $this->fontMaxAngle);
-            $decoyChar = $this->charList[random_int(0, $charLen)];
+            $decoyChar = $this->charList[random_int(0, max(0, $charLen))];
             imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontFile, $decoyChar);
 
             $placed[] = [$cx, $cy];
@@ -402,7 +402,7 @@ final class CaptchaRenderer
     /** @return \GdImage */
     private function createBackground(int $w, int $h): \GdImage
     {
-        $image = imagecreatetruecolor($w, $h);
+        $image = imagecreatetruecolor(max(1, $w), max(1, $h));
         assert($image !== false);
         $bg = $this->allocateColor($image, $this->backgroundColor);
         imagefill($image, 0, 0, $bg);
@@ -417,7 +417,7 @@ final class CaptchaRenderer
     private function allocateColor(\GdImage $image, ?string $hex = null): int
     {
         [$r, $g, $b] = $this->hexToRgb($hex);
-        $color = imagecolorallocate($image, $r, $g, $b);
+        $color = imagecolorallocate($image, $r & 0xFF, $g & 0xFF, $b & 0xFF);
         assert($color !== false);
         return $color;
     }
@@ -438,17 +438,17 @@ final class CaptchaRenderer
 
         if (strlen($hex) === 3) {
             return [
-                hexdec($hex[0] . $hex[0]),
-                hexdec($hex[1] . $hex[1]),
-                hexdec($hex[2] . $hex[2]),
+                (int) hexdec($hex[0] . $hex[0]),
+                (int) hexdec($hex[1] . $hex[1]),
+                (int) hexdec($hex[2] . $hex[2]),
             ];
         }
 
         if (strlen($hex) === 6) {
             return [
-                hexdec(substr($hex, 0, 2)),
-                hexdec(substr($hex, 2, 2)),
-                hexdec(substr($hex, 4, 2)),
+                (int) hexdec(substr($hex, 0, 2)),
+                (int) hexdec(substr($hex, 2, 2)),
+                (int) hexdec(substr($hex, 4, 2)),
             ];
         }
 

@@ -106,7 +106,7 @@ final class Mailer
 
     /**
      * Send a plain-text email.
-     * @return Result<true>
+     * @return Result<bool>
      */
     /**
      * Send an email.
@@ -116,7 +116,7 @@ final class Mailer
      *                                     Used by webmail to send as the logged-in user.
      * @param string $fromNameOverride     Paired display name override.
      */
-/** @return Result<true> */
+/** @return Result<bool> */
     public function send(
         string $toAddress,
         string $toName,
@@ -150,7 +150,7 @@ final class Mailer
     // Internal
     // =========================================================================
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     private function doSend(
         string $toAddress,
         string $toName,
@@ -349,7 +349,7 @@ final class Mailer
             fread($sock, 4);
         }     // IPv4
         elseif ($atyp === 3) {
-            fread($sock, ord((string)fread($sock, 1)));
+            fread($sock, max(1, ord((string)fread($sock, 1))));
         } // domain
         elseif ($atyp === 4) {
             fread($sock, 16);
@@ -494,7 +494,7 @@ final class Mailer
     /** @return Result<never> */
     private function err(string $detail): Result
     {
-        return Result::err(false, Diagnostics::of(
+        return Result::err(null, Diagnostics::of(
             new MailSendFailedDiagnostic('astrx.mail/send_failed', DiagnosticLevel::ERROR, $detail)
         ));
     }

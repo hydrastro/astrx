@@ -79,7 +79,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateType(string $hexId, int $type): Result
     {
         return $this->exec(
@@ -93,7 +93,7 @@ final class UserRepository
      * Returns only columns safe to display publicly.
      * Returns null if user does not exist or is deleted.
      *
-     * @return Result<array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,created_at:string}|null>
+     * @return Result<array<string,mixed>|null>
      */
     public function findPublicById(string $hexId): Result
     {
@@ -110,7 +110,7 @@ final class UserRepository
     /**
      * Fetch public profile data by username (case-insensitive).
      *
-     * @return Result<array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,created_at:string}|null>
+     * @return Result<array<string,mixed>|null>
      */
     public function findPublicByUsername(string $username): Result
     {
@@ -190,7 +190,7 @@ final class UserRepository
     // Writes
     // -------------------------------------------------------------------------
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function create(
         string  $hexId,
         string  $username,
@@ -224,7 +224,7 @@ final class UserRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updatePassword(string $hexId, string $hash): Result
     {
         return $this->exec(
@@ -233,7 +233,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateUsername(string $hexId, string $username): Result
     {
         return $this->exec(
@@ -242,7 +242,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateDisplayName(string $hexId, string $name): Result
     {
         return $this->exec(
@@ -251,7 +251,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateRecoveryEmail(string $hexId, string $email): Result
     {
         // Changing recovery email resets verification status
@@ -261,7 +261,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateLoginAttempts(string $hexId, int $delta): Result
     {
         $sql = $delta >= 0
@@ -271,7 +271,7 @@ final class UserRepository
         return $this->exec($sql, [':d' => abs($delta), ':id' => $hexId]);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function updateLastAccess(string $hexId): Result
     {
         return $this->exec(
@@ -280,7 +280,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setVerified(string $hexId): Result
     {
         return $this->exec(
@@ -289,7 +289,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setAvatar(string $hexId, bool $has): Result
     {
         return $this->exec(
@@ -301,7 +301,7 @@ final class UserRepository
     /**
      * Store a token hash for an email action.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function setToken(
         string $hexId,
@@ -319,7 +319,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function markTokenUsed(string $hexId): Result
     {
         return $this->exec(
@@ -328,7 +328,7 @@ final class UserRepository
         );
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     /**
      * Full admin view — every column including sensitive fields.
      * @return Result<array<string,mixed>|null>
@@ -353,7 +353,7 @@ final class UserRepository
      * Admin full update — every editable column in one shot.
      * Password hash is stored as-is (admin responsibility to supply valid argon2id).
      * Pass null to leave email/birth/password unchanged.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function adminUpdate(
         string  $hexId,
@@ -494,7 +494,7 @@ final class UserRepository
 
     /**
      * @param array<string,mixed> $params
-     * @return Result<true>
+     * @return Result<bool>
      */
     private function exec(string $sql, array $params): Result
     {
@@ -510,7 +510,7 @@ final class UserRepository
     /** @return Result<never> */
     private function dbErr(PDOException $e): Result
     {
-        return Result::err(false, Diagnostics::of(new UserDbDiagnostic(
+        return Result::err(null, Diagnostics::of(new UserDbDiagnostic(
                                                       'astrx.user/db_error', DiagnosticLevel::ERROR,
                                                       $e->getMessage(),
                                                   )));

@@ -63,7 +63,9 @@ final class Prelude
             $bootstrapResult = $injector->createClass(GateBootstrapper::class)
                 ->drainTo($collector);
             if ($bootstrapResult->isOk()) {
-                $bootstrapResult->unwrap()->registerAll($gate);
+                /** @var \AstrX\Auth\GateBootstrapper $bootstrapper */
+                $bootstrapper = $bootstrapResult->unwrap();
+                $bootstrapper->registerAll($gate);
             }
             $injector->setClass($gate);
         }

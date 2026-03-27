@@ -201,7 +201,7 @@ final class CommentService
     // Moderation (used by admin controller and future public report flow)
     // -------------------------------------------------------------------------
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function hide(int $commentId): Result
     {
         if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY)) {
@@ -210,7 +210,7 @@ final class CommentService
         return $this->repo->setHidden($commentId, true);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function unhide(int $commentId): Result
     {
         if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY)) {
@@ -219,7 +219,7 @@ final class CommentService
         return $this->repo->setHidden($commentId, false);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function delete(int $commentId): Result
     {
         if ($this->gate->cannot(Permission::COMMENT_DELETE_ANY)) {
@@ -228,7 +228,7 @@ final class CommentService
         return $this->repo->delete($commentId);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function flag(int $commentId): Result
     {
         if ($this->gate->cannot(Permission::COMMENT_FLAG)) {

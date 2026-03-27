@@ -108,6 +108,7 @@ final class AdminAuditLogController extends AbstractController
                  LIMIT " . self::PER_PAGE . " OFFSET {$offset}"
             );
             $rowStmt->execute($params);
+            /** @var list<array<string,string>> $rows */
             $rows = $rowStmt->fetchAll(\PDO::FETCH_ASSOC);
             return [$rows, $total];
         } catch (\Throwable) {

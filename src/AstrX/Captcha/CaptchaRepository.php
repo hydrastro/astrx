@@ -23,7 +23,7 @@ final class CaptchaRepository
     /**
      * Store a new captcha token.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function store(string $id, string $text, int $expiresAt): Result
     {
@@ -36,7 +36,7 @@ final class CaptchaRepository
 
             return Result::ok(true);
         } catch (PDOException $e) {
-            return Result::err(false, $this->diagnostic($e));
+            return Result::err(null, $this->diagnostic($e));
         }
     }
 
@@ -72,7 +72,7 @@ final class CaptchaRepository
     /**
      * Delete a captcha by ID (called after successful verification).
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function delete(string $id): Result
     {
@@ -82,7 +82,7 @@ final class CaptchaRepository
 
             return Result::ok(true);
         } catch (PDOException $e) {
-            return Result::err(false, $this->diagnostic($e));
+            return Result::err(null, $this->diagnostic($e));
         }
     }
 

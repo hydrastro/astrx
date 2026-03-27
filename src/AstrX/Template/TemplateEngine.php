@@ -163,6 +163,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
             // local args win over global
             $mergedArgs = array_merge($this->globalArgs, $args);
+            assert(method_exists($tpl, 'render'));
             return Result::ok((string) $tpl->render($mergedArgs, []), $collector->diagnostics());
         } finally {
             $this->sink = $prevSink;
@@ -448,7 +449,8 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             $class .= 'extract($args);ob_start();eval("?>" . $buffer);$buffer=ob_get_clean();';
         }
 
-        $class .= 'return ($buffer) ? $buffer : "";}' . implode('', $code[self::INDEX_FUNCTIONS_CODE]) . '}';
+        $funcs = $code[self::INDEX_FUNCTIONS_CODE];
+        $class .= 'return ($buffer) ? $buffer : "";}' . implode('', is_array($funcs) ? $funcs : [$funcs]) . '}';
 
         return $class;
     }
@@ -519,6 +521,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                     $functionName = $safeFnName . $iteration;
                     $code        .= '$buffer.=$this->' . $functionName . '($args,$parent,$i);';
                     $loopParents[] = $ast[$i];
+                    /** @phpstan-ignore argument.type, argument.type */
                     $this->writeCode($ast[$i - 1] ?? [], $loopParents, $functionsCode, $iteration);
                     array_pop($loopParents);
                     $i--;

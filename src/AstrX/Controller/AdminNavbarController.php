@@ -286,6 +286,8 @@ final class AdminNavbarController extends AbstractController
                    LEFT JOIN page pg             ON pg.id      = ni.page_id
                    ORDER BY n.id, p.sort_order, e.sort_order, e.name'
             );
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (\PDOException $e) {
             $this->emitDiag($e);
@@ -390,7 +392,10 @@ final class AdminNavbarController extends AbstractController
                   WHERE p.hidden = 0
                   ORDER BY p.id'
             );
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $rows;
         } catch (\PDOException) {
             return [];
         }

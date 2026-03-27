@@ -31,12 +31,15 @@ final class DiagnosticLevelOverrideRepository
             $stmt = $this->pdo->query(
                 'SELECT `code`, `level` FROM `diagnostic_level_override`'
             );
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            /** @var array<string, DiagnosticLevel> $map */
             $map  = [];
             foreach ($rows as $row) {
                 $level = DiagnosticLevel::tryFrom((int) $row['level']);
                 if ($level !== null) {
-                    $map[$row['code']] = $level;
+                    $map[(string)$row['code']] = $level;
                 }
             }
             return Result::ok($map);
@@ -51,7 +54,7 @@ final class DiagnosticLevelOverrideRepository
      * Set the level override for a single code.
      * Pass null to remove the override entirely.
      *
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function set(string $code, ?DiagnosticLevel $level): Result
     {
@@ -71,7 +74,7 @@ final class DiagnosticLevelOverrideRepository
             }
             return Result::ok(true);
         } catch (\Throwable $e) {
-            return Result::err(false, Diagnostics::of(new DiagnosticVisibilityDbDiagnostic(
+            return Result::err(null, Diagnostics::of(new DiagnosticVisibilityDbDiagnostic(
                                                           'astrx.auth/diag_level_override.db_error', DiagnosticLevel::ERROR, $e->getMessage()
                                                       )));
         }
@@ -82,7 +85,7 @@ final class DiagnosticLevelOverrideRepository
      * Accepts a map of code → level int value (or null to clear).
      *
      * @param array<string, int|null> $overrides
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function replaceAll(array $overrides): Result
     {
@@ -107,7 +110,7 @@ final class DiagnosticLevelOverrideRepository
             return Result::ok(true);
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) { $this->pdo->rollBack(); }
-            return Result::err(false, Diagnostics::of(new DiagnosticVisibilityDbDiagnostic(
+            return Result::err(null, Diagnostics::of(new DiagnosticVisibilityDbDiagnostic(
                                                           'astrx.auth/diag_level_override.db_error', DiagnosticLevel::ERROR, $e->getMessage()
                                                       )));
         }

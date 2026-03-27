@@ -213,7 +213,7 @@ final class DefaultTemplateContext
                 preg_replace(
                     '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
                     '',
-                    file_get_contents($cssPath)
+                    (string) file_get_contents($cssPath)
                 )
             )
         ) : '';

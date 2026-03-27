@@ -81,7 +81,7 @@ final class CsrfHandler
      */
     public function generate(string $formId)
     : string {
-        $token = bin2hex(random_bytes($this->tokenBytes));
+        $token = bin2hex(random_bytes(max(1, $this->tokenBytes)));
 
         $_SESSION[self::SESSION_PREFIX . $formId] = [
             'token' => $token,
@@ -100,7 +100,7 @@ final class CsrfHandler
      *   CsrfTokenMissingDiagnostic  — no token in POST / empty string submitted
      *   CsrfTokenMismatchDiagnostic — token present but does not match session
      *   CsrfTokenExpiredDiagnostic  — token matched but past expiry time
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function verify(string $formId, string $submitted)
     : Result {

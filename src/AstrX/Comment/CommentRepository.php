@@ -67,7 +67,9 @@ final class CommentRepository
                 if ($itemId !== null) { $stmt->bindValue(':item_id', $itemId, PDO::PARAM_INT); }
             }
             $stmt->execute();
-            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+            /** @var list<array<string,mixed>> $_rows */ $_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            return Result::ok($_rows);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -132,7 +134,9 @@ final class CommentRepository
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-            return Result::ok($stmt->fetchAll(PDO::FETCH_ASSOC));
+            /** @var list<array<string,mixed>> $_rows */ $_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            return Result::ok($_rows);
         } catch (PDOException $e) {
             return $this->err($e);
         }
@@ -181,7 +185,7 @@ final class CommentRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function update(int $id, string $content, string $name,
         ?string $email, ?int $replyTo, bool $hidden, bool $flagged): Result
     {
@@ -201,7 +205,7 @@ final class CommentRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setHidden(int $id, bool $hidden): Result
     {
         try {
@@ -215,7 +219,7 @@ final class CommentRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setFlagged(int $id, bool $flagged): Result
     {
         try {
@@ -229,7 +233,7 @@ final class CommentRepository
         }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function delete(int $id): Result
     {
         try {
@@ -317,7 +321,7 @@ final class CommentRepository
         } catch (PDOException $e) { return $this->err($e); }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function addMute(?string $hexUserId, ?string $packedIp, ?int $pageId, int $durationSecs): Result
     {
         try {
@@ -339,6 +343,8 @@ final class CommentRepository
                    FROM mute m LEFT JOIN user u ON u.id = m.user_id
                   WHERE m.expires_at > NOW() ORDER BY m.expires_at DESC"
             );
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as &$row) {
                 $row['ip_display'] = $row['ip'] !== null
@@ -349,7 +355,7 @@ final class CommentRepository
         } catch (PDOException $e) { return $this->err($e); }
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function deleteMute(int $id): Result
     {
         try {
@@ -360,7 +366,7 @@ final class CommentRepository
 
 
 
-/** @return Result<never> */
+    /** @return Result<never> */
     private function err(PDOException $e): Result
     {
         return Result::err(null, Diagnostics::of(new CommentDbDiagnostic(

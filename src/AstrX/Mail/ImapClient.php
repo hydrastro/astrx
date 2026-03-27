@@ -86,7 +86,7 @@ final class ImapClient
 
     /**
      * Open a connection using configured host/port/encryption.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function connect(): Result
     {
@@ -94,7 +94,8 @@ final class ImapClient
             $this->socket  = $this->openSocket();
             $this->tagSeq  = 0;
             $this->loggedIn = false;
-            $greeting = $this->readLine();
+            $greetingRaw = $this->readLine();
+            $greeting = is_string($greetingRaw) ? $greetingRaw : '';
             if (!str_starts_with($greeting, '* OK') && !str_starts_with($greeting, '* PREAUTH')) {
                 return $this->err('connect', "Unexpected greeting: $greeting");
             }
@@ -114,7 +115,7 @@ final class ImapClient
 
     /**
      * Authenticate with IMAP LOGIN.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function login(string $username, string $password): Result
     {
@@ -122,7 +123,7 @@ final class ImapClient
         $r = $this->command(
             'LOGIN ' . $this->quoteString($username) . ' ' . $this->quoteString($password)
         );
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         $this->loggedIn = true;
         return Result::ok(true);
     }
@@ -134,7 +135,7 @@ final class ImapClient
     public function listFolders(): Result
     {
         $r = $this->command('LIST "" "*"');
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $folders = [];
         foreach ($this->untaggedLines() as $line) {
@@ -166,7 +167,7 @@ final class ImapClient
     public function folderStatus(string $folder): Result
     {
         $r = $this->command('STATUS ' . $this->quoteString($folder) . ' (MESSAGES UNSEEN RECENT)');
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $result = ['total' => 0, 'unseen' => 0, 'recent' => 0];
         foreach ($this->untaggedLines() as $line) {
@@ -185,7 +186,7 @@ final class ImapClient
     public function selectFolder(string $folder): Result
     {
         $r = $this->command('SELECT ' . $this->quoteString($folder));
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $exists = 0;
         foreach ($this->untaggedLines() as $line) {
@@ -224,7 +225,7 @@ final class ImapClient
 
         // Fetch envelope+flags for the sequence range
         $r = $this->command("FETCH {$set} (UID FLAGS ENVELOPE)");
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $messages = [];
         foreach ($this->untaggedLines() as $line) {
@@ -268,7 +269,7 @@ final class ImapClient
     {
         // Fetch flags + full RFC822 message
         $r = $this->command("UID FETCH {$uid} (FLAGS RFC822)");
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         // UID FETCH may return a literal. We need to read it.
         $raw   = $this->lastLiteralContent;
@@ -294,7 +295,7 @@ final class ImapClient
     public function fetchRawHeaders(int $uid): Result
     {
         $r = $this->command("UID FETCH {$uid} (RFC822.HEADER)");
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         $raw = $this->lastLiteralContent;
         if ($raw === '') {
             return Result::err(false);
@@ -304,18 +305,18 @@ final class ImapClient
 
     /**
      * Mark a message (by UID) as seen or unseen.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function setSeenFlag(int $uid, bool $seen): Result
     {
         $op  = $seen ? '+FLAGS' : '-FLAGS';
         $r   = $this->command("UID STORE {$uid} {$op} (\\Seen)");
-        return $r->isOk() ? Result::ok(true) : Result::err(false, $r->diagnostics());
+        return $r->isOk() ? Result::ok(true) : Result::err(null, $r->diagnostics());
     }
 
     /**
      * Move a message to another folder (COPY → DELETE → EXPUNGE).
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function moveMessage(int $uid, string $targetFolder): Result
     {
@@ -325,10 +326,10 @@ final class ImapClient
 
         // Fall back to COPY + mark deleted + expunge
         $r = $this->command("UID COPY {$uid} " . $this->quoteString($targetFolder));
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $r = $this->command("UID STORE {$uid} +FLAGS (\\Deleted)");
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $this->command("EXPUNGE");
         return Result::ok(true);
@@ -336,7 +337,7 @@ final class ImapClient
 
     /**
      * Delete a message (marks deleted and expunges, or moves to Trash).
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function deleteMessage(int $uid, string $trashFolder = 'Trash'): Result
     {
@@ -349,24 +350,24 @@ final class ImapClient
         }
         // No Trash — just mark deleted
         $r = $this->command("UID STORE {$uid} +FLAGS (\\Deleted)");
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         $this->command("EXPUNGE");
         return Result::ok(true);
     }
 
     /**
      * Create a folder if it does not exist.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function createFolder(string $name): Result
     {
         $r = $this->command("CREATE " . $this->quoteString($name));
-        return $r->isOk() ? Result::ok(true) : Result::err(false, $r->diagnostics());
+        return $r->isOk() ? Result::ok(true) : Result::err(null, $r->diagnostics());
     }
 
     /**
      * Append a sent message to the Sent folder.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function appendToSent(string $rawMessage, string $sentFolder = 'Sent'): Result
     {
@@ -374,12 +375,12 @@ final class ImapClient
         $tag = $this->nextTag();
         $this->writeLine("{$tag} APPEND " . $this->quoteString($sentFolder) . " (\\Seen) {{$len}}");
         // Server should respond with + (continue)
-        $cont = $this->readLine();
+        $cont = (string) $this->readLine();
         if (!str_starts_with($cont, '+')) {
             // Try creating the folder and retrying once
             $this->createFolder($sentFolder);
             $this->writeLine("{$tag} APPEND " . $this->quoteString($sentFolder) . " (\\Seen) {{$len}}");
-            $cont = $this->readLine();
+            $cont = (string) $this->readLine();
             if (!str_starts_with($cont, '+')) {
                 return $this->err('append', "Server rejected APPEND continuation: $cont");
             }
@@ -470,11 +471,11 @@ final class ImapClient
         return $proxy;
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     private function starttls(): Result
     {
         $r = $this->command('STARTTLS');
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }
@@ -846,7 +847,7 @@ final class ImapClient
         // Unfold: join lines that start with whitespace
         $raw = preg_replace("/\r\n([ \t])/", " $1", $raw);
         $raw = preg_replace("/\n([ \t])/", " $1", $raw);
-        foreach (preg_split("/\r?\n/", $raw) as $line) {
+        foreach ((preg_split("/\r?\n/", $raw) ?: []) as $line) {
             $colon = strpos($line, ':');
             if ($colon === false) { continue; }
             $name  = strtolower(trim(substr($line, 0, $colon)));
@@ -864,7 +865,7 @@ final class ImapClient
     {
         $delimiter = '--' . $boundary;
         $parts     = [];
-        $lines     = preg_split("/\r?\n/", $body);
+        $lines     = preg_split("/\r?\n/", $body) ?: [];
         $current   = null;
 
         foreach ($lines as $line) {
@@ -958,6 +959,6 @@ final class ImapClient
             'starttls'      => new ImapStartTlsDiagnostic('astrx.mail/imap.starttls', DiagnosticLevel::ERROR, $detail),
             default         => new ImapCommandFailedDiagnostic('astrx.mail/imap.command', DiagnosticLevel::ERROR, $detail),
         };
-        return Result::err(false, Diagnostics::of($diagnostic));
+        return Result::err(null, Diagnostics::of($diagnostic));
     }
 }

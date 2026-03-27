@@ -89,7 +89,7 @@ final class IdenticonTile implements IdenticonTileInterface
         }
 
         $this->size = $size;
-        $image = imagecreatetruecolor($size, $size);
+        $image = imagecreatetruecolor(max(1, $size), max(1, $size));
         assert($image !== false);
         $this->image = $image;
 
@@ -98,7 +98,8 @@ final class IdenticonTile implements IdenticonTileInterface
         }
 
         [$r, $g, $b] = $this->bgColor;
-        $this->bgColorValue = imagecolorallocate($image, $r, $g, $b);
+        $bgResult = imagecolorallocate($image, $r & 0xFF, $g & 0xFF, $b & 0xFF);
+        $this->bgColorValue = $bgResult !== false ? $bgResult : 0;
     }
 
     public function free()
@@ -134,7 +135,7 @@ final class IdenticonTile implements IdenticonTileInterface
             }  // note: intentional overlap with bit 1
         }
 
-        $color = imagecolorallocate($this->image, $r, $g, $b);
+        $color = imagecolorallocate($this->image, $r & 0xFF, $g & 0xFF, $b & 0xFF);
         assert($color !== false);
 
         return $color;

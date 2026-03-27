@@ -137,7 +137,9 @@ final class UserController extends AbstractController
             return;
         }
 
-        $this->session->login($loginResult->unwrap());
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
+        $userData = $loginResult->unwrap();
+        $this->session->login($userData);
     }
 
     private function renderLoginForm(string $usernameValue = ''): void

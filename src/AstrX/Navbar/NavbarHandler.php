@@ -71,6 +71,7 @@ final class NavbarHandler
                 AND `active`    = 1'
         );
         $stmt->execute(['navbar_id' => $navbarId]);
+        /** @var list<array<string,mixed>> $rows */
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         return $rows;

@@ -75,7 +75,7 @@ final class WebmailService
 
     /**
      * Connect and authenticate. Must be called before any other method.
-     * @return Result<true>
+     * @return Result<bool>
      */
     /**
      * Connect using the mailbox local-part. The IMAP login identity is constructed
@@ -86,7 +86,7 @@ final class WebmailService
      * @param string $mailboxLocalPart  Local-part from UserSession::mailbox(),
      *                                  or the username when mailbox_is_username=true.
      * @param string $username          The user's login username (used when mailbox_is_username=true).
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function connect(string $mailboxLocalPart, string $imapPassword, string $username = ''): Result
     {
@@ -103,7 +103,7 @@ final class WebmailService
 
     /**
      * Save a draft to the Drafts folder.
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function saveDraft(
         string $fromAddress,
@@ -128,7 +128,7 @@ final class WebmailService
     public function getAttachment(string $folder, int $uid, int $attachmentIndex): Result
     {
         $r = $this->getMessage($folder, $uid);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         $msg         = $r->unwrap();
         $attachments = $msg['attachments'] ?? [];
         if (!isset($attachments[$attachmentIndex])) {
@@ -142,9 +142,9 @@ final class WebmailService
             default            => $att['raw'],
         };
         return Result::ok([
-                              'name'         => $att['name'],
-                              'content_type' => $att['content_type'],
-                              'data'         => $data,
+                              'name'         => (string) $att['name'],
+                              'content_type' => (string) $att['content_type'],
+                              'data'         => (string) $data,
                           ]);
     }
 
@@ -155,7 +155,7 @@ final class WebmailService
     public function fetchRawHeaders(string $folder, int $uid): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         return $this->imap->fetchRawHeaders($uid);
     }
 
@@ -217,7 +217,7 @@ final class WebmailService
             : $this->messagesPerPage;
 
         $total = $this->imap->selectFolder($folder);
-        if (!$total->isOk()) { return Result::err(false, $total->diagnostics()); }
+        if (!$total->isOk()) { return Result::err(null, $total->diagnostics()); }
         $totalMessages = $total->unwrap();
 
         $pages    = $totalMessages > 0 ? (int) ceil($totalMessages / $perPage) : 1;
@@ -231,7 +231,7 @@ final class WebmailService
         }
 
         $r = $this->imap->fetchHeadersPage($totalMessages, $page, $perPage);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         return Result::ok([
                               'messages' => $r->unwrap(),
@@ -253,7 +253,7 @@ final class WebmailService
     public function getMessage(string $folder, int $uid): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
 
         $r = $this->imap->fetchMessage($uid);
         if (!$r->isOk()) { return $r; }
@@ -277,7 +277,7 @@ final class WebmailService
      * @param string $subject      Subject line
      * @param string $bodyText     Plain-text body
      * @param string $inReplyTo    Message-ID being replied to ('' if none)
-     * @return Result<true>
+     * @return Result<bool>
      */
     public function sendMessage(
         string $fromAddress,
@@ -315,27 +315,27 @@ final class WebmailService
     // Message actions
     // =========================================================================
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function deleteMessage(string $folder, int $uid): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         return $this->imap->deleteMessage($uid, $this->trashFolder);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function moveMessage(string $folder, int $uid, string $targetFolder): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         return $this->imap->moveMessage($uid, $targetFolder);
     }
 
-    /** @return Result<true> */
+    /** @return Result<bool> */
     public function setSeenFlag(string $folder, int $uid, bool $seen): Result
     {
         $r = $this->imap->selectFolder($folder);
-        if (!$r->isOk()) { return Result::err(false, $r->diagnostics()); }
+        if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         return $this->imap->setSeenFlag($uid, $seen);
     }
 
