@@ -268,7 +268,7 @@ final class Injector
 
         $obj = $classResult->unwrap();
 
-        if (!method_exists($obj, $method)) {
+        if ($obj === null || !method_exists($obj, $method)) {
             return Result::err(null, Diagnostics::of(
                 new MethodNotFoundDiagnostic(
                     self::ID_METHOD_NOT_FOUND,

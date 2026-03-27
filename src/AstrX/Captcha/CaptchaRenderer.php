@@ -312,6 +312,7 @@ final class CaptchaRenderer
                 // Too crowded — fall back to MEDIUM
                 return $this->renderMedium($text);
             }
+            assert($cy !== null);
 
             $angle = random_int($this->fontMinAngle, $this->fontMaxAngle);
             imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontFile, $text[$i]);
@@ -338,6 +339,7 @@ final class CaptchaRenderer
             if ($cx === null) {
                 break; // skip remaining decoys if no space
             }
+            assert($cy !== null);
 
             $angle     = random_int($this->fontMinAngle, $this->fontMaxAngle);
             $decoyChar = $this->charList[random_int(0, max(0, $charLen))];

@@ -476,6 +476,7 @@ final class ImapClient
     {
         $r = $this->command('STARTTLS');
         if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
+        assert($this->socket !== null);
         if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }
@@ -581,6 +582,7 @@ final class ImapClient
         $buf = '';
         $remaining = $n;
         while ($remaining > 0) {
+            assert($this->socket !== null);
             $chunk = fread($this->socket, min($remaining, 65536));
             if ($chunk === false || $chunk === '') { break; }
             $buf       .= $chunk;
@@ -845,8 +847,8 @@ final class ImapClient
     {
         $headers = [];
         // Unfold: join lines that start with whitespace
-        $raw = preg_replace("/\r\n([ \t])/", " $1", $raw);
-        $raw = preg_replace("/\n([ \t])/", " $1", $raw);
+        $raw = (string) preg_replace("/\r\n([ \t])/", " $1", $raw);
+        $raw = (string) preg_replace("/\n([ \t])/", " $1", $raw);
         foreach ((preg_split("/\r?\n/", $raw) ?: []) as $line) {
             $colon = strpos($line, ':');
             if ($colon === false) { continue; }

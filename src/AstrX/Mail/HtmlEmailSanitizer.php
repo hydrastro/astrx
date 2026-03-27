@@ -171,6 +171,7 @@ final class HtmlEmailSanitizer
         $bodies = $doc->getElementsByTagName('body');
         if ($bodies->length === 0) { return ''; }
         $body  = $bodies->item(0);
+        if (!($body instanceof \DOMElement)) { return ''; }
         $out   = '';
         foreach ($body->childNodes as $child) {
             $out .= $doc->saveHTML($child);

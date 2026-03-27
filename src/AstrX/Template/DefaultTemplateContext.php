@@ -210,7 +210,7 @@ final class DefaultTemplateContext
             str_replace(
                 ': ',
                 ':',
-                preg_replace(
+                (string) preg_replace(
                     '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
                     '',
                     (string) file_get_contents($cssPath)
