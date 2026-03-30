@@ -57,6 +57,19 @@ final class UserService
     public const int TOKEN_EMAIL_VERIFY  = 2;
     public const int TOKEN_DELETE        = 3;
 
+
+    /**
+     * Normalise a username for availability checking.
+     * Returns the username lowercased unless case-sensitive usernames are enabled,
+     * in which case the original casing is preserved for the DB comparison.
+     * The repository always applies LOWER() in SQL, so this only matters when
+     * a separate case-sensitive check is needed.
+     */
+    private function normaliseUsernameForCheck(string $username): string
+    {
+        return $this->caseSensitiveUsernames ? $username : strtolower($username);
+    }
+
     // -------------------------------------------------------------------------
     // Configuration (all injectable via #[InjectConfig])
     // -------------------------------------------------------------------------
@@ -79,6 +92,7 @@ final class UserService
     private array  $usernameRegex         = [];
     /** @var array<int, array{regex:string,checking_for:bool,message:string,enabled:bool}> */
     private array  $passwordRegex         = [];
+    private bool   $caseSensitiveUsernames = false;
 
     #[InjectConfig('token_expiration_time')]
     public function setTokenTtl(int $v): void { $this->tokenTtl = max(60, $v); }
@@ -114,6 +128,13 @@ final class UserService
     /** @param array<int, array{regex:string,checking_for:bool,message:string,enabled:bool}> $v */
     #[InjectConfig('password_regex')]
     public function setPasswordRegex(array $v): void { $this->passwordRegex = $v; }
+
+    /**
+     * When true, username uniqueness is checked with an exact match (case-sensitive).
+     * When false (default), LOWER() is used in the SQL comparison.
+     */
+    #[InjectConfig('case_sensitive_usernames')]
+    public function setCaseSensitiveUsernames(bool $v): void { $this->caseSensitiveUsernames = $v; }
 
     // -------------------------------------------------------------------------
 
@@ -281,7 +302,7 @@ final class UserService
         if ($unErr !== null) {
             return $this->opErr('invalid_username', $unErr);
         }
-        $availResult = $this->repo->isUsernameAvailable($username);
+        $availResult = $this->repo->isUsernameAvailable($this->normaliseUsernameForCheck($username));
         if (!$availResult->isOk()) {
             return Result::err(null, $availResult->diagnostics());
         }
@@ -510,7 +531,7 @@ final class UserService
         if ($unErr !== null) {
             return $this->opErr('invalid_username', $unErr);
         }
-        $availResult = $this->repo->isUsernameAvailable($username);
+        $availResult = $this->repo->isUsernameAvailable($this->normaliseUsernameForCheck($username));
         if (!$availResult->isOk()) {
             return Result::err(null, $availResult->diagnostics());
         }

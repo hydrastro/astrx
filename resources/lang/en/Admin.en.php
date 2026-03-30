@@ -455,6 +455,13 @@ return [
     'admin.config.field.trash_folder'       => 'Trash folder name',
     'admin.config.field.sent_folder'        => 'Sent folder name',
     'admin.config.field.drafts_folder'      => 'Drafts folder name',
+    'admin.config.field.mail_domain'        => 'Mail domain',
+    'admin.config.field.imap_login_use_full_address' => 'Login with full address (user@domain)',
+    'admin.config.field.imap_verify_ssl'    => 'Verify SSL certificate',
+    'admin.config.field.mailbox_is_username' => 'Mailbox name is the username',
+    'admin.config.field.mailbox_is_username_warning' => 'Enable this if the IMAP mailbox name is exactly the username (no domain suffix).',
+    'admin.config.field.sent_folder'        => 'Sent folder name',
+    'admin.config.field.drafts_folder'      => 'Drafts folder name',
 
 
     // ---- Audit log -------------------------------------------------------

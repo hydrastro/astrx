@@ -48,3 +48,5 @@ $supportConstants = (string) constant('CLASS_DIR') . 'Support/constants.php';
 if (file_exists($supportConstants)) {
     require_once $supportConstants;
 }
+
+new AstrX\Prelude();

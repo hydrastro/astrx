@@ -39,6 +39,7 @@ return [
     'WebmailService' => [
         'mail_domain'                => 'localhost',
         'imap_login_use_full_address'=> false,
+        'mailbox_is_username'         => false,
         'messages_per_page'          => 25,
         'trash_folder'               => 'Trash',
         'sent_folder'                => 'Sent',

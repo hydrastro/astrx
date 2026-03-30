@@ -195,4 +195,12 @@ return [
     'admin.comments.mute_expires'=> 'Scade il',
     'admin.comments.lift_mute'   => 'Rimuovi silenziamento',
     'admin.comments.mute_lifted' => 'Silenziamento rimosso.',
+
+    'admin.config.field.sent_folder'        => 'Cartella posta inviata',
+    'admin.config.field.drafts_folder'      => 'Cartella bozze',
+    'admin.config.field.mail_domain'        => 'Dominio mail',
+    'admin.config.field.imap_login_use_full_address' => 'Accedi con indirizzo completo (utente@dominio)',
+    'admin.config.field.imap_verify_ssl'    => 'Verifica certificato SSL',
+    'admin.config.field.mailbox_is_username' => 'Il nome della casella è il nome utente',
+    'admin.config.field.mailbox_is_username_warning' => 'Abilita se il nome della casella IMAP corrisponde esattamente al nome utente (senza suffisso dominio).',
 ];

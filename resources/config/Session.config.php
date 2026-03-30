@@ -15,9 +15,8 @@ return [
         // encryption policy
         'encrypt' => true,
 
-        // cipher/hmac policy
-        'cipher' => 'aes-256-ctr',
-        'hmac_algo' => 'sha256',
+        // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
+        // (changing these would silently corrupt existing encrypted sessions)
 
         // PRG
         'prg_token_key' => 'prg',
