@@ -30,8 +30,7 @@ final class UserPolicy implements PolicyInterface
             Permission::USER_EDIT_ANY,
             Permission::USER_DELETE_ANY => (
                 isset($resource->type)
-                && ($resourceType = $resource->type) !== null
-                && UserGroup::tryFrom(is_int($resourceType) ? $resourceType : (is_numeric($resourceType) ? (int)$resourceType : 0)) === UserGroup::ADMIN
+                && UserGroup::tryFrom(is_int(($rt = $resource->type)) ? $rt : (is_numeric($rt) ? (int)$rt : 0)) === UserGroup::ADMIN
                 && $session->userType() !== UserGroup::ADMIN
             ) ? false : null,
 

@@ -74,8 +74,10 @@ final class ProfileController extends AbstractController
         $this->ctx->set('profile_not_found', false);
         $this->ctx->set('profile_id', $hexId);
         $this->ctx->set('profile_username', (is_scalar($userData['username']) ? (string)$userData['username'] : ''));
-        $dnRaw = $userData['display_name'] ?? $userData['username'];
-        $this->ctx->set('profile_display_name', is_scalar($dnRaw) ? (string)$dnRaw : '');
+        $this->ctx->set(
+            'profile_display_name',
+            (is_scalar($userData['display_name'] ?? null) ? (string)$userData['display_name'] : (is_scalar($userData['username'] ?? null) ? (string)$userData['username'] : ''))
+        );
         $this->ctx->set('profile_group', $groupLabel);
         $this->ctx->set('profile_verified', (bool)$userData['verified']);
         $this->ctx->set('profile_avatar_src', $avatarSrc);

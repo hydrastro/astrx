@@ -494,7 +494,7 @@ final class WebmailController extends AbstractController
         $senderEmail   = '';
         $senderTrusted = false;
         if ($message !== null) {
-            $senderEmail = $this->extractEmailAddress(is_scalar($message['from'] ?? null) ? (is_scalar($message['from']) ? (string)$message['from'] : '') : '');
+            $senderEmail = $this->extractEmailAddress((is_scalar($message['from'] ?? null) ? (string)$message['from'] : ''));
             if ($senderEmail !== '') {
                 $trustR = $this->trustedSenders->isTrusted($this->session->userId(), $senderEmail);
                 $senderTrusted = $trustR->isOk() && $trustR->unwrap();
@@ -505,7 +505,7 @@ final class WebmailController extends AbstractController
         $hasHtml  = false;
         if ($message !== null && is_string($message['body_html'] ?? null) && $message['body_html'] !== '') {
             $hasHtml  = true;
-            $safeHtml = $this->sanitizer->sanitise((is_scalar($message['body_html']) ? (string)$message['body_html'] : ''), $senderTrusted);
+            $safeHtml = $this->sanitizer->sanitise((string)$message['body_html'], $senderTrusted);
         }
 
         $attachments = [];
@@ -613,12 +613,12 @@ final class WebmailController extends AbstractController
             if ($msgR->isOk()) {
                 /** @var array<string,mixed> $msg */
                 $msg            = $msgR->unwrap();
-                $composeTo      = is_scalar($msg['from'] ?? null) ? (is_scalar($msg['from']) ? (string)$msg['from'] : '') : '';
-                $subjectRaw = is_scalar($msg['subject'] ?? null) ? (is_scalar($msg['subject']) ? (string)$msg['subject'] : '') : '';
+                $composeTo      = (is_scalar($msg['from'] ?? null) ? (string)$msg['from'] : '');
+                $subjectRaw = (is_scalar($msg['subject'] ?? null) ? (string)$msg['subject'] : '');
                 $composeSubject = 'Re: ' . (preg_replace('/^Re:\s*/i', '', $subjectRaw) ?? $subjectRaw);
                 $inReplyTo      = $msg['message_id'] ?? '';
-                $origBody       = is_scalar($msg['body_text'] ?? null) ? (is_scalar($msg['body_text']) ? (string)$msg['body_text'] : '') : '';
-                $origDate       = is_scalar($msg['date'] ?? null) ? (is_scalar($msg['date']) ? (string)$msg['date'] : '') : '';
+                $origBody       = (is_scalar($msg['body_text'] ?? null) ? (string)$msg['body_text'] : '');
+                $origDate       = (is_scalar($msg['date'] ?? null) ? (string)$msg['date'] : '');
                 if ($origBody !== '') {
                     $composeBody = "\n\nOn {$origDate}, {$composeTo} wrote:\n"
                                    . implode("\n", array_map(fn($l) => '> ' . $l, explode("\n", $origBody)));

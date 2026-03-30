@@ -310,9 +310,9 @@ final class AdminNavbarController extends AbstractController
         foreach ($rows as $row) {
             $nid = (is_int($row['navbar_id']) ? $row['navbar_id'] : 0);
             $rawPinId = $row['pin_id'];
-            $pid = $rawPinId !== null ? (is_int($rawPinId) ? $rawPinId : (int)$rawPinId) : null;
+            $pid = $rawPinId !== null ? (is_int($rawPinId) ? $rawPinId : (is_numeric($rawPinId) ? (int)$rawPinId : null)) : null;
             $rawEntryId = $row['entry_id'];
-            $eid = $rawEntryId !== null ? (is_int($rawEntryId) ? $rawEntryId : (int)$rawEntryId) : null;
+            $eid = $rawEntryId !== null ? (is_int($rawEntryId) ? $rawEntryId : (is_numeric($rawEntryId) ? (int)$rawEntryId : null)) : null;
 
             if (!isset($navbars[$nid])) {
                 $navbars[$nid] = [

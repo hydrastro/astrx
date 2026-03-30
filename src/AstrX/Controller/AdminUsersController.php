@@ -150,16 +150,16 @@ final class AdminUsersController extends AbstractController
                     $hexId,
                     trim(self::mStr($posted, 'username', '')),
                     $password,
-                    is_scalar($posted['mailbox'] ?? null) && ($posted['mailbox'] ?? '') !== '' ? trim((string)$posted['mailbox']) : null,
-                    is_scalar($posted['email'] ?? null) && ($posted['email'] ?? '') !== '' ? trim((string)$posted['email']) : null,
-                    is_scalar($posted['display_name'] ?? null) && ($posted['display_name'] ?? '') !== '' ? trim((string)$posted['display_name']) : null,
+                    (self::mStr($posted, 'mailbox', '')) !== '' ? trim(self::mStr($posted, 'mailbox', '')) : null,
+                    (self::mStr($posted, 'email', '')) !== '' ? trim(self::mStr($posted, 'email', '')) : null,
+                    (self::mStr($posted, 'display_name', '')) !== '' ? trim(self::mStr($posted, 'display_name', '')) : null,
                     self::mInt($posted, 'type', 0),
-                    is_scalar($posted['birth'] ?? null) && ($posted['birth'] ?? '') !== '' ? trim((string)$posted['birth']) : null,
+                    (self::mStr($posted, 'birth', '')) !== '' ? trim(self::mStr($posted, 'birth', '')) : null,
                     self::mInt($posted, 'login_attempts', 0),
                     self::mBool($posted, 'verified'),
                     self::mBool($posted, 'deleted'),
-                    is_scalar($posted['created_at'] ?? null) && ($posted['created_at'] ?? '') !== '' ? trim((string)$posted['created_at']) : null,
-                    is_scalar($posted['last_access'] ?? null) && ($posted['last_access'] ?? '') !== '' ? trim((string)$posted['last_access']) : null,
+                    (self::mStr($posted, 'created_at', '')) !== '' ? trim(self::mStr($posted, 'created_at', '')) : null,
+                    (self::mStr($posted, 'last_access', '')) !== '' ? trim(self::mStr($posted, 'last_access', '')) : null,
                 );
                 $r->drainTo($this->collector);
                 if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.updated')); }
@@ -281,8 +281,9 @@ final class AdminUsersController extends AbstractController
             $registerType = $this->config->getConfigInt('UserService', 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS);
             $recoverType  = $this->config->getConfigInt('UserService', 'recover_captcha_type',  UserService::CAPTCHA_SHOW_ALWAYS);
             /** @param array<string,mixed>[] $o */
-            $sel = function(mixed $v, array $o): array {
-                return array_map(function (array $x) use ($v): array {
+            $sel = function (mixed $v, array $o): array {
+                return array_map(function (mixed $x) use ($v): mixed {
+                    if (!is_array($x)) { return $x; }
                     /** @var array<string,mixed> $x */
                     return array_merge($x, ['selected' => $x['value'] === $v]);
                 }, $o);

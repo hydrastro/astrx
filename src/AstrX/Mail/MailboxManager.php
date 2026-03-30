@@ -112,11 +112,14 @@ final class MailboxManager
                                    'password' => $newPassword,
                                ]);
 
-        return $this->apiCall(
+        $chPwR = $this->apiCall(
             'PATCH',
             '/mailbox/' . urlencode($username),
             (string)$payload
         );
+        /** @var \AstrX\Result\Result<bool> $chPwTyped */
+        $chPwTyped = $chPwR;
+        return $chPwTyped;
     }
 
     // =========================================================================

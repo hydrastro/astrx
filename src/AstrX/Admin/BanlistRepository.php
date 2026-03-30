@@ -204,7 +204,8 @@ final class BanlistRepository
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($fetched === false) { return Result::ok(null); }
             /** @var array<string,mixed> $fetched */
-            return Result::ok(is_int($fetched['id']) ? $fetched['id'] : (int)$fetched['id']);
+            $idV = $fetched['id'];
+            return Result::ok(is_int($idV) ? $idV : (is_numeric($idV) ? (int)$idV : 0));
         } catch (PDOException $e) {
             return $this->err($e);
         }

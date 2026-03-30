@@ -324,12 +324,21 @@ final class Request
                 $nameArr = $node['name'];
                 foreach (array_keys($nameArr) as $index) {
                     /** @var array<string,mixed> $nodeSlice */
+                    /** @var array<int|string,mixed> $typeArr */
+                    $typeArr    = is_array($node['type'])     ? $node['type']     : [];
+                    /** @var array<int|string,mixed> $tmpArr */
+                    $tmpArr     = is_array($node['tmp_name']) ? $node['tmp_name'] : [];
+                    /** @var array<int|string,mixed> $errArr */
+                    $errArr     = is_array($node['error'])    ? $node['error']    : [];
+                    /** @var array<int|string,mixed> $szArr */
+                    $szArr      = is_array($node['size'])     ? $node['size']     : [];
+                    /** @var array<string,mixed> $nodeSlice */
                     $nodeSlice = [
-                        'name'     => is_array($node['name'])     ? ($node['name'][$index] ?? '')  : '',
-                        'type'     => is_array($node['type'])     ? ($node['type'][$index] ?? '')  : '',
-                        'tmp_name' => is_array($node['tmp_name']) ? ($node['tmp_name'][$index] ?? '') : '',
-                        'error'    => is_array($node['error'])    ? ($node['error'][$index] ?? 0)  : 0,
-                        'size'     => is_array($node['size'])     ? ($node['size'][$index] ?? 0)   : 0,
+                        'name'     => $nameArr[$index] ?? '',
+                        'type'     => $typeArr[$index] ?? '',
+                        'tmp_name' => $tmpArr[$index]  ?? '',
+                        'error'    => $errArr[$index]  ?? 0,
+                        'size'     => $szArr[$index]   ?? 0,
                     ];
                     $result[$index] = self::normalizeFileNode($nodeSlice);
                 }

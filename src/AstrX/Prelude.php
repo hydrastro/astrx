@@ -12,6 +12,7 @@ use AstrX\Module\ModuleLoader;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\ErrorHandler\ErrorHandler;
+use AstrX\ContentManager;
 
 final class Prelude
 {

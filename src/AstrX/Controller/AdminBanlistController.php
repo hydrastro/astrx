@@ -224,8 +224,10 @@ final class AdminBanlistController extends AbstractController
             $isEditing         = ($banEditId > 0 && (is_int($ban['id']) ? $ban['id'] : 0) === $banEditId);
             if ($isEditing) {
                 $editCtx                  = $ban;
+                $banRoute = is_scalar($ban['ban_route'] ?? null) ? (string)$ban['ban_route'] : '';
                 $editCtx['route_options'] = array_map(
-                    fn($o) => array_merge($o, ['selected' => $o['key'] === ($ban['ban_route'] ?? '')]),
+                    /** @param array{key:string,name:string} $o */
+                    fn(array $o): array => array_merge($o, ['selected' => $o['key'] === $banRoute]),
                     $routeOptions
                 );
                 $ban['editing'] = [$editCtx];
@@ -307,11 +309,9 @@ final class AdminBanlistController extends AbstractController
         ]);
     }
 
-    /**
-     * @param  list<array<string,mixed>> $routes
+    /** @param list<array<string,mixed>> $routes
      * @return list<array{key:string,name:string}>
      */
-    /** @param list<array<string,mixed>> $routes */
     private function buildRouteOptions(array $routes): array
     {
         $options = [];

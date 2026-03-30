@@ -271,8 +271,8 @@ final class ContentManager
                     $filesArr = $filesRaw;
                     foreach ($filesArr as $fieldName => $rawMeta) {
                         /** @var array<string,mixed> $meta */
-                        $meta = is_array($rawMeta) ? $rawMeta : [];
-                        if (!isset($meta['temp_path'])) { continue; }
+                        $meta = $rawMeta;
+                        if (!array_key_exists('temp_path', $meta)) { continue; }
                         $tmpPathRaw = $meta['temp_path'] ?? '';
                         if (!is_string($tmpPathRaw) || !file_exists($tmpPathRaw)) { continue; }
                         $tmpPath   = $tmpPathRaw;

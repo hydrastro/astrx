@@ -39,9 +39,9 @@ final class DiagnosticLevelOverrideRepository
             foreach ($rows as $row) {
                 $rowLevel = $row['level'] ?? null;
                 $rowCode  = $row['code'] ?? null;
-                $level = DiagnosticLevel::tryFrom(is_int($rowLevel) ? $rowLevel : (int)$rowLevel);
+                $level = DiagnosticLevel::tryFrom(is_int($rowLevel) ? $rowLevel : (is_numeric($rowLevel) ? (int)$rowLevel : -1));
                 if ($level !== null) {
-                    $map[is_string($rowCode) ? $rowCode : (string)$rowCode] = $level;
+                    $map[is_string($rowCode) ? $rowCode : (is_scalar($rowCode) ? (string)$rowCode : '')] = $level;
                 }
             }
             return Result::ok($map);

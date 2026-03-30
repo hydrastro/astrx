@@ -207,7 +207,7 @@ final class AdminConfigCaptchaController extends AbstractController
             'font_file'                   => trim(self::mStr($p, 'font_file', '')),
             'font_min_distance'           => self::mInt($p, 'font_min_distance', 0),
             'font_max_distance'           => self::mInt($p, 'font_max_distance', 10),
-            'font_min_angle'              => (int) ($p['font_min_angle'] ?? -45),
+            'font_min_angle'              => self::mInt($p, 'font_min_angle', -45),
             'font_max_angle'              => self::mInt($p, 'font_max_angle', 45),
             'font_x_border'               => max(0, self::mInt($p, 'font_x_border', 5)),
             'font_y_border'               => max(0, self::mInt($p, 'font_y_border', 5)),

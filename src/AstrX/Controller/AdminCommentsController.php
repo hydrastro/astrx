@@ -246,11 +246,14 @@ final class AdminCommentsController extends AbstractController
         if ($canConfig) {
             $current      = $this->loadCurrent();
             $antispamList = [];
-            foreach ((array) ($current['antispam_regex'] ?? []) as $key => $rule) {
+            $antispamRaw = $current['antispam_regex'] ?? [];
+            $antispamArr = is_array($antispamRaw) ? $antispamRaw : [];
+            /** @var array<int|string, array<string,mixed>> $antispamArr */
+            foreach ($antispamArr as $key => $rule) {
                 $antispamList[] = [
                     'key'     => $key,
                     'regex'   => self::mStr($rule, 'regex', ''),
-                    'enabled' => is_array($rule) ? !empty($rule['enabled']) : true,
+                    'enabled' => !empty($rule['enabled']),
                     'message' => self::mStr($rule, 'message', ''),
                 ];
             }

@@ -148,7 +148,7 @@ final class NewsRepository
     /**
      * Fetch a single news item by ID regardless of hidden status.
      *
-     * @return Result<array{id:int,title:string,content:string,created_at:string,hidden:int}|null>
+     * @return Result<array<string,mixed>|null>
      */
     public function findByIdAdmin(int $id): Result
     {

@@ -143,8 +143,8 @@ final class CommentController extends AbstractController
         $name     = ($posted['name']  ?? '') !== '' ? (is_scalar($posted['name']) ? (string)$posted['name'] : '')  : null;
         $email    = ($posted['email'] ?? '') !== '' ? (is_scalar($posted['email']) ? (string)$posted['email'] : '') : null;
         $replyTo  = is_numeric($posted['reply_to'] ?? null) ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
-        $remoteAddrRaw = $this->request->server()->get('REMOTE_ADDR');
-        $remoteIp = is_string($remoteAddrRaw) ? $remoteAddrRaw : '';
+        $remoteIpRaw = $this->request->server()->get('REMOTE_ADDR') ?? '';
+        $remoteIp = is_scalar($remoteIpRaw) ? (string)$remoteIpRaw : '';
 
         $this->commentService->post(
             $this->page->id, $content, $name, $email, $replyTo, $remoteIp
@@ -158,18 +158,17 @@ final class CommentController extends AbstractController
     private function renderComments(): void
     {
         // ── Read comment display parameters from query string ─────────────────
-        $cpPageRaw = $this->request->query()->get(self::CP_PAGE);
-        $pageNum    = max(1, is_int($cpPageRaw) ? $cpPageRaw : (is_numeric($cpPageRaw) ? (int)$cpPageRaw : 1));
+        $pageNumRaw = $this->request->query()->get(self::CP_PAGE) ?? 1;
+        $pageNum    = max(1, is_int($pageNumRaw) ? $pageNumRaw : (is_numeric($pageNumRaw) ? (int)$pageNumRaw : 1));
         $orderRaw   = $this->request->query()->get(self::CP_ORDER);
         $order      = is_string($orderRaw) ? $orderRaw : self::DEFAULT_ORDER;
         $descending = ($order === 'desc');
         $perPage    = $this->commentService->commentsPerPage();
         $csPerPage  = ($this->request->query()->get(self::CP_SHOW) !== null)
-            ? max(0, is_numeric($csShowRaw = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw : 0)
+            ? max(0, (is_numeric($csShowRaw2 = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw2 : 0))
             : $perPage;
-        $indentRaw  = $this->request->query()->get(self::CP_INDENT);
-        $indent     = ($indentRaw !== null)
-            ? (is_int($indentRaw) ? $indentRaw : (is_numeric($indentRaw) ? (int)$indentRaw : 0))
+        $indent     = ($this->request->query()->get(self::CP_INDENT) !== null)
+            ? (int) $this->request->query()->get(self::CP_INDENT)
             : self::DEFAULT_INDENT;
         $nested     = ($indent !== 0);
 
@@ -237,7 +236,7 @@ final class CommentController extends AbstractController
                 $profileUrl  = '';
                 $avatarSrc   = $useIdenticons
                     ? $this->urlGen->toPage('avatar', [
-                        'seed' => hash('sha256', (is_scalar($row['name'] ?? null) ? (string)$row['name'] : '') . (is_scalar($row['ip'] ?? null) ? (string)$row['ip'] : '')),
+                        'seed' => hash('sha256', (is_scalar($row['name']) ? (string)$row['name'] : '') . (is_scalar($row['ip']) ? (string)$row['ip'] : '')),
                     ])
                     : '';
             }
@@ -273,8 +272,11 @@ final class CommentController extends AbstractController
 
             // close_divs_html: closes outer comment div(s) to produce nesting
             $d  = self::mInt($row, 'depth', 0);
-            $ndRaw = isset($flat[$i + 1]) ? ($flat[$i + 1]['depth'] ?? 0) : null;
-            $nd = $ndRaw !== null ? (is_int($ndRaw) ? $ndRaw : 0) : -1;
+            if (isset($flat[$i + 1])) {
+                /** @var array<string,mixed> $nextItem */
+                $nextItem = $flat[$i + 1];
+                $nd = is_int($nextItem['depth'] ?? null) ? $nextItem['depth'] : 0;
+            } else { $nd = -1; }
             if ($nd > $d)       { $close = 0; }
             elseif ($nd === $d) { $close = 1; }
             elseif ($nd >= 0)   { $close = $d - $nd + 1; }
