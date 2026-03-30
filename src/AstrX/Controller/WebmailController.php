@@ -193,10 +193,12 @@ final class WebmailController extends AbstractController
                 ->drainTo($this->collector);
         }
 
-        $folder = (string) ($posted['folder'] ?? self::INBOX);
+        $folderPRaw = $posted['folder'] ?? null;
+        $folder = is_string($folderPRaw) ? $folderPRaw : self::INBOX;
         $uid    = self::mInt($posted, 'uid', 0);
         // Bulk: uid[] array of selected message UIDs
-        $uids   = array_map(fn($v): int => (int)$v, (array) ($posted['uid'] ?? []));
+        $uidsRaw = is_array($posted['uid'] ?? null) ? $posted['uid'] : (array)($posted['uid'] ?? []);
+        $uids   = array_map(fn($v): int => is_int($v) ? $v : (is_numeric($v) ? (int)$v : 0), $uidsRaw);
         $uids   = array_filter($uids, fn($u) => $u > 0);
 
         switch ($action) {
@@ -359,7 +361,8 @@ final class WebmailController extends AbstractController
         $imapPass = $this->session->imapPassword();
         if ($imapPass === '') { return; }
 
-        $folder = (string) ($this->request->query()->get('folder') ?? self::INBOX);
+        $folderQRaw = $this->request->query()->get('folder');
+        $folder = is_string($folderQRaw) ? $folderQRaw : self::INBOX;
         $uid    = (is_numeric($vq_uid = $this->request->query()->get('uid')) ? (int)$vq_uid : 0);
         $index  = (is_numeric($vq_attachment = $this->request->query()->get('attachment')) ? (int)$vq_attachment : 0);
         if ($uid <= 0) { return; }

@@ -143,7 +143,8 @@ final class CommentController extends AbstractController
         $name     = ($posted['name']  ?? '') !== '' ? (is_scalar($posted['name']) ? (string)$posted['name'] : '')  : null;
         $email    = ($posted['email'] ?? '') !== '' ? (is_scalar($posted['email']) ? (string)$posted['email'] : '') : null;
         $replyTo  = is_numeric($posted['reply_to'] ?? null) ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
-        $remoteIp = (string) ($this->request->server()->get('REMOTE_ADDR') ?? '');
+        $remoteAddrRaw = $this->request->server()->get('REMOTE_ADDR');
+        $remoteIp = is_string($remoteAddrRaw) ? $remoteAddrRaw : '';
 
         $this->commentService->post(
             $this->page->id, $content, $name, $email, $replyTo, $remoteIp
@@ -157,16 +158,18 @@ final class CommentController extends AbstractController
     private function renderComments(): void
     {
         // ── Read comment display parameters from query string ─────────────────
-        $pageNum    = max(1, (int) ($this->request->query()->get(self::CP_PAGE) ?? 1));
+        $cpPageRaw = $this->request->query()->get(self::CP_PAGE);
+        $pageNum    = max(1, is_int($cpPageRaw) ? $cpPageRaw : (is_numeric($cpPageRaw) ? (int)$cpPageRaw : 1));
         $orderRaw   = $this->request->query()->get(self::CP_ORDER);
         $order      = is_string($orderRaw) ? $orderRaw : self::DEFAULT_ORDER;
         $descending = ($order === 'desc');
         $perPage    = $this->commentService->commentsPerPage();
         $csPerPage  = ($this->request->query()->get(self::CP_SHOW) !== null)
-            ? max(0, (int) $this->request->query()->get(self::CP_SHOW))
+            ? max(0, is_numeric($csShowRaw = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw : 0)
             : $perPage;
-        $indent     = ($this->request->query()->get(self::CP_INDENT) !== null)
-            ? (int) $this->request->query()->get(self::CP_INDENT)
+        $indentRaw  = $this->request->query()->get(self::CP_INDENT);
+        $indent     = ($indentRaw !== null)
+            ? (is_int($indentRaw) ? $indentRaw : (is_numeric($indentRaw) ? (int)$indentRaw : 0))
             : self::DEFAULT_INDENT;
         $nested     = ($indent !== 0);
 
@@ -225,7 +228,8 @@ final class CommentController extends AbstractController
                 ? (is_int($row['reply_to']) ? $row['reply_to'] : 0) : null;
 
             if ($row['user_id'] !== null) {
-                $displayName = (string) ($row['user_display_name'] ?? $row['name'] ?? 'Anonymous');
+                $dnRaw = $row['user_display_name'] ?? $row['name'] ?? 'Anonymous';
+                $displayName = is_scalar($dnRaw) ? (string)$dnRaw : 'Anonymous';
                 $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (is_scalar($row['user_id']) ? (string)$row['user_id'] : '')]);
                 $profileUrl  = $profileBase . '?uid=' . rawurlencode((is_scalar($row['user_id']) ? (string)$row['user_id'] : ''));
             } else {
@@ -233,7 +237,7 @@ final class CommentController extends AbstractController
                 $profileUrl  = '';
                 $avatarSrc   = $useIdenticons
                     ? $this->urlGen->toPage('avatar', [
-                        'seed' => hash('sha256', ($row['name'] ?? '') . ($row['ip'] ?? '')),
+                        'seed' => hash('sha256', (is_scalar($row['name'] ?? null) ? (string)$row['name'] : '') . (is_scalar($row['ip'] ?? null) ? (string)$row['ip'] : '')),
                     ])
                     : '';
             }
@@ -269,7 +273,8 @@ final class CommentController extends AbstractController
 
             // close_divs_html: closes outer comment div(s) to produce nesting
             $d  = self::mInt($row, 'depth', 0);
-            $nd = isset($flat[$i + 1]) ? (int) ($flat[$i + 1]['depth'] ?? 0) : -1;
+            $ndRaw = isset($flat[$i + 1]) ? ($flat[$i + 1]['depth'] ?? 0) : null;
+            $nd = $ndRaw !== null ? (is_int($ndRaw) ? $ndRaw : 0) : -1;
             if ($nd > $d)       { $close = 0; }
             elseif ($nd === $d) { $close = 1; }
             elseif ($nd >= 0)   { $close = $d - $nd + 1; }

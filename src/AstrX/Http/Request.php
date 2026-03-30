@@ -350,6 +350,7 @@ final class Request
 
         foreach ($node as $key => $value) {
             if (is_array($value)) {
+                /** @var array<string,mixed> $value */
                 $result[$key] = self::normalizeFileNode($value);
             }
         }

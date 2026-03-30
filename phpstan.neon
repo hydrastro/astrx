@@ -1,5 +1,0 @@
-parameters:
-    bootstrapFiles:
-        - public/index.php
-    excludePaths:
-        - test/*

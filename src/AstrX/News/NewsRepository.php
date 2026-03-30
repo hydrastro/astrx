@@ -88,7 +88,7 @@ final class NewsRepository
     /**
      * Fetch a single visible news item by ID.
      *
-     * @return Result<array{id:int,title:string,content:string,created_at:int}|null>
+     * @return Result<array<string,mixed>|null>
      */
     public function findById(int $id): Result
     {
@@ -100,8 +100,9 @@ final class NewsRepository
             );
             $stmt->execute([':id' => $id]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            return Result::ok($row !== false ? $row : null);
+            if ($row === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $row */
+            return Result::ok($row);
         } catch (PDOException $e) {
             return Result::err(null, $this->pdoDiagnostic($e));
         }

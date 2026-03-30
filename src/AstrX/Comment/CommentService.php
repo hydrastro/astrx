@@ -185,7 +185,7 @@ final class CommentService
             $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $lastTs = $lastResult->unwrap();
-                $elapsed = time() - (is_int($lastTs) ? $lastTs : 0);
+                $elapsed = time() - $lastTs;
                 if ($elapsed < $this->minimumFloodSecs) {
                     if ($this->antispamTimeSecs > 0) {
                         $this->repo->addMute($hexUserId, $ip, null, $this->antispamTimeSecs);
@@ -272,16 +272,16 @@ final class CommentService
             if ($replyTo === null || !isset($byId[$replyTo])) {
                 $roots[] = &$row;
             } else {
-                if (is_array($byId[$replyTo])) {
-                    $byId[$replyTo]['children'][] = &$row;
-                }
+                $childList = is_array($byId[$replyTo]['children']) ? $byId[$replyTo]['children'] : [];
+                $childList[] = &$row;
+                $byId[$replyTo]['children'] = $childList;
             }
         }
         unset($row);
 
         // Flatten back to a list with depth
         $result = [];
-        /** @phpstan-var list<array<string,mixed>> $roots */
+        /** @phpstan-ignore argument.type */
         $this->flattenTree($roots, 0, $result);
         return $result;
     }

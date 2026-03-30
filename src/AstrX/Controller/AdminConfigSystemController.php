@@ -125,7 +125,7 @@ final class AdminConfigSystemController extends AbstractController
      */
     private function savePrelude(array $p)
     : Result {
-        $env = (int)($p['environment']??EnvironmentType::DEVELOPMENT->value);
+        $env = self::mInt($p, 'environment', EnvironmentType::DEVELOPMENT->value);
         $available = array_values(
             array_filter(
                 array_map(
@@ -262,9 +262,8 @@ final class AdminConfigSystemController extends AbstractController
             ] as $lvl
         ) {
             $key = 'level_class_' . strtolower($lvl);
-            $levelClasses[$lvl] = trim(
-                (string)($p[$key]??'diag-' . strtolower($lvl))
-            );
+            $levelRaw = $p[$key] ?? ('diag-' . strtolower($lvl));
+            $levelClasses[$lvl] = trim(is_scalar($levelRaw) ? (string)$levelRaw : ('diag-' . strtolower($lvl)));
         }
 
         return $this->writer->write('ContentManager', [
@@ -672,7 +671,7 @@ final class AdminConfigSystemController extends AbstractController
         ) {
             $this->ctx->set(
                 'cfg_level_class_' . strtolower($lvl),
-                (string)($levelClasses[$lvl]??'diag-' . strtolower($lvl))
+                (is_scalar($levelClasses[$lvl] ?? null) ? (string)$levelClasses[$lvl] : ('diag-' . strtolower($lvl)))
             );
         }
 

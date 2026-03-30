@@ -169,7 +169,8 @@ final class AdminBanlistController extends AbstractController
 
             case 'update_round':
                 $key      = trim(self::mStr($posted, 'route_key', ''));
-                $roundIdx = (int) ($posted['round_idx'] ?? -1);
+                $roundIdxRaw = $posted['round_idx'] ?? -1;
+                $roundIdx = is_int($roundIdxRaw) ? $roundIdxRaw : (is_numeric($roundIdxRaw) ? (int)$roundIdxRaw : -1);
                 $routes   = $this->loadRoutes();
                 if ($key !== '' && isset($routes[$key][$roundIdx])) {
                     $routes[$key][$roundIdx] = [
@@ -186,7 +187,8 @@ final class AdminBanlistController extends AbstractController
 
             case 'delete_round':
                 $key      = trim(self::mStr($posted, 'route_key', ''));
-                $roundIdx = (int) ($posted['round_idx'] ?? -1);
+                $roundIdxRaw = $posted['round_idx'] ?? -1;
+                $roundIdx = is_int($roundIdxRaw) ? $roundIdxRaw : (is_numeric($roundIdxRaw) ? (int)$roundIdxRaw : -1);
                 $routes   = $this->loadRoutes();
                 if ($key !== '' && isset($routes[$key][$roundIdx])) {
                     unset($routes[$key][$roundIdx]);
@@ -309,11 +311,12 @@ final class AdminBanlistController extends AbstractController
      * @param  list<array<string,mixed>> $routes
      * @return list<array{key:string,name:string}>
      */
+    /** @param list<array<string,mixed>> $routes */
     private function buildRouteOptions(array $routes): array
     {
         $options = [];
         foreach ($routes as $r) {
-            $options[] = ['key' => (string) $r['key'], 'name' => (string) $r['name']];
+            $options[] = ['key' => is_scalar($r['key'] ?? null) ? (string)$r['key'] : '', 'name' => is_scalar($r['name'] ?? null) ? (string)$r['name'] : ''];
         }
         return $options;
     }

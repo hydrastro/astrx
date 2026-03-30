@@ -182,9 +182,10 @@ final class AdminCommentsController extends AbstractController
 
         $antispam = [];
         foreach ($keys as $i => $key) {
-            $k = (int) $key;
+            $k = is_int($key) ? $key : (is_numeric($key) ? (int)$key : 0);
             if ($k <= 0) { continue; }
-            $pattern = trim((string) ($regexes[$i] ?? ''));
+            $regexRaw = $regexes[$i] ?? '';
+            $pattern = trim(is_scalar($regexRaw) ? (string)$regexRaw : '');
             if ($pattern === '') { continue; }
             $antispam[$k] = [
                 'regex'   => $pattern,
@@ -214,10 +215,10 @@ final class AdminCommentsController extends AbstractController
             $qFlagged = $this->request->query()->get('flagged');
             $qHidden  = $this->request->query()->get('show_hidden');
             $editRaw  = $this->request->query()->get('edit');
-        $editId   = is_int($editRaw) ? $editRaw : (int)($editRaw ?? 0);
+        $editId   = is_int($editRaw) ? $editRaw : (is_numeric($editRaw) ? (int)$editRaw : 0);
 
             $filters = [];
-            if ($qPageId !== null) { $filters['page_id'] = is_int($qPageId) ? $qPageId : (int)$qPageId; }
+            if ($qPageId !== null) { $filters['page_id'] = is_int($qPageId) ? $qPageId : (is_numeric($qPageId) ? (int)$qPageId : 0); }
             if ($qFlagged === '1')    { $filters['flagged']  = 1; }
             if ($qHidden  === '0')    { $filters['hidden']   = 0; }
             elseif ($qHidden === '1') { $filters['hidden']   = 1; }

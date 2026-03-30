@@ -202,7 +202,7 @@ final class AdminConfigCaptchaController extends AbstractController
             'dots_number'                 => max(0, self::mInt($p, 'dots_number', 100)),
             'char_list'                   => trim(self::mStr($p, 'char_list', '')),
             'captcha_length'              => max(1, self::mInt($p, 'captcha_length', 5)),
-            'captcha_type'                => (int) ($p['captcha_type'] ?? CaptchaType::MEDIUM->value),
+            'captcha_type'                => self::mInt($p, 'captcha_type', CaptchaType::MEDIUM->value),
             'font_size'                   => max(8, self::mInt($p, 'font_size', 20)),
             'font_file'                   => trim(self::mStr($p, 'font_file', '')),
             'font_min_distance'           => self::mInt($p, 'font_min_distance', 0),
@@ -224,10 +224,10 @@ final class AdminConfigCaptchaController extends AbstractController
     private function saveContextDifficulty(array $p): Result
     {
         $full = $this->loadFullCaptchaConfig();
-        $full['CaptchaRenderer']['login_captcha_difficulty']    = (int) ($p['login_captcha_difficulty']    ?? CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['register_captcha_difficulty'] = (int) ($p['register_captcha_difficulty'] ?? CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['recover_captcha_difficulty']  = (int) ($p['recover_captcha_difficulty']  ?? CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['comment_captcha_difficulty']  = (int) ($p['comment_captcha_difficulty']  ?? CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['login_captcha_difficulty']    = self::mInt($p, 'login_captcha_difficulty', CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['register_captcha_difficulty'] = self::mInt($p, 'register_captcha_difficulty', CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['recover_captcha_difficulty']  = self::mInt($p, 'recover_captcha_difficulty', CaptchaType::MEDIUM->value);
+        $full['CaptchaRenderer']['comment_captcha_difficulty']  = self::mInt($p, 'comment_captcha_difficulty', CaptchaType::MEDIUM->value);
         return $this->writer->write('Captcha', $full);
     }
 

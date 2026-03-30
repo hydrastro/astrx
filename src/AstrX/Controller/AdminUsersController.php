@@ -150,16 +150,16 @@ final class AdminUsersController extends AbstractController
                     $hexId,
                     trim(self::mStr($posted, 'username', '')),
                     $password,
-                    ($posted['mailbox']      ?? '') !== '' ? trim((string) $posted['mailbox'])      : null,
-                    ($posted['email']        ?? '') !== '' ? trim((string) $posted['email'])        : null,
-                    ($posted['display_name'] ?? '') !== '' ? trim((string) $posted['display_name']) : null,
+                    is_scalar($posted['mailbox'] ?? null) && ($posted['mailbox'] ?? '') !== '' ? trim((string)$posted['mailbox']) : null,
+                    is_scalar($posted['email'] ?? null) && ($posted['email'] ?? '') !== '' ? trim((string)$posted['email']) : null,
+                    is_scalar($posted['display_name'] ?? null) && ($posted['display_name'] ?? '') !== '' ? trim((string)$posted['display_name']) : null,
                     self::mInt($posted, 'type', 0),
-                    ($posted['birth']        ?? '') !== '' ? trim((string) $posted['birth'])        : null,
+                    is_scalar($posted['birth'] ?? null) && ($posted['birth'] ?? '') !== '' ? trim((string)$posted['birth']) : null,
                     self::mInt($posted, 'login_attempts', 0),
                     self::mBool($posted, 'verified'),
                     self::mBool($posted, 'deleted'),
-                    ($posted['created_at']  ?? '') !== '' ? trim((string) $posted['created_at'])  : null,
-                    ($posted['last_access'] ?? '') !== '' ? trim((string) $posted['last_access']) : null,
+                    is_scalar($posted['created_at'] ?? null) && ($posted['created_at'] ?? '') !== '' ? trim((string)$posted['created_at']) : null,
+                    is_scalar($posted['last_access'] ?? null) && ($posted['last_access'] ?? '') !== '' ? trim((string)$posted['last_access']) : null,
                 );
                 $r->drainTo($this->collector);
                 if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.updated')); }
@@ -193,10 +193,10 @@ final class AdminUsersController extends AbstractController
                 'case_sensitive_usernames'       => self::mBool($p, 'case_sensitive_usernames'),
                 'minimum_age'                    => max(0, self::mInt($p, 'minimum_age', 0)),
                 'maximum_age'                    => max(0, self::mInt($p, 'maximum_age', 0)),
-                'login_captcha_type'             => (int) ($p['login_captcha_type']    ?? UserService::CAPTCHA_SHOW_ON_X_FAILED),
+                'login_captcha_type'             => self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED),
                 'login_captcha_attempts'         => max(1, self::mInt($p, 'login_captcha_attempts', 3)),
-                'register_captcha_type'          => (int) ($p['register_captcha_type'] ?? UserService::CAPTCHA_SHOW_ALWAYS),
-                'recover_captcha_type'           => (int) ($p['recover_captcha_type']  ?? UserService::CAPTCHA_SHOW_ALWAYS),
+                'register_captcha_type'          => self::mInt($p, 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
+                'recover_captcha_type'           => self::mInt($p, 'recover_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
                 'remember_me_time'               => max(0, self::mInt($p, 'remember_me_time', 2592000)),
                 'username_regex'                 => $this->parseRegexTable($p, 'username'),
                 'password_regex'                 => $this->parseRegexTable($p, 'password'),
@@ -260,7 +260,8 @@ final class AdminUsersController extends AbstractController
                     $full = $this->userRepo->adminFindById($editId);
                     $full->drainTo($this->collector);
                     $fd = ($full->isOk() && $full->unwrap() !== null) ? $full->unwrap() : $row;
-                    $fd['type_options'] = $this->buildTypeOptions((int) $fd['type']);
+                    $typeV = $fd['type'] ?? 0;
+                    $fd['type_options'] = $this->buildTypeOptions(is_int($typeV) ? $typeV : (is_numeric($typeV) ? (int)$typeV : 0));
                     $row['editing'] = [$fd];
                 } else {
                     $row['editing'] = false;
@@ -279,12 +280,13 @@ final class AdminUsersController extends AbstractController
             $loginType    = $this->config->getConfigInt('UserService', 'login_captcha_type',    UserService::CAPTCHA_SHOW_ON_X_FAILED);
             $registerType = $this->config->getConfigInt('UserService', 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS);
             $recoverType  = $this->config->getConfigInt('UserService', 'recover_captcha_type',  UserService::CAPTCHA_SHOW_ALWAYS);
-            /** @phpstan-var callable(mixed, list<array<string,mixed>>): list<array<string,mixed>> $sel */
-            $sel          = function($v, array $o) { return array_map(function($x) use ($v) {
-                if (!is_array($x)) { return $x; }
-                /** @phpstan-var array<string,mixed> $x */
-                return array_merge($x, ['selected' => $x['value'] === $v]);
-            }, $o); };
+            /** @param array<string,mixed>[] $o */
+            $sel = function(mixed $v, array $o): array {
+                return array_map(function (array $x) use ($v): array {
+                    /** @var array<string,mixed> $x */
+                    return array_merge($x, ['selected' => $x['value'] === $v]);
+                }, $o);
+            };
 
             $this->ctx->set('cfg_token_expiration_time',          $this->config->getConfigInt('UserService', 'token_expiration_time',          21600));
             $this->ctx->set('cfg_allow_register',                 $this->config->getConfigBool('UserService', 'allow_register',                 true));
@@ -310,8 +312,8 @@ final class AdminUsersController extends AbstractController
             $passwordRulesTyped = $passwordRulesRaw;
             $this->ctx->set('username_regex_list', $this->flattenRegex($usernameRulesTyped));
             $this->ctx->set('password_regex_list', $this->flattenRegex($passwordRulesTyped));
-            $this->ctx->set('has_username_regex',  $usernameRules !== []);
-            $this->ctx->set('has_password_regex',  $passwordRules !== []);
+            $this->ctx->set('has_username_regex',  $usernameRulesRaw !== []);
+            $this->ctx->set('has_password_regex',  $passwordRulesRaw !== []);
 
             $this->ctx->set('cfg_avatar_dir',            $this->config->getConfigString('AvatarService',      'avatar_dir',       ''));
             $this->ctx->set('cfg_avatar_file_size',      $this->config->getConfigInt('AvatarService',      'avatar_file_size',  1048576));
@@ -350,15 +352,17 @@ final class AdminUsersController extends AbstractController
 
         $result = [];
         foreach ($keys as $i => $key) {
-            $k = (int) $key;
+            $k = is_int($key) ? $key : (is_numeric($key) ? (int)$key : 0);
             if ($k <= 0) { continue; }
-            $pattern = trim((string) ($patterns[$i] ?? ''));
+            $patRaw = $patterns[$i] ?? '';
+            $pattern = trim(is_scalar($patRaw) ? (string)$patRaw : '');
             if ($pattern === '') { continue; }
+            $msgRaw = $messages[$i] ?? '';
             $result[$k] = [
                 'regex'        => $pattern,
                 'enabled'      => isset($enabled[$i]),
                 'checking_for' => isset($checkingFor[$i]),
-                'message'      => trim((string) ($messages[$i] ?? '')),
+                'message'      => trim(is_scalar($msgRaw) ? (string)$msgRaw : ''),
             ];
         }
         return $result;

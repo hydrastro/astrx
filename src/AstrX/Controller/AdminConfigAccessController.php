@@ -235,7 +235,8 @@ final class AdminConfigAccessController extends AbstractController
         $overrides = [];
         foreach ($this->renderer->knownCodes() as $code) {
             $field = 'diag_level_' . $this->escapeCode($code);
-            $raw   = (string) ($p[$field] ?? '');
+            $rawV  = $p[$field] ?? '';
+            $raw   = is_scalar($rawV) ? (string)$rawV : '';
             if ($raw === '') { continue; }
             $level = DiagnosticLevel::tryFrom((int) $raw);
             if ($level !== null) {

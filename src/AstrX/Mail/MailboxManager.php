@@ -74,7 +74,9 @@ final class MailboxManager
             return $result;
         }
 
-        return Result::ok(['address' => $address]);
+        /** @var \AstrX\Result\Result<array{address: string}> $mbOk */
+        $mbOk = Result::ok(['address' => $address]);
+        return $mbOk;
     }
 
     /**
@@ -100,9 +102,8 @@ final class MailboxManager
     /**
      * Change the IMAP/SMTP password for a mailbox.
      * Called when the user changes their password in settings.
-     * @return Result<true>
+     * @return Result<bool>
      */
-    /** @phpstan-return Result<true> */
     public function changePassword(string $username, string $newPassword)
     : Result {
         $payload = json_encode([
@@ -185,7 +186,7 @@ final class MailboxManager
 
         if ($action === 'create') {
             $hash = password_hash(
-                (is_scalar($data['password'] ?? null) ? (string)($data['password'] ?? '') : ''),
+                (is_scalar($data['password']) ? (string)$data['password'] : ''),
                 PASSWORD_ARGON2ID
             );
             $passwdLine = "{$address}:{ARGON2ID}{$hash}\n";
@@ -226,7 +227,7 @@ final class MailboxManager
             }
         } elseif ($action === 'passwd') {
             $hash = password_hash(
-                (is_scalar($data['password'] ?? null) ? (string)($data['password'] ?? '') : ''),
+                (is_scalar($data['password']) ? (string)$data['password'] : ''),
                 PASSWORD_ARGON2ID
             );
             $lines = file($passwdFile, FILE_IGNORE_NEW_LINES) ?: [];

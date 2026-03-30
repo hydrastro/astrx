@@ -324,10 +324,10 @@ final class AdminNavbarController extends AbstractController
             if ($pid !== null && !isset($navbars[$nid]['pins'][$pid])) {
                 $navbars[$nid]['pins'][$pid] = [
                     'id'         => $pid,
-                    'sort_order' => (is_int($row['pin_sort_order']) ? (is_int($row['pin_sort_order']) ? $row['pin_sort_order'] : 0) : 0),
-                    'sort_mode'  => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0),
-                    'alpha'      => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0) === 0,
-                    'custom'     => (is_int($row['sort_mode']) ? (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) : 0) === 1,
+                    'sort_order' => (is_int($row['pin_sort_order']) ? $row['pin_sort_order'] : 0),
+                    'sort_mode'  => (is_int($row['sort_mode']) ? $row['sort_mode'] : 0),
+                    'alpha'      => (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) === 0,
+                    'custom'     => (is_int($row['sort_mode']) ? $row['sort_mode'] : 0) === 1,
                     'entries'    => [],
                 ];
             }
@@ -339,8 +339,8 @@ final class AdminNavbarController extends AbstractController
                     'internal'   => (bool) $row['internal'],
                     'external'   => !(bool) $row['internal'],
                     'active'     => (bool) $row['active'],
-                    'sort_order' => (is_int($row['entry_sort_order']) ? (is_int($row['entry_sort_order']) ? $row['entry_sort_order'] : 0) : 0),
-                    'page_id'    => $row['page_id'] !== null ? (is_int($row['page_id']) ? (is_int($row['page_id']) ? $row['page_id'] : 0) : 0) : null,
+                    'sort_order' => (is_int($row['entry_sort_order']) ? $row['entry_sort_order'] : 0),
+                    'page_id'    => $row['page_id'] !== null ? (is_int($row['page_id']) ? $row['page_id'] : 0) : null,
                     'page_url_id'=> $row['page_url_id'],
                     'url'        => $row['url'],
                 ];
@@ -391,7 +391,9 @@ final class AdminNavbarController extends AbstractController
             );
             $stmt->execute([':id' => $id]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $row !== false ? $row : null;
+            if (!is_array($row)) { return null; }
+            /** @var array<string,mixed> $row */
+            return $row;
         } catch (\PDOException) {
             return null;
         }
