@@ -44,6 +44,7 @@ final class CaptchaRenderer
     private bool   $dotsColorRandom  = false;
 
     private int    $linesNumber          = 5;
+    private bool   $linesStartFromBorder = true;
     private int    $dotsNumber           = 100;
 
     private string $charList      = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
@@ -90,6 +91,8 @@ final class CaptchaRenderer
     public function setDotsColorRandom(bool $v): void { $this->dotsColorRandom = $v; }
     #[InjectConfig('lines_number')]
     public function setLinesNumber(int $v): void { $this->linesNumber = $v; }
+    #[InjectConfig('lines_start_from_border')]
+    public function setLinesStartFromBorder(bool $v): void { $this->linesStartFromBorder = $v; }
     #[InjectConfig('dots_number')]
     public function setDotsNumber(int $v): void { $this->dotsNumber = $v; }
     #[InjectConfig('char_list')]
@@ -372,7 +375,9 @@ final class CaptchaRenderer
             }
 
             $start  = $this->randomBorder($w, $h);
-            $finish = $this->randomBorder($w, $h);
+            $finish = $this->linesStartFromBorder
+                ? $this->randomBorder($w, $h)
+                : [random_int(0, $w - 1), random_int(0, $h - 1)];
             imageline($image, $start[0], $start[1], $finish[0], $finish[1], $color);
         }
     }
