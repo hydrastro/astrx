@@ -71,12 +71,10 @@ final class MailboxManager
 
         $result = $this->apiCall('POST', '/mailbox', (string)$payload);
         if (!$result->isOk()) {
-            return $result;
+            return $result; /** @phpstan-ignore return.type */
         }
 
-        /** @var \AstrX\Result\Result<array{address: string}> $mbOk */
-        $mbOk = Result::ok(['address' => $address]);
-        return $mbOk;
+        return Result::ok(['address' => $address]);
     }
 
     /**

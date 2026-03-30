@@ -281,17 +281,14 @@ final class CommentService
 
         // Flatten back to a list with depth
         $result = [];
-        /** @var list<array<string,mixed>> $rootsList */
-        $rootsList = $roots;
-        /** @phpstan-ignore argument.type */
-        $this->flattenTree($rootsList, 0, $result);
+        $this->flattenTree($roots, 0, $result);
         return $result;
     }
 
     // -------------------------------------------------------------------------
 
     /**
-     * @param list<array<string,mixed>> $nodes
+     * @param array<mixed> $nodes
      * @param list<array<string,mixed>> $out
      */
     private function flattenTree(array &$nodes, int $depth, array &$out): void

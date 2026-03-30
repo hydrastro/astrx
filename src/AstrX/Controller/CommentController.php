@@ -168,7 +168,7 @@ final class CommentController extends AbstractController
             ? max(0, (is_numeric($csShowRaw2 = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw2 : 0))
             : $perPage;
         $indent     = ($this->request->query()->get(self::CP_INDENT) !== null)
-            ? (int) $this->request->query()->get(self::CP_INDENT)
+            ? (is_numeric($indRaw = $this->request->query()->get(self::CP_INDENT)) ? (int)$indRaw : self::DEFAULT_INDENT)
             : self::DEFAULT_INDENT;
         $nested     = ($indent !== 0);
 
