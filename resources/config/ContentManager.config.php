@@ -17,7 +17,7 @@ return [
 
         // Lang domains loaded globally (on every page load) before the page-specific domain.
         // Useful for shared string sets like all user pages sharing one 'User' lang file.
-        'extra_lang_domains' => ['User'],
+        'extra_lang_domains' => ['User', 'Http'],
 
         'status_bar_min_level' => 2,
 

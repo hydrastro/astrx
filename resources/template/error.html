@@ -1,2 +1,12 @@
-This is the error page.
-<br>{{error_name}}<br>{{error_message}}<br>
+<h2>{{error}} {{error_code}} - {{error_name}}</h2>
+<p>{{error_message}}</p>
+<hr>
+<a href="{{home_url}}" class="btn">{{error_go_home}}</a>
+{{#error_show_diagnostics}}
+<details class="error-diagnostics" open>
+  <summary>Diagnostics</summary>
+  <ul>
+    {{#error_diagnostics}}<li class="{{css_class}}"><code>{{message}}</code></li>{{/error_diagnostics}}
+  </ul>
+</details>
+{{/error_show_diagnostics}}

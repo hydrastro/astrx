@@ -155,7 +155,7 @@ final class ContentManager
             ->drainTo($this->collector);
 
         if (!$sessionResult->isOk()) {
-            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
             return;
         }
 
@@ -213,7 +213,7 @@ final class ContentManager
 
         $prgResult = $this->injector->getClass(PrgHandler::class);
         if (!$prgResult->isOk()) {
-            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
             return;
         }
 
@@ -238,7 +238,7 @@ final class ContentManager
                                                self::LVL_INVALID_PRG_ID,
                                                $prgId,
                                            ));
-                    http_response_code(HttpStatus::BAD_REQUEST->value);
+                    $this->renderError(HttpStatus::BAD_REQUEST);
                     return;
                 }
                 $token = $commentPrg->storeFromPayload($request->body()->all());
@@ -251,7 +251,7 @@ final class ContentManager
                                                self::LVL_INVALID_PRG_ID,
                                                $prgId,
                                            ));
-                    http_response_code(HttpStatus::BAD_REQUEST->value);
+                    $this->renderError(HttpStatus::BAD_REQUEST);
                     return;
                 }
                 // Persist uploaded files through the PRG cycle: move each file to a
@@ -281,7 +281,7 @@ final class ContentManager
                     ->drainTo($this->collector);
             }
             if (!$sendResult->isOk()) {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                 return;
             }
             exit;
@@ -326,7 +326,7 @@ final class ContentManager
             ->drainTo($this->collector);
 
         if (!$pageHandlerResult->isOk()) {
-            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
             return;
         }
 
@@ -400,7 +400,7 @@ final class ContentManager
             ->drainTo($this->collector);
 
         if (!$ctxResult->isOk()) {
-            http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+            $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
             return;
         }
 
@@ -441,7 +441,7 @@ final class ContentManager
                     ->drainTo($this->collector);
 
                 if (!$controllerResult->isOk()) {
-                    http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                    $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                     return;
                 }
 
@@ -481,7 +481,7 @@ final class ContentManager
                 ->drainTo($this->collector);
 
             if (!$engineResult->isOk()) {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                 return;
             }
 
@@ -518,7 +518,7 @@ final class ContentManager
                 ->drainTo($this->collector);
 
             if (!$renderResult->isOk()) {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                 return;
             }
 
@@ -624,6 +624,68 @@ final class ContentManager
         $request->query()->set($pageKey, $pageToken);
 
         return [$locale, $sidCandidate, $pageToken];
+    }
+
+
+    // =========================================================================
+    // Error rendering
+    // =========================================================================
+
+    /**
+     * Set the response code, load the error page, and render it.
+     *
+     * This replaces bare `http_response_code(X); return;` patterns throughout
+     * the request pipeline so that errors produce a useful rendered page
+     * instead of a blank response.
+     *
+     * Falls back to a minimal inline HTML page if the full error page machinery
+     * is itself unavailable (e.g. DB down, template missing).
+     */
+    private function renderError(HttpStatus $status): void
+    {
+        http_response_code($status->value);
+
+        // Load the Http lang domain so ErrorController has its translations.
+        if (langDir() !== '') {
+            $this->translator->loadDomain(langDir(), 'Http');
+        }
+
+        // Try the full error page route.
+        $errorUrlId = $this->config->getConfig(
+            'ContentManager', 'error_page_url_id', 'WORDING_ERROR'
+        );
+        if (!is_string($errorUrlId)) {
+            $errorUrlId = 'WORDING_ERROR';
+        }
+
+        $phResult = $this->injector->getClass(\AstrX\Page\PageHandler::class);
+        if ($phResult->isOk()) {
+            /** @var \AstrX\Page\PageHandler $ph */
+            $ph  = $phResult->unwrap();
+            $eid = $ph->getPageIdFromUrlId($errorUrlId);
+            $errorPage = $eid !== null ? $ph->getPage($eid) : null;
+
+            if ($errorPage !== null) {
+                $this->injector->setClass($errorPage);
+                $this->renderPage($errorPage, false);
+                return;
+            }
+        }
+
+        // Failsafe: minimal HTML that does not require templates or DB.
+        $code = $status->value;
+        $name = htmlspecialchars($status->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $name = ucwords(strtolower(str_replace('_', ' ', $name)));
+        echo <<<HTML
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>{$code} {$name}</title></head>
+        <body>
+          <h1>{$code} — {$name}</h1>
+          <p>An error occurred. Please try again or contact the administrator.</p>
+        </body>
+        </html>
+        HTML;
     }
 
     private function initPDO(): void
