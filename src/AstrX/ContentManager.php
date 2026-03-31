@@ -170,17 +170,21 @@ final class ContentManager
             }
         }
 
-        // Harden session cookie: Secure (HTTPS only), HttpOnly (no JS access),
-        // SameSite=Lax (CSRF mitigation). These apply whether or not cookies
-        // are the transport mechanism — session_set_cookie_params() sets the
-        // parameters PHP uses when it writes the Set-Cookie header.
+        // Harden session cookie: HttpOnly (no JS access), SameSite=Lax (CSRF
+        // mitigation). The Secure flag is set only when the request is over HTTPS
+        // so that local HTTP development still works. In production behind a TLS
+        // terminator, $_SERVER['HTTPS'] is set to 'on' by the web server or by the
+        // X-Forwarded-Proto header (if your proxy sets it).
+        $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
+                    && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
         $existingParams = session_get_cookie_params();
         session_set_cookie_params([
             'lifetime' => $existingParams['lifetime'],
             /** @phpstan-ignore notIdentical.alwaysTrue */
             'path'     => $existingParams['path'] !== '' ? $existingParams['path'] : '/',
             'domain'   => $existingParams['domain'],
-            'secure'   => true,
+            'secure'   => $isHttps,
             'httponly' => true,
             'samesite' => 'Lax',
         ]);

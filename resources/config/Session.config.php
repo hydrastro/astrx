@@ -15,6 +15,13 @@ return [
         // encryption policy
         'encrypt' => true,
 
+        // Server-side secret mixed into the per-session HKDF key derivation.
+        // A stolen database row cannot be decrypted without this secret.
+        // CHANGE THIS to a long random string before deploying to production.
+        // Generate one with: php -r "echo bin2hex(random_bytes(32));" 
+        // WARNING: changing this value invalidates ALL existing sessions.
+        'server_secret' => '',
+
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)
 

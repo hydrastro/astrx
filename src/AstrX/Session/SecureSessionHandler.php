@@ -219,10 +219,26 @@ final class SecureSessionHandler implements
     /** @return array<string,mixed>|false */
     private function readRow(string $hashedId): array|false
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT `data`, `replaced_by`, `replace_at` FROM `session` WHERE `id` = :id'
-        );
-        $stmt->execute(['id' => $hashedId]);
+        try {
+            // Full query including handover columns (requires the updated schema).
+            $stmt = $this->pdo->prepare(
+                'SELECT `data`, `replaced_by`, `replace_at` FROM `session` WHERE `id` = :id'
+            );
+            $stmt->execute(['id' => $hashedId]);
+        } catch (\PDOException) {
+            // Fallback for databases still running the pre-handover schema
+            // (missing replaced_by / replace_at columns). Handover is disabled
+            // but sessions work normally.  Run the migration in tables.sql to
+            // enable session-ID regeneration with grace-period support.
+            try {
+                $stmt = $this->pdo->prepare(
+                    'SELECT `data` FROM `session` WHERE `id` = :id'
+                );
+                $stmt->execute(['id' => $hashedId]);
+            } catch (\PDOException) {
+                return false;
+            }
+        }
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) { return false; }
         /** @var array<string,mixed> $row */
