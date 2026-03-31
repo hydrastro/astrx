@@ -7,10 +7,10 @@ namespace AstrX\Controller;
 use AstrX\Http\HttpStatus;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
-use AstrX\Identicon\IdenticonRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
+use AstrX\Routing\UrlGenerator;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\UserGroup;
@@ -39,9 +39,9 @@ final class ProfileController extends AbstractController
         private readonly CurrentUrl $currentUrl,
         private readonly UserRepository $userRepo,
         private readonly AvatarService $avatarService,
-        private readonly IdenticonRenderer $identicon,
         private readonly UserSession $session,
         private readonly Translator $t,
+        private readonly UrlGenerator $urlGen,
     ) {
         parent::__construct($collector);
     }
@@ -65,7 +65,7 @@ final class ProfileController extends AbstractController
 
         $hexId = (is_scalar($userData['id']) ? (string)$userData['id'] : '');
         $hasAvatar = (bool)$userData['avatar'];
-        $avatarSrc = $this->resolveAvatarSrc($hexId, $hasAvatar);
+        $avatarSrc = $this->resolveAvatarUrl($hexId, $hasAvatar);
 
         $groupLabel = $this->resolveGroupLabel((is_int($userData['type']) ? $userData['type'] : 0));
         $isOwnProfile = $this->session->isLoggedIn() &&
@@ -145,23 +145,22 @@ final class ProfileController extends AbstractController
     }
 
     /**
-     * Build the avatar img src: data URI for on-disk avatar,
-     * base64 identicon, or empty string (template hides it).
+     * Build the avatar img src as a URL pointing to the avatar endpoint.
+     * For uploaded avatars: /avatar?uid=<hexId>
+     * For identicons:       /avatar?uid=<hexId>  (AvatarController generates it)
+     * Returns '' if neither avatar nor identicons are enabled.
+     *
+     * Using URLs instead of data URIs:
+     *   - Avoids embedding large base64 blobs in the page HTML.
+     *   - Allows the browser to cache the image independently.
+     *   - Keeps the HTML payload small.
      */
-    private function resolveAvatarSrc(string $hexId, bool $hasAvatar)
-    : string {
-        if ($hasAvatar && $this->avatarService->exists($hexId)) {
-            $path = $this->avatarService->pathFor($hexId);
-            $data = base64_encode((string)file_get_contents($path));
-
-            return 'data:image/png;base64,' . $data;
+    private function resolveAvatarUrl(string $hexId, bool $hasAvatar): string
+    {
+        if (!$hasAvatar && !$this->avatarService->useIdenticons()) {
+            return '';
         }
-
-        if ($this->avatarService->useIdenticons()) {
-            return 'data:image/png;base64,' . $this->identicon->render($hexId);
-        }
-
-        return '';
+        return $this->urlGen->toPage('avatar', ['uid' => $hexId]);
     }
 
     private function resolveGroupLabel(int $type)

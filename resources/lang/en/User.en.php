@@ -123,7 +123,11 @@ return [
     // -------------------------------------------------------------------------
     // Success / info messages
     // -------------------------------------------------------------------------
-    'user.register.success' => 'Registration successful! You can now log in.',
+    'user.register.success'            => 'Registration successful! You can now log in.',
+    'user.register.terms_label'        => 'I accept the Terms and Conditions',
+    'user.register.data_usage_label'   => 'I accept the Data Usage Policy',
+    'user.register.terms_required'     => 'You must accept the Terms and Conditions to register.',
+    'user.register.data_usage_required'=> 'You must accept the Data Usage Policy to register.',
     'user.recover.sent'     => 'If an account with that username or email exists, a reset link has been sent.',
 
     // -------------------------------------------------------------------------

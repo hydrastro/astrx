@@ -38,6 +38,24 @@
     <input type="number" name="year"  class="input" style="width:5em" placeholder="YYYY"><br>
     {{/show_birth_date}}
     {{> captcha}}
+    {{#show_terms}}
+    <p>
+      <label>
+        <input type="checkbox" name="terms_accepted" value="1">
+        {{#terms_url}}<a href="{{terms_url}}" target="_blank" rel="noopener">{{reg_terms_label}}</a>{{/terms_url}}
+        {{^terms_url}}{{reg_terms_label}}{{/terms_url}}
+      </label>
+    </p>
+    {{/show_terms}}
+    {{#show_data_usage}}
+    <p>
+      <label>
+        <input type="checkbox" name="data_usage_accepted" value="1">
+        {{#data_usage_url}}<a href="{{data_usage_url}}" target="_blank" rel="noopener">{{reg_data_usage_label}}</a>{{/data_usage_url}}
+        {{^data_usage_url}}{{reg_data_usage_label}}{{/data_usage_url}}
+      </label>
+    </p>
+    {{/show_data_usage}}
     <input type="submit" value="{{reg_submit}}" class="input"><br>
     <a href="{{login_url}}">{{reg_back}}</a>.
   </p>

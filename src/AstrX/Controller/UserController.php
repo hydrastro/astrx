@@ -14,6 +14,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Mail\WebmailService;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 
@@ -43,6 +44,7 @@ final class UserController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly WebmailService        $webmail,
     ) {
         parent::__construct($collector);
     }
@@ -61,7 +63,11 @@ final class UserController extends AbstractController
                 $tokenType = $verifyResult->unwrap();
 
                 if ($tokenType === UserService::TOKEN_DELETE) {
-                    $this->userService->delete($hexUid, null, tokenUnlock: true);
+                    $this->userService->delete(
+                        hexId:       $hexUid,
+                        mode:        \AstrX\User\DeletionMode::SOFT_REDACT,
+                        tokenUnlock: true,
+                    );
                     $this->session->logout();
                 } elseif (
                     $this->session->isLoggedIn() &&
@@ -140,6 +146,13 @@ final class UserController extends AbstractController
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
         $userData = $loginResult->unwrap();
         $this->session->login($userData);
+
+        // When the mail server is local (shares user DB with this app), the
+        // user's login password is also the IMAP password.  Store it now so
+        // the webmail page does not need to ask for it again.
+        if ($this->webmail->mailserverIsLocal() && $password !== '') {
+            $this->session->storeImapPassword($password);
+        }
     }
 
     private function renderLoginForm(string $usernameValue = ''): void

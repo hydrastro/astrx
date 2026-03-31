@@ -28,6 +28,17 @@ return [
         ],
         'password_regex' => [],
     ],
+    // ── Registration legal agreements ───────────────────────────────────────
+    // enabled = true: checkbox is shown AND required.
+    // enabled = false: checkbox is NOT shown (field is ignored on submission).
+    // url: if non-empty, the label becomes a link to this URL.
+    'RegisterConsent' => [
+        'require_terms'      => false,
+        'terms_url'          => '',
+        'require_data_usage' => false,
+        'data_usage_url'     => '',
+    ],
+
     'AvatarService' => [
         'avatar_dir' => '/app/resources/avatar',
         'avatar_file_size' => 1048576,

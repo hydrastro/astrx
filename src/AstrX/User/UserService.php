@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\User;
 
+use AstrX\User\DeletionMode;
+
 use AstrX\Config\Config;
 use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
@@ -138,7 +140,10 @@ final class UserService
 
     // -------------------------------------------------------------------------
 
-    public function __construct(private readonly UserRepository $repo) {}
+    public function __construct(
+        private readonly UserRepository $repo,
+        private readonly AvatarService  $avatarService,
+    ) {}
 
     // -------------------------------------------------------------------------
     // Public getters (needed by controllers for conditional UI)
@@ -576,14 +581,26 @@ final class UserService
     }
 
     /**
-     * Soft-delete the user's account. Requires correct password unless a
-     * delete token has already been verified (tokenUnlock=true).
+     * Delete or retire a user account using the specified mode.
+     *
+     * User-initiated deletion (from settings) requires correct password unless
+     * a delete token was already verified ($tokenUnlock=true).
+     * Admin-initiated deletion skips password verification entirely.
+     *
+     * For hard_redact and full_delete, the avatar file is also removed from disk.
+     * For hard_redact, comments are reassigned to the ghost account first.
      *
      * @return Result<bool>
      */
-    public function delete(string $hexId, ?string $password, bool $tokenUnlock = false): Result
-    {
-        if (!$tokenUnlock) {
+    public function delete(
+        string       $hexId,
+        DeletionMode $mode         = DeletionMode::SOFT_REDACT,
+        ?string      $password     = null,
+        bool         $tokenUnlock  = false,
+        bool         $adminBypass  = false,
+    ): Result {
+        // Password check for user-initiated deletion
+        if (!$adminBypass && !$tokenUnlock) {
             if ($password === null || $password === '') {
                 return $this->opErr('wrong_password');
             }
@@ -592,14 +609,41 @@ final class UserService
                 return Result::err(null, $hashResult->diagnostics());
             }
             $hash = $hashResult->unwrap();
-            if ($hash === null || !password_verify((string)$hash, $password)) {
+            if ($hash === null || !password_verify($password, (string)$hash)) {
                 return $this->opErr('wrong_password');
             }
         }
 
-        /** @var \AstrX\Result\Result<bool> $deleteResult */
-        $deleteResult = $this->repo->softDelete($hexId);
-        return $deleteResult;
+        return match ($mode) {
+            DeletionMode::FULL_DELETE    => $this->doFullDelete($hexId),
+            DeletionMode::HARD_REDACT    => $this->doHardRedact($hexId),
+            DeletionMode::SOFT_REDACT    => $this->repo->softRedact($hexId),
+            DeletionMode::KEEP_VISIBLE   => $this->repo->keepVisible($hexId),
+            DeletionMode::KEEP_SUSPENDED => $this->repo->keepSuspended($hexId),
+            DeletionMode::NONE           => Result::ok(true), // no-op
+        };
+    }
+
+    /** @return Result<bool> */
+    private function doFullDelete(string $hexId): Result
+    {
+        // Remove avatar file before deleting the row.
+        $this->avatarService->removeAvatar($hexId);
+        return $this->repo->fullDelete($hexId);
+    }
+
+    /** @return Result<bool> */
+    private function doHardRedact(string $hexId): Result
+    {
+        // Step 1: reassign comments to ghost (preserves thread structure).
+        $reassign = $this->repo->reassignCommentsToGhost($hexId);
+        if (!$reassign->isOk()) {
+            return Result::err(null, $reassign->diagnostics());
+        }
+        // Step 2: remove avatar file.
+        $this->avatarService->removeAvatar($hexId);
+        // Step 3: wipe PII and create tombstone.
+        return $this->repo->hardRedact($hexId);
     }
 
     /**

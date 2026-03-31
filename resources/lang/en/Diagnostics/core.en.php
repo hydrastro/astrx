@@ -335,4 +335,11 @@ return [
             assert($d instanceof \AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic);
             return 'Diagnostic level override DB error: ' . $d->detail();
         },
+
+    // Injector — method call threw a runtime exception
+    'astrx.injector/method_call_exception' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Injector\Diagnostic\MethodCallExceptionDiagnostic);
+            return "Injector method call exception in {$d->getClassName()}::{$d->getMethodName()}(): {$d->getMessage()}"
+;        },
 ];

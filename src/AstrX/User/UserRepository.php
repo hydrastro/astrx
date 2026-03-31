@@ -6,6 +6,7 @@ namespace AstrX\User;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\User\Diagnostic\UserDbDiagnostic;
+use AstrX\User\DeletionMode;
 use PDO;
 use PDOException;
 use AstrX\Result\DiagnosticLevel;
@@ -21,6 +22,12 @@ use AstrX\Result\DiagnosticLevel;
  */
 final class UserRepository
 {
+    /**
+     * Fixed hex ID of the ghost account.
+     * All-zeros binary(16), seeded in tables.sql.
+     */
+    public const GHOST_HEX_ID = '00000000000000000000000000000000';
+
     public function __construct(private readonly PDO $pdo) {}
 
     // -------------------------------------------------------------------------
@@ -438,6 +445,169 @@ final class UserRepository
         }
         $row = $result->unwrap();
         return Result::ok($row !== null ? (is_scalar($row['password']) ? (string)$row['password'] : '') : null);
+    }
+
+
+    // -------------------------------------------------------------------------
+    // Deletion
+    // -------------------------------------------------------------------------
+
+    /**
+     * Full delete — physically remove the user row.
+     * The `comment.user_id` FK is ON DELETE SET NULL, so all comments from this
+     * user will have user_id set to NULL by the database. Thread structure is
+     * preserved but authorship is permanently lost.
+     *
+     * For hard_redact (where comments are reassigned to the ghost account
+     * BEFORE this call), call reassignCommentsToGhost() first.
+     *
+     * @return Result<bool>
+     */
+    public function fullDelete(string $hexId): Result
+    {
+        return $this->exec(
+            'DELETE FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+    }
+
+    /**
+     * Hard redact — wipe all PII and mark the row as a tombstone.
+     * The username is replaced with a collision-safe placeholder that frees
+     * the original username for re-registration.
+     *
+     * Call reassignCommentsToGhost() BEFORE this to preserve thread structure.
+     *
+     * @return Result<bool>
+     */
+    public function hardRedact(string $hexId): Result
+    {
+        // The tombstone username must be unique but not re-registerable.
+        // Prefixed with \x00 (null byte) which is illegal in normal usernames.
+        $tombstone = 'deleted_' . $hexId;
+        return $this->exec(
+            'UPDATE `user`
+                SET `deletion_mode` = :mode,
+                    `deleted`        = 1,
+                    `username`       = :tomb,
+                    `password`       = NULL,
+                    `mailbox`        = NULL,
+                    `email`          = NULL,
+                    `display_name`   = NULL,
+                    `birth`          = NULL,
+                    `avatar`         = 0,
+                    `verified`       = 0,
+                    `login_attempts` = 0,
+                    `token_hash`     = NULL,
+                    `token_type`     = NULL,
+                    `token_used`     = 0,
+                    `token_expires_at` = NULL,
+                    `last_access`    = NULL
+              WHERE `id` = UNHEX(:id)',
+            [':mode' => DeletionMode::HARD_REDACT->value, ':tomb' => $tombstone, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Soft redact — set deletion_mode + deleted flag only.
+     * All data stays intact; the rendering layer shows [deleted].
+     * Reversible by calling setDeletionMode(NONE).
+     *
+     * @return Result<bool>
+     */
+    public function softRedact(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `deletion_mode` = :mode, `deleted` = 1
+              WHERE `id` = UNHEX(:id)',
+            [':mode' => DeletionMode::SOFT_REDACT->value, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Keep visible — mark account as voluntarily closed.
+     * Content and profile remain visible; login is blocked by deleted=1.
+     *
+     * @return Result<bool>
+     */
+    public function keepVisible(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `deletion_mode` = :mode, `deleted` = 0
+              WHERE `id` = UNHEX(:id)',
+            [':mode' => DeletionMode::KEEP_VISIBLE->value, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Keep suspended — admin-disabled; content hidden from public.
+     *
+     * @return Result<bool>
+     */
+    public function keepSuspended(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `deletion_mode` = :mode, `deleted` = 1
+              WHERE `id` = UNHEX(:id)',
+            [':mode' => DeletionMode::KEEP_SUSPENDED->value, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Change deletion_mode directly (e.g. to restore a soft_redact).
+     *
+     * @return Result<bool>
+     */
+    public function setDeletionMode(string $hexId, DeletionMode $mode): Result
+    {
+        $deleted = match ($mode) {
+            DeletionMode::NONE, DeletionMode::KEEP_VISIBLE => 0,
+            default => 1,
+        };
+        return $this->exec(
+            'UPDATE `user` SET `deletion_mode` = :mode, `deleted` = :d
+              WHERE `id` = UNHEX(:id)',
+            [':mode' => $mode->value, ':d' => $deleted, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Reassign all comments authored by $hexId to the ghost account.
+     * Called before hard_redact to preserve thread structure.
+     *
+     * @return Result<bool>
+     */
+    public function reassignCommentsToGhost(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `comment` SET `user_id` = UNHEX(:ghost)
+              WHERE `user_id` = UNHEX(:id)',
+            [':ghost' => self::GHOST_HEX_ID, ':id' => $hexId],
+        );
+    }
+
+    /**
+     * Fetch only the email for a given user ID (used for avatar seed).
+     * Returns null if user not found or deleted.
+     *
+     * @return Result<string|null>
+     */
+    public function findEmailById(string $hexId): Result
+    {
+        $result = $this->fetchOne(
+            'SELECT `email` FROM `user` WHERE `id` = UNHEX(:id) AND `deleted` = 0',
+            [':id' => $hexId],
+        );
+        if (!$result->isOk()) {
+            return Result::err(null, $result->diagnostics());
+        }
+        $row = $result->unwrap();
+        if (!is_array($row)) {
+            return Result::ok(null);
+        }
+        /** @var array<string,mixed> $row */
+        $email = $row['email'] ?? null;
+        return Result::ok(is_string($email) ? $email : null);
     }
 
     // -------------------------------------------------------------------------

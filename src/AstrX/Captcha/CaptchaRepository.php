@@ -27,12 +27,16 @@ final class CaptchaRepository
      */
     public function store(string $id, string $text, int $expiresAt): Result
     {
+        // Hash the plaintext answer before storage — the DB row must not reveal
+        // the answer. strtolower() is applied first so the same transform is used
+        // during verification (case-insensitive comparison).
+        $hashedText = hash('sha256', strtolower($text));
         try {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO `captcha` (`id`, `text`, `expires_at`)
                  VALUES (:id, :text, FROM_UNIXTIME(:expires_at))'
             );
-            $stmt->execute([':id' => $id, ':text' => $text, ':expires_at' => $expiresAt]);
+            $stmt->execute([':id' => $id, ':text' => $hashedText, ':expires_at' => $expiresAt]);
 
             return Result::ok(true);
         } catch (PDOException $e) {

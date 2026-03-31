@@ -128,7 +128,8 @@ final class CaptchaService
                                                       )));
         }
 
-        if (!hash_equals(strtolower($row['text']), strtolower($submittedText))) {
+        // Stored text is SHA-256(strtolower(plaintext)); apply the same transform.
+        if (!hash_equals($row['text'], hash('sha256', strtolower($submittedText)))) {
             return Result::err(null, Diagnostics::of(new CaptchaWrongDiagnostic(
                                                           'astrx.captcha/wrong_text', DiagnosticLevel::NOTICE,
                                                       )));

@@ -24,5 +24,22 @@ return [
 
         // collision retry
         'max_sid_retries' => 8,
+
+        // ── Session ID regeneration ───────────────────────────────────────────
+        // Time-based regeneration interval per UserGroup name (seconds).
+        // 0 = disabled for that group.
+        // Keys are UserGroup::case names (e.g. 'ADMIN', 'MOD', 'USER', 'GUEST').
+        // Future groups not listed here fall back to 'default_interval'.
+        'regenerate_interval' => [
+            'default' => 0,      // fallback for unlisted groups
+            'GUEST'   => 0,      // guests have no elevated privileges
+            'USER'    => 3600,   // 60 minutes
+            'MOD'     => 900,    // 15 minutes
+            'ADMIN'   => 900,    // 15 minutes
+        ],
+
+        // Seconds the old session row remains valid after regeneration.
+        // Protects slow/Tor connections where two requests may be in-flight.
+        'regenerate_grace_period' => 30,
     ],
 ];

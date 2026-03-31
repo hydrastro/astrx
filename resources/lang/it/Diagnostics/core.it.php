@@ -303,4 +303,11 @@ return [
         return "Espressione di dereferenziazione non valida: \"{$d->value()}\".";
     },
 
+
+    // Injector — method call threw a runtime exception
+    'astrx.injector/method_call_exception' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Injector\Diagnostic\MethodCallExceptionDiagnostic);
+            return "Eccezione nel metodo Injector {$d->getClassName()}::{$d->getMethodName()}(): {$d->getMessage()}"
+;        },
 ];

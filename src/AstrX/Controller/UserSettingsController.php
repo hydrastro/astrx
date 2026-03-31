@@ -13,6 +13,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
+use AstrX\User\DeletionMode;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 
@@ -157,10 +158,18 @@ final class UserSettingsController extends AbstractController
                 break;
 
             case 'delete_account':
+                // Users may choose soft_redact (keeps data) or hard_redact (wipes PII).
+                // full_delete and keep_suspended are reserved for admins.
+                $modeRaw    = self::mStr($posted, 'delete_mode', DeletionMode::SOFT_REDACT->value);
+                $deleteMode = DeletionMode::tryFrom($modeRaw) ?? DeletionMode::SOFT_REDACT;
+                if ($deleteMode === DeletionMode::FULL_DELETE
+                    || $deleteMode === DeletionMode::KEEP_SUSPENDED) {
+                    $deleteMode = DeletionMode::SOFT_REDACT;
+                }
                 $result = $this->userService->delete(
-                                 $hexId,
-                                 self::mStr($posted, 'password', ''),
-                    tokenUnlock: false,
+                    hexId:    $hexId,
+                    mode:     $deleteMode,
+                    password: self::mStr($posted, 'password', ''),
                 );
                 $result->drainTo($this->collector);
                 if ($result->isOk()) {

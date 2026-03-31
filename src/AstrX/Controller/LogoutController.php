@@ -24,7 +24,6 @@ use AstrX\Http\Request;
  */
 final class LogoutController extends AbstractController
 {
-    private const TOKEN_KEY = '_logout_token';
 
     public function __construct(
         DiagnosticsCollector        $collector,
@@ -46,7 +45,7 @@ final class LogoutController extends AbstractController
 
         $ltRaw = $this->request->query()->get('_lt');
         $provided = is_string($ltRaw) ? $ltRaw : '';
-        $expected = $this->getOrCreateToken();
+        $expected = $this->session->logoutToken();
 
         if ($provided === '' || !hash_equals($expected, $provided)) {
             // No token or wrong token — redirect silently (don't log out)
@@ -56,7 +55,7 @@ final class LogoutController extends AbstractController
         }
 
         // Consume the token before destroying the session
-        unset($_SESSION[self::TOKEN_KEY]);
+        $this->session->consumeLogoutToken();
 
         $this->session->logout();
         session_destroy();
@@ -66,15 +65,4 @@ final class LogoutController extends AbstractController
         exit;
     }
 
-    /**
-     * Returns the logout token for the current session, creating it if absent.
-     * The token is a URL-safe 32-byte hex string stored in the session.
-     */
-    public static function getOrCreateToken(): string
-    {
-        if (!isset($_SESSION[self::TOKEN_KEY]) || !is_string($_SESSION[self::TOKEN_KEY])) {
-            $_SESSION[self::TOKEN_KEY] = bin2hex(random_bytes(32));
-        }
-        return $_SESSION[self::TOKEN_KEY];
-    }
 }

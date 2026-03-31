@@ -314,7 +314,7 @@ final class DefaultTemplateContext
             }
             // Append the logout CSRF token to the logout entry URL.
             // LogoutController::handle() verifies this token before acting.
-            $logoutToken = \AstrX\Controller\LogoutController::getOrCreateToken();
+            $logoutToken = $this->userSession->logoutToken();
             $navWithToken = [];
             foreach ($processedUserNav as $entry) {
                 /** @var array<string,mixed> $entry */

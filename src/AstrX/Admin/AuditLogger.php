@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Admin;
 
 use AstrX\Admin\Diagnostic\AuditLogDiagnostic;
+use AstrX\Http\Request;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\User\UserSession;
@@ -31,6 +32,7 @@ final class AuditLogger
     public function __construct(
         private readonly PDO         $pdo,
         private readonly UserSession $session,
+        private readonly Request     $request,
     ) {}
 
     /**
@@ -55,7 +57,7 @@ final class AuditLogger
                                ':action'   => $action,
                                ':resource' => $resource,
                                ':detail'   => $detail,
-                               ':ip'       => $_SERVER['REMOTE_ADDR'] ?? '',
+                               ':ip'       => $this->request->ip(),
                            ]);
             return Result::ok(true);
         } catch (\Throwable $e) {

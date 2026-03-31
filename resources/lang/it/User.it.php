@@ -114,6 +114,10 @@ return [
     // -------------------------------------------------------------------------
     // Messaggi di successo / info
     // -------------------------------------------------------------------------
+    'user.register.terms_label'        => 'Accetto i Termini e Condizioni',
+    'user.register.data_usage_label'   => 'Accetto l\'Informativa sul Trattamento dei Dati',
+    'user.register.terms_required'     => 'Devi accettare i Termini e Condizioni per registrarti.',
+    'user.register.data_usage_required'=> 'Devi accettare l\'Informativa sul Trattamento dei Dati per registrarti.',
     'user.register.success' => 'Registrazione completata! Ora puoi accedere.',
     'user.recover.sent'     => 'Se esiste un account con quel nome utente o email, ti abbiamo inviato un link.',
 

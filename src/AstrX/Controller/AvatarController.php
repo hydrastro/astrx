@@ -31,8 +31,9 @@ final class AvatarController extends AbstractController
         DiagnosticsCollector        $collector,
         private readonly Request    $request,
         private readonly CurrentUrl $currentUrl,
-        private readonly AvatarService $avatarService,
-        private readonly IdenticonRenderer $identicon,
+        private readonly AvatarService        $avatarService,
+        private readonly IdenticonRenderer    $identicon,
+        private readonly UserRepository       $userRepo,
     ) {
         parent::__construct($collector);
     }
@@ -78,9 +79,16 @@ final class AvatarController extends AbstractController
             exit;
         }
 
-        // Identicon fallback
+        // Identicon fallback.
+        // The seed mixes hexId + email so that two users with the same username
+        // (e.g. after a rename) but different emails get distinct identicons.
         if ($this->avatarService->useIdenticons()) {
-            $b64 = $this->identicon->render($hexId);
+            $emailResult = $this->userRepo->findEmailById($hexId);
+            $email       = ($emailResult->isOk() && is_string($emailResult->unwrap()))
+                ? (string) $emailResult->unwrap()
+                : '';
+            $seed = $hexId . $email;
+            $b64 = $this->identicon->render($seed);
             $png = base64_decode($b64);
             header('Content-Type: image/png');
             header('Cache-Control: public, max-age=3600');

@@ -140,7 +140,13 @@ CREATE TABLE `session`
 (
     `id`        VARCHAR(128) NOT NULL PRIMARY KEY,
     `timestamp` INT UNSIGNED NOT NULL,
-    `data`      MEDIUMBLOB   NOT NULL DEFAULT ''
+    `data`        MEDIUMBLOB   NOT NULL DEFAULT '',
+    -- Handover columns for session ID regeneration grace period.
+    -- When a session ID is regenerated, the old row keeps a pointer to the
+    -- successor for `regenerate_grace_period` seconds so in-flight requests
+    -- using the old ID are transparently redirected.
+    `replaced_by` CHAR(128)    NULL DEFAULT NULL,
+    `replace_at`  INT UNSIGNED NULL DEFAULT NULL
 );
 
 
@@ -210,6 +216,8 @@ CREATE TABLE `user`
     `verified`         TINYINT      NOT NULL DEFAULT 0,
     `avatar`           TINYINT      NOT NULL DEFAULT 0,
     `deleted`          TINYINT      NOT NULL DEFAULT 0,
+    `deletion_mode`    ENUM('none','keep_visible','keep_suspended','soft_redact','hard_redact')
+                                   NOT NULL DEFAULT 'none',
     `token_hash`       VARCHAR(255) NULL,
     `token_type`       TINYINT      NULL,
     `token_used`       TINYINT      NOT NULL DEFAULT 0,
@@ -284,7 +292,7 @@ CREATE TABLE `mute`
 CREATE TABLE `captcha`
 (
     `id`         CHAR(32)    NOT NULL PRIMARY KEY,
-    `text`       VARCHAR(32) NOT NULL,
+    `text`       VARCHAR(64) NOT NULL,  -- SHA-256 hex digest (64 chars)
     `expires_at` TIMESTAMP   NOT NULL,
     INDEX idx_expires (expires_at)
 );
@@ -637,6 +645,23 @@ INSERT INTO `user` (id, username, mailbox, password, type, verified, deleted)
 VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator', 'postmaster',
         '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE',
         1, 1, 0);
+
+
+-- ----------------------------------------------------------
+-- Ghost account (@ghost)
+-- Fixed ID: all-zeros binary(16) = '00000000000000000000000000000000'
+-- Used as the target when hard_redact reassigns comments.
+-- No password, no mailbox — this account cannot log in.
+-- Do NOT delete this row.
+-- ----------------------------------------------------------
+
+INSERT INTO `user`
+    (id, username, password, mailbox, email, display_name,
+     type, verified, deleted, deletion_mode)
+VALUES
+    (UNHEX('00000000000000000000000000000000'),
+     '[deleted]', NULL, NULL, NULL, '[deleted]',
+     3, 0, 0, 'none');
 
 
 -- ----------------------------------------------------------

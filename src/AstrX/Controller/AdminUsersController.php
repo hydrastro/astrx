@@ -20,6 +20,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserGroup;
+use AstrX\User\DeletionMode;
 use AstrX\User\UserRepository;
 use AstrX\User\UserService;
 
@@ -57,6 +58,7 @@ final class AdminUsersController extends AbstractController
         private readonly Page                  $page,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly UserService           $userService,
     ) {
         parent::__construct($collector);
     }
@@ -166,7 +168,13 @@ final class AdminUsersController extends AbstractController
                 break;
 
             case 'delete':
-                $r = $this->userRepo->softDelete($hexId);
+                $modeRaw  = self::mStr($posted, 'deletion_mode', DeletionMode::SOFT_REDACT->value);
+                $delMode  = DeletionMode::tryFrom($modeRaw) ?? DeletionMode::SOFT_REDACT;
+                $r = $this->userService->delete(
+                    hexId:         $hexId,
+                    mode:          $delMode,
+                    adminBypass:   true,
+                );
                 $r->drainTo($this->collector);
                 if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.deleted')); }
                 break;

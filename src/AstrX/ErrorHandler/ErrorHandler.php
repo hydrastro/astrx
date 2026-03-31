@@ -68,6 +68,23 @@ final class ErrorHandler
 
         if ($env === EnvironmentType::DEVELOPMENT || $env === EnvironmentType::TESTING) {
             ini_set('assert.exception', '1');
+
+            // Activate Xdebug if the extension is present.
+            // In production Xdebug should not be installed at all; this block is
+            // a no-op there even if the extension were loaded.
+            // Docker: add the Xdebug dev-stage instructions to your Dockerfile
+            // (see README / Dockerfile comments).
+            if (extension_loaded('xdebug')) {
+                ini_set('xdebug.mode',               'debug,develop');
+                ini_set('xdebug.start_with_request', 'yes');
+                // 'host.docker.internal' resolves to the Docker host on Mac/Windows.
+                // On Linux either set this to the host gateway IP (e.g. 172.17.0.1)
+                // or use: extra_hosts: ['host.docker.internal:host-gateway'] in
+                // docker-compose.yml, which makes the hostname work on Linux too.
+                ini_set('xdebug.client_host', 'host.docker.internal');
+                ini_set('xdebug.client_port', '9003');
+                ini_set('xdebug.log_level',   '0');  // 0 = errors only
+            }
         }
     }
 

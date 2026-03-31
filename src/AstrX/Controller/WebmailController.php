@@ -118,7 +118,14 @@ final class WebmailController extends AbstractController
         // ── Require IMAP password ─────────────────────────────────────────────
         $imapPass = $this->session->imapPassword();
         if ($imapPass === '') {
-            $this->buildLoginContext($selfUrl, imapError: false);
+            if ($this->webmail->mailserverIsLocal()) {
+                // mailserver_is_local=true means the login password should have
+                // been stored at login time. If it's missing now, the session is
+                // in an inconsistent state — show an error rather than the prompt.
+                $this->buildLoginContext($selfUrl, imapError: true);
+            } else {
+                $this->buildLoginContext($selfUrl, imapError: false);
+            }
             return $this->ok();
         }
 

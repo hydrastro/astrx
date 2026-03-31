@@ -15,6 +15,7 @@ use AstrX\Injector\Diagnostic\ClassReflectionDiagnostic;
 use AstrX\Injector\Diagnostic\HelperInvalidSignatureDiagnostic;
 use AstrX\Injector\Diagnostic\HelperMethodNotFoundDiagnostic;
 use AstrX\Injector\Diagnostic\HelperReflectionDiagnostic;
+use AstrX\Injector\Diagnostic\MethodCallExceptionDiagnostic;
 use AstrX\Injector\Diagnostic\MethodNotFoundDiagnostic;
 use AstrX\Injector\Diagnostic\UnresolvableParameterDiagnostic;
 use Throwable;
@@ -38,6 +39,9 @@ final class Injector
 
     public const string ID_CLASS_REFLECTION           = 'astrx.injector/class_reflection_error';
     public const DiagnosticLevel LVL_CLASS_REFLECTION = DiagnosticLevel::ERROR;
+
+    public const string ID_METHOD_CALL_EXCEPTION           = 'astrx.injector/method_call_exception';
+    public const DiagnosticLevel LVL_METHOD_CALL_EXCEPTION = DiagnosticLevel::ERROR;
 
     public const string ID_UNRESOLVABLE_PARAMETER     = 'astrx.injector/unresolvable_parameter';
     public const DiagnosticLevel LVL_UNRESOLVABLE_PARAMETER = DiagnosticLevel::ERROR;
@@ -219,10 +223,9 @@ final class Injector
 
             $obj = new $className(...$dependencies);
 
-            if ($share) {
-                $this->classes[$className] = $obj;
-            }
-
+            // Run helpers BEFORE registering in $this->classes so that a
+            // helper failure does not leave a half-initialised object in the
+            // registry (which would be returned on subsequent getClass() calls).
             foreach ($this->helpers as $helper) {
                 try {
                     $helper->instance->{$helper->method}($obj, $className);
@@ -237,6 +240,10 @@ final class Injector
                         )
                     ));
                 }
+            }
+
+            if ($share) {
+                $this->classes[$className] = $obj;
             }
 
             return Result::ok($obj);
@@ -283,9 +290,11 @@ final class Injector
             return Result::ok($obj->$method(...$arguments));
         } catch (Throwable $t) {
             return Result::err(null, Diagnostics::of(
-                new ClassReflectionDiagnostic(
-                    self::ID_CLASS_REFLECTION,
-                    self::LVL_CLASS_REFLECTION,
+                new MethodCallExceptionDiagnostic(
+                    self::ID_METHOD_CALL_EXCEPTION,
+                    self::LVL_METHOD_CALL_EXCEPTION,
+                    $className,
+                    $method,
                     $t->getMessage(),
                 )
             ));

@@ -94,6 +94,10 @@ final class UserSession
      */
     public function login(array $row): void
     {
+        // Signal ContentManager to regenerate the session ID on this request.
+        // Prevents session fixation: a session created before login cannot be
+        // used after login.
+        $_SESSION['_regen_force'] = true;
         $_SESSION[self::LOGGED_IN] = true;
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string} $_SESSION */
         $_SESSION[self::KEY] = [
@@ -114,29 +118,74 @@ final class UserSession
     }
 
     /**
-     * Store the user's IMAP password in the (AES-encrypted) session.
-     * Called at login time so webmail can connect without re-prompting.
-     * Safe: the session data is AES-256-CTR encrypted at rest.
+     * Store the user's IMAP password in the session, XOR-obfuscated with a
+     * key derived from the current session ID.
+     *
+     * Rationale: even when SecureSessionHandler encryption is disabled, the
+     * password is not stored as a legible string. An attacker with only the
+     * raw session DB row cannot recover it without also knowing the session ID.
+     * An attacker who already has the session ID can read the whole session
+     * regardless, so this provides meaningful defence-in-depth against
+     * database-only compromise.
      */
     public function storeImapPassword(string $password): void
     {
-        $_SESSION['_webmail_pass'] = $password;
+        if ($password === '') {
+            $this->clearImapPassword();
+            return;
+        }
+        $obfuscated = $this->xorWithSessionKey($password);
+        $_SESSION['_webmail_pass'] = base64_encode($obfuscated);
     }
 
-    /** Retrieve the stored IMAP password, or '' if not set. */
+    /** Retrieve and de-obfuscate the stored IMAP password, or '' if absent. */
     public function imapPassword(): string
     {
-        $pw = $_SESSION['_webmail_pass'] ?? ''; return is_string($pw) ? $pw : '';
+        $stored = $_SESSION['_webmail_pass'] ?? '';
+        if (!is_string($stored) || $stored === '') {
+            return '';
+        }
+        $decoded = base64_decode($stored, strict: true);
+        if ($decoded === false) {
+            return '';
+        }
+        return $this->xorWithSessionKey($decoded);
     }
 
-    /** Remove the stored IMAP password (on logout or failed auth). */
+    /** Remove the stored IMAP password (called on logout or failed auth). */
     public function clearImapPassword(): void
     {
         unset($_SESSION['_webmail_pass']);
     }
 
+    /**
+     * XOR $data with a keystream derived from the current session ID.
+     * Applying this twice (encrypt then decrypt) recovers the original.
+     */
+    private function xorWithSessionKey(string $data): string
+    {
+        $sid = session_id();
+        if ($sid === false || $sid === '' || $data === '') {
+            return $data;
+        }
+        // Derive a keystream of the same length as $data.
+        $key = '';
+        $block = hash('sha256', $sid, true); // 32-byte seed block
+        $needed = strlen($data);
+        for ($i = 0; strlen($key) < $needed; $i++) {
+            // 4-byte big-endian counter — equivalent to pack('N', $i) but
+            // always returns string so PHPStan is satisfied without stubs.
+            $counter  = chr(($i >> 24) & 0xFF) . chr(($i >> 16) & 0xFF)
+                      . chr(($i >> 8)  & 0xFF) . chr($i & 0xFF);
+            $key .= hash('sha256', $block . $counter, true);
+        }
+        $key = substr($key, 0, $needed);
+        return $data ^ $key;
+    }
+
     public function logout(): void
     {
+        $_SESSION['_regen_force'] = true;
         $_SESSION[self::LOGGED_IN] = false;
         unset($_SESSION[self::KEY]);
         $this->clearImapPassword();
@@ -172,6 +221,20 @@ final class UserSession
         $_SESSION[self::KEY] = $sess;
     }
 
+    /**
+     * Called after an admin changes this user's group mid-session.
+     * Forces session ID regeneration on the next request from this session.
+     */
+    public function updateType(int $type): void
+    {
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['type'] = $type;
+        $_SESSION[self::KEY]    = $sess;
+        $_SESSION['_regen_force'] = true;
+    }
+
     /** Called after avatar upload / removal. */
     public function updateAvatar(bool $hasAvatar): void
     {
@@ -180,5 +243,32 @@ final class UserSession
         /** @var array<string,mixed> $sess */
         $sess['avatar'] = $hasAvatar;
         $_SESSION[self::KEY] = $sess;
+    }
+
+    // ── Logout CSRF token ─────────────────────────────────────────────────────
+
+    private const LOGOUT_TOKEN_KEY = '_logout_token';
+
+    /**
+     * Returns the logout CSRF token for the current session, creating it if
+     * absent. The token is a 32-byte random hex string used to authenticate
+     * GET-based logout links so a malicious page cannot log the user out by
+     * embedding an <img> or link.
+     */
+    public function logoutToken(): string
+    {
+        $sess = $_SESSION[self::LOGOUT_TOKEN_KEY] ?? null;
+        if (!is_string($sess) || $sess === '') {
+            $token = bin2hex(random_bytes(32));
+            $_SESSION[self::LOGOUT_TOKEN_KEY] = $token;
+            return $token;
+        }
+        return $sess;
+    }
+
+    /** Consume (clear) the logout token after a successful logout. */
+    public function consumeLogoutToken(): void
+    {
+        unset($_SESSION[self::LOGOUT_TOKEN_KEY]);
     }
 }

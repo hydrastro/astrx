@@ -28,6 +28,8 @@ use AstrX\Session\CommentPrgHandler;
 use AstrX\Http\UploadedFile;
 use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
+use AstrX\User\UserGroup;
+use AstrX\User\UserSession;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
@@ -168,10 +170,35 @@ final class ContentManager
             }
         }
 
+        // Harden session cookie: Secure (HTTPS only), HttpOnly (no JS access),
+        // SameSite=Lax (CSRF mitigation). These apply whether or not cookies
+        // are the transport mechanism — session_set_cookie_params() sets the
+        // parameters PHP uses when it writes the Set-Cookie header.
+        $existingParams = session_get_cookie_params();
+        session_set_cookie_params([
+            'lifetime' => $existingParams['lifetime'],
+            /** @phpstan-ignore notIdentical.alwaysTrue */
+            'path'     => $existingParams['path'] !== '' ? $existingParams['path'] : '/',
+            'domain'   => $existingParams['domain'],
+            'secure'   => true,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
 
+        $sid = (string) session_id();
+        $current->set($sessionKey, $sid);
+        $request->query()->set($sessionKey, $sid);
+
+        // ── Session ID regeneration ───────────────────────────────────────────
+        // Regenerate the session ID on privilege changes (login/logout/role change)
+        // and on a time-based interval configurable per UserGroup.
+        $this->maybeRegenerateSession($sessionHandler);
+
+        // Update $sid after possible regeneration
         $sid = (string) session_id();
         $current->set($sessionKey, $sid);
         $request->query()->set($sessionKey, $sid);
@@ -707,4 +734,84 @@ final class ContentManager
 
         return $page;
     }
+
+    // =========================================================================
+    // Session ID regeneration
+    // =========================================================================
+
+    /**
+     * Regenerate the session ID if a privilege-change flag was set this request
+     * (login, logout, admin role change) OR the time-based rotation interval
+     * for the current user's group has elapsed.
+     *
+     * After regeneration the old row is kept alive via the replaced_by handover
+     * pointer so slow/in-flight requests using the old ID still succeed.
+     */
+    private function maybeRegenerateSession(SecureSessionHandler $handler): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        $forceRegen = ($_SESSION['_regen_force'] ?? false) === true;
+        unset($_SESSION['_regen_force']);
+
+        if (!$forceRegen && !$this->isTimeBasedRegenDue()) {
+            return;
+        }
+
+        $oldSid      = (string) session_id();
+        $oldHashedId = $handler->hashIdPublic($oldSid);
+
+        // Keep the old row so in-flight requests can still find it.
+        session_regenerate_id(false);
+
+        $newSid      = (string) session_id();
+        $newHashedId = $handler->hashIdPublic($newSid);
+
+        $handler->markReplaced($oldHashedId, $newHashedId);
+
+        $_SESSION['_regen_at'] = time();
+    }
+
+    private function isTimeBasedRegenDue(): bool
+    {
+        $loggedIn = ($_SESSION['logged_in'] ?? false) === true;
+        $groupKey = 'GUEST';
+
+        if ($loggedIn) {
+            $userData = $_SESSION['user'] ?? null;
+            if (is_array($userData)) {
+                /** @var array<string,mixed> $userData */
+                $typeRaw  = $userData['type'] ?? UserGroup::GUEST->value;
+                $type     = is_int($typeRaw) ? $typeRaw
+                    : (is_numeric($typeRaw) ? (int)(string)$typeRaw : UserGroup::GUEST->value);
+                $group    = UserGroup::tryFrom($type) ?? UserGroup::GUEST;
+                $groupKey = $group->name;
+            }
+        }
+
+        /** @var mixed $rawConfig */
+        $rawConfig = $this->config->getConfig('Session', 'regenerate_interval', []);
+        if (!is_array($rawConfig)) {
+            return false;
+        }
+        /** @var array<string,mixed> $regenConfig */
+        $regenConfig = $rawConfig;
+
+        $rawInterval = $regenConfig[$groupKey] ?? $regenConfig['default'] ?? 0;
+        $interval    = is_int($rawInterval) ? $rawInterval
+            : (is_numeric($rawInterval) ? (int)(string)$rawInterval : 0);
+
+        if ($interval <= 0) {
+            return false;
+        }
+
+        $lastRaw   = $_SESSION['_regen_at'] ?? 0;
+        $lastRegen = is_int($lastRaw) ? $lastRaw
+            : (is_numeric($lastRaw) ? (int)(string)$lastRaw : 0);
+
+        return (time() - $lastRegen) >= $interval;
+    }
+
 }

@@ -79,10 +79,24 @@ final class RegisterController extends AbstractController
         $csrfToken   = self::mStr($posted, '_csrf', '');
         $captchaId   = self::mStr($posted, 'captcha_id', '');
         $captchaText = self::mStr($posted, 'captcha_text', '');
+        $termsChecked     = self::mBool($posted, 'terms_accepted');
+        $dataUsageChecked = self::mBool($posted, 'data_usage_accepted');
 
         $csrfResult = $this->csrf->verify(self::FORM, $csrfToken);
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
+            return $this->renderForm($username, $mailbox, $email, $displayName);
+        }
+
+        // Validate consent checkboxes if they are required.
+        if ($this->config->getConfigBool('RegisterConsent', 'require_terms', false)
+            && !$termsChecked) {
+            $this->flash->set('error', $this->t->t('user.register.terms_required'));
+            return $this->renderForm($username, $mailbox, $email, $displayName);
+        }
+        if ($this->config->getConfigBool('RegisterConsent', 'require_data_usage', false)
+            && !$dataUsageChecked) {
+            $this->flash->set('error', $this->t->t('user.register.data_usage_required'));
             return $this->renderForm($username, $mailbox, $email, $displayName);
         }
 
@@ -177,6 +191,16 @@ final class RegisterController extends AbstractController
         $this->ctx->set('registrations_closed', false);
         $this->ctx->set('login_url',          $this->urlGen->toPage($this->t->t('WORDING_LOGIN')));
 
+        // Consent checkboxes
+        $showTerms     = $this->config->getConfigBool('RegisterConsent', 'require_terms',      false);
+        $showDataUsage = $this->config->getConfigBool('RegisterConsent', 'require_data_usage', false);
+        $termsUrl      = $this->config->getConfigString('RegisterConsent', 'terms_url',        '');
+        $dataUsageUrl  = $this->config->getConfigString('RegisterConsent', 'data_usage_url',   '');
+        $this->ctx->set('show_terms',         $showTerms);
+        $this->ctx->set('show_data_usage',    $showDataUsage);
+        $this->ctx->set('terms_url',          $termsUrl);
+        $this->ctx->set('data_usage_url',     $dataUsageUrl);
+
         $this->setI18n();
         return $this->ok();
     }
@@ -195,7 +219,9 @@ final class RegisterController extends AbstractController
         $this->ctx->set('reg_birth_date',   $this->t->t('user.field.birth_date'));
         $this->ctx->set('reg_submit',       $this->t->t('user.register.submit'));
         $this->ctx->set('reg_back',         $this->t->t('user.register.back_to_login'));
-        $this->ctx->set('reg_closed_msg',   $this->t->t('user.register.closed'));
-        $this->ctx->set('captcha_label',    $this->t->t('user.captcha.label'));
+        $this->ctx->set('reg_closed_msg',     $this->t->t('user.register.closed'));
+        $this->ctx->set('captcha_label',      $this->t->t('user.captcha.label'));
+        $this->ctx->set('reg_terms_label',    $this->t->t('user.register.terms_label'));
+        $this->ctx->set('reg_data_usage_label', $this->t->t('user.register.data_usage_label'));
     }
 }

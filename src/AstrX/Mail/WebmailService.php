@@ -35,6 +35,11 @@ final class WebmailService
      * is not populated (or is ignored during registration).
      */
     private bool   $mailboxIsUsername         = false;
+    /**
+     * When true, the mail server is local — the user's login password equals
+     * their IMAP password, so no separate IMAP auth prompt is shown.
+     */
+    private bool   $mailserverIsLocal         = false;
 
     #[InjectConfig('messages_per_page')]
     public function setMessagesPerPage(int $v): void { $this->messagesPerPage = max(5, min(200, $v)); }
@@ -59,10 +64,16 @@ final class WebmailService
     #[InjectConfig('mailbox_is_username')]
     public function setMailboxIsUsername(bool $v): void { $this->mailboxIsUsername = $v; }
 
+    #[InjectConfig('mailserver_is_local')]
+    public function setMailserverIsLocal(bool $v): void { $this->mailserverIsLocal = $v; }
+
     public function __construct(
         private readonly ImapClient $imap,
         private readonly Mailer     $mailer,
     ) {}
+
+    public function mailserverIsLocal(): bool { return $this->mailserverIsLocal; }
+
 
     public function __destruct()
     {

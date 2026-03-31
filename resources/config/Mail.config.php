@@ -40,6 +40,11 @@ return [
         'mail_domain'                => 'localhost',
         'imap_login_use_full_address'=> false,
         'mailbox_is_username'         => false,
+        // When true: the mail server shares the user database with this app.
+        // The user's login password IS their IMAP password.
+        // Effect: the webmail IMAP login form is skipped; the password is
+        // stored in the session automatically at login time.
+        'mailserver_is_local'         => false,
         'messages_per_page'          => 25,
         'trash_folder'               => 'Trash',
         'sent_folder'                => 'Sent',
