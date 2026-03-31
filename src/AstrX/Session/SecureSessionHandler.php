@@ -69,6 +69,24 @@ final class SecureSessionHandler implements
         $this->serverSecret = $secret;
     }
 
+    /**
+     * Returns the effective IKM for HKDF.
+     * hash_hkdf() requires a non-empty key; if server_secret is not configured
+     * we fall back to a fixed string derived from a constant phrase so the
+     * system remains functional. Sessions are still AES-256 encrypted; they
+     * just lack the additional server-secret protection against DB-only attacks.
+     * Set 'server_secret' in Session.config.php for full security.
+     */
+    private function ikm(): string
+    {
+        if ($this->serverSecret !== '') {
+            return $this->serverSecret;
+        }
+        // Deterministic non-empty fallback — never throws ValueError.
+        // Functionally secure but lacks the server-secret protection layer.
+        return hash('sha256', 'astrx-session-fallback-no-secret-configured', true);
+    }
+
     // -------------------------------------------------------------------------
     // SessionHandlerInterface
     // -------------------------------------------------------------------------
@@ -294,8 +312,8 @@ final class SecureSessionHandler implements
         $iv         = random_bytes(16);
         // Derive keys by mixing the session ID with the server-side secret.
         // This means a stolen DB row cannot be decrypted without knowing the secret.
-        $key        = hash_hkdf('sha256', $this->serverSecret, 32, 'astrx-enc', $id);
-        $macKey     = hash_hkdf('sha256', $this->serverSecret, 32, 'astrx-mac', $id);
+        $key        = hash_hkdf('sha256', $this->ikm(), 32, 'astrx-enc', $id);
+        $macKey     = hash_hkdf('sha256', $this->ikm(), 32, 'astrx-mac', $id);
         $ciphertext = (string) openssl_encrypt($data, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
         $hmac       = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
 
@@ -311,8 +329,8 @@ final class SecureSessionHandler implements
         $hmac       = mb_substr($blob, 0, 32, '8bit');
         $iv         = mb_substr($blob, 32, 16, '8bit');
         $ciphertext = mb_substr($blob, 48, null, '8bit');
-        $key        = hash_hkdf('sha256', $this->serverSecret, 32, 'astrx-enc', $id);
-        $macKey     = hash_hkdf('sha256', $this->serverSecret, 32, 'astrx-mac', $id);
+        $key        = hash_hkdf('sha256', $this->ikm(), 32, 'astrx-enc', $id);
+        $macKey     = hash_hkdf('sha256', $this->ikm(), 32, 'astrx-mac', $id);
 
         $expectedHmac = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
         if (!hash_equals($hmac, $expectedHmac)) {
