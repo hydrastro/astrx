@@ -37,7 +37,7 @@ final class ErrorController implements Controller
     public function handle(): Result
     {
         $status = (int) http_response_code();
-        if ($status === 0 || $status === false) {
+        if ($status === 0) {
             $status = 500;
         }
         $this->t->loadDomain(langDir(), "Http");
@@ -69,16 +69,18 @@ final class ErrorController implements Controller
         $showDiag  = $isAdmin || $isServerError;
 
         if ($showDiag) {
-            $diags = $this->collector->all();
-            if ($diags !== []) {
+            $diags = $this->collector->diagnostics();
+            if (count($diags) > 0) {
                 $rendered = [];
                 foreach ($diags as $d) {
+                    /** @var \AstrX\Result\DiagnosticInterface $d */
                     $text     = $this->renderer->render($d);
+                    $level    = $d->level();
                     $cssClass = match (true) {
-                        $d->level()->value >= DiagnosticLevel::ERROR->value     => 'diag-error',
-                        $d->level()->value >= DiagnosticLevel::WARNING->value   => 'diag-warning',
-                        $d->level()->value >= DiagnosticLevel::NOTICE->value    => 'diag-notice',
-                        default                                                  => 'diag-debug',
+                        $level->value >= DiagnosticLevel::ERROR->value   => 'diag-error',
+                        $level->value >= DiagnosticLevel::WARNING->value => 'diag-warning',
+                        $level->value >= DiagnosticLevel::NOTICE->value  => 'diag-notice',
+                        default                                           => 'diag-debug',
                     };
                     $rendered[] = ['message' => $text, 'css_class' => $cssClass];
                 }

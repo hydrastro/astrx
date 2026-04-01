@@ -70,7 +70,10 @@ final class RegisterController extends AbstractController
         $username    = self::mStr($posted, 'username', '');
         $password    = self::mStr($posted, 'password', '');
         $repeat      = self::mStr($posted, 'repeat', '');
-        $mailbox     = self::mStr($posted, 'mailbox', '');
+        $mailboxIsUsernamePost = $this->config->getConfigBool('WebmailService', 'mailbox_is_username', false);
+        $mailbox     = $mailboxIsUsernamePost
+            ? $username
+            : self::mStr($posted, 'mailbox', '');
         $email       = self::mStr($posted, 'email', '');
         $displayName = self::mStr($posted, 'display_name', '');
         $month       = is_numeric($posted['month'] ?? null) ? (int) $posted['month'] : null;

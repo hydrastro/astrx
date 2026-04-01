@@ -667,7 +667,7 @@ final class ContentManager
 
             if ($errorPage !== null) {
                 $this->injector->setClass($errorPage);
-                $this->renderPage($errorPage, false);
+                $this->renderErrorPage($errorPage);
                 return;
             }
         }
@@ -686,6 +686,59 @@ final class ContentManager
         </body>
         </html>
         HTML;
+    }
+
+
+    /**
+     * Render a single page (used by renderError to display the error page).
+     * Stripped-down version of the inline render flow in init().
+     */
+    private function renderErrorPage(Page $page): void
+    {
+        $langDir = langDir();
+        $this->translator->loadDomain($langDir, ucfirst($page->fileName));
+
+        $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
+            ->drainTo($this->collector);
+        if (!$ctxResult->isOk()) { return; }
+        /** @var DefaultTemplateContext $ctx */
+        $ctx = $ctxResult->unwrap();
+        $ctx->buildBase($page);
+
+        if ($page->controller) {
+            $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';
+            $fqcn  = 'AstrX\\Controller\\' . $short;
+            if (class_exists($fqcn)) {
+                $controllerResult = $this->injector->createClass($fqcn)
+                    ->drainTo($this->collector);
+                if ($controllerResult->isOk()) {
+                    $controller = $controllerResult->unwrap();
+                    if ($controller instanceof Controller) {
+                        $controller->handle()->drainTo($this->collector);
+                    }
+                }
+            }
+        }
+
+        if ($page->template) {
+            $engineResult = $this->injector->createClass(TemplateEngine::class)
+                ->drainTo($this->collector);
+            if (!$engineResult->isOk()) { return; }
+            /** @var TemplateEngine $engine */
+            $engine = $engineResult->unwrap();
+            $templateName = $this->config->getConfigString(
+                'ContentManager', 'default_template', 'default'
+            );
+            $ctx->resolveUrls();
+            $ctx->set('page_comments', false);
+            $ctx->set('comments_html', '');
+            $ctx->finalise();
+            $renderResult = $engine->renderTemplate($templateName, $ctx->all())
+                ->drainTo($this->collector);
+            if ($renderResult->isOk()) {
+                echo $renderResult->unwrap();
+            }
+        }
     }
 
     private function initPDO(): void
