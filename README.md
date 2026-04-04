@@ -8,6 +8,7 @@ A modular PHP web framework.
 - **Zero dependencies.** - what's composer?
 - **i18n by default.** - mamma mia
 - **Highly configurable.** - if you can't change it, it's a bug
+- **No tests.** - those are for weak programmers who doubt their code
 
 ---
 
