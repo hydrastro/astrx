@@ -2,52 +2,31 @@
 declare(strict_types=1);
 
 return [
-    // ── Outbound SMTP (system mail + webmail send) ────────────────────────────
     'Mailer' => [
-        'host'         => 'localhost',
-        'port'         => 25,
-        'username'     => '',
-        'password'     => '',
-        'from_address' => 'noreply@localhost',
-        'from_name'    => 'AstrX',
-        'encryption'   => '',
+        'host'         => getenv('MAIL_HOST')         ?: 'localhost',
+        'port'         => (int)(getenv('MAIL_PORT')   ?: 25),
+        'username'     => getenv('MAIL_USER')         ?: '',
+        'password'     => getenv('MAIL_PASSWORD')     ?: '',
+        'from_address' => getenv('MAIL_FROM_ADDRESS') ?: 'noreply@localhost',
+        'from_name'    => getenv('MAIL_FROM_NAME')    ?: 'App',
+        'encryption'   => getenv('MAIL_ENCRYPTION')   ?: '',
         'timeout'      => 30,
-        'socks5_host'  => '',
-        'socks5_port'  => 9050,
     ],
-
-    // ── IMAP client (webmail read) ────────────────────────────────────────────
-    // imap_encryption: 'ssl' = implicit TLS (port 993),
-    //                  'tls' = STARTTLS (port 143),
-    //                  ''    = plain, no encryption (port 143)
     'ImapClient' => [
-        'imap_host'        => 'localhost',
-        'imap_port'        => 993,
-        'imap_encryption'  => 'ssl',
-        'imap_timeout'     => 30,
-        'imap_socks5_host' => '',
-        'imap_socks5_port' => 9050,
-        // Set to false for self-signed / private CA certificates
-        'imap_verify_ssl'  => false,
+        'imap_host'       => getenv('IMAP_HOST')      ?: 'localhost',
+        'imap_port'       => (int)(getenv('IMAP_PORT')?: 993),
+        'imap_encryption' => getenv('IMAP_ENCRYPTION')?: 'ssl',
+        'imap_timeout'    => 30,
+        'imap_verify_ssl' => (getenv('IMAP_VERIFY_SSL') ?: 'true') === 'true',
     ],
-
-    // ── Webmail service settings ──────────────────────────────────────────────
-    // mail_domain: appended to the mailbox local-part to form the full address.
-    //   e.g. mailbox='alice' + mail_domain='mail.example.com' → alice@mail.example.com
-    // imap_login_use_full_address: true  = LOGIN alice@mail.example.com (Dovecot default)
-    //                              false = LOGIN alice (some older/simpler servers)
     'WebmailService' => [
-        'mail_domain'                => 'localhost',
-        'imap_login_use_full_address'=> false,
-        'mailbox_is_username'         => false, // TODO: this setting should be in User.config.php
-        // When true: the mail server shares the user database with this app.
-        // The user's login password IS their IMAP password.
-        // Effect: the webmail IMAP login form is skipped; the password is
-        // stored in the session automatically at login time.
-        'mailserver_is_local'         => false,
-        'messages_per_page'          => 25,
-        'trash_folder'               => 'Trash',
-        'sent_folder'                => 'Sent',
-        'drafts_folder'              => 'Drafts',
+        'mail_domain'                 => getenv('MAIL_DOMAIN')        ?: 'localhost',
+        'imap_login_use_full_address' => true,
+        'mailbox_is_username'         => false,
+        'mailserver_is_local'         => (getenv('MAIL_LOCAL') ?: 'false') === 'true',
+        'messages_per_page'           => 25,
+        'trash_folder'                => 'Trash',
+        'sent_folder'                 => 'Sent',
+        'drafts_folder'               => 'Drafts',
     ],
 ];
