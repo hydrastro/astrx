@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 use AstrX\ErrorHandler\EnvironmentType;
 
-$env = getenv('APP_ENV') ?: 'development';
+$env = getenv('APP_ENV') ?: 0;
 
 return [
     'Prelude' => [
-        'environment'         => $env === 'production'
+        'environment'         => $env === 0
                                     ? EnvironmentType::PRODUCTION->value
                                     : EnvironmentType::DEVELOPMENT->value,
         'available_languages' => ['en', 'it'],
