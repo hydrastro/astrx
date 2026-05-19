@@ -17,6 +17,7 @@ return [
     'WORDING_ADMIN_NEWS.label'       => 'Notizie',
     'WORDING_ADMIN_COMMENTS.label'   => 'Commenti',
     'WORDING_ADMIN_USERS.label'      => 'Utenti',
+    'WORDING_ADMIN_THEMES.label'     => 'Temi',
     'WORDING_ADMIN_BANLIST.label'    => 'Banlist',
     'WORDING_ADMIN_NAVBAR.label'     => 'Navigazione',
     'WORDING_ADMIN_PAGES.label'      => 'Pagine',

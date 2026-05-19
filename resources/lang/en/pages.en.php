@@ -29,6 +29,7 @@ return [
     'WORDING_ADMIN_NAVBAR'   => 'admin-navbar',
     'WORDING_ADMIN_PAGES'    => 'admin-pages',
     'WORDING_ADMIN_NOTES'    => 'admin-notes',
+    'WORDING_ADMIN_THEMES'   => 'admin-themes',
 
     // Admin — configuration
     'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-system',
@@ -47,6 +48,8 @@ return [
     'WORDING_ADMIN_AUDIT_LOG.title'      => 'Admin — Audit Log',
     'WORDING_ADMIN_AUDIT_LOG.description'=> 'History of all admin actions.',
     'WORDING_ADMIN_CONFIG_WEBMAIL' => 'admin-config-webmail',
+    'WORDING_ADMIN_THEMES.title'         => 'Admin — Themes',
+    'WORDING_ADMIN_THEMES.description'   => 'Choose the global site theme.',
 
     // Comments test page
     'WORDING_COMMENTS_TEST' => 'comments-test',

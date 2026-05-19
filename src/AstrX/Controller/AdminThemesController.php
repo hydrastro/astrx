@@ -18,6 +18,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Template\TemplateEngine;
 use AstrX\Theme\ThemeService;
 
 /**
@@ -49,6 +50,7 @@ final class AdminThemesController extends AbstractController
         private readonly UrlGenerator           $urlGen,
         private readonly Translator             $t,
         private readonly ThemeService           $themeService,
+        private readonly TemplateEngine         $templates,
     ) {
         parent::__construct($collector);
     }
@@ -89,6 +91,21 @@ final class AdminThemesController extends AbstractController
         }
 
         $section = self::mStr($posted, 'section', '');
+
+        // Cache clear is a separate explicit action — useful when an admin
+        // edits a template file on disk and wants the change to take effect
+        // immediately. Normally the mtime check in TemplateEngine catches
+        // changes automatically, but on some filesystems (Docker bind mounts
+        // with strict caching) mtime detection can lag — this is the manual
+        // override.
+        if ($section === 'clear_cache') {
+            $deleted = $this->templates->clearCache();
+            $this->flash->set(
+                'success',
+                str_replace('{n}', (string) $deleted, $this->t->t('admin.themes.cache_cleared')),
+            );
+            return '';
+        }
 
         if ($section === 'global') {
             $themeKey = self::mStr($posted, 'theme', '');
@@ -149,5 +166,8 @@ final class AdminThemesController extends AbstractController
         $this->ctx->set('label_version',                $this->t->t('admin.themes.version'));
         $this->ctx->set('btn_save',                     $this->t->t('admin.btn.save'));
         $this->ctx->set('no_themes',                    $this->t->t('admin.themes.no_themes'));
+        $this->ctx->set('cache_heading',                $this->t->t('admin.themes.cache_heading'));
+        $this->ctx->set('cache_desc',                   $this->t->t('admin.themes.cache_desc'));
+        $this->ctx->set('btn_clear_cache',              $this->t->t('admin.themes.btn_clear_cache'));
     }
 }

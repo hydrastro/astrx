@@ -18,6 +18,7 @@ use AstrX\User\Diagnostic\UserPasswordsMismatchDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidDateDiagnostic;
 use AstrX\User\Diagnostic\UserTooYoungDiagnostic;
 use AstrX\User\Diagnostic\UserEmptyFieldsDiagnostic;
+use AstrX\User\Diagnostic\InvalidThemeDiagnostic;
 use AstrX\User\Diagnostic\UserWrongPasswordDiagnostic;
 use AstrX\User\Diagnostic\UserTokenNotFoundDiagnostic;
 use AstrX\User\Diagnostic\UserTokenExpiredDiagnostic;
@@ -133,4 +134,10 @@ return [
     'astrx.user/avatar_move_failed' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Failed to save the uploaded file.',
+
+    'astrx.user/invalid_theme' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof InvalidThemeDiagnostic);
+            return 'That theme is not installed. Please pick another.';
+        },
 ];

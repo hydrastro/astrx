@@ -553,4 +553,11 @@ return [
     'admin.themes.no_themes'              => 'No themes discovered. Add a theme by creating a directory under resources/template/themes/ containing style.css and theme.config.php.',
     'admin.themes.invalid_theme'          => 'The selected theme is not installed.',
     'admin.themes.saved'                  => 'Theme configuration saved.',
+
+    // ---- Theme cache (fix98) ------------------------------------------------
+    'admin.themes.cache_heading'    => 'Template cache',
+    'admin.themes.cache_desc'       => 'Clear compiled templates from disk. Use this if you edited template files on the server and the changes are not showing up. Normally not needed — the framework checks file timestamps automatically.',
+    'admin.themes.btn_clear_cache'  => 'Clear template cache',
+    'admin.themes.cache_cleared'    => 'Cache cleared — {n} files removed.',
+
 ];

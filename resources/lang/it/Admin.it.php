@@ -264,4 +264,11 @@ return [
     'admin.themes.no_themes'              => 'Nessun tema trovato. Aggiungine uno creando una directory sotto resources/template/themes/ contenente style.css e theme.config.php.',
     'admin.themes.invalid_theme'          => 'Il tema selezionato non è installato.',
     'admin.themes.saved'                  => 'Configurazione tema salvata.',
+
+    // ---- Cache del tema (fix98) ---------------------------------------------
+    'admin.themes.cache_heading'    => 'Cache dei template',
+    'admin.themes.cache_desc'       => 'Cancella i template compilati. Usalo se hai modificato i file template e i cambiamenti non appaiono. Normalmente non necessario — il framework controlla i timestamp automaticamente.',
+    'admin.themes.btn_clear_cache'  => 'Cancella cache template',
+    'admin.themes.cache_cleared'    => 'Cache cancellata — {n} file rimossi.',
+
 ];

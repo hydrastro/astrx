@@ -247,10 +247,23 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
         if ($this->cacheTemplates) {
             $cacheFile = $this->templateCacheDir . $template . '.php';
+            // Cache is valid only when it exists AND is at least as fresh as
+            // the source. mtime(source) > mtime(cache) means the template was
+            // edited since the last compile — we must recompile.
+            // This is also true for SOURCE files whose CONTENT depends on
+            // included partials, but partials trigger their own template load
+            // which would have already invalidated their own cache.
             if (file_exists($cacheFile)) {
-                require_once $cacheFile;
-                $this->knownTemplates[$template] = $className;
-                return $this->getTemplateClass($className);
+                $srcMtime   = @filemtime($templateFile);
+                $cacheMtime = @filemtime($cacheFile);
+                if ($srcMtime !== false && $cacheMtime !== false && $cacheMtime >= $srcMtime) {
+                    require_once $cacheFile;
+                    $this->knownTemplates[$template] = $className;
+                    return $this->getTemplateClass($className);
+                }
+                // Stale — delete to avoid PHP's require_once cache making
+                // the next request still see the old class definition.
+                @unlink($cacheFile);
             }
         }
 
@@ -292,6 +305,34 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     public function getTemplateClass(string $className): object
     {
         return new $className($this);
+    }
+
+    /**
+     * Wipe every compiled template file. Used by the admin "Clear Cache"
+     * action. Returns the number of files deleted. Errors are silent — this
+     * is best-effort cleanup, not a precondition for correctness because the
+     * mtime check above also recovers from stale cache.
+     */
+    public function clearCache(): int
+    {
+        if (!is_dir($this->templateCacheDir)) { return 0; }
+        $deleted = 0;
+        // Recursive — cache files mirror the template directory tree
+        $rii = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator(
+                $this->templateCacheDir,
+                \FilesystemIterator::SKIP_DOTS,
+            ),
+        );
+        /** @var \SplFileInfo $file */
+        foreach ($rii as $file) {
+            if ($file->isFile() && str_ends_with($file->getFilename(), '.php')) {
+                if (@unlink($file->getPathname())) { $deleted++; }
+            }
+        }
+        // Also drop our in-memory map so the next render reloads from disk.
+        $this->knownTemplates = [];
+        return $deleted;
     }
 
     public function getTemplateClassName(string $templateName, string $templateContent): string

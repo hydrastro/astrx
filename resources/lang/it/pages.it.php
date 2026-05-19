@@ -28,6 +28,7 @@ return [
     'WORDING_ADMIN_BANLIST'  => 'admin-banlist',
     'WORDING_ADMIN_NAVBAR'   => 'admin-navigazione',
     'WORDING_ADMIN_PAGES'    => 'admin-pagine',
+    'WORDING_ADMIN_THEMES'   => 'admin-temi',
     'WORDING_ADMIN_NOTES'    => 'admin-note',
 
     // Admin — configurazione

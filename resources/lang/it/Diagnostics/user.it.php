@@ -44,4 +44,10 @@ return [
                 default                 => "Si è verificato un errore (" . $d->operation() . ").",
             };
         },
+
+    'astrx.user/invalid_theme' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof InvalidThemeDiagnostic);
+            return 'Quel tema non è installato. Sceglierne un altro.';
+        },
 ];

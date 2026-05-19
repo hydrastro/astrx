@@ -24,6 +24,7 @@ return [
     'WORDING_ADMIN_COMMENTS.label'   => 'Comments',
     'WORDING_ADMIN_USERS.label'      => 'Users',
     'WORDING_ADMIN_BANLIST.label'    => 'Banlist',
+    'WORDING_ADMIN_THEMES.label'     => 'Themes',
     'WORDING_ADMIN_NAVBAR.label'     => 'Navbar',
     'WORDING_ADMIN_PAGES.label'      => 'Pages',
     'WORDING_ADMIN_NOTES.label'      => 'Notes',

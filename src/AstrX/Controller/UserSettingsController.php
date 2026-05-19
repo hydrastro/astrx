@@ -165,7 +165,13 @@ final class UserSettingsController extends AbstractController
                 // Empty string is allowed and means "revert to global default".
                 $theme = self::mStr($posted, 'theme', '');
                 if ($theme !== '' && !$this->themeService->themeExists($theme)) {
-                    $this->flash->set('error', $this->t->t('user.settings.theme_invalid'));
+                    // No flash on this controller — matches the existing pattern
+                    // (all error feedback flows through diagnostics, which the
+                    // template renders inline via the diagnostics panel).
+                    $this->emit(new \AstrX\User\Diagnostic\InvalidThemeDiagnostic(
+                        'astrx.user/invalid_theme',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
                     break;
                 }
                 $result = $this->userService->changeTheme($hexId, $theme);
@@ -174,7 +180,6 @@ final class UserSettingsController extends AbstractController
                     // Live-update the session so the new theme applies immediately
                     // on the redirect that follows this PRG dispatch.
                     $this->session->updateTheme($theme);
-                    $this->flash->set('success', $this->t->t('user.settings.theme_saved'));
                 }
                 break;
 
