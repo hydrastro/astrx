@@ -14,6 +14,7 @@ final class Page
         public readonly bool $controller,
         public readonly bool $hidden,
         public readonly bool $comments = false,
+        public readonly bool $apiEnabled = false,
         /** @var list<array{id:int,url_id:string,i18n:bool,file_name:string}> */
         public readonly array $ancestors = [],
         public readonly bool $index = false,

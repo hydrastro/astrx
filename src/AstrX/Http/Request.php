@@ -5,6 +5,16 @@ namespace AstrX\Http;
 
 final class Request
 {
+    /** Set by ContentManager when the URL contains the `/api/` segment. */
+    private bool $isApi = false;
+
+    /**
+     * Hex user-id of the bearer-authenticated user, or null. Set by
+     * ContentManager when API key auth succeeds. The session is then
+     * bootstrapped from this id for the duration of the request.
+     */
+    private ?string $apiKeyUser = null;
+
     public function __construct(
         private RequestMethod $method,
         private Uri $uri,
@@ -17,6 +27,12 @@ final class Request
         private FileBag $files,
     ) {
     }
+
+    public function isApi(): bool { return $this->isApi; }
+    public function markAsApi(): void { $this->isApi = true; }
+
+    public function apiKeyUser(): ?string { return $this->apiKeyUser; }
+    public function setApiKeyUser(?string $hexUserId): void { $this->apiKeyUser = $hexUserId; }
 
     /** @return \AstrX\Result\Result<self> */
     public static function fromGlobals(): \AstrX\Result\Result

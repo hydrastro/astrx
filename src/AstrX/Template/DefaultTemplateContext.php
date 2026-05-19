@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Template;
 
+use AstrX\Api\ContextScope;
 use AstrX\Theme\ThemeService;
 
 use AstrX\Auth\Gate;
@@ -50,6 +51,15 @@ final class DefaultTemplateContext
     /** @var array<string, mixed> */
     private array $vars = [];
 
+    /**
+     * Parallel map of context-key → scope. Entries without a scope here are
+     * treated as WEB_ONLY (secure default). Used by JsonRenderer to filter
+     * which keys appear in the API response.
+     *
+     * @var array<string, ContextScope>
+     */
+    private array $scopes = [];
+
     /** @var list<string> url_ids of the current page and all its ancestors */
     private array $ancestorUrlIds = [];
 
@@ -90,9 +100,44 @@ final class DefaultTemplateContext
     // Mutable context API — used by controllers
     // -------------------------------------------------------------------------
 
-    public function set(string $key, mixed $value): void
+    public function set(string $key, mixed $value, ContextScope $scope = ContextScope::WEB_ONLY): void
     {
         $this->vars[$key] = $value;
+        // Only track non-default scopes — saves memory and makes the
+        // hot path (default WEB_ONLY) a single assignment.
+        if ($scope !== ContextScope::WEB_ONLY) {
+            $this->scopes[$key] = $scope;
+        } else {
+            unset($this->scopes[$key]);
+        }
+    }
+
+    /**
+     * Convenience: set a value visible in both the HTML and the API response.
+     * Same as set($key, $value, ContextScope::SHARED).
+     */
+    public function setShared(string $key, mixed $value): void
+    {
+        $this->set($key, $value, ContextScope::SHARED);
+    }
+
+    /**
+     * Filter the context for an API response. Returns only the keys whose
+     * scope is SHARED, API_PUBLIC, or (when $isAdmin) API_ADMIN.
+     * WEB_ONLY values (the default) are excluded — accidental data leakage
+     * via the API requires explicit opt-in at the set() call site.
+     *
+     * @return array<string, mixed>
+     */
+    public function getApiData(bool $isAdmin): array
+    {
+        $out = [];
+        foreach ($this->scopes as $key => $scope) {
+            if ($scope->visibleToApi($isAdmin) && array_key_exists($key, $this->vars)) {
+                $out[$key] = $this->vars[$key];
+            }
+        }
+        return $out;
     }
 
     public function get(string $key, mixed $default = null): mixed

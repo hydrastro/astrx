@@ -59,8 +59,27 @@ final class UserSettingsController extends AbstractController
 
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
+            // PRG: the token was set by middleware on the POST. We pull the
+            // stored form data, process it, and then REDIRECT to the clean
+            // URL (without the token query parameter). This is the canonical
+            // Post-Redirect-Get pattern.
+            //
+            // Why redirect even on F5 / repeated visits to the same URL?
+            //
+            //   - The token is single-use. After we pull it, it's gone.
+            //   - If the user presses F5, the browser re-requests the same
+            //     URL with the same token. Without a redirect, processSubmission
+            //     runs again with an empty pulled array, which makes the CSRF
+            //     check fail with form name "settings_" (empty action). That's
+            //     the bug you saw.
+            //   - Some context that was built before processSubmission ran is
+            //     now stale (e.g. theme picker showing the old theme because the
+            //     session was just updated). A clean redirect re-builds it.
             $this->processSubmission($prgToken);
-            // processSubmission always redirects or falls through to renderForm
+
+            $pageUrl = $this->urlGen->toPage($this->t->t('WORDING_SETTINGS', fallback: 'WORDING_SETTINGS'));
+            Response::redirect($pageUrl)->send()->drainTo($this->collector);
+            exit;
         }
 
         return $this->renderForm();

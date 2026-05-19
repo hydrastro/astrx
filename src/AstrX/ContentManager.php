@@ -125,6 +125,26 @@ final class ContentManager
         // (e.g. NavbarHandler) can receive the current locale, session id, etc.
         $this->injector->setClass($current);
 
+        // Bearer auth: if the request carries an Authorization: Bearer token,
+        // resolve it via ApiKeyService BEFORE the regular session machinery
+        // runs. A successful API-key auth bootstraps UserSession as that user
+        // for the lifetime of this request. This is independent of the /api/
+        // URL marker — a bearer token works on the regular web URL too,
+        // although in practice only API callers will use it.
+        $bearer = $request->bearerToken();
+        if ($bearer !== null && $bearer !== '') {
+            $apiKeyResult = $this->injector->createClass(\AstrX\Api\ApiKeyService::class)
+                ->drainTo($this->collector);
+            if ($apiKeyResult->isOk()) {
+                /** @var \AstrX\Api\ApiKeyService $apiKeySvc */
+                $apiKeySvc = $apiKeyResult->unwrap();
+                $authedUserId = $apiKeySvc->validate($bearer);
+                if ($authedUserId !== null) {
+                    $request->setApiKeyUser($authedUserId);
+                }
+            }
+        }
+
         $this->translator->setLocale($locale->value);
         $this->moduleLoader->setLocale($locale->value);
 
@@ -492,16 +512,10 @@ final class ContentManager
                 ? $page->templateFileName
                 : $this->config->getConfigString('ContentManager', 'default_template', 'default');
 
-            // Resolve deferred pagination URLs (SubPageState + CommentState → URLs).
-            // Must happen before comments are pre-rendered because comments.html
-            // references comments_filter_action, comments_has_pagination etc.
             $ctx->resolveUrls();
 
-            // Render the comments partial into a ctx variable so it lands
-            // inside the template (inside #main) rather than after </html>.
             if ($page->comments) {
                 $ctx->set('page_comments', true);
-                // Pre-render the partial so it is available as {{&comments_html}}
                 $commentsPreResult = $engine->renderTemplate('partials/comments', $ctx->all())
                     ->drainTo($this->collector);
                 if ($commentsPreResult->isOk()) {
@@ -517,6 +531,59 @@ final class ContentManager
             $renderResult = $engine->renderTemplate($templateName, $ctx->all())
                 ->drainTo($this->collector);
 
+            // ── API dispatch ─────────────────────────────────────────────────
+            // /api/<page> URLs are served via the JsonRenderer. The page
+            // must have api_enabled = 1 — otherwise we return 404 without
+            // revealing the page exists.
+            if ($request->isApi()) {
+                if (!$page->apiEnabled) {
+                    $this->collector->emit(new \AstrX\Api\Diagnostic\ApiNotEnabledDiagnostic(
+                        'astrx.api/not_enabled',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
+                    http_response_code(404);
+                    if (!headers_sent()) {
+                        header('Content-Type: application/json; charset=utf-8');
+                    }
+                    echo json_encode([
+                        'ok'          => false,
+                        'status'      => 404,
+                        'error'       => ['id' => 'astrx.api/not_enabled', 'level' => 'warning'],
+                        'diagnostics' => [],
+                    ], JSON_UNESCAPED_SLASHES);
+                    return;
+                }
+
+                $rendererResult = $this->injector->createClass(\AstrX\Api\JsonRenderer::class)
+                    ->drainTo($this->collector);
+                if (!$rendererResult->isOk()) {
+                    $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
+                    return;
+                }
+                /** @var \AstrX\Api\JsonRenderer $jsonRenderer */
+                $jsonRenderer = $rendererResult->unwrap();
+
+                $html = $renderResult->isOk() ? (string) $renderResult->unwrap() : '';
+                // Try to find the user-session admin flag through the injector
+                $isAdmin = false;
+                $sessResult = $this->injector->getClass(\AstrX\User\UserSession::class);
+                if ($sessResult->isOk()) {
+                    /** @var \AstrX\User\UserSession $sess */
+                    $sess = $sessResult->unwrap();
+                    $isAdmin = $sess->isLoggedIn() && $sess->isAdmin();
+                }
+
+                $jsonRenderer->emit(
+                    ctx:          $ctx,
+                    locale:       $locale->value,
+                    pageUrlId:    $page->urlId,
+                    renderedHtml: $html,
+                    isAdmin:      $isAdmin,
+                );
+                return;
+            }
+
+            // ── HTML dispatch (default) ──────────────────────────────────────
             if (!$renderResult->isOk()) {
                 $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                 return;
@@ -573,6 +640,17 @@ final class ContentManager
             $current->set($localeKey, $locale->value);
             $request->query()->set($localeKey, $locale->value);
 
+            // API detection (rewrite mode): the segment after the locale is
+            // literally "api". /en/api/user-profile/... becomes an API call
+            // resolving to the user-profile page. We strip the segment from
+            // the stack so the rest of the routing logic sees the URL as if
+            // /api/ wasn't there. The api_enabled check on the page itself
+            // is what actually grants access.
+            if ($b === 'api') {
+                $request->markAsApi();
+                $b = $stack->pop();   // advance to the real page token
+            }
+
             if (
                 !$sessionUseCookies
                 && $b !== null
@@ -622,6 +700,13 @@ final class ContentManager
 
         $current->set($pageKey, $pageToken);
         $request->query()->set($pageKey, $pageToken);
+
+        // API detection (query mode): ?api=1 turns the same page into an
+        // API call. Mirror of the rewrite-mode /api/ segment above.
+        $apiFlag = $request->query()->get('api');
+        if ($apiFlag === '1' || $apiFlag === 'true') {
+            $request->markAsApi();
+        }
 
         return [$locale, $sidCandidate, $pageToken];
     }
