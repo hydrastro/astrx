@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\Template;
 
+use AstrX\Theme\ThemeService;
+
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
@@ -81,6 +83,7 @@ final class DefaultTemplateContext
         private readonly UrlGenerator $urlGenerator,
         private readonly FlashBag    $flashBag,
         private readonly Gate        $gate,
+        private readonly ThemeService $themeService,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -199,12 +202,12 @@ final class DefaultTemplateContext
         }
         $keywords = implode(', ', $keywordParts);
 
-        $cssPath = $this->config->getConfigString(
-            'ContentManager',
-            'css_file',
-            templateDir() . 'style.css',
-        );
-        $cssRawMid = ($cssPath !== '' && is_file($cssPath)) ? str_replace(
+        // CSS now comes from the active theme via ThemeService.
+        // ThemeService handles per-user override + global config + fallback to
+        // the default theme. The minification logic below (strip comments and
+        // whitespace) is preserved for performance.
+        $cssRaw = $this->themeService->activeStylesheetContent();
+        $cssRawMid = $cssRaw !== '' ? str_replace(
             array("\r\n", "\r", "\n", "\t", '  ', '    ', '    '),
             '',
             str_replace(
@@ -213,10 +216,10 @@ final class DefaultTemplateContext
                 preg_replace(
                     '!/\*[^*]*\*+([^/][^*]*\*+)*/!',
                     '',
-                    (string) file_get_contents($cssPath)
+                    $cssRaw,
                 ) ?? ''
             )
-        ) : null;
+        ) : '';
         $css = is_string($cssRawMid) ? $cssRawMid : '';
 
         $this->vars = [

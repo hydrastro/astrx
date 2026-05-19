@@ -4,6 +4,9 @@ declare(strict_types=1);
 return [
     'Mailer' => [
         'host'         => getenv('MAIL_HOST')         ?: 'localhost',
+        // SOCKS5 proxy for .onion / Tor delivery — leave empty to disable.
+        'socks5_host'  => getenv('MAIL_SOCKS5_HOST')  ?: '',
+        'socks5_port'  => (int)(getenv('MAIL_SOCKS5_PORT') ?: 0),
         'port'         => (int)(getenv('MAIL_PORT')   ?: 25),
         'username'     => getenv('MAIL_USER')         ?: '',
         'password'     => getenv('MAIL_PASSWORD')     ?: '',
@@ -14,6 +17,9 @@ return [
     ],
     'ImapClient' => [
         'imap_host'       => getenv('IMAP_HOST')      ?: 'localhost',
+        // SOCKS5 proxy for .onion / Tor IMAP — leave empty to disable.
+        'imap_socks5_host'=> getenv('IMAP_SOCKS5_HOST')?: '',
+        'imap_socks5_port'=> (int)(getenv('IMAP_SOCKS5_PORT') ?: 0),
         'imap_port'       => (int)(getenv('IMAP_PORT')?: 993),
         'imap_encryption' => getenv('IMAP_ENCRYPTION')?: 'ssl',
         'imap_timeout'    => 30,

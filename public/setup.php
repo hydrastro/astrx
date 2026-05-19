@@ -5,6 +5,15 @@ declare(strict_types=1);
  * DELETE THIS FILE after setup is complete.
  */
 
+// The framework's php.ini sets session.sid_length=256 (or similar) to match
+// SecureSessionHandler's 128-byte IDs. PHP's default file session handler
+// would then try to write sess_<256 hex chars> — too long for ext4 (255 max).
+// The wizard uses the file handler (not the DB-backed framework handler), so
+// we override sid_length to a small sane value here.
+ini_set('session.sid_length',          '32');
+ini_set('session.sid_bits_per_character', '5');
+ini_set('session.use_strict_mode',     '1');
+
 // session_start() MUST come before any processing that writes $_SESSION.
 session_start();
 
@@ -39,18 +48,31 @@ function checkReqs(): array
         if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
         $c[] = ["$label writable", is_writable($dir), $dir];
     }
+    // Fix 10.5: PHP session save path must be writable for the wizard to
+    // persist state between steps. Failure here means step 2 → step 3 loses
+    // the DB credentials silently in some container environments.
+    $sessionPath = session_save_path() ?: sys_get_temp_dir();
+    $c[] = ['session save path writable', is_writable($sessionPath), $sessionPath];
     return $c;
 }
 function allOk(array $c): bool { foreach ($c as [,$ok]) { if (!$ok) return false; } return true; }
 
 // ── Config writers ────────────────────────────────────────────────────────────
-function writePDO(string $h, string $d, string $u, string $p, int $port): void
+function writePDO(string $h, string $d, string $u, string $p, int $port): string
 {
-    [$h,$d,$u,$p] = array_map('addslashes', [$h,$d,$u,$p]);
-    file_put_contents(__DIR__ . '/../resources/config/PDO.config.php', "<?php\ndeclare(strict_types=1);\nreturn [\n    'PDO' => [\n        'db_type'             => 'mysql',\n        'db_host'             => '$h',\n        'db_name'             => '$d',\n        'db_port'             => $port,\n        'db_username'         => '$u',\n        'db_password'         => '$p',\n        'emulate_prepares'    => false,\n        'errmode_exception'   => true,\n        'default_fetch_assoc' => true,\n    ],\n];\n");
+    $path = __DIR__ . '/../resources/config/PDO.config.php';
+    [$h2,$d2,$u2,$p2] = array_map('addslashes', [$h,$d,$u,$p]);
+    $content = "<?php\ndeclare(strict_types=1);\nreturn [\n    'PDO' => [\n        'db_type'             => 'mysql',\n        'db_host'             => '$h2',\n        'db_name'             => '$d2',\n        'db_port'             => $port,\n        'db_username'         => '$u2',\n        'db_password'         => '$p2',\n        'emulate_prepares'    => false,\n        'errmode_exception'   => true,\n        'default_fetch_assoc' => true,\n    ],\n];\n";
+    // Fix: check the return value so permission errors surface as flash messages
+    // instead of silently falling through to step 3 with no config written.
+    $bytes = @file_put_contents($path, $content);
+    if ($bytes === false) {
+        return "Cannot write {$path}. Check directory permissions: this directory must be writable by the web server user.";
+    }
+    return '';
 }
 
-function writeSecurity(string $secret, string $env): void
+function writeSecurity(string $secret, string $env): string
 {
     $s = addslashes($secret);
     $envConst = match($env) { 'production' => 'PRODUCTION', 'staging' => 'STAGING', default => 'DEVELOPMENT' };
@@ -62,12 +84,20 @@ function writeSecurity(string $secret, string $env): void
             "/'environment'\s*=>\s*EnvironmentType::[A-Z]+->value/" => "'environment' => EnvironmentType::{$envConst}->value",
         ],
     ] as $path => $replacements) {
-        $content = @file_get_contents($path) ?: '';
+        $content = @file_get_contents($path);
+        if ($content === false) {
+            return "Cannot read {$path}. Check that the file exists and is readable.";
+        }
         foreach ($replacements as $pattern => $replacement) {
             $content = preg_replace($pattern, $replacement, $content) ?? $content;
         }
-        file_put_contents($path, $content);
+        // Fix: check write return value.
+        $bytes = @file_put_contents($path, $content);
+        if ($bytes === false) {
+            return "Cannot write {$path}. Check directory permissions.";
+        }
     }
+    return '';
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
@@ -101,13 +131,48 @@ function sessionConn(): PDO|string
 }
 function runSQL(PDO $pdo, string $file): string
 {
-    if (!file_exists($file)) return '';
+    // Fix: surface missing files instead of silently returning success.
+    if (!file_exists($file)) {
+        return "Schema file not found: $file";
+    }
     $stmts = array_filter(array_map('trim', explode(';', preg_replace('/--[^\n]*/','',(string)file_get_contents($file))??'')), fn($s)=>$s!=='');
     foreach ($stmts as $stmt) {
         try { $pdo->exec($stmt); }
         catch (\PDOException $e) { if (!in_array((string)$e->getCode(),['42S01','42S21','23000','42000'],true)) return $e->getMessage().' | '.substr($stmt,0,200); }
     }
     return '';
+}
+
+/**
+ * Find a setup SQL file in any of the conventional locations.
+ * Docker layouts vary — some mount the whole repo as /app, others mount
+ * only public/, src/, and resources/. We try every plausible location so
+ * the wizard works regardless of how the container is configured.
+ *
+ * Returns the first existing path, or null if nothing matched.
+ */
+function findSetupFile(string $name): ?string
+{
+    $candidates = [
+        __DIR__ . '/../src/setup/' . $name,   // canonical: ships inside src/ (always mounted)
+        __DIR__ . '/../setup/' . $name,       // alternative: repo-root setup/ (only works when whole repo is mounted)
+    ];
+    foreach ($candidates as $c) {
+        if (file_exists($c)) { return $c; }
+    }
+    return null;
+}
+
+function listSetupMigrations(): array
+{
+    $found = [];
+    foreach ([__DIR__ . '/../src/setup/', __DIR__ . '/../setup/'] as $dir) {
+        if (!is_dir($dir)) continue;
+        foreach (glob($dir . 'migrate_*.sql') ?: [] as $m) {
+            $found[basename($m)] = $m;   // de-dup by filename, prefer first found
+        }
+    }
+    return array_values($found);
 }
 function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 {
@@ -138,13 +203,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (is_string($conn)) { $errors[]='Database connection failed: '.$conn; }
         else {
             if (pb('run_migrations')) {
-                $err = runSQL($conn, __DIR__.'/../setup/tables.sql');
-                if ($err==='' ) $err = runSQL($conn, __DIR__.'/../setup/migrate.sql');
-                if ($err!=='' ) $errors[]='SQL error: '.$err;
+                $tablesPath = findSetupFile('tables.sql');
+                if ($tablesPath === null) {
+                    $errors[] = 'Schema file tables.sql not found in either src/setup/ or setup/.';
+                } else {
+                    $err = runSQL($conn, $tablesPath);
+                    if ($err !== '') {
+                        $errors[] = 'SQL error: ' . $err;
+                    }
+                }
+                // Auto-apply every migrate_*.sql found in either location.
+                if ($errors === []) {
+                    foreach (listSetupMigrations() as $mf) {
+                        $err = runSQL($conn, $mf);
+                        if ($err !== '') {
+                            $errors[] = 'SQL error in ' . basename($mf) . ': ' . $err;
+                            break;
+                        }
+                    }
+                }
             }
             if ($errors===[]) {
-                writePDO($h,$d,$u,$p,$port);
-                $step = 3;
+                $writeErr = writePDO($h,$d,$u,$p,$port);
+                if ($writeErr !== '') {
+                    $errors[] = $writeErr;
+                } else {
+                    $step = 3;
+                }
             }
         }
     }
@@ -168,9 +253,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($ps === 4) {
         $secret = post('server_secret','');
         if ($secret==='') $secret = bin2hex(random_bytes(32));
-        writeSecurity($secret, post('environment','production'));
-        file_put_contents($configDir.'.setup_complete', date('c'));
-        $step=5;
+        $writeErr = writeSecurity($secret, post('environment','production'));
+        if ($writeErr !== '') {
+            $errors[] = $writeErr;
+        } else {
+            $lockBytes = @file_put_contents($configDir.'.setup_complete', date('c'));
+            if ($lockBytes === false) {
+                $errors[] = "Cannot write lock file at {$configDir}.setup_complete";
+            } else {
+                $step = 5;
+            }
+        }
     }
 }
 

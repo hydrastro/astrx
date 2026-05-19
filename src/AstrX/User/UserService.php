@@ -581,6 +581,23 @@ final class UserService
     }
 
     /**
+     * Update the user's theme preference. Empty string clears the override
+     * (revert to the global theme). The caller should also call
+     * UserSession::updateTheme() so the change takes effect in this request.
+     *
+     * No validation is done against the list of installed themes here — the
+     * controller is expected to check that, because the list comes from the
+     * filesystem and only ThemeService knows it.
+     *
+     * @return Result<bool>
+     */
+    public function changeTheme(string $hexId, string $theme): Result
+    {
+        return $this->repo->updateTheme($hexId, $theme === '' ? null : $theme);
+    }
+
+
+    /**
      * Delete or retire a user account using the specified mode.
      *
      * User-initiated deletion (from settings) requires correct password unless

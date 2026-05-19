@@ -71,6 +71,8 @@ final class AdminConfigAccessController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 

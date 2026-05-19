@@ -9,6 +9,7 @@ use AstrX\Mail\Diagnostic\ImapStartTlsDiagnostic;
 use AstrX\Mail\Diagnostic\MailApiErrorDiagnostic;
 use AstrX\Mail\Diagnostic\MailInvalidPayloadDiagnostic;
 use AstrX\Mail\Diagnostic\MailSendFailedDiagnostic;
+use AstrX\Mail\Diagnostic\MailerNotConfiguredDiagnostic;
 use AstrX\Mail\Diagnostic\TrustAddFailedDiagnostic;
 use AstrX\Mail\Diagnostic\TrustCheckFailedDiagnostic;
 use AstrX\Mail\Diagnostic\TrustListFailedDiagnostic;
@@ -93,5 +94,12 @@ return [
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof TrustListFailedDiagnostic);
             return 'Database error listing trusted senders: ' . $d->detail();
+        },
+    // ── Mailer not configured ─────────────────────────────────────────────────
+
+    'astrx.mail/not_configured' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof MailerNotConfiguredDiagnostic);
+            return 'Mailer is not configured. Outbound email (e.g. verification tokens) cannot be sent. Wire PHPMailer in RegisterController to silence.';
         },
 ];

@@ -82,9 +82,23 @@ final class SecureSessionHandler implements
         if ($this->serverSecret !== '') {
             return $this->serverSecret;
         }
-        // Deterministic non-empty fallback — never throws ValueError.
-        // Functionally secure but lacks the server-secret protection layer.
-        return hash('sha256', 'astrx-session-fallback-no-secret-configured', true);
+        // No configured server_secret → use a lazily-generated per-installation
+        // fallback file. Unique to this installation, so a stolen DB row from
+        // one AstrX site cannot be decrypted using another site's fallback.
+        // The admin should still configure server_secret explicitly — this is
+        // a fail-safe, not a recommended mode.
+        $fallbackFile = \AstrX\Support\configDir() . '.server_secret_generated';
+        if (is_file($fallbackFile)) {
+            $contents = @file_get_contents($fallbackFile);
+            if (is_string($contents) && $contents !== '') {
+                return $contents;
+            }
+        }
+        // First run — generate and persist.
+        $generated = random_bytes(32);
+        @file_put_contents($fallbackFile, $generated, LOCK_EX);
+        @chmod($fallbackFile, 0600);
+        return $generated;
     }
 
     // -------------------------------------------------------------------------

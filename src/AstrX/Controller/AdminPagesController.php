@@ -36,6 +36,11 @@ final class AdminPagesController extends AbstractController
 {
     private const FORM = 'admin_pages';
 
+    // Fix 5.2: file_name maps to controller class names and template files.
+    // Restrict to safe identifiers only.
+    private const FILE_NAME_REGEX = '/\\A[a-z][a-z0-9_]*\\z/';
+    private const URL_ID_REGEX    = '/\\A[A-Z][A-Z0-9_]*\\z|\\A[a-z][a-z0-9_-]*\\z/';
+
     public function __construct(
         DiagnosticsCollector                   $collector,
         private readonly DefaultTemplateContext $ctx,
@@ -57,6 +62,8 @@ final class AdminPagesController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -74,7 +81,7 @@ final class AdminPagesController extends AbstractController
             exit;
         }
 
-        $editId    = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
+        $editId    = self::queryInt($this->request, 'edit', 0);
         $pages     = $this->loadPages();
         $csrfToken = $this->csrf->generate(self::FORM);
         $prgId     = $this->prg->createId($selfUrl);
@@ -152,6 +159,17 @@ final class AdminPagesController extends AbstractController
             $this->flash->set('error', $this->t->t('admin.pages.url_file_required'));
             return;
         }
+        // Fix 5.2: file_name maps to PHP class and template filename — restrict.
+        if (!preg_match(self::FILE_NAME_REGEX, $fileName)) {
+            $this->flash->set('error',
+                $this->t->t('admin.pages.invalid_file_name'));
+            return;
+        }
+        if (!preg_match(self::URL_ID_REGEX, $urlId)) {
+            $this->flash->set('error',
+                $this->t->t('admin.pages.invalid_url_id'));
+            return;
+        }
         $i18n       = self::mBool($p, 'i18n')       ? 1 : 0;
         $template   = self::mBool($p, 'template')   ? 1 : 0;
         $controller = self::mBool($p, 'controller') ? 1 : 0;
@@ -174,13 +192,19 @@ final class AdminPagesController extends AbstractController
                         ':hidden' => $hidden, ':comments' => $comments]);
             $newId = (int) $this->pdo->lastInsertId();
 
-            // Closure: self-ref + inherit from parent
+            // Fix 5.4: explicit closure-table logic — easier to audit than the
+            // previous self-referencing SELECT.  Two cases:
+            //   1. parent > 0 → inherit all ancestors of parent + add self-ref
+            //   2. parent = 0 → root page, only the self-ref is needed
+            if ($parentId > 0) {
+                $this->pdo->prepare(
+                    'INSERT INTO page_closure (ancestor, descendant)
+                     SELECT ancestor, :new FROM page_closure WHERE descendant = :parent'
+                )->execute([':new' => $newId, ':parent' => $parentId]);
+            }
             $this->pdo->prepare(
-                'INSERT INTO page_closure (ancestor, descendant)
-                 SELECT ancestor, :new FROM page_closure WHERE descendant = :parent
-                 UNION ALL SELECT :new2, :new3'
-            )->execute([':new' => $newId, ':parent' => $parentId > 0 ? $parentId : $newId,
-                        ':new2' => $newId, ':new3' => $newId]);
+                'INSERT INTO page_closure (ancestor, descendant) VALUES (:id, :id2)'
+            )->execute([':id' => $newId, ':id2' => $newId]);
 
             // Meta
             $this->pdo->prepare(
@@ -195,8 +219,14 @@ final class AdminPagesController extends AbstractController
             $this->pdo->commit();
             $this->flash->set('success', $this->t->t('admin.pages.added'));
         } catch (\PDOException $e) {
-            $this->pdo->rollBack();
-            $this->emitDiag($e);
+            if ($this->pdo->inTransaction()) { $this->pdo->rollBack(); }
+            // Fix 5.3: friendly message for duplicate-key violations.
+            if ((string) $e->getCode() === '23000') {
+                $this->flash->set('error',
+                    $this->t->t('admin.pages.url_id_exists'));
+            } else {
+                $this->emitDiag($e);
+            }
         }
     }
 
@@ -207,6 +237,14 @@ final class AdminPagesController extends AbstractController
         $fileName   = trim(self::mStr($p, 'file_name', ''));
         if ($urlId === '' || $fileName === '') {
             $this->flash->set('error', $this->t->t('admin.pages.url_file_required'));
+            return;
+        }
+        if (!preg_match(self::FILE_NAME_REGEX, $fileName)) {
+            $this->flash->set('error', $this->t->t('admin.pages.invalid_file_name'));
+            return;
+        }
+        if (!preg_match(self::URL_ID_REGEX, $urlId)) {
+            $this->flash->set('error', $this->t->t('admin.pages.invalid_url_id'));
             return;
         }
         $i18n       = self::mBool($p, 'i18n')       ? 1 : 0;
@@ -242,13 +280,35 @@ final class AdminPagesController extends AbstractController
 
             $this->flash->set('success', $this->t->t('admin.pages.updated'));
         } catch (\PDOException $e) {
-            $this->emitDiag($e);
+            // Fix 5.3: friendly duplicate-key message on update too.
+            if ((string) $e->getCode() === '23000') {
+                $this->flash->set('error', $this->t->t('admin.pages.url_id_exists'));
+            } else {
+                $this->emitDiag($e);
+            }
         }
     }
 
     private function deletePage(int $id): void
     {
         try {
+            // Fix 5.1 (CRITICAL): refuse to delete a page with descendants.
+            // The closure-table CASCADE would orphan the children — they'd
+            // survive in `page` but lose all their closure rows, becoming
+            // unreachable through nav, breadcrumbs, and the admin tree.
+            // Reparenting would be too clever; explicit refusal is safest.
+            $stmt = $this->pdo->prepare(
+                'SELECT COUNT(*) FROM page_closure
+                  WHERE ancestor = :id AND descendant != :id2'
+            );
+            $stmt->execute([':id' => $id, ':id2' => $id]);
+            $childCount = (int) $stmt->fetchColumn();
+            if ($childCount > 0) {
+                $this->flash->set('error',
+                    $this->t->t('admin.pages.has_children'));
+                return;
+            }
+
             // CASCADE handles page_closure, page_meta, page_robots
             $this->pdo->prepare('DELETE FROM page WHERE id = :id')
                 ->execute([':id' => $id]);
@@ -260,12 +320,17 @@ final class AdminPagesController extends AbstractController
 
     private function toggleFlag(int $id, string $column): void
     {
-        if (!in_array($column, ['hidden', 'comments'], true)) {
-            return;
-        }
+        // Fix 5.5: explicit match expression — no string interpolation.
+        // Self-documenting and prevents future copy-paste mistakes that omit
+        // the allowlist check.
+        $sql = match ($column) {
+            'hidden'   => 'UPDATE page SET hidden = 1 - hidden WHERE id = :id',
+            'comments' => 'UPDATE page SET comments = 1 - comments WHERE id = :id',
+            default    => null,
+        };
+        if ($sql === null) { return; }
         try {
-            $this->pdo->prepare("UPDATE page SET {$column} = 1 - {$column} WHERE id = :id")
-                ->execute([':id' => $id]);
+            $this->pdo->prepare($sql)->execute([':id' => $id]);
         } catch (\PDOException $e) {
             $this->emitDiag($e);
         }

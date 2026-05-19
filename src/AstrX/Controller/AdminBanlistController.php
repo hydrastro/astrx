@@ -53,6 +53,8 @@ final class AdminBanlistController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_BANLIST)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -88,8 +90,11 @@ final class AdminBanlistController extends AbstractController
                 $value  = trim(self::mStr($posted, 'value', ''));
                 $reason = trim(self::mStr($posted, 'reason', ''));
                 $route  = trim(self::mStr($posted, 'route', ''));
-                $end    = ($posted['end'] ?? '') !== '' ? (is_scalar($posted['end']) ? (string)$posted['end'] : '') : null;
-                if ($value === '' || $reason === '' || $route === '') { break; }
+                $end    = self::mNullableTrimmed($posted, 'end');
+                if ($value === '' || $reason === '' || $route === '') {
+                    $this->flash->set('error', $this->t->t('admin.banlist.required_fields'));
+                    break;
+                }
                 $r = match ($type) {
                     'ip'    => $this->banlist->banCidr($value, $reason, $route, $end),
                     'email' => $this->banlist->banEmail($value, $reason, $route, $end),
@@ -103,47 +108,92 @@ final class AdminBanlistController extends AbstractController
                 break;
 
             case 'update_ban':
+                // Fix 3.1: validate ban_id > 0 before all operations.
                 $banId  = self::mInt($posted, 'ban_id', 0);
+                if ($banId <= 0) {
+                    $this->flash->set('error', $this->t->t('admin.banlist.invalid_id'));
+                    break;
+                }
                 $reason = trim(self::mStr($posted, 'reason', ''));
                 $route  = trim(self::mStr($posted, 'route', ''));
-                $end    = ($posted['end'] ?? '') !== '' ? (is_scalar($posted['end']) ? (string)$posted['end'] : '') : null;
+                $end    = self::mNullableTrimmed($posted, 'end');
                 $active = self::mBool($posted, 'active');
-                if ($banId === 0 || $reason === '' || $route === '') { break; }
+                if ($reason === '' || $route === '') {
+                    $this->flash->set('error', $this->t->t('admin.banlist.required_fields'));
+                    break;
+                }
                 $r = $this->banlist->updateBan($banId, $reason, $route, $end, $active);
                 $r->drainTo($this->collector);
                 if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.updated')); }
                 break;
 
             case 'activate':
-                $this->banlist->setActive(self::mInt($posted, 'ban_id', 0), true)
-                    ->drainTo($this->collector);
+                // Fix 3.1 + 3.2: guard id + emit flash on success.
+                $banId = self::mInt($posted, 'ban_id', 0);
+                if ($banId <= 0) {
+                    $this->flash->set('error', $this->t->t('admin.banlist.invalid_id'));
+                    break;
+                }
+                $r = $this->banlist->setActive($banId, true);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.activated')); }
                 break;
 
             case 'deactivate':
-                $this->banlist->setActive(self::mInt($posted, 'ban_id', 0), false)
-                    ->drainTo($this->collector);
+                $banId = self::mInt($posted, 'ban_id', 0);
+                if ($banId <= 0) {
+                    $this->flash->set('error', $this->t->t('admin.banlist.invalid_id'));
+                    break;
+                }
+                $r = $this->banlist->setActive($banId, false);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.deactivated')); }
                 break;
 
             case 'delete_ban':
-                $this->banlist->delete(self::mInt($posted, 'ban_id', 0))
-                    ->drainTo($this->collector);
-                $this->flash->set('success', $this->t->t('admin.banlist.deleted'));
+                $banId = self::mInt($posted, 'ban_id', 0);
+                if ($banId <= 0) {
+                    $this->flash->set('error', $this->t->t('admin.banlist.invalid_id'));
+                    break;
+                }
+                $r = $this->banlist->delete($banId);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.deleted')); }
                 break;
 
             // ── Routes ────────────────────────────────────────────────────────
             case 'add_route':
                 $key = trim(self::mStr($posted, 'route_key', ''));
-                if ($key === '') { break; }
-                $routes = $this->loadRoutes();
-                if (!isset($routes[$key])) {
-                    $routes[$key] = [];
-                    $this->saveRoutes($routes)->drainTo($this->collector);
-                    $this->flash->set('success', $this->t->t('admin.banlist.route_added'));
+                if ($key === '') {
+                    $this->flash->set('error', $this->t->t('admin.banlist.route_key_required'));
+                    break;
                 }
+                $routes = $this->loadRoutes();
+                if (isset($routes[$key])) {
+                    // Fix 3.3: explicit feedback on duplicate.
+                    $this->flash->set('error', $this->t->t('admin.banlist.route_exists'));
+                    break;
+                }
+                $routes[$key] = [];
+                $this->saveRoutes($routes)->drainTo($this->collector);
+                $this->flash->set('success', $this->t->t('admin.banlist.route_added'));
                 break;
 
             case 'delete_route':
                 $key    = trim(self::mStr($posted, 'route_key', ''));
+                if ($key === '') {
+                    $this->flash->set('error', $this->t->t('admin.banlist.route_key_required'));
+                    break;
+                }
+                // Fix 3.4: refuse delete if any active bans reference this route.
+                $usage = $this->banlist->countBansForRoute($key);
+                $usage->drainTo($this->collector);
+                $count = $usage->isOk() ? (int) $usage->unwrap() : 0;
+                if ($count > 0) {
+                    $this->flash->set('error',
+                        $this->t->t('admin.banlist.route_in_use'));
+                    break;
+                }
                 $routes = $this->loadRoutes();
                 unset($routes[$key]);
                 $this->saveRoutes($routes)->drainTo($this->collector);
@@ -207,7 +257,7 @@ final class AdminBanlistController extends AbstractController
 
     private function buildContext(): void
     {
-        $banEditId   = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
+        $banEditId   = self::queryInt($this->request, 'edit', 0);
         $routeEditId = trim((is_scalar($vroute_edit = $this->request->query()->get('route_edit') ?? '') ? (string)$vroute_edit : ''));
 
         $listResult = $this->banlist->listAll();

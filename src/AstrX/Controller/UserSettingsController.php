@@ -14,6 +14,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\DeletionMode;
+use AstrX\Theme\ThemeService;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 
@@ -42,6 +43,7 @@ final class UserSettingsController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly ThemeService $themeService
     ) {
         parent::__construct($collector);
     }
@@ -157,6 +159,25 @@ final class UserSettingsController extends AbstractController
                 }
                 break;
 
+            case 'change_theme':
+                // User chose a theme on their settings page. Validate against the
+                // discovered theme list (security: prevents directory traversal).
+                // Empty string is allowed and means "revert to global default".
+                $theme = self::mStr($posted, 'theme', '');
+                if ($theme !== '' && !$this->themeService->themeExists($theme)) {
+                    $this->flash->set('error', $this->t->t('user.settings.theme_invalid'));
+                    break;
+                }
+                $result = $this->userService->changeTheme($hexId, $theme);
+                $result->drainTo($this->collector);
+                if ($result->isOk()) {
+                    // Live-update the session so the new theme applies immediately
+                    // on the redirect that follows this PRG dispatch.
+                    $this->session->updateTheme($theme);
+                    $this->flash->set('success', $this->t->t('user.settings.theme_saved'));
+                }
+                break;
+
             case 'delete_account':
                 // Users may choose soft_redact (keeps data) or hard_redact (wipes PII).
                 // full_delete and keep_suspended are reserved for admins.
@@ -194,7 +215,7 @@ final class UserSettingsController extends AbstractController
         $actions = [
             'change_username', 'change_display_name', 'change_recovery_email',
             'change_password', 'verify_email', 'set_avatar', 'remove_avatar',
-            'delete_account',
+            'delete_account', 'change_theme',
         ];
         $csrfTokens = [];
         $prgIds     = [];
@@ -222,6 +243,21 @@ final class UserSettingsController extends AbstractController
         $this->ctx->set('show_avatar',       true);
         $this->ctx->set('max_avatar_mb',     1); // TODO: from AvatarService config
 
+        // Theme picker — only show if admin allows user override.
+        $allowOverride = $this->themeService->allowUserOverride();
+        $themes        = [];
+        if ($allowOverride) {
+            $currentTheme = $this->session->userTheme();
+            foreach ($this->themeService->discoverThemes() as $tDef) {
+                $tDef['active'] = ($tDef['key'] === $currentTheme);
+                $themes[]       = $tDef;
+            }
+        }
+        $this->ctx->set('show_theme_picker', $allowOverride);
+        $this->ctx->set('themes',            $themes);
+        $this->ctx->set('current_theme',     $this->session->userTheme());
+        $this->ctx->set('theme_default_active', $this->session->userTheme() === '');
+
         $this->setI18n();
         return $this->ok();
     }
@@ -248,6 +284,9 @@ final class UserSettingsController extends AbstractController
         $this->ctx->set('settings_delete',         $this->t->t('user.settings.delete'));
         $this->ctx->set('settings_delete_confirm', $this->t->t('user.settings.delete_confirm'));
         $this->ctx->set('settings_submit',         $this->t->t('user.settings.submit'));
+        $this->ctx->set('settings_theme',          $this->t->t('user.settings.theme'));
+        $this->ctx->set('settings_theme_desc',     $this->t->t('user.settings.theme_desc'));
+        $this->ctx->set('settings_theme_default',  $this->t->t('user.settings.theme_default'));
         $this->ctx->set('field_current_value',     $this->t->t('user.settings.current_value'));
     }
 }

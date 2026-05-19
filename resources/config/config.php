@@ -1,27 +1,24 @@
 <?php
 declare(strict_types=1);
 
-use AstrX\ErrorHandler\EnvironmentType;
-
-$env = getenv('APP_ENV') ?: 0;
-
 return [
     'Prelude' => [
-        'environment'         => $env === 0
-                                    ? EnvironmentType::PRODUCTION->value
-                                    : EnvironmentType::DEVELOPMENT->value,
-        'available_languages' => ['en', 'it'],
-        'default_language'    => 'en',
+        'environment' => 0,
+        'available_languages' => [
+            'en',
+            'it',
+        ],
+        'default_language' => 'en',
     ],
     'ModuleLoader' => [
-        'config_dir'      => CONFIG_DIR,
-        'lang_dir'        => LANG_DIR,
+        'config_dir' => '/app/resources/config/',
+        'lang_dir' => '/app/resources/lang/',
         'config_optional' => true,
-        'lang_optional'   => true,
+        'lang_optional' => true,
     ],
     'ErrorHandler' => [
-        'failsafe_template' => TEMPLATE_DIR . '/failsafe.html',
-        'production_mask'   => E_ALL & ~E_NOTICE,
+        'failsafe_template' => '/app/resources/template//failsafe.html',
+        'production_mask' => 30711,
     ],
     'Injector' => [
         'helpers_strict' => true,

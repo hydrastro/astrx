@@ -16,6 +16,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Config\Config;
 use AstrX\User\UserService;
+use AstrX\Config\InjectConfig;
 use AstrX\User\UserSession;
 
 /**
@@ -25,6 +26,15 @@ use AstrX\User\UserSession;
 final class RegisterController extends AbstractController
 {
     private const FORM = 'register';
+
+    // Fix 7.3: cached config so duplicated reads stay in sync.
+    private bool $mailboxIsUsername = false;
+
+    #[InjectConfig('mailbox_is_username')]
+    public function setMailboxIsUsername(bool $v): void
+    {
+        $this->mailboxIsUsername = $v;
+    }
 
     public function __construct(
         DiagnosticsCollector                   $collector,
@@ -70,8 +80,8 @@ final class RegisterController extends AbstractController
         $username    = self::mStr($posted, 'username', '');
         $password    = self::mStr($posted, 'password', '');
         $repeat      = self::mStr($posted, 'repeat', '');
-        $mailboxIsUsernamePost = $this->config->getConfigBool('WebmailService', 'mailbox_is_username', false);
-        $mailbox     = $mailboxIsUsernamePost
+        // Fix 7.3: use cached config (set once via #[InjectConfig]).
+        $mailbox     = $this->mailboxIsUsername
             ? $username
             : self::mStr($posted, 'mailbox', '');
         $email       = self::mStr($posted, 'email', '');
@@ -91,6 +101,20 @@ final class RegisterController extends AbstractController
             return $this->renderForm($username, $mailbox, $email, $displayName);
         }
 
+        // Fix 7.2: captcha check moved BEFORE consent — captchas are one-shot
+        // (deleted on verify), so a consent failure must not consume the
+        // captcha and leave the user stuck with "already used" on retry.
+        $captchaSubmitted = $captchaId !== '';
+        $captchaResult    = $this->userService->shouldShowCaptcha(self::FORM);
+        $policyRequires   = $captchaResult->isOk() && (bool) $captchaResult->unwrap();
+        if ($captchaSubmitted || $policyRequires) {
+            $verifyResult = $this->captchaService->verify($captchaId, $captchaText);
+            if (!$verifyResult->isOk()) {
+                $verifyResult->drainTo($this->collector);
+                return $this->renderForm($username, $mailbox, $email, $displayName);
+            }
+        }
+
         // Validate consent checkboxes if they are required.
         if ($this->config->getConfigBool('RegisterConsent', 'require_terms', false)
             && !$termsChecked) {
@@ -101,16 +125,6 @@ final class RegisterController extends AbstractController
             && !$dataUsageChecked) {
             $this->flash->set('error', $this->t->t('user.register.data_usage_required'));
             return $this->renderForm($username, $mailbox, $email, $displayName);
-        }
-
-        $captchaResult = $this->userService->shouldShowCaptcha(self::FORM);
-        $needsCaptcha  = $captchaResult->isOk() && (bool) $captchaResult->unwrap();
-        if ($needsCaptcha) {
-            $verifyResult = $this->captchaService->verify($captchaId, $captchaText);
-            if (!$verifyResult->isOk()) {
-                $verifyResult->drainTo($this->collector);
-                return $this->renderForm($username, $mailbox, $email, $displayName);
-            }
         }
 
         $registerResult = $this->userService->register(
@@ -126,17 +140,22 @@ final class RegisterController extends AbstractController
         $newHexId = $registerResult->unwrap();
 
         // --- Email verification token ---
-        // If unverified users cannot log in, generate a token and send the verification email.
-        // TODO: replace the commented-out block with a real PHPMailer call.
+        // If unverified users cannot log in, generate a token. The mailer
+        // integration is still TODO — for now the token is stored in the DB and
+        // surfaced as a diagnostic so the admin can see registrations queued
+        // for verification. Wire PHPMailer here to actually send the email.
         if (!$this->userService->allowLoginNonVerifiedUsers()) {
-            $tokenResult = $this->userService->generateToken($newHexId, \AstrX\User\UserService::TOKEN_EMAIL_VERIFY);
+            $tokenResult = $this->userService->generateToken(
+                $newHexId,
+                \AstrX\User\UserService::TOKEN_EMAIL_VERIFY,
+            );
             $tokenResult->drainTo($this->collector);
-            // if ($tokenResult->isOk()) {
-            //     /** @var array<string,mixed> */
-     $data = $tokenResult->unwrap();
-            //     $link = ... build verify URL from $data['token'] and $data['user_id'] ...
-            //     $mailer->send($email, $link);
-            // }
+            // Fix 7.1: emit a diagnostic so the admin notices the mailer is
+            // not yet wired and pending verifications are accumulating.
+            $this->emit(new \AstrX\Mail\Diagnostic\MailerNotConfiguredDiagnostic(
+                'astrx.mail/not_configured',
+                \AstrX\Result\DiagnosticLevel::WARNING,
+            ));
         }
 
         $this->flash->set('success', $this->t->t('user.register.success'));
@@ -186,8 +205,7 @@ final class RegisterController extends AbstractController
         $this->ctx->set('show_captcha',       $showCaptcha);
         $this->ctx->set('captcha_id',         $captchaId);
         $this->ctx->set('captcha_image',      $captchaB64);
-        $mailboxIsUsername = $this->config->getConfigBool('WebmailService', 'mailbox_is_username', false);
-        $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$mailboxIsUsername);
+        $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$this->mailboxIsUsername);
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());
         $this->ctx->set('show_display_name',  $this->userService->requireDisplayName());
         $this->ctx->set('show_birth_date',    $this->userService->requireBirthDate());

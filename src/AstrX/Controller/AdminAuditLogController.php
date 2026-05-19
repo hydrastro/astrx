@@ -43,10 +43,12 @@ final class AdminAuditLogController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
-        $page       = max(1, (is_numeric($vq_page = $this->request->query()->get('page')) ? (int)$vq_page : 1));
+        $page       = max(1, self::queryInt($this->request, 'page', 1));
         $filterUser = trim((is_scalar($vuser = $this->request->query()->get('user') ?? '') ? (string)$vuser : ''));
         $filterAct  = trim((is_scalar($vaction = $this->request->query()->get('action') ?? '') ? (string)$vaction : ''));
 

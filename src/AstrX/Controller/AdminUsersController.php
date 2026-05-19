@@ -71,6 +71,8 @@ final class AdminUsersController extends AbstractController
 
         if (!$canManage && !$canConfig) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -130,40 +132,63 @@ final class AdminUsersController extends AbstractController
     {
         $action = self::mStr($posted, 'action', '');
         $hexId  = self::mStr($posted, 'user_id', '');
-        if ($hexId === '') { return; }
+        if ($hexId === '') {
+            $this->flash->set('error', $this->t->t('admin.users.invalid_id'));
+            return;
+        }
 
+        // Fix 1.1: explicit user-not-found handling.
         $targetResult = $this->userRepo->findById($hexId);
-        if ($targetResult->isOk() && $targetResult->unwrap() !== null) {
-            $target = (object) $targetResult->unwrap();
-            if ($this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
-                $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
-                return;
-            }
+        if (!$targetResult->isOk()) {
+            $targetResult->drainTo($this->collector);
+            $this->flash->set('error', $this->t->t('admin.users.lookup_failed'));
+            return;
+        }
+        $targetData = $targetResult->unwrap();
+        if (!is_array($targetData)) {
+            $this->flash->set('error', $this->t->t('admin.users.not_found'));
+            return;
+        }
+        $target = (object) $targetData;
+        if ($this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
+            $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
+            return;
         }
 
         switch ($action) {
             case 'update':
+                // Fix 1.3: password hashing delegated to UserService.
                 $rawPassword = trim(self::mStr($posted, 'password', ''));
                 $hashIt      = self::mBool($posted, 'hash_password');
-                $password    = $rawPassword !== ''
-                    ? ($hashIt ? password_hash($rawPassword, PASSWORD_ARGON2ID) : $rawPassword)
-                    : null;
+
                 $r = $this->userRepo->adminUpdate(
                     $hexId,
                     trim(self::mStr($posted, 'username', '')),
-                    $password,
-                    (self::mStr($posted, 'mailbox', '')) !== '' ? trim(self::mStr($posted, 'mailbox', '')) : null,
-                    (self::mStr($posted, 'email', '')) !== '' ? trim(self::mStr($posted, 'email', '')) : null,
-                    (self::mStr($posted, 'display_name', '')) !== '' ? trim(self::mStr($posted, 'display_name', '')) : null,
+                    null, // password handled separately below
+                    self::mNullableTrimmed($posted, 'mailbox'),
+                    self::mNullableTrimmed($posted, 'email'),
+                    self::mNullableTrimmed($posted, 'display_name'),
                     self::mInt($posted, 'type', 0),
-                    (self::mStr($posted, 'birth', '')) !== '' ? trim(self::mStr($posted, 'birth', '')) : null,
+                    self::mNullableTrimmed($posted, 'birth'),
                     self::mInt($posted, 'login_attempts', 0),
                     self::mBool($posted, 'verified'),
                     self::mBool($posted, 'deleted'),
-                    (self::mStr($posted, 'created_at', '')) !== '' ? trim(self::mStr($posted, 'created_at', '')) : null,
-                    (self::mStr($posted, 'last_access', '')) !== '' ? trim(self::mStr($posted, 'last_access', '')) : null,
+                    self::mNullableTrimmed($posted, 'created_at'),
+                    self::mNullableTrimmed($posted, 'last_access'),
                 );
                 $r->drainTo($this->collector);
+
+                // Apply password change separately if requested.
+                if ($r->isOk() && $rawPassword !== '') {
+                    $pwResult = $hashIt
+                        ? $this->userService->adminSetPassword($hexId, $rawPassword)
+                        : $this->userService->adminSetPasswordHash($hexId, $rawPassword);
+                    $pwResult->drainTo($this->collector);
+                    if (!$pwResult->isOk()) {
+                        $this->flash->set('error', $this->t->t('admin.users.password_failed'));
+                        return;
+                    }
+                }
                 if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.updated')); }
                 break;
 

@@ -486,4 +486,71 @@ return [
     'admin.btn.filter'                  => 'Filter',
     'admin.btn.prev'                    => '← Prev',
     'admin.btn.next'                    => 'Next →',
+
+    // ---- Bug-fix additions (fix94) -------------------------------------------
+    // Pre-existing missing keys (referenced but never defined)
+    'admin.banlist.route_added'         => 'Route added.',
+    'admin.banlist.route_deleted'       => 'Route deleted.',
+    'admin.banlist.round_added'         => 'Round added.',
+    'admin.banlist.round_updated'       => 'Round updated.',
+    'admin.banlist.round_deleted'       => 'Round deleted.',
+
+    'admin.forbidden'                   => 'You do not have permission to view this page.',
+    'admin.db_error'                    => 'A database error occurred. Check the diagnostics panel for details.',
+
+    // Users
+    'admin.users.invalid_id'            => 'Invalid or missing user ID.',
+    'admin.users.lookup_failed'         => 'Could not look up that user.',
+    'admin.users.not_found'             => 'User not found.',
+    'admin.users.password_failed'       => 'Profile updated but password change failed — see diagnostics.',
+
+    // Comments
+    'admin.comments.invalid_id'         => 'Invalid or missing comment ID.',
+    'admin.comments.not_found'          => 'Comment not found.',
+    'admin.comments.permission_denied'  => 'You cannot moderate this comment.',
+    'admin.comments.content_required'   => 'Comment content cannot be empty.',
+    'admin.comments.flagged'            => 'Comment flagged.',
+    'admin.comments.unflagged'          => 'Flag removed.',
+
+    // Banlist
+    'admin.banlist.invalid_id'          => 'Invalid or missing ban ID.',
+    'admin.banlist.required_fields'     => 'Value, reason and route are required.',
+    'admin.banlist.activated'           => 'Ban activated.',
+    'admin.banlist.deactivated'         => 'Ban deactivated.',
+    'admin.banlist.route_key_required'  => 'Route key cannot be empty.',
+    'admin.banlist.route_exists'        => 'A route with that key already exists.',
+    'admin.banlist.route_in_use'        => 'Cannot delete: bans still reference this route. Reassign them first.',
+
+    // Navbar
+    'admin.navbar.name_required'        => 'Entry name is required.',
+
+    // Pages
+    'admin.pages.has_children'          => 'Cannot delete: this page has child pages. Delete or reparent them first.',
+    'admin.pages.invalid_file_name'     => 'File name must be lowercase letters, digits and underscores, starting with a letter.',
+    'admin.pages.invalid_url_id'        => 'URL ID must be either an UPPER_SNAKE_CASE wording key or a lowercase-with-hyphens slug.',
+    'admin.pages.url_id_exists'         => 'A page with that URL ID already exists.',
+
+    // System config
+    'admin.config.system.invalid_session_id_regex'   => 'Session ID regex is invalid — would crash session_start. Save aborted.',
+    'admin.config.system.invalid_prg_token_regex'    => 'PRG token regex is invalid. Save aborted.',
+    'admin.config.system.unknown_cipher'             => 'Cipher is not available in OpenSSL on this system. Save aborted.',
+    'admin.config.system.unknown_hmac_algo'          => 'HMAC algorithm is not supported by PHP. Save aborted.',
+    'admin.config.system.no_languages'               => 'You must specify at least one available language.',
+    'admin.config.system.default_language_unavailable' => 'Default language must be one of the available languages.',
+    'admin.config.system.default_page_empty'         => 'Default page cannot be empty.',
+
+    // ---- Themes (fix95) -----------------------------------------------------
+    'admin.nav.themes'                    => 'Themes',
+    'admin.nav.themes.desc'               => 'Choose the global look of the site.',
+    'WORDING_ADMIN_THEMES.title'          => 'Admin — Themes',
+    'WORDING_ADMIN_THEMES.description'    => 'Choose the global theme.',
+    'admin.themes.intro'                  => 'Pick the active theme. Logged-in users may override this on their settings page if you allow it below.',
+    'admin.themes.label_theme'            => 'Theme',
+    'admin.themes.allow_user_override'    => 'Allow users to choose their own theme',
+    'admin.themes.allow_user_override_hint' => 'When enabled, the theme picker appears on each user\'s settings page. When disabled, everyone sees the global theme.',
+    'admin.themes.author'                 => 'Author',
+    'admin.themes.version'                => 'Version',
+    'admin.themes.no_themes'              => 'No themes discovered. Add a theme by creating a directory under resources/template/themes/ containing style.css and theme.config.php.',
+    'admin.themes.invalid_theme'          => 'The selected theme is not installed.',
+    'admin.themes.saved'                  => 'Theme configuration saved.',
 ];

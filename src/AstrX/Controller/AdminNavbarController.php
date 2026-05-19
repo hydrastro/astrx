@@ -67,6 +67,8 @@ final class AdminNavbarController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_NAVBAR)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -243,10 +245,13 @@ final class AdminNavbarController extends AbstractController
                 $sortOrder = self::mInt($posted, 'sort_order', 0);
                 $active    = self::mBool($posted, 'active') ? 1 : 0;
                 $i18n      = self::mBool($posted, 'i18n')   ? 1 : 0;
-                if ($name !== '') {
-                    $this->addEntry($pinId, $name, $i18n, $type, $url, $pageId, $sortOrder, $active);
-                    $this->flash->set('success', $this->t->t('admin.navbar.added'));
+                if ($name === '') {
+                    // Fix 4.4: explicit feedback on missing required field.
+                    $this->flash->set('error', $this->t->t('admin.navbar.name_required'));
+                    break;
                 }
+                $this->addEntry($pinId, $name, $i18n, $type, $url, $pageId, $sortOrder, $active);
+                $this->flash->set('success', $this->t->t('admin.navbar.added'));
                 break;
 
             case 'update_entry':
@@ -302,7 +307,9 @@ final class AdminNavbarController extends AbstractController
             /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (\PDOException $e) {
+            // Fix 4.5: also surface to user via flash so it appears in the UI.
             $this->emitDiag($e);
+            $this->flash->set('error', $this->t->t('admin.db_error'));
             return [];
         }
 
@@ -488,7 +495,9 @@ final class AdminNavbarController extends AbstractController
             }
             $this->pdo->commit();
         } catch (\PDOException $e) {
-            $this->pdo->rollBack();
+            // Fix 4.2: guard rollBack with inTransaction check —
+            // if beginTransaction() itself failed, calling rollBack throws.
+            if ($this->pdo->inTransaction()) { $this->pdo->rollBack(); }
             $this->emitDiag($e);
         }
     }
@@ -496,7 +505,10 @@ final class AdminNavbarController extends AbstractController
     private function updateEntry(int $id, string $name, int $i18n, string $type,
         string $url, int $pageId, int $sortOrder, int $active): void
     {
+        // Fix 4.1: wrap in transaction — type switches between internal/external
+        // require coordinated DELETE+INSERT across two subtype tables.
         try {
+            $this->pdo->beginTransaction();
             $isInternal = $type === 'internal' ? 1 : 0;
             $this->pdo->prepare(
                 'UPDATE navbar_entry
@@ -521,7 +533,9 @@ final class AdminNavbarController extends AbstractController
                      ON DUPLICATE KEY UPDATE url = :url2'
                 )->execute([':id' => $id, ':url' => $url, ':url2' => $url]);
             }
+            $this->pdo->commit();
         } catch (\PDOException $e) {
+            if ($this->pdo->inTransaction()) { $this->pdo->rollBack(); }
             $this->emitDiag($e);
         }
     }
@@ -531,7 +545,10 @@ final class AdminNavbarController extends AbstractController
         try {
             $this->pdo->prepare('UPDATE navbar_entry SET active = 1 - active WHERE id = :id')
                 ->execute([':id' => $id]);
-        } catch (\PDOException) {}
+        } catch (\PDOException $e) {
+            // Fix 4.3: emit diagnostic instead of silent swallow.
+            $this->emitDiag($e);
+        }
     }
 
     private function deleteEntry(int $id): void
@@ -539,7 +556,9 @@ final class AdminNavbarController extends AbstractController
         try {
             $this->pdo->prepare('DELETE FROM navbar_entry_ids WHERE id = :id')
                 ->execute([':id' => $id]);
-        } catch (\PDOException) {}
+        } catch (\PDOException $e) {
+            $this->emitDiag($e);
+        }
     }
 
     // =========================================================================

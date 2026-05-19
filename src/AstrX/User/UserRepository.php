@@ -44,7 +44,7 @@ final class UserRepository
         return $this->fetchOne(
             'SELECT LOWER(HEX(`id`)) AS id, `username`, `password`, `mailbox`,
                     `email`, `display_name`, `type`, `verified`, `avatar`,
-                    `login_attempts`, `deleted`
+                    `login_attempts`, `deleted`, `theme`
                FROM `user`
               WHERE LOWER(`username`) = LOWER(:u) AND `deleted` = 0',
             [':u' => $username],
@@ -340,6 +340,21 @@ final class UserRepository
      * Full admin view — every column including sensitive fields.
      * @return Result<array<string,mixed>|null>
      */
+    /**
+     * Set the user's personal theme preference.
+     * Pass an empty string or null to clear the override (revert to global theme).
+     *
+     * @return Result<bool>
+     */
+    public function updateTheme(string $hexId, ?string $theme): Result
+    {
+        $value = ($theme === null || $theme === '') ? null : $theme;
+        return $this->exec(
+            'UPDATE `user` SET `theme` = :theme WHERE `id` = UNHEX(:id)',
+            [':theme' => $value, ':id' => $hexId],
+        );
+    }
+
     public function adminFindById(string $hexId): Result
     {
         return $this->fetchOne(

@@ -5,6 +5,7 @@ namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
+use AstrX\Auth\Policy\CommentPolicy;
 use AstrX\Comment\CommentRepository;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -64,6 +65,8 @@ final class AdminCommentsController extends AbstractController
 
         if (!$canModerate && !$canConfig) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -118,37 +121,79 @@ final class AdminCommentsController extends AbstractController
         $action = self::mStr($posted, 'action', '');
         $id     = self::mInt($posted, 'id', 0);
 
+        // Fix 2.3: validate id at top.
+        if ($id <= 0) {
+            $this->flash->set('error', $this->t->t('admin.comments.invalid_id'));
+            return;
+        }
+
+        // Fix 2.4: per-comment policy check (delete/hide on admin comments
+        // requires admin role, not just mod). Fetch the comment first so
+        // the policy can inspect author type.
+        if (in_array($action, ['hide', 'unhide', 'flag', 'unflag', 'delete'], true)) {
+            $lookup = $this->comments->findById($id);
+            $lookup->drainTo($this->collector);
+            $row = $lookup->isOk() ? $lookup->unwrap() : null;
+            if (!is_array($row)) {
+                $this->flash->set('error', $this->t->t('admin.comments.not_found'));
+                return;
+            }
+            $resource    = (object) $row;
+            $checkPerm   = $action === 'delete'
+                ? Permission::COMMENT_DELETE_ANY
+                : Permission::COMMENT_HIDE_ANY;
+            if ($this->gate->cannot($checkPerm, $resource)) {
+                $this->flash->set('error', $this->t->t('admin.comments.permission_denied'));
+                return;
+            }
+        }
+
         switch ($action) {
             case 'update':
                 $content = trim(self::mStr($posted, 'content', ''));
                 $name    = trim(self::mStr($posted, 'name', ''));
-                $email   = ($posted['email']    ?? '') !== '' ? trim((is_scalar($posted['email']) ? (string)$posted['email'] : ''))    : null;
-                $replyTo = ($posted['reply_to'] ?? '') !== '' ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
+                $email   = self::mNullableTrimmed($posted, 'email');
+                $replyTo = isset($posted['reply_to']) && is_int($posted['reply_to'])
+                    ? $posted['reply_to']
+                    : (isset($posted['reply_to']) && is_numeric($posted['reply_to'])
+                        ? (int)$posted['reply_to']
+                        : null);
                 $hidden  = self::mBool($posted, 'hidden');
                 $flagged = self::mBool($posted, 'flagged');
-                if ($content !== '') {
-                    $r = $this->comments->update($id, $content, $name, $email, $replyTo, $hidden, $flagged);
-                    $r->drainTo($this->collector);
-                    if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.updated')); }
+                // Fix 2.1: explicit error when content is empty.
+                if ($content === '') {
+                    $this->flash->set('error', $this->t->t('admin.comments.content_required'));
+                    return;
                 }
+                $r = $this->comments->update($id, $content, $name, $email, $replyTo, $hidden, $flagged);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.updated')); }
                 break;
             case 'hide':
-                $this->comments->setHidden($id, true)->drainTo($this->collector);
-                $this->flash->set('success', $this->t->t('admin.comments.hidden'));
+                $r = $this->comments->setHidden($id, true);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.hidden')); }
                 break;
             case 'unhide':
-                $this->comments->setHidden($id, false)->drainTo($this->collector);
-                $this->flash->set('success', $this->t->t('admin.comments.unhidden'));
+                $r = $this->comments->setHidden($id, false);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.unhidden')); }
                 break;
             case 'flag':
-                $this->comments->setFlagged($id, true)->drainTo($this->collector);
+                // Fix 2.2: emit flash on flag/unflag.
+                $r = $this->comments->setFlagged($id, true);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.flagged')); }
                 break;
             case 'unflag':
-                $this->comments->setFlagged($id, false)->drainTo($this->collector);
+                $r = $this->comments->setFlagged($id, false);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.unflagged')); }
                 break;
             case 'delete':
-                $this->comments->delete($id)->drainTo($this->collector);
-                $this->flash->set('success', $this->t->t('admin.comments.deleted'));
+                $r = $this->comments->delete($id);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.deleted')); }
                 break;
         }
     }

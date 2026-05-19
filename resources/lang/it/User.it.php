@@ -144,4 +144,11 @@ return [
     // -------------------------------------------------------------------------
     'WORDING_PROFILE.title'        => 'Profilo',
     'WORDING_PROFILE.description'  => 'Visualizza un profilo utente.',
+
+    // ---- Selettore tema (fix95) ---------------------------------------------
+    'user.settings.theme'                  => 'Tema',
+    'user.settings.theme_desc'             => 'Scegli come appare il sito per te. "Predefinito" significa usa il tema globale del sito.',
+    'user.settings.theme_default'          => 'Predefinito (usa il tema del sito)',
+    'user.settings.theme_saved'            => 'Preferenza tema salvata.',
+    'user.settings.theme_invalid'          => 'Questo tema non è installato.',
 ];

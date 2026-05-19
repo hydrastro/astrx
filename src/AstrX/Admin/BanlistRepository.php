@@ -373,4 +373,24 @@ final class BanlistRepository
                                                      'astrx.admin/db_error', DiagnosticLevel::ERROR, $e->getMessage()
                                                  )));
     }
+
+    /**
+     * Count active bans referencing the given route key.
+     * Used by AdminBanlistController to prevent deleting in-use routes.
+     *
+     * @return Result<int>
+     */
+    public function countBansForRoute(string $routeKey): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT COUNT(*) FROM `ban` WHERE `ban_route` = :route'
+            );
+            $stmt->execute([':route' => $routeKey]);
+            return Result::ok((int) $stmt->fetchColumn());
+        } catch (\PDOException $e) {
+            return $this->dbErr($e);
+        }
+    }
+
 }

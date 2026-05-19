@@ -42,6 +42,8 @@ final class AdminNewsController extends AbstractController
     {
         if ($this->gate->cannot(Permission::ADMIN_NEWS)) {
             http_response_code(403);
+            $this->ctx->set('admin_forbidden', true);
+            $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
 
@@ -69,7 +71,7 @@ final class AdminNewsController extends AbstractController
 
         $this->ctx->set('csrf_token',  $csrfToken);
         $this->ctx->set('prg_id',      $prgId);
-        $editId = (is_numeric($vq_edit = $this->request->query()->get('edit')) ? (int)$vq_edit : 0);
+        $editId = self::queryInt($this->request, 'edit', 0);
         $rawList = $listResult->isOk() ? $listResult->unwrap() : [];
         $newsList = [];
         foreach ($rawList as $item) {

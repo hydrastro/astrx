@@ -141,6 +141,18 @@ final class AdminConfigSystemController extends AbstractController
         );
         $default = trim(self::mStr($p, 'default_language', 'en'));
 
+        // Fix 6.2: default_language must be in available_languages.
+        if ($available === []) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.no_languages'));
+            return Result::ok(false);
+        }
+        if (!in_array($default, $available, true)) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.default_language_unavailable'));
+            return Result::ok(false);
+        }
+
         $current = $this->loadFile('config');
         $current['Prelude'] = [
             'environment' => $env,
@@ -158,17 +170,22 @@ final class AdminConfigSystemController extends AbstractController
      */
     private function saveRouting(array $p)
     : Result {
+        $defaultPage = trim(self::mStr($p, 'default_page', 'WORDING_MAIN'));
+        // Fix 6.3: empty default_page is always wrong.
+        if ($defaultPage === '') {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.default_page_empty'));
+            return Result::ok(false);
+        }
         return $this->writer->write('Routing', [
             'Routing' => [
-                'url_rewrite' => self::mBool($p, 'url_rewrite'),
-                'base_path' => trim(self::mStr($p, 'base_path', '/')),
-                'entry_point' => trim(self::mStr($p, 'entry_point', 'index.php')),
-                'locale_key' => trim(self::mStr($p, 'locale_key', 'lang')),
-                'session_key' => trim(self::mStr($p, 'session_key', 'sid')),
-                'page_key' => trim(self::mStr($p, 'page_key', 'page')),
-                'default_page' => trim(
-                    self::mStr($p, 'default_page', 'WORDING_MAIN')
-                ),
+                'url_rewrite'  => self::mBool($p, 'url_rewrite'),
+                'base_path'    => trim(self::mStr($p, 'base_path', '/')),
+                'entry_point'  => trim(self::mStr($p, 'entry_point', 'index.php')),
+                'locale_key'   => trim(self::mStr($p, 'locale_key', 'lang')),
+                'session_key'  => trim(self::mStr($p, 'session_key', 'sid')),
+                'page_key'     => trim(self::mStr($p, 'page_key', 'page')),
+                'default_page' => $defaultPage,
                 'default_keys' => ['locale_key', 'session_key', 'page_key'],
             ],
         ]);
@@ -180,19 +197,46 @@ final class AdminConfigSystemController extends AbstractController
      */
     private function saveSession(array $p)
     : Result {
+        // Fix 6.1 (CRITICAL): validate before write — a bad regex or unknown
+        // cipher would crash the next request during session_start and lock
+        // the admin out with no way back except editing the config file.
+        $sessionIdRegex = trim(self::mStr($p, 'session_id_regex', ''));
+        $prgTokenRegex  = trim(self::mStr($p, 'prg_token_regex', ''));
+        $cipher         = trim(self::mStr($p, 'cipher', 'aes-256-ctr'));
+        $hmacAlgo       = trim(self::mStr($p, 'hmac_algo', 'sha256'));
+
+        if ($sessionIdRegex !== '' && @preg_match($sessionIdRegex, '') === false) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_session_id_regex'));
+            return Result::ok(false);
+        }
+        if ($prgTokenRegex !== '' && @preg_match($prgTokenRegex, '') === false) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_prg_token_regex'));
+            return Result::ok(false);
+        }
+        if (!in_array($cipher, openssl_get_cipher_methods(true), true)) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.unknown_cipher'));
+            return Result::ok(false);
+        }
+        if (!in_array($hmacAlgo, hash_hmac_algos(), true)) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.unknown_hmac_algo'));
+            return Result::ok(false);
+        }
+
         return $this->writer->write('Session', [
             'Session' => [
-                'use_cookies' => self::mBool($p, 'use_cookies'),
-                'sid_bytes' => max(32, self::mInt($p, 'sid_bytes', 128)),
-                'session_id_regex' => trim(
-                    self::mStr($p, 'session_id_regex', '')
-                ),
-                'encrypt' => self::mBool($p, 'encrypt'),
-                'cipher' => trim(self::mStr($p, 'cipher', 'aes-256-ctr')),
-                'hmac_algo' => trim(self::mStr($p, 'hmac_algo', 'sha256')),
-                'prg_token_key' => trim(self::mStr($p, 'prg_token_key', 'prg')),
-                'prg_token_regex' => trim(self::mStr($p, 'prg_token_regex', '')),
-                'max_sid_retries' => max(1, self::mInt($p, 'max_sid_retries', 8)),
+                'use_cookies'      => self::mBool($p, 'use_cookies'),
+                'sid_bytes'        => max(32, self::mInt($p, 'sid_bytes', 128)),
+                'session_id_regex' => $sessionIdRegex,
+                'encrypt'          => self::mBool($p, 'encrypt'),
+                'cipher'           => $cipher,
+                'hmac_algo'        => $hmacAlgo,
+                'prg_token_key'    => trim(self::mStr($p, 'prg_token_key', 'prg')),
+                'prg_token_regex'  => $prgTokenRegex,
+                'max_sid_retries'  => max(1, self::mInt($p, 'max_sid_retries', 8)),
             ],
         ]);
     }

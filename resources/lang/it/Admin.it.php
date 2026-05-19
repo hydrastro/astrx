@@ -203,4 +203,65 @@ return [
     'admin.config.field.imap_verify_ssl'    => 'Verifica certificato SSL',
     'admin.config.field.mailbox_is_username' => 'Il nome della casella è il nome utente',
     'admin.config.field.mailbox_is_username_warning' => 'Abilita se il nome della casella IMAP corrisponde esattamente al nome utente (senza suffisso dominio).',
+
+    // ---- Bug-fix additions (fix94) -------------------------------------------
+    'admin.banlist.route_added'         => 'Rotta aggiunta.',
+    'admin.banlist.route_deleted'       => 'Rotta eliminata.',
+    'admin.banlist.round_added'         => 'Round aggiunto.',
+    'admin.banlist.round_updated'       => 'Round aggiornato.',
+    'admin.banlist.round_deleted'       => 'Round eliminato.',
+
+    'admin.forbidden'                   => 'Non hai i permessi per visualizzare questa pagina.',
+    'admin.db_error'                    => 'Si è verificato un errore di database. Consulta il pannello diagnostico.',
+
+    'admin.users.invalid_id'            => 'ID utente non valido o mancante.',
+    'admin.users.lookup_failed'         => 'Impossibile recuperare l\'utente.',
+    'admin.users.not_found'             => 'Utente non trovato.',
+    'admin.users.password_failed'       => 'Profilo aggiornato ma la modifica della password è fallita — consulta la diagnostica.',
+
+    'admin.comments.invalid_id'         => 'ID commento non valido o mancante.',
+    'admin.comments.not_found'          => 'Commento non trovato.',
+    'admin.comments.permission_denied'  => 'Non puoi moderare questo commento.',
+    'admin.comments.content_required'   => 'Il contenuto del commento non può essere vuoto.',
+    'admin.comments.flagged'            => 'Commento segnalato.',
+    'admin.comments.unflagged'          => 'Segnalazione rimossa.',
+
+    'admin.banlist.invalid_id'          => 'ID ban non valido o mancante.',
+    'admin.banlist.required_fields'     => 'Valore, motivo e rotta sono obbligatori.',
+    'admin.banlist.activated'           => 'Ban attivato.',
+    'admin.banlist.deactivated'         => 'Ban disattivato.',
+    'admin.banlist.route_key_required'  => 'La chiave della rotta non può essere vuota.',
+    'admin.banlist.route_exists'        => 'Una rotta con questa chiave esiste già.',
+    'admin.banlist.route_in_use'        => 'Impossibile eliminare: alcuni ban usano ancora questa rotta. Riassegnali prima.',
+
+    'admin.navbar.name_required'        => 'Il nome della voce è obbligatorio.',
+
+    'admin.pages.has_children'          => 'Impossibile eliminare: questa pagina ha pagine figlie. Eliminale o riassegnale prima.',
+    'admin.pages.invalid_file_name'     => 'Il nome del file deve essere minuscolo, cifre e underscore, iniziando con una lettera.',
+    'admin.pages.invalid_url_id'        => 'URL ID deve essere una chiave UPPER_SNAKE_CASE o uno slug minuscolo con trattini.',
+    'admin.pages.url_id_exists'         => 'Una pagina con questo URL ID esiste già.',
+
+    'admin.config.system.invalid_session_id_regex'     => 'Regex ID sessione non valida — bloccherebbe l\'avvio della sessione. Salvataggio annullato.',
+    'admin.config.system.invalid_prg_token_regex'      => 'Regex token PRG non valida. Salvataggio annullato.',
+    'admin.config.system.unknown_cipher'               => 'Cipher non disponibile in OpenSSL su questo sistema. Salvataggio annullato.',
+    'admin.config.system.unknown_hmac_algo'            => 'Algoritmo HMAC non supportato da PHP. Salvataggio annullato.',
+    'admin.config.system.no_languages'                 => 'Devi specificare almeno una lingua disponibile.',
+    'admin.config.system.default_language_unavailable' => 'La lingua predefinita deve essere tra quelle disponibili.',
+    'admin.config.system.default_page_empty'           => 'La pagina predefinita non può essere vuota.',
+
+
+    // ---- Temi (fix95) -------------------------------------------------------
+    'admin.nav.themes'                    => 'Temi',
+    'admin.nav.themes.desc'               => 'Scegli l\'aspetto globale del sito.',
+    'WORDING_ADMIN_THEMES.title'          => 'Admin — Temi',
+    'WORDING_ADMIN_THEMES.description'    => 'Scegli il tema globale.',
+    'admin.themes.intro'                  => 'Scegli il tema attivo. Gli utenti registrati possono sovrascriverlo dalle impostazioni se lo permetti qui sotto.',
+    'admin.themes.label_theme'            => 'Tema',
+    'admin.themes.allow_user_override'    => 'Permetti agli utenti di scegliere il proprio tema',
+    'admin.themes.allow_user_override_hint' => 'Se abilitato, il selettore del tema appare nelle impostazioni di ogni utente. Se disabilitato, tutti vedono il tema globale.',
+    'admin.themes.author'                 => 'Autore',
+    'admin.themes.version'                => 'Versione',
+    'admin.themes.no_themes'              => 'Nessun tema trovato. Aggiungine uno creando una directory sotto resources/template/themes/ contenente style.css e theme.config.php.',
+    'admin.themes.invalid_theme'          => 'Il tema selezionato non è installato.',
+    'admin.themes.saved'                  => 'Configurazione tema salvata.',
 ];

@@ -82,11 +82,17 @@ final class LoginController extends AbstractController
             return $this->renderForm($username);
         }
 
-        // Captcha check (before login attempt — don't reveal if user exists)
+        // Fix 8.1: avoid leaking captcha policy via side-channel.
+        // If a captcha was submitted (id present), ALWAYS verify it. Otherwise,
+        // check the policy to decide whether to require one. This means
+        // shouldShowCaptcha being username-specific (CAPTCHA_SHOW_ON_X_FAILED)
+        // cannot be used to infer whether the username has accumulated failed
+        // login attempts — the verification path is identical either way.
+        $captchaSubmitted  = $captchaId !== '';
         $showCaptchaResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
-        $showCaptcha = $showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap();
+        $policyRequires    = $showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap();
 
-        if ($showCaptcha) {
+        if ($captchaSubmitted || $policyRequires) {
             $captchaResult = $this->captchaService->verify($captchaId, $captchaText);
             if (!$captchaResult->isOk()) {
                 $captchaResult->drainTo($this->collector);
@@ -99,9 +105,10 @@ final class LoginController extends AbstractController
         if (!$loginResult->isOk()) {
             $loginResult->drainTo($this->collector);
             // Check if captcha is NOW needed after this failure
-            $showAfterResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
-            $showAfter = $showAfterResult->isOk() && (bool) $showAfterResult->unwrap();
-            return $this->renderForm($username, $showAfter);
+            $captchaPolicyAfter = $this->userService->shouldShowCaptcha(self::FORM, $username);
+            $showCaptchaOnRetry = $captchaPolicyAfter->isOk()
+                && (bool) $captchaPolicyAfter->unwrap();
+            return $this->renderForm($username, $showCaptchaOnRetry);
         }
 
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */

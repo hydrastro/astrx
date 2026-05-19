@@ -4,12 +4,11 @@ WORKDIR /app
 
 COPY /docker/php/php.ini /usr/local/etc/php/php.ini
 
-RUN apk add --no-cache \
-        freetype-dev \
-        libjpeg-turbo-dev \
-        libpng-dev \
+RUN apt-get update && apt-get install -y \
+        libfreetype6-dev libjpeg62-turbo-dev libpng-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif
+    && docker-php-ext-install -j$(nproc) gd \
+    && rm -rf /var/lib/apt/lists/*
 
 CMD [ "php-fpm"]
 
@@ -34,14 +33,20 @@ WORKDIR /app
 
 COPY /docker/php/php.ini /usr/local/etc/php/php.ini
 
-RUN apk add --no-cache \
+RUN apk add --no-cache --virtual .build-deps \
+        $PHPIZE_DEPS \
         freetype-dev \
         libjpeg-turbo-dev \
         libpng-dev \
         linux-headers \
+    && apk add --no-cache \
+        freetype \
+        libjpeg-turbo \
+        libpng \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif \
     && pecl install xdebug \
-    && docker-php-ext-enable xdebug
+    && docker-php-ext-enable xdebug \
+    && apk del --no-network .build-deps
 
 CMD [ "php-fpm" ]

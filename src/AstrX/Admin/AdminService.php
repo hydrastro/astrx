@@ -31,6 +31,7 @@ final class AdminService
         'admin_config_captcha' => 'admin.nav.config_captcha',
         'admin_config_mail'    => 'admin.nav.config_mail',
         'admin_config_webmail' => 'admin.nav.config_webmail',
+        'admin_themes'         => 'admin.nav.themes',
 
         // ── Audit ──────────────────────────────────────────────────────
         'admin_audit_log'      => 'admin.nav.audit_log',

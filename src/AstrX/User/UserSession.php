@@ -90,7 +90,7 @@ final class UserSession
     /**
      * Persist user data to session after successful login / token verification.
      *
-     * @param array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string} $row
+     * @param array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row
      */
     public function login(array $row): void
     {
@@ -99,7 +99,7 @@ final class UserSession
         // used after login.
         $_SESSION['_regen_force'] = true;
         $_SESSION[self::LOGGED_IN] = true;
-        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string} $_SESSION */
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string} $_SESSION */
         $_SESSION[self::KEY] = [
             'id'           => (string)  $row['id'],
             'username'     => (string)  $row['username'],
@@ -108,7 +108,34 @@ final class UserSession
             'verified'     => (bool)    $row['verified'],
             'avatar'       => (bool)    $row['avatar'],
             'mailbox'      => (string) ($row['mailbox'] ?? ''),
+            // Per-user theme override. Empty string = no override = use global.
+            'theme'        => (string) ($row['theme']   ?? ''),
         ];
+    }
+
+    /**
+     * The user's personal theme override.
+     * Empty string means "no override — use the global theme".
+     * Read by ThemeService when resolving the active theme.
+     */
+    public function userTheme(): string
+    {
+        $v = $this->sessionData()['theme'] ?? '';
+        return is_scalar($v) ? (string) $v : '';
+    }
+
+    /**
+     * Update the user's theme preference live in the current session.
+     * Called after UserService::changeTheme() so the new choice takes effect
+     * immediately without needing to log out and back in.
+     */
+    public function updateTheme(string $theme): void
+    {
+        if (!is_array($_SESSION[self::KEY] ?? null)) { return; }
+        /** @var array<string,mixed> $data */
+        $data = $_SESSION[self::KEY];
+        $data['theme'] = $theme;
+        $_SESSION[self::KEY] = $data;
     }
 
     /** The user's mailbox address (e.g. username@domain.onion). */

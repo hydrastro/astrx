@@ -234,4 +234,11 @@ return [
     'webmail.attachments'         => 'Attachments',
     'webmail.compose_fields_required' => 'To, Subject and body are required.',
 
+
+    // ---- Theme picker (fix95) -----------------------------------------------
+    'user.settings.theme'                  => 'Theme',
+    'user.settings.theme_desc'             => 'Choose how the site looks for you. "Default" means use the site\'s global theme.',
+    'user.settings.theme_default'          => 'Default (use site-wide theme)',
+    'user.settings.theme_saved'            => 'Theme preference saved.',
+    'user.settings.theme_invalid'          => 'That theme is not installed.',
 ];

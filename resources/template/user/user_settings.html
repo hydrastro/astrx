@@ -83,6 +83,31 @@
 </form>
 <hr>
 {{/is_verified}}
+{{#show_theme_picker}}
+<h3>{{settings_theme}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.change_theme}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.change_theme}}">
+  <input type="hidden" name="action" value="change_theme">
+  <p>{{settings_theme_desc}}</p>
+  <p>
+    <label>
+      <input type="radio" name="theme" value="" {{#theme_default_active}}checked{{/theme_default_active}}>
+      <strong>{{settings_theme_default}}</strong>
+    </label>
+  </p>
+  {{#themes}}
+  <p>
+    <label>
+      <input type="radio" name="theme" value="{{key}}" {{#active}}checked{{/active}}>
+      <strong>{{name}}</strong> — <small>{{description}}</small>
+    </label>
+  </p>
+  {{/themes}}
+  <p><input type="submit" value="{{settings_submit}}" class="input"></p>
+</form>
+<hr>
+{{/show_theme_picker}}
 <h3>{{settings_delete}}</h3>
 <form method="POST">
   <input type="hidden" name="prg_id" value="{{&prg.delete_account}}">
