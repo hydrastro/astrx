@@ -114,6 +114,32 @@ final class UserSession
     }
 
     /**
+     * Bootstrap session state for an API request authenticated via Bearer
+     * token. Mirrors login() but DOES NOT set `_regen_force`: an API request
+     * should never trigger session ID regeneration. The data still lives in
+     * $_SESSION so that downstream code (e.g. Gate, controllers) reads it
+     * exactly the way it does for web requests — no special-casing needed
+     * anywhere else in the framework.
+     *
+     * @param array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row
+     */
+    public function loginFromApiKey(array $row): void
+    {
+        $_SESSION[self::LOGGED_IN] = true;
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string} $_SESSION */
+        $_SESSION[self::KEY] = [
+            'id'           => (string)  $row['id'],
+            'username'     => (string)  $row['username'],
+            'display_name' => (string) ($row['display_name'] ?? ''),
+            'type'         => (int)     $row['type'],
+            'verified'     => (bool)    $row['verified'],
+            'avatar'       => (bool)    $row['avatar'],
+            'mailbox'      => (string) ($row['mailbox'] ?? ''),
+            'theme'        => (string) ($row['theme']   ?? ''),
+        ];
+    }
+
+    /**
      * The user's personal theme override.
      * Empty string means "no override — use the global theme".
      * Read by ThemeService when resolving the active theme.

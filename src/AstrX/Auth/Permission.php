@@ -68,6 +68,10 @@ enum Permission: string
     case WEBMAIL_ACCESS  = 'webmail.access';   // access the webmail UI
     case WEBMAIL_SEND    = 'webmail.send';     // send emails via webmail
 
+    // ── API key management (fix103) ───────────────────────────────────────
+    case API_KEY_CREATE = 'api.key.create';   // user can create their own API keys
+    case API_KEY_REVOKE = 'api.key.revoke';   // user can revoke their own API keys
+
     // ---- Audit log ----------------------------------------------------------
     case ADMIN_AUDIT_LOG = 'admin.audit_log';  // view the admin audit log
 }

@@ -13,6 +13,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Api\ContextScope;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\SubPageState;
 
@@ -147,19 +148,19 @@ final class MainController extends AbstractController
         $formAction = $this->urlGenerator->toPage($resolvedUrlId);
 
         // --- Template vars ---------------------------------------------------
-        $this->ctx->set('news_heading',      $this->t->t('news.heading'));
-        $this->ctx->set('news_date',         $this->t->t('news.date'));
-        $this->ctx->set('news_empty',        $this->t->t('news.empty'));
-        $this->ctx->set('news_prev',         $this->t->t('news.prev'));
-        $this->ctx->set('news_next',         $this->t->t('news.next'));
-        $this->ctx->set('news_older',        $this->t->t('news.older'));
-        $this->ctx->set('news_filter_show',  $this->t->t('news.filter.show'));
-        $this->ctx->set('news_filter_order', $this->t->t('news.filter.order'));
-        $this->ctx->set('news_filter_desc',  $this->t->t('news.filter.desc'));
-        $this->ctx->set('news_filter_asc',   $this->t->t('news.filter.asc'));
-        $this->ctx->set('news_filter_submit',$this->t->t('news.filter.submit'));
-        $this->ctx->set('news_first',         $this->t->t('news.first'));
-        $this->ctx->set('news_last',          $this->t->t('news.last'));
+        $this->ctx->set('news_heading',      $this->t->t('news.heading'),          ContextScope::SHARED);
+        $this->ctx->set('news_date',         $this->t->t('news.date'),             ContextScope::SHARED);
+        $this->ctx->set('news_empty',        $this->t->t('news.empty'),            ContextScope::SHARED);
+        $this->ctx->set('news_prev',         $this->t->t('news.prev'),             ContextScope::SHARED);
+        $this->ctx->set('news_next',         $this->t->t('news.next'),             ContextScope::SHARED);
+        $this->ctx->set('news_older',        $this->t->t('news.older'),            ContextScope::SHARED);
+        $this->ctx->set('news_filter_show',  $this->t->t('news.filter.show'),      ContextScope::SHARED);
+        $this->ctx->set('news_filter_order', $this->t->t('news.filter.order'),     ContextScope::SHARED);
+        $this->ctx->set('news_filter_desc',  $this->t->t('news.filter.desc'),      ContextScope::SHARED);
+        $this->ctx->set('news_filter_asc',   $this->t->t('news.filter.asc'),       ContextScope::SHARED);
+        $this->ctx->set('news_filter_submit',$this->t->t('news.filter.submit'),    ContextScope::SHARED);
+        $this->ctx->set('news_first',         $this->t->t('news.first'),           ContextScope::SHARED);
+        $this->ctx->set('news_last',          $this->t->t('news.last'),            ContextScope::SHARED);
 
         $this->ctx->set('news_order_key',     $orderKey);
         $this->ctx->set('news_show_key',      $showKey);

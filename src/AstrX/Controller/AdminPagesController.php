@@ -143,6 +143,9 @@ final class AdminPagesController extends AbstractController
             case 'toggle_comments':
                 $this->toggleFlag(self::mInt($posted, 'page_id', 0), 'comments');
                 break;
+            case 'toggle_api_enabled':
+                $this->toggleFlag(self::mInt($posted, 'page_id', 0), 'api_enabled');
+                break;
         }
     }
 
@@ -175,6 +178,7 @@ final class AdminPagesController extends AbstractController
         $controller = self::mBool($p, 'controller') ? 1 : 0;
         $hidden     = self::mBool($p, 'hidden')     ? 1 : 0;
         $comments   = self::mBool($p, 'comments')   ? 1 : 0;
+        $apiEnabled = self::mBool($p, 'api_enabled') ? 1 : 0;
         $title       = trim(self::mStr($p, 'title', ''));
         $description = trim(self::mStr($p, 'description', ''));
         $parentId    = self::mInt($p, 'parent_id', 0);
@@ -185,11 +189,12 @@ final class AdminPagesController extends AbstractController
             $this->pdo->beginTransaction();
 
             $this->pdo->prepare(
-                'INSERT INTO page (url_id, i18n, file_name, template, controller, hidden, comments)
-                 VALUES (:uid, :i18n, :fn, :tpl, :ctrl, :hidden, :comments)'
+                'INSERT INTO page (url_id, i18n, file_name, template, controller, hidden, comments, api_enabled)
+                 VALUES (:uid, :i18n, :fn, :tpl, :ctrl, :hidden, :comments, :apienabled)'
             )->execute([':uid' => $urlId, ':i18n' => $i18n, ':fn' => $fileName,
                         ':tpl' => $template, ':ctrl' => $controller,
-                        ':hidden' => $hidden, ':comments' => $comments]);
+                        ':hidden' => $hidden, ':comments' => $comments,
+                        ':apienabled' => $apiEnabled]);
             $newId = (int) $this->pdo->lastInsertId();
 
             // Fix 5.4: explicit closure-table logic — easier to audit than the
@@ -252,6 +257,7 @@ final class AdminPagesController extends AbstractController
         $controller = self::mBool($p, 'controller') ? 1 : 0;
         $hidden     = self::mBool($p, 'hidden')     ? 1 : 0;
         $comments   = self::mBool($p, 'comments')   ? 1 : 0;
+        $apiEnabled = self::mBool($p, 'api_enabled') ? 1 : 0;
         $title       = trim(self::mStr($p, 'title', ''));
         $description = trim(self::mStr($p, 'description', ''));
         $indexFlag   = self::mBool($p, 'index_flag')  ? 1 : 0;
@@ -260,11 +266,10 @@ final class AdminPagesController extends AbstractController
         try {
             $this->pdo->prepare(
                 'UPDATE page SET url_id=:uid, i18n=:i18n, file_name=:fn, template=:tpl,
-                                 controller=:ctrl, hidden=:hidden, comments=:comments
-                  WHERE id = :id'
+                                 controller=:ctrl, hidden=:hidden, comments=:comments, api_enabled=:apienabled WHERE id = :id'
             )->execute([':uid' => $urlId, ':i18n' => $i18n, ':fn' => $fileName,
                         ':tpl' => $template, ':ctrl' => $controller,
-                        ':hidden' => $hidden, ':comments' => $comments, ':id' => $id]);
+                        ':hidden' => $hidden, ':comments' => $comments, ':apienabled' => $apiEnabled, ':id' => $id]);
 
             $this->pdo->prepare(
                 'INSERT INTO page_meta (page_id, title, description) VALUES (:id, :t, :d)
@@ -324,9 +329,10 @@ final class AdminPagesController extends AbstractController
         // Self-documenting and prevents future copy-paste mistakes that omit
         // the allowlist check.
         $sql = match ($column) {
-            'hidden'   => 'UPDATE page SET hidden = 1 - hidden WHERE id = :id',
-            'comments' => 'UPDATE page SET comments = 1 - comments WHERE id = :id',
-            default    => null,
+            'hidden'      => 'UPDATE page SET hidden = 1 - hidden WHERE id = :id',
+            'comments'    => 'UPDATE page SET comments = 1 - comments WHERE id = :id',
+            'api_enabled' => 'UPDATE page SET api_enabled = 1 - api_enabled WHERE id = :id',
+            default       => null,
         };
         if ($sql === null) { return; }
         try {

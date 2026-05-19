@@ -141,6 +141,32 @@ final class ContentManager
                 $authedUserId = $apiKeySvc->validate($bearer);
                 if ($authedUserId !== null) {
                     $request->setApiKeyUser($authedUserId);
+
+                    // Bootstrap UserSession as the bearer-authenticated user.
+                    // We load the user record and inject it into the session
+                    // WITHOUT triggering the session-fixation regeneration
+                    // (loginFromApiKey omits the _regen_force flag): API
+                    // requests should never rewrite session IDs.
+                    $userRepoResult = $this->injector->createClass(\AstrX\User\UserRepository::class)
+                        ->drainTo($this->collector);
+                    $userSessResult = $this->injector->createClass(\AstrX\User\UserSession::class)
+                        ->drainTo($this->collector);
+                    if ($userRepoResult->isOk() && $userSessResult->isOk()) {
+                        /** @var \AstrX\User\UserRepository $userRepo */
+                        $userRepo = $userRepoResult->unwrap();
+                        /** @var \AstrX\User\UserSession $userSess */
+                        $userSess = $userSessResult->unwrap();
+
+                        $userRow = $userRepo->findById($authedUserId);
+                        $userRow->drainTo($this->collector);
+                        if ($userRow->isOk()) {
+                            $row = $userRow->unwrap();
+                            if (is_array($row) && !empty($row['id']) && empty($row['deleted'])) {
+                                /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
+                                $userSess->loginFromApiKey($row);
+                            }
+                        }
+                    }
                 }
             }
         }

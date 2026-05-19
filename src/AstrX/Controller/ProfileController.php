@@ -11,6 +11,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Api\ContextScope;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\UserGroup;
@@ -71,20 +72,22 @@ final class ProfileController extends AbstractController
         $isOwnProfile = $this->session->isLoggedIn() &&
                         $this->session->userId() === $hexId;
 
-        $this->ctx->set('profile_not_found', false);
-        $this->ctx->set('profile_id', $hexId);
-        $this->ctx->set('profile_username', (is_scalar($userData['username']) ? (string)$userData['username'] : ''));
+        $this->ctx->set('profile_not_found', false, ContextScope::SHARED);
+        $this->ctx->set('profile_id', $hexId, ContextScope::SHARED);
+        $this->ctx->set('profile_username', (is_scalar($userData['username']) ? (string)$userData['username'] : ''), ContextScope::SHARED);
         $this->ctx->set(
             'profile_display_name',
-            (is_scalar($userData['display_name'] ?? null) ? (string)$userData['display_name'] : (is_scalar($userData['username'] ?? null) ? (string)$userData['username'] : ''))
+            (is_scalar($userData['display_name'] ?? null) ? (string)$userData['display_name'] : (is_scalar($userData['username'] ?? null) ? (string)$userData['username'] : '')),
+            ContextScope::SHARED,
         );
-        $this->ctx->set('profile_group', $groupLabel);
-        $this->ctx->set('profile_verified', (bool)$userData['verified']);
-        $this->ctx->set('profile_avatar_src', $avatarSrc);
-        $this->ctx->set('profile_has_avatar', $avatarSrc !== '');
+        $this->ctx->set('profile_group', $groupLabel, ContextScope::SHARED);
+        $this->ctx->set('profile_verified', (bool)$userData['verified'], ContextScope::SHARED);
+        $this->ctx->set('profile_avatar_src', $avatarSrc, ContextScope::SHARED);
+        $this->ctx->set('profile_has_avatar', $avatarSrc !== '', ContextScope::SHARED);
         $this->ctx->set(
             'profile_joined',
-            self::mStr($userData, 'created_at', '')
+            self::mStr($userData, 'created_at', ''),
+            ContextScope::SHARED,
         );
         $this->ctx->set('profile_is_own', $isOwnProfile);
 

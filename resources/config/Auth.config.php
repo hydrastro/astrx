@@ -26,6 +26,10 @@ return [
                 'user.delete.own',
                 'webmail.access',
                 'webmail.send',
+                // API key management (fix103) — default: users can manage their own keys.
+                // Remove these two lines to lock the API to admin-provisioned keys only.
+                'api.key.create',
+                'api.key.revoke',
             ],
             'MOD' => [
                 'news.view',
@@ -44,6 +48,8 @@ return [
                 'admin.config.captcha',
                 'admin.config.users',
                 'admin.config.mail',
+                'api.key.create',
+                'api.key.revoke',
             ],
         ],
     ],

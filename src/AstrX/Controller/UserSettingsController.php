@@ -14,6 +14,9 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\DeletionMode;
+use AstrX\Api\ApiKeyService;
+use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
 use AstrX\Theme\ThemeService;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
@@ -43,7 +46,9 @@ final class UserSettingsController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
-        private readonly ThemeService $themeService
+        private readonly ThemeService          $themeService,
+        private readonly ApiKeyService         $apiKeys,
+        private readonly Gate                  $gate,
     ) {
         parent::__construct($collector);
     }
@@ -202,6 +207,59 @@ final class UserSettingsController extends AbstractController
                 }
                 break;
 
+            case 'create_api_key':
+                // Gate: only users with Permission::API_KEY_CREATE may create keys.
+                // Configured in Auth.config.php — by default USER and MOD have it,
+                // GUEST does not. Removing it from the USER grant locks all key
+                // creation behind admin provisioning (DB insert by an admin).
+                if ($this->gate->cannot(Permission::API_KEY_CREATE)) {
+                    $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyDiagnostic(
+                        'astrx.api/key_create_forbidden',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
+                    break;
+                }
+                $label = trim(self::mStr($posted, 'label', ''));
+                if ($label === '') {
+                    $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyLabelDiagnostic(
+                        'astrx.api/key_label_required',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
+                    break;
+                }
+                if (strlen($label) > 64) {
+                    $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyLabelDiagnostic(
+                        'astrx.api/key_label_too_long',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
+                    break;
+                }
+                $result = $this->apiKeys->create($hexId, $label);
+                $result->drainTo($this->collector);
+                if ($result->isOk()) {
+                    // The raw key must be shown to the user EXACTLY ONCE
+                    // because we don't keep it after this point. Park it in
+                    // the session under a one-shot flag that renderForm()
+                    // reads and clears below.
+                    $_SESSION['_new_api_key']       = $result->unwrap();
+                    $_SESSION['_new_api_key_label'] = $label;
+                }
+                break;
+
+            case 'revoke_api_key':
+                if ($this->gate->cannot(Permission::API_KEY_REVOKE)) {
+                    $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyDiagnostic(
+                        'astrx.api/key_revoke_forbidden',
+                        \AstrX\Result\DiagnosticLevel::WARNING,
+                    ));
+                    break;
+                }
+                $keyId = trim(self::mStr($posted, 'key_id', ''));
+                if ($keyId !== '' && preg_match('/\A[0-9a-f]{32}\z/', $keyId) === 1) {
+                    $this->apiKeys->revoke($keyId, $hexId);
+                }
+                break;
+
             case 'delete_account':
                 // Users may choose soft_redact (keeps data) or hard_redact (wipes PII).
                 // full_delete and keep_suspended are reserved for admins.
@@ -239,7 +297,7 @@ final class UserSettingsController extends AbstractController
         $actions = [
             'change_username', 'change_display_name', 'change_recovery_email',
             'change_password', 'verify_email', 'set_avatar', 'remove_avatar',
-            'delete_account', 'change_theme',
+            'delete_account', 'change_theme', 'create_api_key', 'revoke_api_key',
         ];
         $csrfTokens = [];
         $prgIds     = [];
@@ -266,6 +324,55 @@ final class UserSettingsController extends AbstractController
         $this->ctx->set('show_display_name', $this->userService->requireDisplayName());
         $this->ctx->set('show_avatar',       true);
         $this->ctx->set('max_avatar_mb',     1); // TODO: from AvatarService config
+
+        // ── API keys (fix100) ───────────────────────────────────────────
+        // List the user's current keys for the management UI. The raw key
+        // is NEVER stored — keys here are "id, label, created, last_used,
+        // expires, revoked" only. The raw value of a JUST-CREATED key (if
+        // any) is in $_SESSION as a one-shot flag and is shown once.
+        $keysResult = $this->apiKeys->listForUser($hexId);
+        $keysResult->drainTo($this->collector);
+        $keys = $keysResult->isOk() ? $keysResult->unwrap() : [];
+
+        // Normalise rows for the template: stringify timestamps, mark revoked.
+        $normalisedKeys = [];
+        foreach ($keys as $k) {
+            $createdTs = isset($k['created_ts']) && is_numeric($k['created_ts']) ? (int) $k['created_ts'] : 0;
+            $lastUsed  = isset($k['last_used_ts']) && is_numeric($k['last_used_ts']) ? (int) $k['last_used_ts'] : 0;
+            $expiresTs = isset($k['expires_ts']) && is_numeric($k['expires_ts']) ? (int) $k['expires_ts'] : 0;
+            $normalisedKeys[] = [
+                'id'           => isset($k['id']) && is_scalar($k['id']) ? (string)$k['id'] : '',
+                'label'        => isset($k['label']) && is_scalar($k['label']) ? (string)$k['label'] : '',
+                'created_at'   => $createdTs > 0 ? gmdate('Y-m-d H:i', $createdTs) : '',
+                'last_used_at' => $lastUsed  > 0 ? gmdate('Y-m-d H:i', $lastUsed)  : '—',
+                'expires_at'   => $expiresTs > 0 ? gmdate('Y-m-d H:i', $expiresTs) : '',
+                'has_expiry'   => $expiresTs > 0,
+                'revoked'      => !empty($k['revoked']),
+            ];
+        }
+        $this->ctx->set('api_keys',          $normalisedKeys);
+        $this->ctx->set('has_api_keys',      $normalisedKeys !== []);
+
+        // One-shot raw key display: if the previous request just created a key,
+        // surface it now and clear from session so refreshing doesn't show it again.
+        $newKeyRaw   = isset($_SESSION['_new_api_key'])       && is_string($_SESSION['_new_api_key'])
+            ? $_SESSION['_new_api_key'] : '';
+        $newKeyLabel = isset($_SESSION['_new_api_key_label']) && is_string($_SESSION['_new_api_key_label'])
+            ? $_SESSION['_new_api_key_label'] : '';
+        unset($_SESSION['_new_api_key'], $_SESSION['_new_api_key_label']);
+        $this->ctx->set('new_api_key',         $newKeyRaw);
+        $this->ctx->set('new_api_key_label',   $newKeyLabel);
+        $this->ctx->set('show_new_api_key',    $newKeyRaw !== '');
+
+        // Gate the create form: only render it when the user has the permission.
+        // The list of existing keys + the revoke button still show because they
+        // refer to the user's OWN keys (the user can always see and manage what
+        // they own — independent of the create permission, which is a separate
+        // capability some installs may want to lock to admins).
+        $canCreateKeys = $this->gate->can(Permission::API_KEY_CREATE);
+        $canRevokeKeys = $this->gate->can(Permission::API_KEY_REVOKE);
+        $this->ctx->set('show_api_key_create', $canCreateKeys);
+        $this->ctx->set('show_api_key_revoke', $canRevokeKeys);
 
         // Theme picker — only show if admin allows user override.
         $allowOverride = $this->themeService->allowUserOverride();
@@ -311,6 +418,25 @@ final class UserSettingsController extends AbstractController
         $this->ctx->set('settings_theme',          $this->t->t('user.settings.theme'));
         $this->ctx->set('settings_theme_desc',     $this->t->t('user.settings.theme_desc'));
         $this->ctx->set('settings_theme_default',  $this->t->t('user.settings.theme_default'));
+
+        // API keys lang
+        $this->ctx->set('settings_api_keys',           $this->t->t('user.settings.api_keys'));
+        $this->ctx->set('settings_api_keys_desc',      $this->t->t('user.settings.api_keys_desc'));
+        $this->ctx->set('settings_api_keys_label',     $this->t->t('user.settings.api_keys_label'));
+        $this->ctx->set('settings_api_keys_created',   $this->t->t('user.settings.api_keys_created'));
+        $this->ctx->set('settings_api_keys_last_used', $this->t->t('user.settings.api_keys_last_used'));
+        $this->ctx->set('settings_api_keys_expires',   $this->t->t('user.settings.api_keys_expires'));
+        $this->ctx->set('settings_api_keys_status',    $this->t->t('user.settings.api_keys_status'));
+        $this->ctx->set('settings_api_keys_actions',   $this->t->t('user.settings.api_keys_actions'));
+        $this->ctx->set('settings_api_keys_active',    $this->t->t('user.settings.api_keys_active'));
+        $this->ctx->set('settings_api_keys_revoked',   $this->t->t('user.settings.api_keys_revoked'));
+        $this->ctx->set('settings_api_keys_revoke',    $this->t->t('user.settings.api_keys_revoke'));
+        $this->ctx->set('settings_api_keys_create',    $this->t->t('user.settings.api_keys_create'));
+        $this->ctx->set('settings_api_keys_new_label_ph', $this->t->t('user.settings.api_keys_new_label_ph'));
+        $this->ctx->set('settings_api_keys_none',      $this->t->t('user.settings.api_keys_none'));
+        $this->ctx->set('settings_api_keys_save_now',  $this->t->t('user.settings.api_keys_save_now'));
+        $this->ctx->set('settings_api_keys_save_warn', $this->t->t('user.settings.api_keys_save_warn'));
+        $this->ctx->set('settings_api_keys_no_permission', $this->t->t('user.settings.api_keys_no_permission'));
         $this->ctx->set('field_current_value',     $this->t->t('user.settings.current_value'));
     }
 }

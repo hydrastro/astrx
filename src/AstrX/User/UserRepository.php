@@ -139,8 +139,8 @@ final class UserRepository
     public function findById(string $hexId): Result
     {
         return $this->fetchOne(
-            'SELECT LOWER(HEX(`id`)) AS id, `username`, `display_name`, `type`,
-                    `verified`, `avatar`, `deleted`,
+            'SELECT LOWER(HEX(`id`)) AS id, `username`, `mailbox`, `display_name`, `type`,
+                    `verified`, `avatar`, `deleted`, `theme`,
                     `token_hash`, `token_type`, `token_used`,
                     UNIX_TIMESTAMP(`token_expires_at`) AS token_expires_at
                FROM `user`

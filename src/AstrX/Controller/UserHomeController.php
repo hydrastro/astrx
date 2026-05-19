@@ -8,6 +8,7 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Api\ContextScope;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserSession;
 
@@ -35,9 +36,9 @@ final class UserHomeController extends AbstractController
             exit;
         }
 
-        $this->ctx->set('user_welcome_heading', $this->t->t('user.home.heading'));
-        $this->ctx->set('user_welcome_body',    $this->t->t('user.home.body'));
-        $this->ctx->set('username',             $this->session->username());
+        $this->ctx->set('user_welcome_heading', $this->t->t('user.home.heading'),   ContextScope::SHARED);
+        $this->ctx->set('user_welcome_body',    $this->t->t('user.home.body'),      ContextScope::SHARED);
+        $this->ctx->set('username',             $this->session->username(),         ContextScope::SHARED);
 
         // Build section links dynamically — sorted alphabetically.
         // Add entries here (slug => label key) to have them appear on the home page.
@@ -58,7 +59,7 @@ final class UserHomeController extends AbstractController
             ];
         }
         usort($sections, fn($a, $b) => strcmp($a['name'], $b['name']));
-        $this->ctx->set('user_sections', $sections);
+        $this->ctx->set('user_sections', $sections, ContextScope::SHARED);
 
         return $this->ok();
     }

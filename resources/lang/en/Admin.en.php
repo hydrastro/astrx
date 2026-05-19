@@ -560,4 +560,18 @@ return [
     'admin.themes.btn_clear_cache'  => 'Clear template cache',
     'admin.themes.cache_cleared'    => 'Cache cleared — {n} files removed.',
 
+
+    // ---- Deletion mode UI (fix101) ------------------------------------------
+    'deletion_mode_help'                 => 'Pick how this account should be deleted.',
+    'deletion_mode_legend_heading'       => 'What do the deletion modes mean?',
+    'deletion_mode_soft_redact'          => 'Soft redact',
+    'deletion_mode_soft_redact_desc'     => 'Row stays in the DB; rendering layer substitutes "[deleted]" for username and content. Fully reversible — change the mode back to NONE to restore.',
+    'deletion_mode_hard_redact'          => 'Hard redact',
+    'deletion_mode_hard_redact_desc'     => 'PII (username, email, mailbox) is wiped. Comments are reassigned to the ghost account so thread structure is preserved. A tombstone row remains with deletion_mode=hard_redact so auditors can see a deletion occurred. Not reversible.',
+    'deletion_mode_keep_visible'         => 'Keep visible',
+    'deletion_mode_keep_visible_desc'    => 'Account is closed (cannot log in) but profile and content remain fully visible. Useful when a user voluntarily retires their account but wants their posts to stay.',
+    'deletion_mode_keep_suspended'       => 'Keep suspended',
+    'deletion_mode_keep_suspended_desc'  => 'Account is admin-disabled. Content is hidden from the public but still visible to admins. Used for investigations, legal holds, or temporary bans.',
+    'deletion_mode_full_delete'          => 'Full delete',
+    'deletion_mode_full_delete_desc'     => 'Hard delete — the user row is removed and all their comments cascade-deleted with it. No ghost account involvement. Thread structure WILL be destroyed if other users replied to deleted comments. Not reversible. Reserved for GDPR right-to-erasure requests.',
 ];

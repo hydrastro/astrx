@@ -241,4 +241,23 @@ return [
     'user.settings.theme_default'          => 'Default (use site-wide theme)',
     'user.settings.theme_saved'            => 'Theme preference saved.',
     'user.settings.theme_invalid'          => 'That theme is not installed.',
+
+    // ---- API keys (fix100) --------------------------------------------------
+    'user.settings.api_keys'                => 'API Keys',
+    'user.settings.api_keys_desc'           => 'Use API keys to access this site programmatically. Each key acts as your account — keep it secret. A key shown here ONCE on creation cannot be recovered, only revoked.',
+    'user.settings.api_keys_label'          => 'Label',
+    'user.settings.api_keys_created'        => 'Created',
+    'user.settings.api_keys_last_used'      => 'Last used',
+    'user.settings.api_keys_expires'        => 'Expires',
+    'user.settings.api_keys_status'         => 'Status',
+    'user.settings.api_keys_actions'        => 'Actions',
+    'user.settings.api_keys_active'         => 'Active',
+    'user.settings.api_keys_revoked'        => 'Revoked',
+    'user.settings.api_keys_revoke'         => 'Revoke',
+    'user.settings.api_keys_create'         => 'Create new key',
+    'user.settings.api_keys_new_label_ph'   => 'e.g. "My CLI tool"',
+    'user.settings.api_keys_none'           => 'You have no API keys yet.',
+    'user.settings.api_keys_save_now'       => 'Save this key now',
+    'user.settings.api_keys_save_warn'      => 'This is the only time it will be shown. If you lose it, revoke this entry and create a new one.',
+    'user.settings.api_keys_no_permission'  => 'You do not have permission to create API keys. Ask an administrator if you need API access.',
 ];

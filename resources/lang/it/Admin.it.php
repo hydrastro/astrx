@@ -271,4 +271,18 @@ return [
     'admin.themes.btn_clear_cache'  => 'Cancella cache template',
     'admin.themes.cache_cleared'    => 'Cache cancellata — {n} file rimossi.',
 
+
+    // ---- UI modalità eliminazione (fix101) ----------------------------------
+    'deletion_mode_help'                 => 'Scegli come eliminare questo account.',
+    'deletion_mode_legend_heading'       => 'Cosa significano le modalità di eliminazione?',
+    'deletion_mode_soft_redact'          => 'Soft redact',
+    'deletion_mode_soft_redact_desc'     => 'La riga resta nel DB; il livello di rendering sostituisce "[eliminato]" a username e contenuti. Completamente reversibile — riporta la modalità a NONE per ripristinare.',
+    'deletion_mode_hard_redact'          => 'Hard redact',
+    'deletion_mode_hard_redact_desc'     => 'I dati personali (username, email, mailbox) vengono cancellati. I commenti vengono riassegnati al ghost account per preservare la struttura dei thread. Una riga tombstone resta con deletion_mode=hard_redact per audit. Non reversibile.',
+    'deletion_mode_keep_visible'         => 'Mantieni visibile',
+    'deletion_mode_keep_visible_desc'    => 'Account chiuso (non può più accedere) ma profilo e contenuti restano visibili. Utile quando un utente si ritira volontariamente ma vuole che i suoi post restino.',
+    'deletion_mode_keep_suspended'       => 'Sospendi',
+    'deletion_mode_keep_suspended_desc'  => 'Account disabilitato dall\'admin. I contenuti sono nascosti al pubblico ma visibili agli admin. Usato per indagini, blocchi legali o ban temporanei.',
+    'deletion_mode_full_delete'          => 'Eliminazione completa',
+    'deletion_mode_full_delete_desc'     => 'Hard delete — la riga utente viene rimossa e tutti i suoi commenti cascade-eliminati con essa. Nessun coinvolgimento del ghost account. La struttura dei thread VERRÀ distrutta se altri utenti hanno risposto ai commenti eliminati. Non reversibile. Riservato a richieste GDPR di diritto all\'oblio.',
 ];

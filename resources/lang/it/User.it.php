@@ -151,4 +151,23 @@ return [
     'user.settings.theme_default'          => 'Predefinito (usa il tema del sito)',
     'user.settings.theme_saved'            => 'Preferenza tema salvata.',
     'user.settings.theme_invalid'          => 'Questo tema non è installato.',
+
+    // ---- Chiavi API (fix100) ------------------------------------------------
+    'user.settings.api_keys'                => 'Chiavi API',
+    'user.settings.api_keys_desc'           => 'Usa le chiavi API per accedere al sito in modo programmatico. Ogni chiave equivale al tuo account &mdash; tienila segreta. Una chiave mostrata UNA volta alla creazione non può essere recuperata, solo revocata.',
+    'user.settings.api_keys_label'          => 'Etichetta',
+    'user.settings.api_keys_created'        => 'Creata',
+    'user.settings.api_keys_last_used'      => 'Ultimo uso',
+    'user.settings.api_keys_expires'        => 'Scadenza',
+    'user.settings.api_keys_status'         => 'Stato',
+    'user.settings.api_keys_actions'        => 'Azioni',
+    'user.settings.api_keys_active'         => 'Attiva',
+    'user.settings.api_keys_revoked'        => 'Revocata',
+    'user.settings.api_keys_revoke'         => 'Revoca',
+    'user.settings.api_keys_create'         => 'Crea nuova chiave',
+    'user.settings.api_keys_new_label_ph'   => 'es. "Mio script CLI"',
+    'user.settings.api_keys_none'           => 'Non hai ancora chiavi API.',
+    'user.settings.api_keys_save_now'       => 'Salva questa chiave ora',
+    'user.settings.api_keys_save_warn'      => "È l'unica volta che verrà mostrata. Se la perdi, revoca questa voce e creane una nuova.",
+    'user.settings.api_keys_no_permission'  => "Non hai il permesso di creare chiavi API. Chiedi a un amministratore se ti serve l'accesso API.",
 ];

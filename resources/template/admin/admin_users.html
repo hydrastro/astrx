@@ -33,6 +33,13 @@
             <input type="hidden" name="section"   value="manage">
             <input type="hidden" name="action"    value="delete">
             <input type="hidden" name="user_id"   value="{{id}}">
+            <select name="deletion_mode" class="input" title="{{deletion_mode_help}}">
+                <option value="soft_redact">{{deletion_mode_soft_redact}}</option>
+                <option value="hard_redact">{{deletion_mode_hard_redact}}</option>
+                <option value="keep_visible">{{deletion_mode_keep_visible}}</option>
+                <option value="keep_suspended">{{deletion_mode_keep_suspended}}</option>
+                <option value="full_delete">{{deletion_mode_full_delete}}</option>
+            </select>
             <input type="submit" value="{{btn_delete}}" class="input">
         </form>
     </td>
@@ -107,6 +114,22 @@
 
     </tbody>
 </table>
+
+<details style="margin-top:1em">
+<summary><strong>{{deletion_mode_legend_heading}}</strong></summary>
+<dl>
+    <dt><code>soft_redact</code></dt>
+    <dd>{{deletion_mode_soft_redact_desc}}</dd>
+    <dt><code>hard_redact</code></dt>
+    <dd>{{deletion_mode_hard_redact_desc}}</dd>
+    <dt><code>keep_visible</code></dt>
+    <dd>{{deletion_mode_keep_visible_desc}}</dd>
+    <dt><code>keep_suspended</code></dt>
+    <dd>{{deletion_mode_keep_suspended_desc}}</dd>
+    <dt><code>full_delete</code></dt>
+    <dd>{{deletion_mode_full_delete_desc}}</dd>
+</dl>
+</details>
 {{/can_manage}}
 
 {{! ── User Service Config (requires ADMIN_CONFIG_USERS) ───────────────── }}

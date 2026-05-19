@@ -83,6 +83,80 @@
 </form>
 <hr>
 {{/is_verified}}
+<h3>{{settings_api_keys}}</h3>
+<p>{{settings_api_keys_desc}}</p>
+
+{{#show_new_api_key}}
+<div class="flash-warning">
+  <strong>{{settings_api_keys_save_now}}</strong> &mdash; {{new_api_key_label}}
+  <br><br>
+  <code style="word-break:break-all;font-size:1.05em">{{new_api_key}}</code>
+  <br><br>
+  <em>{{settings_api_keys_save_warn}}</em>
+</div>
+{{/show_new_api_key}}
+
+{{#has_api_keys}}
+<table>
+  <thead>
+    <tr>
+      <th>{{settings_api_keys_label}}</th>
+      <th>{{settings_api_keys_created}}</th>
+      <th>{{settings_api_keys_last_used}}</th>
+      <th>{{settings_api_keys_status}}</th>
+      <th>{{settings_api_keys_actions}}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#api_keys}}
+    <tr>
+      <td>{{label}}</td>
+      <td>{{created_at}}</td>
+      <td>{{last_used_at}}</td>
+      <td>
+        {{#revoked}}<em>{{settings_api_keys_revoked}}</em>{{/revoked}}
+        {{^revoked}}{{settings_api_keys_active}}{{/revoked}}
+      </td>
+      <td>
+        {{^revoked}}
+        {{#show_api_key_revoke}}
+        <form method="POST" style="display:inline">
+          <input type="hidden" name="prg_id"  value="{{&prg.revoke_api_key}}">
+          <input type="hidden" name="_csrf"   value="{{&csrf.revoke_api_key}}">
+          <input type="hidden" name="action"  value="revoke_api_key">
+          <input type="hidden" name="key_id"  value="{{id}}">
+          <input type="submit" value="{{settings_api_keys_revoke}}" class="input">
+        </form>
+        {{/show_api_key_revoke}}
+        {{/revoked}}
+      </td>
+    </tr>
+    {{/api_keys}}
+  </tbody>
+</table>
+{{/has_api_keys}}
+
+{{^has_api_keys}}
+<p><em>{{settings_api_keys_none}}</em></p>
+{{/has_api_keys}}
+
+{{#show_api_key_create}}
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{&prg.create_api_key}}">
+  <input type="hidden" name="_csrf"  value="{{&csrf.create_api_key}}">
+  <input type="hidden" name="action" value="create_api_key">
+  <p>
+    <label>{{settings_api_keys_label}}: <input type="text" name="label" class="input" placeholder="{{settings_api_keys_new_label_ph}}"></label>
+    <input type="submit" value="{{settings_api_keys_create}}" class="input">
+  </p>
+</form>
+{{/show_api_key_create}}
+
+{{^show_api_key_create}}
+<p><em>{{settings_api_keys_no_permission}}</em></p>
+{{/show_api_key_create}}
+<hr>
+
 {{#show_theme_picker}}
 <h3>{{settings_theme}}</h3>
 <form method="POST">
