@@ -572,10 +572,25 @@ final class ContentManager
                         header('Content-Type: application/json; charset=utf-8');
                     }
                     echo json_encode([
-                        'ok'          => false,
-                        'status'      => 404,
-                        'error'       => ['id' => 'astrx.api/not_enabled', 'level' => 'warning'],
-                        'diagnostics' => [],
+                        'ok'     => false,
+                        'status' => 404,
+                        'error'  => [
+                            'id'          => 'astrx.api/not_enabled',
+                            'level'       => 'warning',
+                            'level_value' => \AstrX\Result\DiagnosticLevel::WARNING->value,
+                            'message'     => 'API endpoint not enabled',
+                        ],
+                        'meta' => [
+                            'locale'      => $locale->value,
+                            'page'        => $page->urlId,
+                            'diagnostics' => ['total' => 1, 'visible' => 1, 'hidden' => 0],
+                        ],
+                        'diagnostics' => [[
+                            'id'          => 'astrx.api/not_enabled',
+                            'level'       => 'warning',
+                            'level_value' => \AstrX\Result\DiagnosticLevel::WARNING->value,
+                            'message'     => 'API endpoint not enabled',
+                        ]],
                     ], JSON_UNESCAPED_SLASHES);
                     return;
                 }

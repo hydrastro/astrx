@@ -27,6 +27,7 @@ use function AstrX\Support\templateDir;
  *   /<locale>/js/runtime.js     generated runtime
  *   /<locale>/js/manifest.json  page/site manifest
  *   /<locale>/js/templates.json raw template cache
+ *   /<locale>/js/api.json       API endpoint index for the JS runtime/debugging
  *
  * This intentionally does NOT replace the normal PHP-rendered site. The
  * ordinary /<locale>/<page> pages remain the canonical, JS-less path. The
@@ -39,6 +40,7 @@ final class JsController extends AbstractController
     private const ASSET_RUNTIME  = 'runtime.js';
     private const ASSET_MANIFEST = 'manifest.json';
     private const ASSET_TPLS     = 'templates.json';
+    private const ASSET_API      = 'api.json';
 
     public function __construct(
         DiagnosticsCollector      $collector,
@@ -63,6 +65,7 @@ final class JsController extends AbstractController
             self::ASSET_RUNTIME  => $this->emitRuntimeJs(),
             self::ASSET_MANIFEST => $this->emitManifestJson(),
             self::ASSET_TPLS     => $this->emitTemplatesJson(),
+            self::ASSET_API      => $this->emitApiIndexJson(),
             default              => $this->emitShell(),
         };
 
@@ -149,10 +152,11 @@ HTML;
             'assets'       => [
                 'manifest'  => $this->jsBasePath() . '/' . self::ASSET_MANIFEST,
                 'templates' => $this->jsBasePath() . '/' . self::ASSET_TPLS,
+                'api'       => $this->jsBasePath() . '/' . self::ASSET_API,
             ],
         ];
         $bootJson = $this->json($boot);
-        $etag = '"astrx-js-runtime-' . sha1($bootJson . '|v4') . '"';
+        $etag = '"astrx-js-runtime-' . sha1($bootJson . '|v6') . '"';
 
         if ($this->etagMatches($etag)) {
             http_response_code(304);
@@ -353,7 +357,7 @@ HTML;
 
     renderDocumentShell() {
       const templates = Object.assign({}, this.templates, {
-        '__astrx_js_content': '<div id="astrx-js-status" aria-live="polite"></div><div id="astrx-js-content"></div>'
+        '__astrx_js_content': '<div id="astrx-js-status" aria-live="polite"></div><details id="astrx-js-debug" hidden><summary>JS runtime</summary><pre></pre></details><div id="astrx-js-content"></div>'
       });
       const layout = templates['default'];
       if (!layout) throw new Error('Template cache does not contain default.html');
@@ -408,18 +412,50 @@ HTML;
       document.addEventListener('submit', event => this.onSubmit(event));
     },
 
+    normalizeRoute(route) {
+      route = trimSlashes(route || '');
+
+      // The JS runtime reserves these names inside /<locale>/js/.
+      // In particular, /js without a locale is routed by PHP as the JS page,
+      // but the browser location is still /js. Without this guard the client
+      // would treat that URL as the inner route named "js", fetch /<locale>/js,
+      // then canonicalise to /<locale>/js/js and lose the normal page CSS.
+      if (
+        route === 'js' ||
+        route === 'runtime.js' ||
+        route === 'manifest.json' ||
+        route === 'templates.json' ||
+        route === 'api.json'
+      ) {
+        route = '';
+      }
+
+      return route || BOOT.defaultRoute || 'main';
+    },
+
     routeFromLocation() {
       const jsBase = new URL(BOOT.jsBase + '/', location.origin).pathname.replace(/\/+$/,'');
       let path = location.pathname;
-      if (path.indexOf(jsBase) === 0) path = path.slice(jsBase.length);
+
+      if (path === jsBase || path.indexOf(jsBase + '/') === 0) {
+        path = path.slice(jsBase.length);
+      } else {
+        // If the shell was reached through an unlocalised alias like /js, trust
+        // the route that PHP put on the boot document instead of re-parsing the
+        // browser path as an inner JS route.
+        const bootRoute = document.body ? document.body.getAttribute('data-astrx-js-route') : null;
+        if (bootRoute !== null) {
+          path = bootRoute;
+        }
+      }
+
       path = trimSlashes(decodeURIComponent(path));
-      if (path === 'runtime.js' || path === 'manifest.json' || path === 'templates.json') path = '';
-      return path || BOOT.defaultRoute || 'main';
+      return this.normalizeRoute(path);
     },
 
     targetUrlForRoute(route) {
-      route = trimSlashes(route || BOOT.defaultRoute || 'main');
-      return pathJoin(BOOT.siteBase, route || BOOT.defaultRoute || 'main') + location.search;
+      route = this.normalizeRoute(route);
+      return pathJoin(BOOT.siteBase, route) + location.search;
     },
 
     jsUrlForTarget(url) {
@@ -433,6 +469,7 @@ HTML;
       } else {
         return null;
       }
+      route = this.normalizeRoute(route);
       return pathJoin(BOOT.jsBase, route) + u.search + u.hash;
     },
 
@@ -444,7 +481,7 @@ HTML;
 
       if (u.pathname === jsBase || u.pathname.indexOf(jsBase + '/') === 0) {
         let route = trimSlashes(u.pathname.slice(jsBase.length));
-        if (!route) route = BOOT.defaultRoute || 'main';
+        route = this.normalizeRoute(route);
         return pathJoin(BOOT.siteBase, route) + u.search + u.hash;
       }
       if (u.pathname === siteBase || u.pathname.indexOf(siteBase + '/') === 0) {
@@ -504,6 +541,7 @@ HTML;
       this.ensureRuntimeMarker();
       this.markActive(url);
       this.status('');
+      this.updateDebug(url);
       window.scrollTo(0, 0);
     },
 
@@ -693,6 +731,24 @@ HTML;
       if (el) el.textContent = text || '';
     },
 
+    updateDebug(url) {
+      const el = byId('astrx-js-debug');
+      if (!el) return;
+      const enabled = new URLSearchParams(location.search).get('debug') === '1' || localStorage.getItem('astrx.debug') === '1';
+      el.hidden = !enabled;
+      if (!enabled) return;
+      const pre = el.querySelector('pre');
+      if (!pre) return;
+      pre.textContent = JSON.stringify({
+        route: this.routeFromLocation(),
+        target: url || this.currentTargetUrl,
+        jsBase: BOOT.jsBase,
+        apiIndex: BOOT.assets && BOOT.assets.api,
+        pages: this.manifest && this.manifest.pages ? this.manifest.pages.length : 0,
+        apiEnabledPages: this.manifest && this.manifest.pages ? this.manifest.pages.filter(p => p.api_enabled).length : 0
+      }, null, 2);
+    },
+
     fatal(err) {
       const message = err && err.message ? err.message : String(err);
       const target = byId('astrx-js-content') || byId('astrx-js-boot') || document.body;
@@ -725,6 +781,10 @@ JS;
             'jsBase'       => $this->jsBasePath(),
             'defaultRoute' => $this->defaultRouteSlug(),
             'pages'        => $pages,
+            'api'          => [
+                'index' => $this->jsBasePath() . '/' . self::ASSET_API,
+                'base'  => $this->siteLocaleBasePath() . '/api',
+            ],
             'shellContext' => $shell,
         ];
         $this->emitJson($payload, privateMaxAge: 30, browserLabel: 'manifest');
@@ -734,6 +794,21 @@ JS;
     {
         $payload = $this->buildTemplateCache();
         $this->emitJson($payload, privateMaxAge: 300, browserLabel: 'templates');
+    }
+
+    private function emitApiIndexJson(): void
+    {
+        $payload = [
+            'ok'          => true,
+            'version'     => 1,
+            'locale'      => $this->locale(),
+            'apiBase'     => $this->siteLocaleBasePath() . '/api',
+            'queryMode'   => $this->siteLocaleBasePath() . '?api=1',
+            'description' => 'AstrX API endpoints are regular pages with page.api_enabled = 1. Values in data are filtered through ContextScope; rendered HTML is included unless ?html=0 is sent.',
+            'endpoints'   => $this->apiManifestPages(),
+        ];
+
+        $this->emitJson($payload, privateMaxAge: 30, browserLabel: 'api');
     }
 
     /** @param list<array<string,mixed>> $pages */
@@ -783,7 +858,7 @@ JS;
     private function manifestPages(): array
     {
         $stmt = $this->pdo->query(
-            "SELECT id, url_id, i18n, file_name, template, controller, hidden, title
+            "SELECT id, url_id, i18n, file_name, template, controller, hidden, api_enabled, title
                FROM resolved_page
               WHERE hidden = 0
                 AND template = 1
@@ -821,10 +896,68 @@ JS;
                 'title'     => $name,
                 'url'       => $this->jsBasePath() . '/' . rawurlencode($slug),
                 'normal_url'=> $normalUrl,
+                'api_enabled' => (bool) ($row['api_enabled'] ?? false),
+                'api_url'   => $this->siteLocaleBasePath() . '/api/' . rawurlencode($slug),
+                'api_data_url' => $this->siteLocaleBasePath() . '/api/' . rawurlencode($slug) . '?html=0',
                 'highlight' => false,
             ];
         }
         return $pages;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function apiManifestPages(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT id, url_id, i18n, file_name, template, controller, hidden, api_enabled, title
+               FROM resolved_page
+              WHERE hidden = 0
+                AND api_enabled = 1
+              ORDER BY id ASC"
+        );
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        /** @var list<array<string,mixed>> $rows */
+
+        $endpoints = [];
+        foreach ($rows as $row) {
+            $urlId = is_scalar($row['url_id'] ?? null) ? (string) $row['url_id'] : '';
+            $fileName = is_scalar($row['file_name'] ?? null) ? (string) $row['file_name'] : '';
+            if ($urlId === '' || $fileName === 'error' || $fileName === 'js') {
+                continue;
+            }
+
+            $slug = (bool) ($row['i18n'] ?? false)
+                ? $this->translator->t($urlId, fallback: $fileName)
+                : $urlId;
+            if ($slug === '' || $slug === 'js') {
+                continue;
+            }
+
+            $titleFallback = is_scalar($row['title'] ?? null) ? (string) $row['title'] : $slug;
+            $name = (bool) ($row['i18n'] ?? false)
+                ? $this->translator->t($urlId . '.title', fallback: $titleFallback)
+                : $titleFallback;
+            if ($name === '') {
+                $name = ucfirst(str_replace(['_', '-'], ' ', $slug));
+            }
+
+            $url = $this->siteLocaleBasePath() . '/api/' . rawurlencode($slug);
+            $endpoints[] = [
+                'id'        => (int) ($row['id'] ?? 0),
+                'url_id'    => $urlId,
+                'file_name' => $fileName,
+                'slug'      => $slug,
+                'name'      => $name,
+                'methods'   => ['GET'],
+                'url'       => $url,
+                'data_url'  => $url . '?html=0',
+                'html_url'  => $url,
+                'normal_url'=> $this->urlGenerator->toPage($slug),
+                'note'      => 'Data keys depend on ContextScope tags in the controller. Add ?html=0 to omit rendered HTML.',
+            ];
+        }
+
+        return $endpoints;
     }
 
     /** @return array<string,mixed> */
