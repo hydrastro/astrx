@@ -285,4 +285,11 @@ return [
     'deletion_mode_keep_suspended_desc'  => 'Account disabilitato dall\'admin. I contenuti sono nascosti al pubblico ma visibili agli admin. Usato per indagini, blocchi legali o ban temporanei.',
     'deletion_mode_full_delete'          => 'Eliminazione completa',
     'deletion_mode_full_delete_desc'     => 'Hard delete — la riga utente viene rimossa e tutti i suoi commenti cascade-eliminati con essa. Nessun coinvolgimento del ghost account. La struttura dei thread VERRÀ distrutta se altri utenti hanno risposto ai commenti eliminati. Non reversibile. Riservato a richieste GDPR di diritto all\'oblio.',
+
+    // ---- Impostazioni email (fix115) ----------------------------------------
+    'admin.config.users.email_settings'      => 'Impostazioni email',
+    'admin.config.field.send_verification_email' => 'Invia email di verifica alla registrazione',
+    'admin.config.field.send_password_reset_email' => 'Invia email di reset password',
+    'admin.config.field.site_url'                => 'URL del sito (assoluto, usato nei link delle email)',
+    'admin.config.field.site_name'               => 'Nome del sito (usato in oggetto e firma delle email)',
 ];

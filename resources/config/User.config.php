@@ -8,6 +8,21 @@ return [
         'allow_login_non_verified_users' => true,
         'require_email' => true,
         'require_recovery_email' => true,
+        // Verification email policy (fix114):
+        //   true  → after registration, a verification email is sent. User
+        //           starts with verified=0 and clicks the link to verify.
+        //   false → no email is sent. User starts with verified=1 (auto-verified).
+        //           Use this for closed-beta / invite-only sites where email
+        //           verification adds friction without adding value.
+        // Independent of require_email: if require_email=false and a user
+        // registers without one, no email is sent regardless of this flag.
+        'send_verification_email' => true,
+        // Password recovery email policy (fix114):
+        //   true  → recovery requests trigger an email with a reset link.
+        //   false → recovery requests silently succeed but no email is sent
+        //           (admin must intervene manually). Useful for sites where
+        //           recovery is handled out-of-band.
+        'send_password_reset_email' => true,
         'require_display_name' => true,
         'require_birth_date' => false,
         'case_sensitive_usernames' => false,
@@ -43,5 +58,14 @@ return [
         'avatar_dir' => '/app/resources/avatar',
         'avatar_file_size' => 1048576,
         'use_identicons' => true,
+    ],
+    'EmailService' => [
+        // Absolute base URL for links in emails. Without this, emails contain
+        // relative URLs which break when opened from a mail client. Set this
+        // to your public site URL (e.g. 'https://example.com' or, for Tor,
+        // 'http://abc123.onion').
+        'site_url'  => getenv('SITE_URL')  ?: '',
+        // Site name used in greetings and signatures.
+        'site_name' => getenv('SITE_NAME') ?: 'AstrX',
     ],
 ];

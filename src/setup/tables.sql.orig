@@ -12,8 +12,9 @@ CREATE TABLE `page`
     `file_name`  VARCHAR(64) NOT NULL,
     `template`   TINYINT     NOT NULL DEFAULT 1,
     `controller` TINYINT     NOT NULL DEFAULT 0,
-    `hidden`     TINYINT     NOT NULL DEFAULT 0,
-    `comments`   TINYINT     NOT NULL DEFAULT 0
+    `hidden`       TINYINT     NOT NULL DEFAULT 0,
+    `comments`     TINYINT     NOT NULL DEFAULT 0,
+    `api_enabled`  TINYINT     NOT NULL DEFAULT 0
 );
 
 CREATE TABLE `page_robots`
@@ -157,11 +158,12 @@ SELECT p.id,
        p.controller,
        p.hidden,
        p.comments,
-       pr.`index`,
-       pr.follow,
-       pm.title,
-       pm.description,
-       t.file_name AS template_file_name
+       p.api_enabled,
+       COALESCE(pr.`index`, 1) AS `index`,
+       COALESCE(pr.follow, 1) AS follow,
+       COALESCE(pm.title, '') AS title,
+       COALESCE(pm.description, '') AS description,
+       COALESCE(t.file_name, '') AS template_file_name
 FROM `page` p
          LEFT JOIN `page_robots`   pr ON pr.page_id   = p.id
          LEFT JOIN `page_meta`     pm ON pm.page_id   = p.id
@@ -627,14 +629,11 @@ VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 
 
 -- ----------------------------------------------------------
--- Default admin user
+-- First administrator
 -- ----------------------------------------------------------
-
-INSERT INTO `user` (id, username, password, type, verified, deleted)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator',
-        '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE',
-        1, 1, 0);
-
+-- Intentionally not seeded here. The first administrator is created by
+-- public/setup.php from the credentials entered during setup, so there is no
+-- public default admin account.
 
 -- ----------------------------------------------------------
 -- Captcha test page (remove before production)

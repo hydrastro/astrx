@@ -1,0 +1,296 @@
+/* AstrX Newsprint Theme
+ * Inspired by broadsheet newspapers and academic journals.
+ * Background: cream paper (#fafaf5)
+ * Text: dense black for ink-on-paper feel
+ * Headlines: large serif, restrained
+ * Accents: minimal — just a deep red for links
+ */
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: Charter, "Bitstream Charter", Georgia, "Liberation Serif", serif;
+    color: #1a1a1a;
+    background: #fafaf5;
+    margin: 0;
+    padding: 2em 1em;
+    line-height: 1.6;
+    font-size: 16px;
+}
+
+a { color: #8b0000; text-decoration: none; border-bottom: 1px solid rgba(139,0,0,.3); }
+a:hover { border-bottom-color: #8b0000; }
+a:visited { color: #5a0000; }
+
+#wrap {
+    max-width: 50em;
+    margin: 0 auto;
+    background: #fafaf5;
+}
+
+#header {
+    border-bottom: 3px double #1a1a1a;
+    padding: 1em 0;
+    margin-bottom: 1.5em;
+}
+
+#title {
+    text-align: center;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: .3em;
+    font-size: .9em;
+}
+#title a { color: #1a1a1a; border: none; }
+
+h1 {
+    margin: 0;
+    font-size: 2.4em;
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: -.02em;
+    text-align: center;
+    color: #1a1a1a;
+}
+
+h2 {
+    margin: 1.5em 0 .5em;
+    font-size: 1.6em;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #1a1a1a;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: .2em;
+}
+
+h3 {
+    margin: 1.5em 0 .3em;
+    font-size: 1.15em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #1a1a1a;
+}
+
+#top_nav, #user_top_nav, #admin_top_nav {
+    border-bottom: 1px solid #1a1a1a;
+    border-top:    1px solid #1a1a1a;
+    padding: .5em 0;
+    margin-bottom: 1.5em;
+}
+
+#nav, #user_nav, #admin_nav, #wm-nav {
+    text-align: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#nav li, #user_nav li, #admin_nav li {
+    display: inline-block;
+}
+
+#nav li a, #user_nav li a, #user_nav li input,
+#admin_nav li a, #admin_nav li input {
+    color: #1a1a1a;
+    background: transparent;
+    border: none;
+    padding: .25em 1em;
+    display: block;
+    text-decoration: none;
+    font: inherit;
+    font-variant: small-caps;
+    letter-spacing: .08em;
+    cursor: pointer;
+}
+
+#nav li:not(:last-child)::after,
+#user_nav li:not(:last-child)::after,
+#admin_nav li:not(:last-child)::after {
+    content: "•"; color: #999;
+    display: inline-block; vertical-align: middle;
+}
+
+#nav li a:hover, #user_nav li a:hover, #user_nav li input:hover,
+#admin_nav li a:hover, #admin_nav li input:hover {
+    color: #8b0000;
+}
+
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+    color: #8b0000;
+    font-weight: 700;
+    text-decoration: none;
+    pointer-events: none;
+}
+
+#main {
+    padding: 0 1em;
+    word-wrap: break-word;
+    text-align: justify;
+    hyphens: auto;
+}
+#main p { text-indent: 1.5em; margin: 0; }
+#main p:first-child, #main h1 + p, #main h2 + p, #main h3 + p { text-indent: 0; }
+#main p:first-child::first-letter,
+#main h1 + p::first-letter {
+    font-size: 3em;
+    float: left;
+    line-height: .9;
+    padding: .05em .08em 0 0;
+    font-weight: 900;
+}
+
+#sidebar {
+    float: right; width: 30%; padding: 0 1em;
+    border-left: 1px solid #ccc;
+    font-size: .9em; font-style: italic;
+    margin-left: 1em;
+}
+
+#footer {
+    border-top: 3px double #1a1a1a;
+    margin-top: 2em;
+    padding: 1em 0;
+    text-align: center;
+    font-size: .85em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: .15em;
+}
+
+#go_top { font-size: .85em; padding: 0; color: #999; text-align: center; }
+#go_top a { color: #999; border: none; }
+#go_top a:hover { color: #8b0000; }
+
+.left  { float: left; }
+.right { float: right; }
+.clear { clear: both; }
+
+/* Inputs */
+input, select, textarea, button {
+    background: #fff;
+    color: #1a1a1a;
+    border: 1px solid #1a1a1a;
+    padding: .35em .6em;
+    font: inherit;
+    font-size: 1em;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none; background: #ffffcc;
+}
+
+.input {
+    background: #fff;
+    color: #1a1a1a;
+    border: 1px solid #1a1a1a;
+    padding: .35em .6em;
+    margin: .25em 0;
+}
+
+input[type=submit], button[type=submit], button {
+    background: #1a1a1a; color: #fafaf5;
+    border-color: #1a1a1a;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    font-size: .9em;
+    padding: .5em 1.5em;
+}
+
+input[type=submit]:hover, button[type=submit]:hover, button:hover {
+    background: #8b0000;
+    border-color: #8b0000;
+}
+
+/* Tables — like printed data tables */
+table { border-collapse: collapse; width: 100%; margin: 1.5em 0; border-top: 2px solid #1a1a1a; border-bottom: 2px solid #1a1a1a; }
+th, td { padding: .4em .75em; text-align: left; vertical-align: top; }
+th {
+    border-bottom: 1px solid #1a1a1a;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-size: .85em;
+}
+tr td { border-bottom: 1px solid #e0e0d8; }
+tr:last-child td { border-bottom: 0; }
+
+/* Diagnostics */
+#message_bar { margin: 0 0 1em; border: 1px solid #1a1a1a; }
+#message_bar p {
+    margin: 0; padding: .5em 1em;
+    background: #fff9b5;
+    font-style: italic;
+}
+#message_bar a { color: #8b0000; }
+
+.diag-debug    { background: #f0f0e8; color: #1a1a1a; padding: .25em .5em; }
+.diag-info     { background: #e0e8f0; color: #1a1a1a; padding: .25em .5em; }
+.diag-notice   { background: #fff9b5; color: #1a1a1a; padding: .25em .5em; }
+.diag-warning  { background: #ffd9a0; color: #1a1a1a; padding: .25em .5em; }
+.diag-error    { background: #ffb0a0; color: #8b0000; padding: .25em .5em; font-weight: bold; }
+.diag-critical { background: #8b0000; color: #fafaf5; padding: .25em .5em; font-weight: bold; }
+.diag-alert    { background: #8b0000; color: #fafaf5; padding: .25em .5em; font-weight: bold; }
+.diag-emergency{ background: #1a1a1a; color: #fafaf5; padding: .25em .5em; font-weight: bold; }
+.diag-unknown  { background: #f0f0e8; color: #1a1a1a; padding: .25em .5em; }
+
+.flash-success { background: #d8e8c8; color: #1a1a1a; padding: .5em 1em; font-style: italic; }
+.flash-info    { background: #e0e8f0; color: #1a1a1a; padding: .5em 1em; font-style: italic; }
+.flash-warning { background: #fff9b5; color: #1a1a1a; padding: .5em 1em; font-style: italic; }
+.flash-error   { background: #ffb0a0; color: #8b0000; padding: .5em 1em; font-weight: bold; }
+
+/* Code & pre */
+code, pre { font-family: "Iowa Old Style", "Courier New", monospace; background: #f0f0e8; color: #1a1a1a; }
+code { padding: .1em .3em; }
+pre { padding: .75em; overflow-x: auto; border-left: 3px solid #1a1a1a; }
+
+hr { border: 0; height: 0; border-top: 1px solid #1a1a1a; margin: 2em 0; text-align: center; }
+hr::after { content: "❦"; color: #1a1a1a; position: relative; top: -.7em; background: #fafaf5; padding: 0 .5em; }
+img { max-width: 100%; border: 1px solid #1a1a1a; }
+
+blockquote {
+    border-left: 4px solid #1a1a1a;
+    margin: 1em 0; padding: .5em 0 .5em 1.5em;
+    font-style: italic; font-size: 1.05em;
+}
+
+/* Error page */
+.error-page { text-align: center; padding: 3em 1em; }
+.error-code { font-size: 6em; font-weight: 900; margin: 0; line-height: 1; color: #8b0000; }
+.error-name { font-size: 1.4em; margin: .5em 0; text-transform: uppercase; letter-spacing: .1em; }
+.error-message { font-style: italic; }
+.error-actions a {
+    display: inline-block; margin: 0 .5em; padding: .5em 1.2em;
+    background: #1a1a1a; color: #fafaf5;
+    border: none; text-transform: uppercase; letter-spacing: .08em;
+}
+.error-actions a:hover { background: #8b0000; }
+
+/* =========================================================================
+   AstrX universal overflow guard (fix120)
+   =========================================================================
+   Layout invariants applied with !important to override per-theme rules.
+   These are LAYOUT properties (not colors or decoration) — themes should
+   never override them. If a theme needs custom spacing/borders, keep doing
+   that on th/td individually. */
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* Cancel the legacy default-theme triple-threat that broke layout. */
+    display: table !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+}
+table th, table td {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+}
+.input, input[type="submit"], input[type="button"], button {
+    max-width: 100% !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+}

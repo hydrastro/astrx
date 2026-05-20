@@ -215,12 +215,18 @@ final class AdminUsersController extends AbstractController
     {
         return $this->writer->write('User', array_merge(
             $this->loadUserConfig(),
-            ['UserService' => [
+            ['EmailService' => [
+                'site_url'  => self::mStr($p, 'site_url',  ''),
+                'site_name' => self::mStr($p, 'site_name', ''),
+            ],
+            'UserService' => [
                 'token_expiration_time'          => max(60, self::mInt($p, 'token_expiration_time', 21600)),
                 'allow_register'                 => self::mBool($p, 'allow_register'),
                 'allow_login_non_verified_users' => self::mBool($p, 'allow_login_non_verified_users'),
                 'require_email'                  => self::mBool($p, 'require_email'),
                 'require_recovery_email'         => self::mBool($p, 'require_recovery_email'),
+                'send_verification_email'        => self::mBool($p, 'send_verification_email'),
+                'send_password_reset_email'      => self::mBool($p, 'send_password_reset_email'),
                 'require_display_name'           => self::mBool($p, 'require_display_name'),
                 'require_birth_date'             => self::mBool($p, 'require_birth_date'),
                 'case_sensitive_usernames'       => self::mBool($p, 'case_sensitive_usernames'),
@@ -327,6 +333,11 @@ final class AdminUsersController extends AbstractController
             $this->ctx->set('cfg_allow_login_non_verified_users', $this->config->getConfigBool('UserService', 'allow_login_non_verified_users', true));
             $this->ctx->set('cfg_require_email',                  $this->config->getConfigBool('UserService', 'require_email',                  true));
             $this->ctx->set('cfg_require_recovery_email',         $this->config->getConfigBool('UserService', 'require_recovery_email',         true));
+            // Email transactional flags (fix115)
+            $this->ctx->set('cfg_send_verification_email',        $this->config->getConfigBool('UserService', 'send_verification_email',        true));
+            $this->ctx->set('cfg_send_password_reset_email',      $this->config->getConfigBool('UserService', 'send_password_reset_email',      true));
+            $this->ctx->set('cfg_site_url',                       $this->config->getConfigString('EmailService','site_url',                     ''));
+            $this->ctx->set('cfg_site_name',                      $this->config->getConfigString('EmailService','site_name',                    'AstrX'));
             $this->ctx->set('cfg_require_display_name',           $this->config->getConfigBool('UserService', 'require_display_name',           true));
             $this->ctx->set('cfg_require_birth_date',             $this->config->getConfigBool('UserService', 'require_birth_date',             false));
             $this->ctx->set('cfg_case_sensitive_usernames',       $this->config->getConfigBool('UserService', 'case_sensitive_usernames',       false));
@@ -473,6 +484,12 @@ final class AdminUsersController extends AbstractController
             $this->ctx->set('label_allow_login_non_verified_users',$this->t->t('admin.config.field.allow_login_non_verified_users'));
             $this->ctx->set('label_require_email',                 $this->t->t('admin.config.field.require_email_user'));
             $this->ctx->set('label_require_recovery_email',        $this->t->t('admin.config.field.require_recovery_email'));
+            // Email transactional flags (fix115)
+            $this->ctx->set('label_send_verification_email',       $this->t->t('admin.config.field.send_verification_email'));
+            $this->ctx->set('label_send_password_reset_email',     $this->t->t('admin.config.field.send_password_reset_email'));
+            $this->ctx->set('label_site_url',                      $this->t->t('admin.config.field.site_url'));
+            $this->ctx->set('label_site_name',                     $this->t->t('admin.config.field.site_name'));
+            $this->ctx->set('section_email_settings',              $this->t->t('admin.config.users.email_settings'));
             $this->ctx->set('label_require_display_name',          $this->t->t('admin.config.field.require_display_name'));
             $this->ctx->set('label_require_birth_date',            $this->t->t('admin.config.field.require_birth_date'));
             $this->ctx->set('label_case_sensitive_usernames',      $this->t->t('admin.config.field.case_sensitive_usernames'));

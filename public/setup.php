@@ -104,8 +104,20 @@ function writeSecurity(string $secret, string $env): string
 function tryConn(string $h, string $d, string $u, string $p, int $port): PDO|string
 {
     try {
-        return new PDO("mysql:host=$h;port=$port;dbname=$d;charset=utf8mb4", $u, $p,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]);
+        return new PDO(
+            "mysql:host=$h;port=$port;dbname=$d;charset=utf8mb4",
+            $u,
+            $p,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5,
+                // MySQL leaves SELECT-bearing migration statements open unless
+                // result buffering is enabled. Without this, a later statement
+                // can fail with "Cannot execute queries while other unbuffered
+                // queries are active" even though the reported SQL is innocent.
+                PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+            ]
+        );
     } catch (\PDOException $e) { return $e->getMessage(); }
 }
 function sessionConn(): PDO|string
@@ -135,11 +147,30 @@ function runSQL(PDO $pdo, string $file): string
     if (!file_exists($file)) {
         return "Schema file not found: $file";
     }
-    $stmts = array_filter(array_map('trim', explode(';', preg_replace('/--[^\n]*/','',(string)file_get_contents($file))??'')), fn($s)=>$s!=='');
+
+    $sql = (string)file_get_contents($file);
+    $sql = preg_replace('/--[^\n]*/', '', $sql) ?? $sql;
+    $stmts = array_filter(array_map('trim', explode(';', $sql)), fn($s) => $s !== '');
+
     foreach ($stmts as $stmt) {
-        try { $pdo->exec($stmt); }
-        catch (\PDOException $e) { if (!in_array((string)$e->getCode(),['42S01','42S21','23000','42000'],true)) return $e->getMessage().' | '.substr($stmt,0,200); }
+        try {
+            // query() gives us a cursor we can always close. That makes the
+            // migration runner safe for SELECT, SHOW, CREATE VIEW ... SELECT,
+            // INSERT ... SELECT, and other SELECT-bearing statements.
+            $cursor = $pdo->query($stmt);
+            if ($cursor !== false) {
+                if ($cursor->columnCount() > 0) {
+                    $cursor->fetchAll(PDO::FETCH_ASSOC);
+                }
+                $cursor->closeCursor();
+            }
+        } catch (\PDOException $e) {
+            if (!in_array((string)$e->getCode(), ['42S01','42S21','23000','42000'], true)) {
+                return $e->getMessage() . ' | ' . substr($stmt, 0, 200);
+            }
+        }
     }
+
     return '';
 }
 
@@ -174,6 +205,19 @@ function listSetupMigrations(): array
     }
     return array_values($found);
 }
+function removeSeedAdmin(PDO $pdo): string
+{
+    // Older setup SQL seeded a public default Administrator account. The wizard
+    // now creates the real first admin from the submitted setup form, so remove
+    // only that exact legacy seed account before inserting the chosen admin.
+    $legacyHash = '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE';
+    try {
+        $stmt = $pdo->prepare('DELETE FROM `user` WHERE username = :u AND password = :p AND type = 1 AND verified = 1 AND deleted = 0');
+        $stmt->execute([':u' => 'Administrator', ':p' => $legacyHash]);
+        return '';
+    } catch (\PDOException $e) { return $e->getMessage(); }
+}
+
 function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 {
     try {
@@ -202,7 +246,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn = tryConn($h,$d,$u,$p,$port);
         if (is_string($conn)) { $errors[]='Database connection failed: '.$conn; }
         else {
-            if (pb('run_migrations')) {
+            $writeErr = writePDO($h,$d,$u,$p,$port);
+            if ($writeErr !== '') {
+                $errors[] = $writeErr;
+            }
+
+            if ($errors === [] && pb('run_migrations')) {
                 $tablesPath = findSetupFile('tables.sql');
                 if ($tablesPath === null) {
                     $errors[] = 'Schema file tables.sql not found in either src/setup/ or setup/.';
@@ -223,13 +272,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+
             if ($errors===[]) {
-                $writeErr = writePDO($h,$d,$u,$p,$port);
-                if ($writeErr !== '') {
-                    $errors[] = $writeErr;
-                } else {
-                    $step = 3;
-                }
+                $step = 3;
             }
         }
     }
@@ -243,9 +288,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn = sessionConn();
             if (is_string($conn)) { $errors[]=$conn; }
             else {
-                $err = makeAdmin($conn,$au,$ap,$am?:$au);
-                if ($err!=='') $errors[]='Could not create admin: '.$err;
-                else $step=4;
+                $err = removeSeedAdmin($conn);
+                if ($err !== '') {
+                    $errors[] = 'Could not remove legacy seeded admin: ' . $err;
+                } else {
+                    $err = makeAdmin($conn,$au,$ap,$am?:$au);
+                    if ($err!=='') $errors[]='Could not create admin: '.$err;
+                    else $step=4;
+                }
             }
         }
     }

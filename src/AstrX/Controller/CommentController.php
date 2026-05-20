@@ -344,6 +344,20 @@ final class CommentController extends AbstractController
         $this->ctx->set('comments_logged_in',    $this->session->isLoggedIn(), ContextScope::SHARED);
         $this->ctx->set('show_captcha',          $showCaptcha);
         $this->ctx->set('captcha_id',            $captchaId);
+        // Iframe-reloadable captcha — see LoginController.
+        $captchaFrameUrl = $captchaId !== ''
+            ? $this->urlGen->toPage($this->t->t('WORDING_CAPTCHA_FRAME'))
+                . '?cid=' . $captchaId
+            : '';
+        $this->ctx->set('captcha_frame_url', $captchaFrameUrl);
+        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '');
+        // Label used by the parent-side reload link (external to the iframe
+        // so it can't be clipped by overflow:hidden — fix113).
+        // Captcha translation domain holds 'captcha.reload'. Without
+        // this loadDomain call, t() emits a Missing-translation diagnostic
+        // (the fallback still displays correctly, just noise in logs).
+        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('captcha_image',         $captchaImage);
 
         // Labels

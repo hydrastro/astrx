@@ -1,0 +1,8 @@
+<?php class Templateuser_user_home09628f50e0dc01f31add4ffcf16bfbf3{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}function render($args=array(),$parent=array()){$buffer="";$i=0;$buffer.='<h2>';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("user_welcome_heading",$args,$parent,$i));$buffer.=', ';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("username",$args,$parent,$i));$buffer.='!</h2>
+<p>';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("user_welcome_body",$args,$parent,$i));$buffer.='</p>
+<hr>
+';$buffer.=$this->user_sections8($args,$parent,$i);return ($buffer) ? $buffer : "";}function desc14($args,$parent,$i){$buffer="";$resolved=$this->TemplateEngine->resolveValue("desc",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){$buffer.='<p>';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("desc",$args,$parent,$i));$buffer.='</p>';} return $buffer;}function user_sections8($args,$parent,$i){$buffer="";$resolved=$this->TemplateEngine->resolveValue("user_sections",$args,$parent,$i);if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}$parent=$resolved;for($i=0;$i<$count;$i++){$buffer.='
+<h3><a href="';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("url",$args,$parent,$i));$buffer.='">';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("name",$args,$parent,$i));$buffer.='</a></h3>
+';$buffer.=$this->desc14($args,$parent,$i);$buffer.='
+<hr>
+';} return $buffer;}}

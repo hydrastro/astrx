@@ -619,8 +619,20 @@ final class ContentManager
             return;
         }
 
+        // Fall-through for pages with template=0. The original intent was
+        // "no template, no body — emit 204 No Content". But that breaks for
+        // controllers that legitimately write raw bytes (PNG image endpoint,
+        // JSON, XML feeds, etc.) — downgrading 200→204 with a non-empty body
+        // makes browsers either reject the response ("image contains errors")
+        // or strip the body entirely (empty iframe).
+        //
+        // The fix: only downgrade when NOTHING has been emitted. ob_get_length()
+        // tells us if any output buffer holds bytes, and headers_sent() catches
+        // the case where output went straight to the wire. If either is true,
+        // the controller produced a real response and we leave the status alone.
+        $hasContent  = headers_sent() || (ob_get_level() > 0 && ob_get_length() > 0);
         $currentCode = http_response_code();
-        if ($currentCode === false || $currentCode === 200) {
+        if (!$hasContent && ($currentCode === false || $currentCode === 200)) {
             http_response_code(HttpStatus::NO_CONTENT->value);
         }
     }

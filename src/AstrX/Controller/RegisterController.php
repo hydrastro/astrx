@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Captcha\CaptchaService;
+use AstrX\Mail\EmailService;
+use AstrX\User\UserRepository;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -49,6 +51,8 @@ final class RegisterController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly Config                $config,
+        private readonly EmailService          $emailService,
+        private readonly UserRepository        $userRepo,
     ) {
         parent::__construct($collector);
     }
@@ -139,23 +143,50 @@ final class RegisterController extends AbstractController
         }
         $newHexId = $registerResult->unwrap();
 
-        // --- Email verification token ---
-        // If unverified users cannot log in, generate a token. The mailer
-        // integration is still TODO — for now the token is stored in the DB and
-        // surfaced as a diagnostic so the admin can see registrations queued
-        // for verification. Wire PHPMailer here to actually send the email.
-        if (!$this->userService->allowLoginNonVerifiedUsers()) {
+        // --- Email verification (fix114) ---
+        //
+        // Decision tree:
+        //   (a) Email will be sent: user provided an address AND the admin
+        //       enabled send_verification_email. Generate a token, send the
+        //       email, user stays verified=0 until they click the link.
+        //   (b) No email will be sent (either no address provided, or admin
+        //       disabled verification globally): auto-set verified=1. Without
+        //       this, the account would be created in a state where the user
+        //       cannot verify and (if allow_login_non_verified_users=false)
+        //       cannot log in either — a broken stuck state.
+        //
+        // Per the agreed default-B policy: if the EMAIL SEND fails, the user
+        // account stays created and a diagnostic is emitted. The user can
+        // request another verification email later, or an admin can
+        // resend / mark them verified manually.
+        $emailWillBeSent = $email !== ''
+            && $this->userService->sendVerificationEmail();
+
+        if ($emailWillBeSent) {
             $tokenResult = $this->userService->generateToken(
                 $newHexId,
                 \AstrX\User\UserService::TOKEN_EMAIL_VERIFY,
             );
             $tokenResult->drainTo($this->collector);
-            // Fix 7.1: emit a diagnostic so the admin notices the mailer is
-            // not yet wired and pending verifications are accumulating.
-            $this->emit(new \AstrX\Mail\Diagnostic\MailerNotConfiguredDiagnostic(
-                'astrx.mail/not_configured',
-                \AstrX\Result\DiagnosticLevel::WARNING,
-            ));
+
+            if ($tokenResult->isOk()) {
+                /** @var array{token:string,user_id:string,expires_at:int} $tok */
+                $tok = $tokenResult->unwrap();
+                $sendResult = $this->emailService->sendVerificationEmail(
+                    toAddress: $email,
+                    toName:    $displayName !== '' ? $displayName : $username,
+                    username:  $username,
+                    token:     $tok['token'],
+                    userHexId: $newHexId,
+                );
+                $sendResult->drainTo($this->collector);
+                // Default-B: account remains created regardless of send result.
+            }
+        } else {
+            // No verification path exists for this account — auto-verify so
+            // the user can actually log in.
+            $verifyResult = $this->userRepo->setVerified($newHexId);
+            $verifyResult->drainTo($this->collector);
         }
 
         $this->flash->set('success', $this->t->t('user.register.success'));
@@ -204,6 +235,19 @@ final class RegisterController extends AbstractController
         $this->ctx->set('display_name_value', $displayName);
         $this->ctx->set('show_captcha',       $showCaptcha);
         $this->ctx->set('captcha_id',         $captchaId);
+        // Iframe-reloadable captcha — see LoginController for the rationale.
+        $captchaFrameUrl = $captchaId !== ''
+            ? $this->urlGen->toPage($this->t->t('WORDING_CAPTCHA_FRAME'))
+                . '?cid=' . $captchaId
+            : '';
+        $this->ctx->set('captcha_frame_url', $captchaFrameUrl);
+        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '');
+        // fix113 set this; lost during fix114's email-integration patch — re-added in fix117.
+        // Captcha translation domain holds 'captcha.reload'. Without
+        // this loadDomain call, t() emits a Missing-translation diagnostic
+        // (the fallback still displays correctly, just noise in logs).
+        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('captcha_image',      $captchaB64);
         $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$this->mailboxIsUsername);
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());

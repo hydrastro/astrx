@@ -11,7 +11,11 @@ return [
     'WORDING_ERROR'     => 'errore',
 
     // Pagine utente
-    'WORDING_LOGIN'     => 'accesso',
+    'WORDING_LOGIN'         => 'accesso',
+    'WORDING_CAPTCHA_IMAGE' => 'captcha-immagine',
+    'WORDING_CAPTCHA_FRAME' => 'captcha-cornice',
+    'WORDING_FEED'          => 'feed.xml',
+    'WORDING_JS_APP'        => 'js',
     'WORDING_REGISTER'  => 'registrazione',
     'WORDING_RECOVER'   => 'recupero',
     'WORDING_PROFILE'   => 'profilo',

@@ -117,6 +117,15 @@ final class Mailer
      * @param string $fromNameOverride     Paired display name override.
      */
 /** @return Result<bool> */
+    /**
+     * Send an email.
+     *
+     * @param list<array{filename:string,content_type:string,data:string}> $attachments
+     *         Optional attachments. Each entry has:
+     *         - filename     : displayed name in the receiving client
+     *         - content_type : MIME type (e.g. 'application/pdf')
+     *         - data         : RAW bytes (not base64; we encode internally)
+     */
     public function send(
         string $toAddress,
         string $toName,
@@ -127,6 +136,7 @@ final class Mailer
         string $fromNameOverride    = '',
         string $priority            = 'normal',  // 'high', 'normal', 'low'
         bool   $readReceipt         = false,
+        array  $attachments         = [],
     )
     : Result {
         try {
@@ -140,6 +150,7 @@ final class Mailer
                 $fromNameOverride,
                 $priority,
                 $readReceipt,
+                $attachments,
             );
         } catch (\Throwable $e) {
             return $this->err($e->getMessage());
@@ -161,6 +172,7 @@ final class Mailer
         string $fromNameOverride    = '',
         string $priority            = 'normal',
         bool   $readReceipt         = false,
+        array  $attachments         = [],
     )
     : Result {
         $effectiveFromAddress = $fromAddressOverride !== '' ? $fromAddressOverride : $this->fromAddress;
@@ -191,18 +203,48 @@ final class Mailer
             $caps = $this->ehlo($sock, $domain);
         }
 
-        // AUTH PLAIN
+        // AUTH — prefer PLAIN, fall back to LOGIN when the server doesn't
+        // advertise PLAIN. Older MS Exchange, some shared-hosting MTAs, and a
+        // few legacy mail providers only support AUTH LOGIN. Both methods
+        // send credentials in cleartext (base64 isn't encryption) so STARTTLS
+        // or SMTPS is still required for any non-localhost connection.
         if ($this->username !== '') {
-            if (!in_array('AUTH', $caps, true) &&
-                !in_array('AUTH PLAIN', $caps, true) &&
-                !in_array('AUTH LOGIN', $caps, true)) {
+            $supportsAny = false;
+            $supportsPlain = false;
+            $supportsLogin = false;
+            foreach ($caps as $cap) {
+                if ($cap === 'AUTH PLAIN' || str_starts_with($cap, 'AUTH PLAIN ')) {
+                    $supportsAny = $supportsPlain = true;
+                }
+                if ($cap === 'AUTH LOGIN' || str_starts_with($cap, 'AUTH LOGIN ')
+                 || str_contains($cap, ' PLAIN') || str_contains($cap, ' LOGIN')) {
+                    $supportsAny = true;
+                    if (str_contains($cap, 'LOGIN')) { $supportsLogin = true; }
+                    if (str_contains($cap, 'PLAIN')) { $supportsPlain = true; }
+                }
+                // Tolerate 'AUTH' alone (very old servers); assume both methods.
+                if ($cap === 'AUTH') { $supportsAny = $supportsPlain = $supportsLogin = true; }
+            }
+            if (!$supportsAny) {
                 return $this->err("Server does not support AUTH");
             }
-            $auth = base64_encode(
-                "\0" . $this->username . "\0" . $this->password
-            );
-            $this->cmd($sock, "AUTH PLAIN {$auth}");
-            $this->read($sock, '235');
+
+            if ($supportsPlain) {
+                $auth = base64_encode("\0" . $this->username . "\0" . $this->password);
+                $this->cmd($sock, "AUTH PLAIN {$auth}");
+                $this->read($sock, '235');
+            } elseif ($supportsLogin) {
+                // AUTH LOGIN: server prompts "Username:" then "Password:" both
+                // base64-encoded, and we reply with base64 of each in turn.
+                $this->cmd($sock, "AUTH LOGIN");
+                $this->read($sock, '334');                            // base64('Username:')
+                $this->cmd($sock, base64_encode($this->username));
+                $this->read($sock, '334');                            // base64('Password:')
+                $this->cmd($sock, base64_encode($this->password));
+                $this->read($sock, '235');                            // auth ok
+            } else {
+                return $this->err("Server advertises AUTH but neither PLAIN nor LOGIN");
+            }
         }
 
         // Envelope
@@ -217,6 +259,7 @@ final class Mailer
 
         // Build message
         $boundary = bin2hex(random_bytes(12));
+        $hasAttachments = $attachments !== [];
         $headers = $this->buildHeaders(
             $toAddress,
             $toName,
@@ -227,8 +270,9 @@ final class Mailer
             $effectiveFromName,
             $priority,
             $readReceipt,
+            $hasAttachments,
         );
-        $body = $this->buildBody($bodyText, $bodyHtml, $boundary);
+        $body = $this->buildBody($bodyText, $bodyHtml, $boundary, $attachments);
 
         fwrite($sock, $headers . "\r\n" . $body . "\r\n.\r\n");
         $this->read($sock, '250');
@@ -430,6 +474,7 @@ final class Mailer
         string $fromName     = '',
         string $priority     = 'normal',
         bool   $readReceipt  = false,
+        bool   $hasAttachments = false,
     )
     : string {
         if ($fromAddress === '') { $fromAddress = $this->fromAddress; }
@@ -466,7 +511,13 @@ final class Mailer
         }
         $h .= "MIME-Version: 1.0\r\n";
 
-        if ($hasHtml) {
+        // Outermost Content-Type:
+        //   - With attachments → multipart/mixed (wraps an alternative block + each attachment)
+        //   - HTML, no atts    → multipart/alternative (text + html)
+        //   - No HTML, no atts → text/plain
+        if ($hasAttachments) {
+            $h .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
+        } elseif ($hasHtml) {
             $h .= "Content-Type: multipart/alternative; boundary=\"{$boundary}\"\r\n";
         } else {
             $h .= "Content-Type: text/plain; charset=UTF-8\r\n";
@@ -476,23 +527,84 @@ final class Mailer
         return $h;
     }
 
-    private function buildBody(string $text, string $html, string $boundary)
+    /**
+     * Build the MIME body.
+     *
+     * Layout:
+     *   - No html, no attachments  → bare quoted-printable text
+     *   - Html present, no atts    → multipart/alternative (text + html)
+     *   - Attachments present      → multipart/mixed with the alt-block first,
+     *                                then each attachment as a part with
+     *                                base64 transfer-encoding.
+     *
+     * @param list<array{filename:string,content_type:string,data:string}> $attachments
+     */
+    private function buildBody(string $text, string $html, string $boundary, array $attachments = [])
     : string {
-        if ($html === '') {
+        // Fast path — no html, no attachments.
+        if ($html === '' && $attachments === []) {
             return quoted_printable_encode($text);
         }
 
-        return "--{$boundary}\r\n" .
-               "Content-Type: text/plain; charset=UTF-8\r\n" .
-               "Content-Transfer-Encoding: quoted-printable\r\n\r\n" .
-               quoted_printable_encode($text) .
-               "\r\n" .
-               "--{$boundary}\r\n" .
-               "Content-Type: text/html; charset=UTF-8\r\n" .
-               "Content-Transfer-Encoding: quoted-printable\r\n\r\n" .
-               quoted_printable_encode($html) .
-               "\r\n" .
-               "--{$boundary}--";
+        // Body container — the text+html alternative block (with no attachments
+        // we use this directly; with attachments it becomes a child of the
+        // multipart/mixed wrapper).
+        $altBoundary = $attachments === [] ? $boundary : 'alt_' . bin2hex(random_bytes(8));
+
+        $altBody = '';
+        if ($html !== '') {
+            $altBody = "--{$altBoundary}\r\n" .
+                       "Content-Type: text/plain; charset=UTF-8\r\n" .
+                       "Content-Transfer-Encoding: quoted-printable\r\n\r\n" .
+                       quoted_printable_encode($text) .
+                       "\r\n" .
+                       "--{$altBoundary}\r\n" .
+                       "Content-Type: text/html; charset=UTF-8\r\n" .
+                       "Content-Transfer-Encoding: quoted-printable\r\n\r\n" .
+                       quoted_printable_encode($html) .
+                       "\r\n" .
+                       "--{$altBoundary}--";
+        } else {
+            // Attachments present but no html — single text part.
+            $altBody = "--{$altBoundary}\r\n" .
+                       "Content-Type: text/plain; charset=UTF-8\r\n" .
+                       "Content-Transfer-Encoding: quoted-printable\r\n\r\n" .
+                       quoted_printable_encode($text) .
+                       "\r\n--{$altBoundary}--";
+        }
+
+        // No attachments — the alt block IS the body.
+        if ($attachments === []) {
+            return $altBody;
+        }
+
+        // Multipart/mixed: alt block as first part, attachments after.
+        $out  = "--{$boundary}\r\n";
+        $out .= "Content-Type: multipart/alternative; boundary=\"{$altBoundary}\"\r\n\r\n";
+        $out .= $altBody . "\r\n";
+
+        foreach ($attachments as $att) {
+            $filename    = isset($att['filename']) && is_scalar($att['filename'])
+                ? (string) $att['filename'] : 'attachment';
+            $contentType = isset($att['content_type']) && is_scalar($att['content_type'])
+                ? (string) $att['content_type'] : 'application/octet-stream';
+            $data        = isset($att['data']) && is_string($att['data']) ? $att['data'] : '';
+            if ($data === '') { continue; }
+
+            // Sanitise filename — strip path components and CRLF (header
+            // injection defence).
+            $safeName = preg_replace('/[\r\n]/', '', basename($filename)) ?? 'attachment';
+
+            $out .= "--{$boundary}\r\n";
+            $out .= "Content-Type: {$contentType}; name=\"{$safeName}\"\r\n";
+            $out .= "Content-Transfer-Encoding: base64\r\n";
+            $out .= "Content-Disposition: attachment; filename=\"{$safeName}\"\r\n\r\n";
+            // RFC 2045 — base64 lines max 76 chars.
+            $out .= chunk_split(base64_encode($data), 76, "\r\n");
+        }
+
+        $out .= "--{$boundary}--";
+        return $out;
     }
 
     /** @return Result<never> */

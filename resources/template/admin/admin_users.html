@@ -153,6 +153,17 @@
             <td><input type="checkbox" name="require_email" value="1"{{#cfg_require_email}} checked{{/cfg_require_email}}></td></tr>
         <tr><th>{{label_require_recovery_email}}</th>
             <td><input type="checkbox" name="require_recovery_email" value="1"{{#cfg_require_recovery_email}} checked{{/cfg_require_recovery_email}}></td></tr>
+
+        <tr><th colspan="2" style="text-align:left;padding-top:18px"><strong>{{section_email_settings}}</strong></th></tr>
+
+        <tr><th>{{label_send_verification_email}}</th>
+            <td><input type="checkbox" name="send_verification_email" value="1"{{#cfg_send_verification_email}} checked{{/cfg_send_verification_email}}></td></tr>
+        <tr><th>{{label_send_password_reset_email}}</th>
+            <td><input type="checkbox" name="send_password_reset_email" value="1"{{#cfg_send_password_reset_email}} checked{{/cfg_send_password_reset_email}}></td></tr>
+        <tr><th>{{label_site_url}}</th>
+            <td><input type="url" name="site_url" value="{{cfg_site_url}}" class="input" style="width:100%" placeholder="https://example.com"></td></tr>
+        <tr><th>{{label_site_name}}</th>
+            <td><input type="text" name="site_name" value="{{cfg_site_name}}" class="input" style="width:100%"></td></tr>
         <tr><th>{{label_require_display_name}}</th>
             <td><input type="checkbox" name="require_display_name" value="1"{{#cfg_require_display_name}} checked{{/cfg_require_display_name}}></td></tr>
         <tr><th>{{label_require_birth_date}}</th>

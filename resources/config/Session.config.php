@@ -20,7 +20,7 @@ return [
         // CHANGE THIS to a long random string before deploying to production.
         // Generate one with: php -r "echo bin2hex(random_bytes(32));" 
         // WARNING: changing this value invalidates ALL existing sessions.
-        'server_secret' => 'e502ece70699783cda6afc78251e0d04c0b68409e2f7949ca65ddc0697ea88b7',
+        'server_secret' => '57b7cf5d2288e86805d33086766bc4f7284acb27ff69553e3f2c0089a3fe23e5',
 
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)

@@ -1,198 +1,97 @@
-# AstrX
+# fix123 — Single comprehensive fix
 
-A modular PHP web framework.
+This replaces the broken three-file `setup/` layout with **two files** that
+produce a fully-working database on first boot. No more manual migrations.
 
-- **Overengineered from the core** - because I'm the CEO of Overengineering
-- **No JavaScript.** - for the love of TOR sysadmins
-- **Security by structure** - paranoia is never too much
-- **Zero dependencies.** - what's composer?
-- **i18n by default.** - mamma mia
-- **Highly configurable.** - if you can't change it, it's a bug
-- **No tests.** - those are for weak programmers who doubt their code
+## What's in this fix
 
----
+```
+fix123/
+├── setup/
+│   ├── 01-init.sql       # creates content_manager DB + user account
+│   └── 02-tables.sql     # complete schema + all data seeds (everything baked in)
+└── README.md             # this file
+```
 
-## Requirements
+## What's been fixed at the SQL level
 
-PHP `8.4+` with extensions: `pdo_mysql`, `openssl`, `gd`, `mbstring`.  
-A webserver with url rewriting (like nginx or Apache).  
-A SQL database (like MariaDB / MySQL).
+`02-tables.sql` is the OLD `tables.sql` with all migration content folded in:
 
----
+| Change                                                        | Was in (manual migration)         |
+|---------------------------------------------------------------|-----------------------------------|
+| `page.api_enabled` column (TINYINT DEFAULT 0)                 | migrate_api.sql                   |
+| `resolved_page` view now selects `p.api_enabled`              | migrate_api.sql                   |
+| `api_key` table CREATE                                        | migrate_api.sql                   |
+| `captcha.regen_count` + `captcha.last_regen_at` columns       | migrate_captcha_abuse.sql         |
+| Page row `WORDING_CAPTCHA_IMAGE` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
+| Page row `WORDING_CAPTCHA_FRAME` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
+| Page row `WORDING_FEED` (template=0, controller=1, index=1)   | migrate_feed.sql                  |
+| Page row `WORDING_JS_APP` (template=0, controller=1)          | migrate_js_spa.sql                |
+| `api_enabled=1` on MAIN/USER_HOME/PROFILE/LOGIN/REGISTER/RECOVER | migrate_api_profile + migrate_spa_api_enable |
 
-## Quick Start
+The old `setup/migrate_themes.sql` is gone — its content (theme column on
+user, admin_themes page row) was already in `tables.sql`, and its presence
+in the Docker init dir was causing the alphabetical-ordering bug (it ran
+BEFORE tables.sql, on an empty database, and the ALTER silently failed).
+
+The numeric file prefixes (`01-`, `02-`) make the init order explicit
+instead of relying on alphabetical coincidence.
+
+## How to apply
+
+You're in dev mode, so the cleanest path is a **clean DB rebuild**:
 
 ```bash
-git clone https://github.com/hydrastro/astrx.git
-cd astrx
-docker compose up -d
+# 1. Apply the fix (REPLACE setup/ contents — both old files go away)
+unzip fix123.zip
+rm -f setup/init.sql setup/migrate_themes.sql setup/tables.sql
+cp -r fix123/setup/. setup/
+
+# 2. Nuke the database volume and rebuild everything
+docker compose down -v
+docker compose up --build -d
+
+# 3. Wait ~10 seconds for MariaDB to finish initialising, then verify:
+sleep 10
+docker compose exec -T mariadb mysql -u user -ppassword content_manager -e "
+SELECT id, url_id, api_enabled, \`index\`, follow, title, template_file_name
+  FROM resolved_page
+ WHERE url_id IN ('WORDING_MAIN','WORDING_FEED','WORDING_JS_APP','WORDING_CAPTCHA_FRAME')
+ ORDER BY id;
+"
 ```
 
-Or point your web server root at `public/` with URL rewriting to `index.php`.
+Expected: 4 rows, all without errors. If you see this, the framework
+will boot cleanly:
+- The main page loads (no more `Unknown column 'index'`)
+- `/en/api/main?html=1` returns JSON instead of 404
+- `/en/js/#main` SPA fetches and renders
+- `/en/feed.xml` serves Atom XML
+- Captcha iframe pages route correctly
 
-Then visit `http://localhost/setup.php` and follow the five-step wizard: requirements check → database → admin account → security → done.
+## Optional cleanup
 
-> **Note:** the wizard locks itself on completion, but it's advised to delete `public/setup.php` afterwards anyway.
+Two harmless brace-expansion artifact directories exist in your repo from
+earlier `cp -r` commands where brace expansion didn't fire (likely zsh
+shell behavior). They're invisible to the PSR-4 autoloader. To remove:
 
-For nginx:
-```nginx
-location / {
-    try_files $uri $uri/ /index.php$is_args$args;
-}
+```bash
+rm -rf 'src/{src' 'src/AstrX/{Controller,User,Auth'
 ```
 
----
+(The quoting is essential — those directory names literally start with `{`.)
 
-## Architecture
+## Why this is different from earlier fixes
 
-### Bootstrap & Dependency Injection
+The previous twelve attempts to fix the view were piecemeal patches that
+assumed your Docker init was already producing a correct base state. It
+wasn't. Every `docker compose down -v` reset you back to a broken init
+(`migrate_themes.sql` failing before `tables.sql`, no `api_enabled`
+column, no view rebuild). The manual migrations in `src/setup/` could
+restore correctness, but only if you ran ALL of them in the right
+order — and we both lost track of which had been run.
 
-`public/index.php` is the single entry point.  
-`src/bootstrap.php` defines path constants, registers the PSR-4 autoloader, and instantiates `Prelude` — the composition root.
-
-`Prelude` manually constructs the singletons of the core classes (`Config`, `Translator`, `ModuleLoader`, `Injector`, `Gate`) and registers them with the `Injector`. Everything else is resolved on demand.
-
-Config files in `resources/config/` are plain PHP arrays keyed by domain:
-
-```php
-// resources/config/Mail.config.php
-return [
-    'WebmailService' => ['mail_domain' => 'example.com', 'mailserver_is_local' => false],
-];
-```
-
-Classes declare which keys they consume with `#[InjectConfig]` attributes on setters.  
-`ModuleLoader` wires these automatically every time a class is created.
-
-```php
-#[InjectConfig('mail_domain')]
-public function setMailDomain(string $v): void { $this->mailDomain = $v; }
-```
-
----
-
-### Result Monad & Diagnostics
-
-This is the core of the system.  
-All recoverable runtime errors flow through `Result<T>` and the `Diagnostics` channel.  
-Exceptions are reserved for programmer-contract violations — never for business logic.
-
-```php
-$ok  = Result::ok($value);
-$err = Result::err(null, Diagnostics::of($diagnostic));
-
-$result->isOk();           // bool
-$result->unwrap();         // T (throws only on programmer error)
-$result->drainTo($collector); // propagate diagnostics up the stack
-$result->map(fn($v) => $v * 2);
-$result->flatMap(fn($v) => doSomethingElse($v));
-```
-
-`Diagnostics` is an immutable, append-only collection of `DiagnosticInterface` objects.  
-Each carries a string ID (e.g. `astrx.user/wrong_password`), a `DiagnosticLevel`, and typed fields specific to that diagnostic class.
-
-`DiagnosticRenderer` turns diagnostics into human-readable strings via callable entries in the lang files:
-
-```php
-// resources/lang/en/Diagnostics/i18n.en.php
-'astrx.user/wrong_password' => fn(WrongPasswordDiagnostic $d): string =>
-    "Login failed for \"{$d->username()}\" after {$d->attempts()} attempt(s).",
-```
-
-The `DiagnosticsCollector` accumulates diagnostics across the entire request.  
-At render time, `DiagnosticRenderer` can surface them — to admins as a visible panel on the error page, to logs as structured entries, to tests as assertable values.  
-
-The admin panel lets you configure which severity levels are visible to which user groups and override individual diagnostic levels per deployment.
-
----
-
-### Routing
-
-Two modes, seamlessly switchable via config:
-
-- **Rewrite mode:** `/{locale}/{page-url-id}/...` — uses the URL path as a stack.
-- **Query mode:** `/?page=main&lang=en` — classic `$_GET` style, works without server-side rewriting.
-
-Internationalization of the urls is supported.
-
-Pages live in the `page` table. Each has a `url_id` (an i18n key for localised slugs), a `file_name` (maps to a template and controller), and flags for controller, template, and comments. `ContentManager` resolves the request to a `Page` object, dispatches the controller, and renders the template. `UrlGenerator` produces fully localised, mode-aware URLs from page IDs.
-
----
-
-### Authentication & PBAC
-
-The system implements a Policy-Based Access Control.  
-Roles (`ADMIN`, `MOD`, `USER`, `GUEST`) map to named `Permission` enum values.  
-Per-resource decisions delegate to typed `PolicyInterface` classes:
-
-```php
-// Simple permission check
-if ($this->gate->cannot(Permission::ADMIN_ACCESS)) { ... }
-
-// Resource-level — delegates to a Policy class
-if ($this->gate->cannot(Permission::EDIT_POST, $postResource)) { ... }
-```
-
----
-
-### Session Security
-
-Sessions are database-backed and AES-256-CTR encrypted with HMAC-SHA-256 authentication.  
-Keys are derived per-session via HKDF, mixed with a server-side secret.  
-
-Session ID regeneration is configurable per user group (time-based) and fires unconditionally on login, logout, and admin role changes (event-based), with a grace-period handover window for in-flight requests.
-
----
-
-### Template Engine
-
-Mustache-inspired syntax, compiled to PHP and cached on disk:
-
-```
-{{variable}}           escaped output
-{{&unescaped}}         raw output
-{{#section}}...{{/section}}    loop / truthy block
-{{^inverted}}...{{/inverted}}  falsy block
-{{>partial}}           include partial
-{{>*dynamic}}          dynamic partial (name from variable)
-{{*dereference}}       variable dereference
-{{!comment}}           ignored at render time
-{{=<% %>=}}            custom delimiters
-```
-
-Logic stays in PHP. Templates stay clean.
-
----
-
-### Internationalisation
-
-Every user-facing string in the framework lives in a lang file.  
-The `Translator` loads domain files on demand and caches them for the request lifetime:
-
-```php
-$this->t->t('user.register.success');
-// → "Your account has been created."
-
-$this->t->t('http.status.404.name');
-// → "Not Found"
-```
-
----
-
-## Contributing
-
-Contributions are welcome. Before submitting a pull request:
-
-- All code must pass `phpstan --level=10` with no new suppressions.
-- No external runtime dependencies may be introduced.
-- New user-facing strings must go through the `Translator` — no hardcoded English.
-
----
-
-## Roadmap
-
-- [ ] Template cache invalidation mechanism
-- [ ] Advanced template caching (segment-level)
-- [ ] REST API layer
-- [ ] phpcs / PHP-CS-Fixer integration
-- [ ] README screenshots
+This fix removes the moving parts. The Docker init dir contains exactly
+two files that always produce a complete, correct schema. No manual
+migrations are needed for a fresh boot. The files in `src/setup/` are
+now historical reference only.

@@ -12,8 +12,9 @@ CREATE TABLE `page`
     `file_name`  VARCHAR(64) NOT NULL,
     `template`   TINYINT     NOT NULL DEFAULT 1,
     `controller` TINYINT     NOT NULL DEFAULT 0,
-    `hidden`     TINYINT     NOT NULL DEFAULT 0,
-    `comments`   TINYINT     NOT NULL DEFAULT 0
+    `hidden`       TINYINT     NOT NULL DEFAULT 0,
+    `comments`     TINYINT     NOT NULL DEFAULT 0,
+    `api_enabled`  TINYINT     NOT NULL DEFAULT 0
 );
 
 CREATE TABLE `page_robots`
@@ -157,11 +158,12 @@ SELECT p.id,
        p.controller,
        p.hidden,
        p.comments,
-       pr.`index`,
-       pr.follow,
-       pm.title,
-       pm.description,
-       t.file_name AS template_file_name
+       p.api_enabled,
+       COALESCE(pr.`index`, 1) AS `index`,
+       COALESCE(pr.follow, 1) AS follow,
+       COALESCE(pm.title, '') AS title,
+       COALESCE(pm.description, '') AS description,
+       COALESCE(t.file_name, '') AS template_file_name
 FROM `page` p
          LEFT JOIN `page_robots`   pr ON pr.page_id   = p.id
          LEFT JOIN `page_meta`     pm ON pm.page_id   = p.id
@@ -576,9 +578,9 @@ VALUES
     (3, 0, 1),  -- id=5  admin: Dashboard (custom, single entry)
     (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
 
--- 23 navbar entries total
+-- 24 navbar entries total
 INSERT INTO `navbar_entry_ids` ()
-VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES
@@ -610,8 +612,9 @@ VALUES
     (21, 3, 1, 'WORDING_WEBMAIL',                1, 1, 0),
     -- Admin navbar — Webmail IMAP config (pin 6, alpha-sorted)
     (22, 6, 1, 'WORDING_ADMIN_CONFIG_WEBMAIL',   1, 1, 0),
-    -- Admin navbar — Audit Log (pin 6, alpha-sorted)
-    (23, 6, 1, 'WORDING_ADMIN_AUDIT_LOG',        1, 1, 0);
+    -- Admin navbar — Audit Log and Themes (pin 6, alpha-sorted)
+    (23, 6, 1, 'WORDING_ADMIN_AUDIT_LOG',        1, 1, 0),
+    (24, 6, 1, 'WORDING_ADMIN_THEMES',           1, 1, 0);
 
 INSERT INTO `navbar_internal` (id, page_id)
 VALUES
@@ -619,22 +622,19 @@ VALUES
     (1,1),(2,9),(5,8),(6,6),(7,7),(8,19),
     (9,18),(10,14),(11,12),(12,17),(13,11),(14,13),(15,16),(16,15),
     (17,20),(18,21),(19,24),(20,26),
-    -- New pages (ids 27, 28, 29)
-    (21,27),(22,28),(23,29);
+    -- New pages (ids 27, 28, 29, 30)
+    (21,27),(22,28),(23,29),(24,30);
 
 INSERT INTO `navbar_external` (id, url)
 VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 
 
 -- ----------------------------------------------------------
--- Default admin user
+-- First administrator
 -- ----------------------------------------------------------
-
-INSERT INTO `user` (id, username, password, type, verified, deleted)
-VALUES (UNHEX(REPLACE(UUID(), '-', '')), 'Administrator',
-        '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE',
-        1, 1, 0);
-
+-- Intentionally not seeded here. The first administrator is created by
+-- public/setup.php from the credentials entered during setup, so there is no
+-- public default admin account.
 
 -- ----------------------------------------------------------
 -- Captcha test page (remove before production)

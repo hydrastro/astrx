@@ -1,0 +1,205 @@
+/* AstrX Dracula Theme
+ * Inspired by the Dracula color scheme (draculatheme.com).
+ * Background: #282a36 (deep purple-grey)
+ * Foreground: #f8f8f2 (warm off-white)
+ * Accents: pink, cyan, purple, green, yellow, orange, red
+ */
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+    color: #f8f8f2;
+    background: #282a36;
+    margin: 0;
+    padding: 1em;
+    line-height: 1.55;
+}
+
+a { color: #8be9fd; text-decoration: none; }
+a:hover { color: #ff79c6; text-decoration: underline; }
+a:visited { color: #bd93f9; }
+
+#wrap {
+    max-width: 60em;
+    margin: 0 auto;
+    background: #282a36;
+    border: 1px solid #44475a;
+    border-radius: 6px;
+}
+
+#header {
+    background: #44475a;
+    border-bottom: 1px solid #6272a4;
+    padding: 1em;
+    border-radius: 6px 6px 0 0;
+}
+
+#title { text-align: center; margin: 0; }
+#title a { color: #ff79c6; text-decoration: none; }
+
+h1 { margin: 0; font-size: 1.8em; color: #ff79c6; font-weight: 600; }
+h2 { margin: 0 0 1em; color: #8be9fd; font-weight: 500; }
+h3 { margin: 0 0 .5em; color: #50fa7b; font-weight: 500; }
+
+#top_nav, #user_top_nav, #admin_top_nav {
+    background: #44475a;
+    border-bottom: 1px solid #6272a4;
+}
+
+#nav, #user_nav, #admin_nav, #wm-nav {
+    text-align: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#nav li, #user_nav li, #admin_nav li {
+    display: inline-block;
+}
+
+#nav li a, #user_nav li a, #user_nav li input,
+#admin_nav li a, #admin_nav li input {
+    color: #f8f8f2;
+    background: transparent;
+    border: none;
+    padding: .6em 1em;
+    display: block;
+    text-decoration: none;
+    font: inherit;
+    cursor: pointer;
+}
+
+#nav li a:hover, #user_nav li a:hover, #user_nav li input:hover,
+#admin_nav li a:hover, #admin_nav li input:hover {
+    background: #282a36;
+    color: #ff79c6;
+}
+
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+    background: #282a36;
+    color: #50fa7b;
+    text-decoration: none;
+    pointer-events: none;
+    border-bottom: 2px solid #50fa7b;
+}
+
+#main { padding: 1.5em; word-wrap: break-word; }
+
+#sidebar {
+    float: right; width: 30%; padding: 1em;
+    background: #44475a; border-left: 1px solid #6272a4;
+}
+
+#footer {
+    background: #44475a; border-top: 1px solid #6272a4;
+    padding: 1em; border-radius: 0 0 6px 6px;
+    font-size: .85em; color: #6272a4;
+}
+
+#go_top { font-size: .85em; border-top: 1px solid #44475a; padding-top: .5em; color: #6272a4; }
+#go_top a { color: #6272a4; }
+
+.left  { float: left; }
+.right { float: right; }
+.clear { clear: both; }
+
+/* Inputs */
+input, select, textarea, button {
+    background: #44475a; color: #f8f8f2;
+    border: 1px solid #6272a4;
+    padding: .35em .6em; font: inherit; border-radius: 3px;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none; border-color: #ff79c6;
+    box-shadow: 0 0 0 2px rgba(255,121,198,.25);
+}
+
+.input {
+    background: #44475a; color: #f8f8f2;
+    border: 1px solid #6272a4;
+    padding: .35em .6em; margin: .25em 0; border-radius: 3px;
+}
+
+input[type=submit], button[type=submit], button {
+    background: #bd93f9; color: #282a36; border-color: #bd93f9;
+    cursor: pointer; font-weight: 600;
+}
+
+input[type=submit]:hover, button[type=submit]:hover, button:hover {
+    background: #ff79c6; border-color: #ff79c6;
+}
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; margin: .5em 0; background: #282a36; }
+th, td { border: 1px solid #44475a; padding: .5em .75em; text-align: left; }
+th { background: #44475a; font-weight: 600; color: #8be9fd; }
+tr:nth-child(even) td { background: #2e303c; }
+
+/* Diagnostics */
+#message_bar { margin: 0; border-bottom: 1px solid #6272a4; }
+#message_bar p { margin: 0; padding: .5em 1em; background: #44475a; color: #f8f8f2; }
+#message_bar a { color: #8be9fd; }
+
+.diag-debug    { background: #6272a4; color: #f8f8f2; padding: .25em .5em; }
+.diag-info     { background: #8be9fd; color: #282a36; padding: .25em .5em; }
+.diag-notice   { background: #50fa7b; color: #282a36; padding: .25em .5em; }
+.diag-warning  { background: #f1fa8c; color: #282a36; padding: .25em .5em; }
+.diag-error    { background: #ffb86c; color: #282a36; padding: .25em .5em; font-weight: bold; }
+.diag-critical { background: #ff5555; color: #f8f8f2; padding: .25em .5em; font-weight: bold; }
+.diag-alert    { background: #ff5555; color: #f8f8f2; padding: .25em .5em; font-weight: bold; }
+.diag-emergency{ background: #ff5555; color: #f8f8f2; padding: .25em .5em; font-weight: bold; }
+.diag-unknown  { background: #6272a4; color: #f8f8f2; padding: .25em .5em; }
+
+.flash-success { background: #50fa7b; color: #282a36; padding: .5em 1em; }
+.flash-info    { background: #8be9fd; color: #282a36; padding: .5em 1em; }
+.flash-warning { background: #f1fa8c; color: #282a36; padding: .5em 1em; }
+.flash-error   { background: #ff5555; color: #f8f8f2; padding: .5em 1em; font-weight: bold; }
+
+/* Code */
+code, pre { font-family: "JetBrains Mono", "Fira Code", Menlo, monospace; background: #44475a; color: #50fa7b; border-radius: 2px; }
+code { padding: .1em .3em; }
+pre { padding: .75em; overflow-x: auto; border: 1px solid #6272a4; }
+
+hr { border: 0; border-top: 1px solid #44475a; margin: 1.5em 0; }
+img { max-width: 100%; border-radius: 3px; }
+
+/* Error page */
+.error-page { text-align: center; padding: 3em 1em; }
+.error-code { font-size: 5em; font-weight: 300; margin: 0; color: #ff5555; }
+.error-name { font-size: 1.4em; margin: .5em 0; color: #f8f8f2; }
+.error-actions a {
+    display: inline-block; margin: 0 .5em; padding: .5em 1.2em;
+    background: #bd93f9; color: #282a36; border-radius: 3px;
+    text-decoration: none; font-weight: 500;
+}
+.error-actions a:hover { background: #ff79c6; }
+
+/* =========================================================================
+   AstrX universal overflow guard (fix120)
+   =========================================================================
+   Layout invariants applied with !important to override per-theme rules.
+   These are LAYOUT properties (not colors or decoration) — themes should
+   never override them. If a theme needs custom spacing/borders, keep doing
+   that on th/td individually. */
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* Cancel the legacy default-theme triple-threat that broke layout. */
+    display: table !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+}
+table th, table td {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+}
+.input, input[type="submit"], input[type="button"], button {
+    max-width: 100% !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+}

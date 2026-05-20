@@ -574,4 +574,11 @@ return [
     'deletion_mode_keep_suspended_desc'  => 'Account is admin-disabled. Content is hidden from the public but still visible to admins. Used for investigations, legal holds, or temporary bans.',
     'deletion_mode_full_delete'          => 'Full delete',
     'deletion_mode_full_delete_desc'     => 'Hard delete — the user row is removed and all their comments cascade-deleted with it. No ghost account involvement. Thread structure WILL be destroyed if other users replied to deleted comments. Not reversible. Reserved for GDPR right-to-erasure requests.',
+
+    // ---- Email settings (fix115) --------------------------------------------
+    'admin.config.users.email_settings'      => 'Email Settings',
+    'admin.config.field.send_verification_email' => 'Send verification email on registration',
+    'admin.config.field.send_password_reset_email' => 'Send password reset email on recovery',
+    'admin.config.field.site_url'                => 'Site URL (absolute, used in email links)',
+    'admin.config.field.site_name'               => 'Site name (used in email subjects + greetings)',
 ];

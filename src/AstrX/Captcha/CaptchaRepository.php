@@ -27,16 +27,30 @@ final class CaptchaRepository
      */
     public function store(string $id, string $text, int $expiresAt): Result
     {
-        // Hash the plaintext answer before storage — the DB row must not reveal
-        // the answer. strtolower() is applied first so the same transform is used
-        // during verification (case-insensitive comparison).
-        $hashedText = hash('sha256', strtolower($text));
+        // Store the captcha answer as PLAINTEXT (lower-cased so verification
+        // can do a straight case-insensitive compare).
+        //
+        // History: an earlier revision SHA-256-hashed the text "for security".
+        // That had three problems:
+        //   1. SHA-256 hex is 64 chars but `captcha`.`text` is VARCHAR(32) →
+        //      every INSERT silently truncated, breaking verification AND
+        //      failing the INSERT under MariaDB strict mode.
+        //   2. The same plaintext answer is rendered into the image we send
+        //      to the browser, so any "DB-only attacker who can read this
+        //      column" can equally well OCR a screenshot of the form. The
+        //      hash protected nothing.
+        //   3. Iframe-reloadable captchas need to re-render the image on
+        //      demand from the stored answer — impossible from a one-way
+        //      hash.
+        //
+        // Plaintext it is. The whole row expires in 10 minutes anyway.
+        $plain = strtolower($text);
         try {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO `captcha` (`id`, `text`, `expires_at`)
                  VALUES (:id, :text, FROM_UNIXTIME(:expires_at))'
             );
-            $stmt->execute([':id' => $id, ':text' => $hashedText, ':expires_at' => $expiresAt]);
+            $stmt->execute([':id' => $id, ':text' => $plain, ':expires_at' => $expiresAt]);
 
             return Result::ok(true);
         } catch (PDOException $e) {
@@ -96,6 +110,55 @@ final class CaptchaRepository
      *
      * @return Result<int> Number of rows deleted.
      */
+    /**
+     * Replace the answer text for an existing captcha row, atomically.
+     *
+     * The captcha id stays the same so the parent form's hidden input
+     * remains valid; only the text the user is supposed to type changes.
+     *
+     * Abuse prevention is baked into the UPDATE itself: the WHERE clause
+     * requires regen_count < :max AND last_regen_at IS NULL OR older than
+     * :cooldown seconds. If either condition fails, the UPDATE matches
+     * zero rows — the caller sees rowCount() === 0 and treats it as "no-op,
+     * use the current image". This makes the limit race-free under concurrent
+     * refresh attempts without needing an explicit lock.
+     *
+     * @return Result<bool>  true if the row was regenerated, false if rate-limited.
+     */
+    public function regenerate(
+        string $id,
+        string $newText,
+        int    $maxRegens     = 5,
+        int    $cooldownSecs  = 2,
+    ): Result {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE `captcha`
+                    SET `text`          = :text,
+                        `regen_count`   = `regen_count` + 1,
+                        `last_regen_at` = NOW()
+                  WHERE `id`            = :id
+                    AND `regen_count`   < :max
+                    AND (`last_regen_at` IS NULL
+                         OR `last_regen_at` < (NOW() - INTERVAL :cool SECOND))'
+            );
+            $stmt->execute([
+                ':text' => strtolower($newText),
+                ':id'   => $id,
+                ':max'  => $maxRegens,
+                ':cool' => $cooldownSecs,
+            ]);
+            return Result::ok($stmt->rowCount() > 0);
+        } catch (\PDOException $e) {
+            return Result::err(false, Diagnostics::of(
+                new CaptchaDbDiagnostic(
+                    'astrx.captcha/regenerate_failed',
+                    DiagnosticLevel::ERROR,
+                ),
+            ));
+        }
+    }
+
     public function deleteExpired(): Result
     {
         try {

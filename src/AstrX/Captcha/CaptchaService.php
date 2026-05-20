@@ -45,6 +45,16 @@ final class CaptchaService
     #[InjectConfig('captcha_expiration')]
     public function setTtl(int $ttl): void { $this->ttl = max(1, $ttl); }
 
+    /** Max times a single captcha id may be reloaded before refresh becomes a no-op. */
+    private int $maxRegens     = 5;
+    /** Seconds that must elapse between two reloads of the same captcha id. */
+    private int $cooldownSecs  = 2;
+
+    #[\AstrX\Config\InjectConfig('max_regens')]
+    public function setMaxRegens(int $v): void   { $this->maxRegens    = max(1, $v); }
+    #[\AstrX\Config\InjectConfig('cooldown_secs')]
+    public function setCooldownSecs(int $v): void { $this->cooldownSecs = max(0, $v); }
+
     public function __construct(
         private readonly CaptchaRepository $repository,
         private readonly CaptchaRenderer   $renderer,
@@ -103,6 +113,55 @@ final class CaptchaService
      *
      * @return Result<bool>
      */
+    /**
+     * Replace the text and expiry of an existing captcha (keeps the same id).
+     * Used by the iframe-reload mechanism: the parent form's hidden cid stays
+     * valid, only the visible image+text changes. Returns the new image as
+     * base64 data URI so the caller can serve it without an extra DB read.
+     *
+     * @return Result<string>  the new image as base64 data URI
+     */
+    public function regenerate(string $id): Result
+    {
+        $existing = $this->repository->find($id);
+        if (!$existing->isOk()) {
+            return Result::err('', $existing->diagnostics());
+        }
+        $row = $existing->unwrap();
+        if (!is_array($row)) {
+            return Result::err('', \AstrX\Result\Diagnostics::of());
+        }
+
+        $newText = $this->renderer->generateText();
+
+        // Repository encodes the rate limit in the WHERE clause: this UPDATE
+        // returns rowCount() === 0 (and Result::ok(false)) when the cap or
+        // cooldown blocks the attempt. We do NOT treat that as an error —
+        // it just means the iframe will keep showing the previous image,
+        // which is the right UX for "too many refreshes too fast".
+        $regen = $this->repository->regenerate(
+            $id,
+            $newText,
+            $this->maxRegens,
+            $this->cooldownSecs,
+        );
+        if (!$regen->isOk()) {
+            return Result::err('', $regen->diagnostics());
+        }
+        $updated = (bool) $regen->unwrap();
+        if (!$updated) {
+            // Rate-limited — return the still-current text's image so the
+            // caller can render SOMETHING. Reading $row['text'] from the
+            // earlier find() is fine: it is stale if a concurrent regen
+            // just succeeded, but the rendering is idempotent on the text
+            // value so the user still sees a valid captcha image.
+            $existingText = is_scalar($row['text'] ?? null) ? (string) $row['text'] : '';
+            return Result::ok($this->renderer->render($existingText));
+        }
+
+        return Result::ok($this->renderer->render($newText));
+    }
+
     public function verify(string $id, string $submittedText): Result
     {
         $findResult = $this->repository->find($id);
@@ -128,8 +187,10 @@ final class CaptchaService
                                                       )));
         }
 
-        // Stored text is SHA-256(strtolower(plaintext)); apply the same transform.
-        if (!hash_equals($row['text'], hash('sha256', strtolower($submittedText)))) {
+        // Stored text is lower-cased plaintext (see CaptchaRepository::store
+        // for the rationale). Compare case-insensitively, in constant time to
+        // avoid leaking timing information about how many characters matched.
+        if (!hash_equals((string) $row['text'], strtolower($submittedText))) {
             return Result::err(null, Diagnostics::of(new CaptchaWrongDiagnostic(
                                                           'astrx.captcha/wrong_text', DiagnosticLevel::NOTICE,
                                                       )));

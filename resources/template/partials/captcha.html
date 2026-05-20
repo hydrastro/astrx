@@ -1,8 +1,26 @@
 {{#show_captcha}}
 <div class="captcha-block">
+  {{#has_captcha_frame}}
+  <iframe name="astrx_captcha_iframe"
+          src="{{captcha_frame_url}}"
+          title="captcha"
+          width="260" height="90"
+          style="border:0;display:block;overflow:hidden;background:transparent">
+  </iframe>
+  <a href="{{captcha_frame_url}}&amp;refresh=1"
+     target="astrx_captcha_iframe"
+     class="captcha-reload"
+     style="display:inline-block;margin:4px 0">
+    &#x21bb; {{captcha_reload_label}}
+  </a>
+  <br>
+  {{/has_captcha_frame}}
+  {{^has_captcha_frame}}
   <img src="data:image/png;base64,{{&captcha_image}}" alt="captcha" class="captcha-image">
+  {{/has_captcha_frame}}
   <label for="captcha_text">{{captcha_label}}</label>
-  <input type="text" name="captcha_text" id="captcha_text" class="input captcha-input" autocomplete="off" spellcheck="false">
+  <input type="text" name="captcha_text" id="captcha_text"
+         class="input captcha-input" autocomplete="off" spellcheck="false">
   <input type="hidden" name="captcha_id" value="{{captcha_id}}">
 </div>
 {{/show_captcha}}

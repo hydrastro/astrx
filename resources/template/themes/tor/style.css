@@ -1,0 +1,238 @@
+/* AstrX Tor Minimalist Theme
+ * Maximum contrast, no images, no animations, no JS.
+ * Designed for Tor Browser at Safest level and for text browsers.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: "DejaVu Serif", "Liberation Serif", serif;
+    color: #fff;
+    background: #000;
+    margin: 1em;
+    line-height: 1.5;
+}
+
+a { color: #fff; text-decoration: underline; }
+a:hover { background: #fff; color: #000; }
+a:visited { color: #ccc; }
+
+#wrap {
+    max-width: 60em;
+    margin: 0 auto;
+    border: 2px solid #fff;
+    padding: 0;
+}
+
+#header {
+    border-bottom: 2px solid #fff;
+    padding: 1em;
+}
+
+#title { text-align: center; margin: 0; }
+#title a { text-decoration: none; }
+
+h1 { margin: 0; font-size: 1.8em; font-family: monospace; }
+h2 { margin: 0 0 1em; font-family: monospace; }
+h3 { margin: 0 0 .5em; font-family: monospace; }
+
+#top_nav, #user_top_nav, #admin_top_nav {
+    border-bottom: 2px solid #fff;
+    padding: 0;
+}
+
+#nav, #user_nav, #admin_nav, #wm-nav {
+    text-align: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#nav li, #user_nav li, #admin_nav li {
+    display: inline-block;
+}
+
+#nav li a, #user_nav li a, #user_nav li input,
+#admin_nav li a, #admin_nav li input {
+    color: #fff;
+    background: transparent;
+    border: none;
+    padding: .5em 1em;
+    display: block;
+    text-decoration: underline;
+    font: inherit;
+    cursor: pointer;
+}
+
+#nav li a:hover, #user_nav li a:hover, #user_nav li input:hover,
+#admin_nav li a:hover, #admin_nav li input:hover {
+    background: #fff;
+    color: #000;
+}
+
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+    background: #fff;
+    color: #000;
+    text-decoration: none;
+    pointer-events: none;
+}
+
+#main {
+    padding: 1em;
+    border-bottom: 2px solid #fff;
+    word-wrap: break-word;
+}
+
+#sidebar {
+    float: right;
+    width: 30%;
+    padding: 1em;
+    border-left: 2px solid #fff;
+}
+
+#footer {
+    padding: 1em;
+}
+
+#go_top {
+    font-size: .85em;
+    border-top: 1px solid #fff;
+    padding-top: .5em;
+}
+
+.left  { float: left; }
+.right { float: right; }
+.clear { clear: both; }
+
+/* Inputs */
+input, select, textarea, button {
+    background: #000;
+    color: #fff;
+    border: 1px solid #fff;
+    padding: .25em .5em;
+    font: inherit;
+}
+
+.input {
+    background: #000;
+    color: #fff;
+    border: 1px solid #fff;
+    padding: .25em .5em;
+    margin: .25em 0;
+}
+
+input[type=submit], button[type=submit] {
+    cursor: pointer;
+}
+
+input[type=submit]:hover, button[type=submit]:hover {
+    background: #fff;
+    color: #000;
+}
+
+/* Tables */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: .5em 0;
+}
+
+th, td {
+    border: 1px solid #fff;
+    padding: .25em .5em;
+    text-align: left;
+}
+
+th { font-weight: bold; }
+
+/* Diagnostics */
+#message_bar {
+    border: 2px solid #fff;
+    border-top: 0;
+    background: #fff;
+    color: #000;
+}
+#message_bar p { margin: 0; padding: .25em .5em; }
+#message_bar a { color: #000; }
+
+.diag-debug,
+.diag-info,
+.diag-notice,
+.diag-warning,
+.diag-error,
+.diag-critical,
+.diag-alert,
+.diag-emergency,
+.diag-unknown {
+    background: #fff;
+    color: #000;
+    padding: .25em .5em;
+    border-left: .5em solid #000;
+    margin: .25em 0;
+}
+.diag-error, .diag-critical, .diag-emergency {
+    font-weight: bold;
+}
+
+.flash-success { background: #fff; color: #000; font-weight: bold; }
+.flash-info    { background: #fff; color: #000; }
+.flash-warning { background: #fff; color: #000; text-decoration: underline; }
+.flash-error   { background: #fff; color: #000; font-weight: bold; }
+
+/* Code & pre */
+code, pre {
+    font-family: "DejaVu Sans Mono", monospace;
+    background: #000;
+    color: #fff;
+}
+pre {
+    border: 1px solid #fff;
+    padding: .5em;
+    overflow-x: auto;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid #fff;
+    margin: 1em 0;
+}
+
+img {
+    max-width: 100%;
+    border: 1px solid #fff;
+}
+
+/* Error page */
+.error-page { text-align: center; padding: 2em 1em; }
+.error-code { font-size: 4em; font-family: monospace; margin: 0; }
+.error-name { font-size: 1.4em; margin: .5em 0; }
+.error-message { margin-bottom: 2em; }
+.error-actions a { margin: 0 .5em; }
+
+/* =========================================================================
+   AstrX universal overflow guard (fix120)
+   =========================================================================
+   Layout invariants applied with !important to override per-theme rules.
+   These are LAYOUT properties (not colors or decoration) — themes should
+   never override them. If a theme needs custom spacing/borders, keep doing
+   that on th/td individually. */
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* Cancel the legacy default-theme triple-threat that broke layout. */
+    display: table !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+}
+table th, table td {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+}
+.input, input[type="submit"], input[type="button"], button {
+    max-width: 100% !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+}

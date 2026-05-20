@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Captcha\CaptchaService;
+use AstrX\Mail\EmailService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -37,6 +38,7 @@ final class RecoverController extends AbstractController
         private readonly FlashBag              $flash,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly EmailService          $emailService,
     ) {
         parent::__construct($collector);
     }
@@ -103,17 +105,32 @@ final class RecoverController extends AbstractController
         );
         $tokenResult->drainTo($this->collector);
 
-        if ($tokenResult->isOk()) {
+        if ($tokenResult->isOk() && $this->userService->sendPasswordResetEmail()) {
+            /** @var array{token:string,user_id:string,expires_at:int} $tokenData */
             $tokenData = $tokenResult->unwrap();
-            // TODO: send email via PHPMailer with link:
-            // /en/user?_token={token}&_uid={user_id}
-            // For development: the token link is emitted as a NOTICE diagnostic.
-            $link = $this->urlGen->toPage($this->t->t('WORDING_USER')) .
-                    '?_token=' . rawurlencode((string)$tokenData['token']) .
-                    '&_uid=' . rawurlencode((string)$tokenData['user_id']);
-            // Emit as notice so it shows in the status bar during development
-            // (remove / replace with real email sending before production)
-            // $this->emitMailerNotice($link); — placeholder
+
+            // Extract the user's email + display info from the row we already
+            // pulled in initiateRecovery. If the user has no email on file,
+            // skip sending — the flash message below is still shown so we
+            // don't leak account-existence either way.
+            $userEmail   = is_scalar($userRow['email']    ?? null) ? (string) $userRow['email']    : '';
+            $userName    = is_scalar($userRow['username'] ?? null) ? (string) $userRow['username'] : '';
+            $userDisplay = is_scalar($userRow['display_name'] ?? null)
+                ? (string) $userRow['display_name'] : $userName;
+
+            if ($userEmail !== '') {
+                $sendResult = $this->emailService->sendPasswordResetEmail(
+                    toAddress: $userEmail,
+                    toName:    $userDisplay !== '' ? $userDisplay : $userName,
+                    username:  $userName,
+                    token:     $tokenData['token'],
+                    userHexId: $tokenData['user_id'],
+                );
+                $sendResult->drainTo($this->collector);
+                // Default-B: diagnostic is collected; flash message below
+                // shows the same generic text whether send succeeded or not
+                // (avoids leaking account existence via differential UX).
+            }
         }
 
         // Always show the same message regardless of whether the user exists (prevents enumeration)

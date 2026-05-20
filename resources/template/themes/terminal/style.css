@@ -1,0 +1,236 @@
+/* AstrX Terminal Theme
+ * Green phosphor on black. Monospace everything.
+ * No images, no gradients, no shadows — pure text.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "Courier New", monospace;
+    color: #33ff33;
+    background: #000;
+    margin: 0;
+    padding: 1em;
+    line-height: 1.4;
+}
+
+a { color: #66ff66; text-decoration: underline; }
+a:hover { background: #33ff33; color: #000; text-decoration: none; }
+a:visited { color: #99ff99; }
+
+#wrap {
+    max-width: 80em;
+    margin: 0 auto;
+    border: 1px solid #33ff33;
+}
+
+#header {
+    border-bottom: 1px solid #33ff33;
+    padding: .5em 1em;
+}
+
+#title { text-align: left; margin: 0; }
+#title a { text-decoration: none; }
+#title a::before { content: "$ "; color: #ffff33; }
+
+h1 { margin: 0; font-size: 1.4em; }
+h2 { margin: 0 0 1em; }
+h2::before { content: ">> "; color: #ffff33; }
+h3 { margin: 1em 0 .5em; }
+h3::before { content: "## "; color: #ffff33; }
+
+#top_nav, #user_top_nav, #admin_top_nav {
+    border-bottom: 1px solid #33ff33;
+    padding: 0;
+}
+
+#nav, #user_nav, #admin_nav, #wm-nav {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    text-align: left;
+}
+
+#nav li, #user_nav li, #admin_nav li {
+    display: inline-block;
+}
+
+#nav li a, #user_nav li a, #user_nav li input,
+#admin_nav li a, #admin_nav li input {
+    color: #33ff33;
+    background: transparent;
+    border: none;
+    padding: .25em .75em;
+    display: block;
+    text-decoration: none;
+    font: inherit;
+    cursor: pointer;
+}
+
+#nav li a::before { content: "["; color: #ffff33; }
+#nav li a::after  { content: "]"; color: #ffff33; }
+#user_nav li a::before, #admin_nav li a::before { content: "["; color: #ffff33; }
+#user_nav li a::after, #admin_nav li a::after   { content: "]"; color: #ffff33; }
+
+#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover {
+    background: #33ff33;
+    color: #000;
+}
+
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+    background: #33ff33;
+    color: #000;
+    text-decoration: none;
+    pointer-events: none;
+}
+
+#main { padding: 1em; }
+
+#sidebar {
+    float: right; width: 30%; padding: 1em;
+    border-left: 1px solid #33ff33;
+}
+
+#footer {
+    padding: .5em 1em;
+    border-top: 1px solid #33ff33;
+    font-size: .9em;
+    color: #99ff99;
+}
+
+#go_top { font-size: .85em; }
+#go_top a::before { content: "[^"; }
+#go_top a::after { content: "]"; }
+
+.left  { float: left; }
+.right { float: right; }
+.clear { clear: both; }
+
+/* Inputs */
+input, select, textarea, button {
+    background: #000;
+    color: #33ff33;
+    border: 1px solid #33ff33;
+    padding: .15em .5em;
+    font: inherit;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: 1px solid #ffff33;
+}
+
+.input {
+    background: #000;
+    color: #33ff33;
+    border: 1px solid #33ff33;
+    padding: .15em .5em;
+    margin: .25em 0;
+}
+
+input[type=submit], button[type=submit], button {
+    background: #33ff33;
+    color: #000;
+    border: 1px solid #33ff33;
+    cursor: pointer;
+    font-weight: bold;
+}
+input[type=submit]::before, button[type=submit]::before, button::before { content: "[ "; }
+input[type=submit]::after,  button[type=submit]::after,  button::after  { content: " ]"; }
+
+input[type=submit]:hover, button[type=submit]:hover, button:hover {
+    background: #66ff66;
+}
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; margin: .5em 0; }
+th, td { border: 1px solid #33ff33; padding: .15em .5em; text-align: left; }
+th { background: #33ff33; color: #000; font-weight: bold; }
+
+/* Diagnostics */
+#message_bar { margin: 0; border-bottom: 1px solid #33ff33; }
+#message_bar p { margin: 0; padding: .25em 1em; }
+#message_bar p::before { content: "! "; color: #ffff33; }
+
+.diag-debug    { color: #99ff99; padding: .15em .5em; }
+.diag-info     { color: #66ffff; padding: .15em .5em; }
+.diag-notice   { color: #33ff33; padding: .15em .5em; }
+.diag-warning  { color: #ffff33; padding: .15em .5em; }
+.diag-error    { color: #ff3333; padding: .15em .5em; font-weight: bold; }
+.diag-critical { color: #ff3333; padding: .15em .5em; font-weight: bold; }
+.diag-alert    { color: #ff3333; padding: .15em .5em; font-weight: bold; }
+.diag-emergency{ background: #ff3333; color: #000; padding: .15em .5em; font-weight: bold; }
+.diag-unknown  { color: #99ff99; padding: .15em .5em; }
+
+.flash-success { color: #33ff33; padding: .25em 1em; }
+.flash-success::before { content: "[OK] "; color: #ffff33; }
+.flash-info    { color: #66ffff; padding: .25em 1em; }
+.flash-info::before { content: "[i] "; color: #ffff33; }
+.flash-warning { color: #ffff33; padding: .25em 1em; }
+.flash-warning::before { content: "[!] "; }
+.flash-error   { color: #ff3333; padding: .25em 1em; font-weight: bold; }
+.flash-error::before { content: "[X] "; }
+
+/* Code & pre */
+code, pre { font-family: inherit; background: transparent; color: #66ff66; }
+code { padding: 0; }
+pre { padding: .5em; overflow-x: auto; border: 1px solid #33ff33; background: #001100; }
+
+hr {
+    border: 0;
+    border-top: 1px dashed #33ff33;
+    margin: 1em 0;
+}
+hr::before {
+    content: "----------------------------------------";
+    color: transparent;
+}
+
+img { max-width: 100%; border: 1px solid #33ff33; }
+
+/* Error page */
+.error-page { text-align: left; padding: 2em 1em; }
+.error-code { font-size: 3em; margin: 0; color: #ff3333; }
+.error-code::before { content: "ERR "; color: #ffff33; }
+.error-name { margin: .5em 0; color: #ff3333; }
+.error-actions a {
+    display: inline-block;
+    margin: 0 .5em 0 0;
+    padding: .25em .75em;
+    border: 1px solid #33ff33;
+    color: #33ff33;
+    text-decoration: none;
+}
+.error-actions a::before { content: "[ "; }
+.error-actions a::after { content: " ]"; }
+.error-actions a:hover { background: #33ff33; color: #000; }
+
+/* Subtle "cursor" — uses CSS only, no animation per project rules */
+::selection { background: #33ff33; color: #000; }
+
+/* =========================================================================
+   AstrX universal overflow guard (fix120)
+   =========================================================================
+   Layout invariants applied with !important to override per-theme rules.
+   These are LAYOUT properties (not colors or decoration) — themes should
+   never override them. If a theme needs custom spacing/borders, keep doing
+   that on th/td individually. */
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    /* Cancel the legacy default-theme triple-threat that broke layout. */
+    display: table !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+}
+table th, table td {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+}
+.input, input[type="submit"], input[type="button"], button {
+    max-width: 100% !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+}

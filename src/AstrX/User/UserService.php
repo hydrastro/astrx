@@ -106,6 +106,16 @@ final class UserService
     public function setRequireEmail(bool $v): void { $this->requireEmail = $v; }
     #[InjectConfig('require_recovery_email')]
     public function setRequireRecoveryEmail(bool $v): void { $this->requireRecoveryEmail = $v; }
+
+    /** Whether to send a verification email after registration (fix114). */
+    private bool $sendVerificationEmail = true;
+    /** Whether the password-recovery flow actually sends an email (fix114). */
+    private bool $sendPasswordResetEmail = true;
+
+    #[InjectConfig('send_verification_email')]
+    public function setSendVerificationEmail(bool $v): void  { $this->sendVerificationEmail  = $v; }
+    #[InjectConfig('send_password_reset_email')]
+    public function setSendPasswordResetEmail(bool $v): void { $this->sendPasswordResetEmail = $v; }
     #[InjectConfig('require_birth_date')]
     public function setRequireBirthDate(bool $v): void { $this->requireBirthDate = $v; }
     #[InjectConfig('require_display_name')]
@@ -149,7 +159,9 @@ final class UserService
     // Public getters (needed by controllers for conditional UI)
     // -------------------------------------------------------------------------
 
-    public function requireEmail(): bool         { return $this->requireEmail; }
+    public function requireEmail(): bool             { return $this->requireEmail; }
+    public function sendVerificationEmail(): bool    { return $this->sendVerificationEmail; }
+    public function sendPasswordResetEmail(): bool   { return $this->sendPasswordResetEmail; }
     public function requireRecoveryEmail(): bool { return $this->requireRecoveryEmail; }
     public function requireBirthDate(): bool     { return $this->requireBirthDate; }
     public function requireDisplayName(): bool   { return $this->requireDisplayName; }

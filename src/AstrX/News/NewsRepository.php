@@ -73,6 +73,41 @@ final class NewsRepository
      *
      * @return Result<int>
      */
+    /**
+     * Fetch the N most recent VISIBLE news items. Used by the Atom feed
+     * controller (fix115) and any other "latest news" consumer that
+     * doesn't need full pagination semantics.
+     *
+     * @return Result<list<array{id:int,title:string,content:string,created_at:string}>>
+     */
+    public function fetchRecent(int $limit = 20): Result
+    {
+        $limit = max(1, min(100, $limit));
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT `id`, `title`, `content`,
+                        DATE_FORMAT(`created_at`, \'%Y-%m-%dT%H:%i:%sZ\') AS `created_at`
+                   FROM `news`
+                  WHERE `hidden` = 0
+               ORDER BY `created_at` DESC, `id` DESC
+                  LIMIT :lim'
+            );
+            $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            /** @var list<array{id:int,title:string,content:string,created_at:string}> $typed */
+            $typed = is_array($rows) ? $rows : [];
+            return Result::ok($typed);
+        } catch (\PDOException $e) {
+            return Result::err([], Diagnostics::of(
+                new \AstrX\News\Diagnostic\NewsDbDiagnostic(
+                    'astrx.news/db_error',
+                    \AstrX\Result\DiagnosticLevel::ERROR,
+                ),
+            ));
+        }
+    }
+
     public function countVisible(): Result
     {
         try {

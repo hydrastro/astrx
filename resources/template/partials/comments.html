@@ -125,12 +125,7 @@
                 {{/comments_logged_in}}
                 <label for="comment_content">{{comment_label_content}}: </label><br>
                 <textarea name="content" id="comment_content" rows="10" class="input"></textarea><br>
-                {{#show_captcha}}
-                <img src="data:image/png;base64,{{&captcha_image}}" alt="captcha" class="captcha-image"><br>
-                <label for="captcha_text">{{comment_label_captcha}}: </label>
-                <input type="text" name="captcha_text" id="captcha_text" class="input" autocomplete="off" spellcheck="false"><br>
-                <input type="hidden" name="captcha_id" value="{{captcha_id}}">
-                {{/show_captcha}}
+                {{> captcha}}
                 <input type="submit" value="{{comment_btn_submit}}" class="input">
             </p>
         </form>

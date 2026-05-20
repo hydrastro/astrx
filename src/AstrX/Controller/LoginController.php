@@ -82,17 +82,11 @@ final class LoginController extends AbstractController
             return $this->renderForm($username);
         }
 
-        // Fix 8.1: avoid leaking captcha policy via side-channel.
-        // If a captcha was submitted (id present), ALWAYS verify it. Otherwise,
-        // check the policy to decide whether to require one. This means
-        // shouldShowCaptcha being username-specific (CAPTCHA_SHOW_ON_X_FAILED)
-        // cannot be used to infer whether the username has accumulated failed
-        // login attempts — the verification path is identical either way.
-        $captchaSubmitted  = $captchaId !== '';
+        // Captcha check (before login attempt — don't reveal if user exists)
         $showCaptchaResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
-        $policyRequires    = $showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap();
+        $showCaptcha = $showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap();
 
-        if ($captchaSubmitted || $policyRequires) {
+        if ($showCaptcha) {
             $captchaResult = $this->captchaService->verify($captchaId, $captchaText);
             if (!$captchaResult->isOk()) {
                 $captchaResult->drainTo($this->collector);
@@ -105,10 +99,9 @@ final class LoginController extends AbstractController
         if (!$loginResult->isOk()) {
             $loginResult->drainTo($this->collector);
             // Check if captcha is NOW needed after this failure
-            $captchaPolicyAfter = $this->userService->shouldShowCaptcha(self::FORM, $username);
-            $showCaptchaOnRetry = $captchaPolicyAfter->isOk()
-                && (bool) $captchaPolicyAfter->unwrap();
-            return $this->renderForm($username, $showCaptchaOnRetry);
+            $showAfterResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
+            $showAfter = $showAfterResult->isOk() && (bool) $showAfterResult->unwrap();
+            return $this->renderForm($username, $showAfter);
         }
 
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
@@ -153,6 +146,29 @@ final class LoginController extends AbstractController
         $this->ctx->set('show_captcha',       $showCaptcha);
         $this->ctx->set('captcha_id',         $captchaId);
         $this->ctx->set('captcha_image',      $captchaB64);
+        // Iframe URL for reload-without-page-refresh captcha (fix104).
+        // Templates may use {{captcha_frame_url}} inside <iframe src=...>.
+        // Iframe-reloadable captcha. Two paired keys:
+        //   captcha_frame_url  — the iframe src (empty when no captcha needed)
+        //   has_captcha_frame  — boolean used by the partial's section guard.
+        // The partial CAN'T guard on captcha_frame_url directly because Mustache
+        // changes the current context inside `{{#string_var}}...{{/string_var}}`,
+        // making nested `{{captcha_frame_url}}` lookups ambiguous and emitting
+        // empty in this implementation. The boolean dodge keeps the lookup at
+        // the parent context where the URL actually lives.
+        $captchaFrameUrl = $captchaId !== ''
+            ? $this->urlGen->toPage($this->t->t('WORDING_CAPTCHA_FRAME'))
+                . '?cid=' . $captchaId
+            : '';
+        $this->ctx->set('captcha_frame_url', $captchaFrameUrl);
+        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '');
+        // Label used by the parent-side reload link (external to the iframe
+        // so it can't be clipped by overflow:hidden — fix113).
+        // Captcha translation domain holds 'captcha.reload'. Without
+        // this loadDomain call, t() emits a Missing-translation diagnostic
+        // (the fallback still displays correctly, just noise in logs).
+        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('register_url',       $this->urlGen->toPage($this->t->t('WORDING_REGISTER')));
         $this->ctx->set('recover_url',        $this->urlGen->toPage($this->t->t('WORDING_RECOVER')));
         $this->ctx->set('show_recover',       $this->userService->requireRecoveryEmail());

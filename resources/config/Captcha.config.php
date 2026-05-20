@@ -3,6 +3,13 @@ declare(strict_types=1);
 
 return [
     'CaptchaService' => [
+        // Iframe reload abuse policy (fix105):
+        // max_regens     = hard cap on the number of times a single captcha
+        //                  id can be reloaded. Past this, refresh is a no-op
+        //                  and the iframe keeps showing the previous image.
+        // cooldown_secs  = minimum seconds between two reloads of the same id.
+        'max_regens'    => 5,
+        'cooldown_secs' => 2,
         'captcha_expiration' => 600,
     ],
     'CaptchaRenderer' => [
