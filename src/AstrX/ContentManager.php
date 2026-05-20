@@ -51,6 +51,7 @@ final class ContentManager
 
     public function init(): void
     {
+        $astrxRequestStarted = microtime(true);
         $this->config->loadModuleConfig('Routing');
         $this->config->loadModuleConfig('Session');
         $this->config->loadModuleConfig('ContentManager');
@@ -554,6 +555,33 @@ final class ContentManager
 
             $ctx->finalise();
 
+            // ── JS-browser fragment dispatch ────────────────────────────────
+            // The /js/ runtime sends X-AstrX-JS-Browser when it browses the
+            // canonical PHP pages. In that case we can skip the expensive outer
+            // document shell and return only the chrome/content fragments the
+            // runtime knows how to transplant (#header, navs, #message_bar,
+            // #main, #footer). Normal browsers still receive the full layout.
+            if (!$request->isApi() && $this->isJsBrowserContentRequest($request)) {
+                $fragmentResult = $engine->renderTemplate('js_fragment', $ctx->all())
+                    ->drainTo($this->collector);
+
+                if (!$fragmentResult->isOk()) {
+                    $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
+                    return;
+                }
+
+                if (!headers_sent()) {
+                    header('Content-Type: text/html; charset=utf-8');
+                    header('Cache-Control: private, no-store');
+                    header('Vary: X-AstrX-JS-Browser, Accept', false);
+                    header('X-AstrX-JS-Browser: fragment');
+                    $this->emitServerTiming('astrx_fragment', $astrxRequestStarted);
+                }
+
+                echo $fragmentResult->unwrap();
+                return;
+            }
+
             $renderResult = $engine->renderTemplate($templateName, $ctx->all())
                 ->drainTo($this->collector);
 
@@ -614,6 +642,9 @@ final class ContentManager
                     $isAdmin = $sess->isLoggedIn() && $sess->isAdmin();
                 }
 
+                if (!headers_sent()) {
+                    $this->emitServerTiming('astrx_api', $astrxRequestStarted);
+                }
                 $jsonRenderer->emit(
                     ctx:          $ctx,
                     locale:       $locale->value,
@@ -630,6 +661,9 @@ final class ContentManager
                 return;
             }
 
+            if (!headers_sent()) {
+                $this->emitServerTiming('astrx_html', $astrxRequestStarted);
+            }
             echo $renderResult->unwrap();
             return;
         }
@@ -764,6 +798,30 @@ final class ContentManager
         return [$locale, $sidCandidate, $pageToken];
     }
 
+
+    private function isJsBrowserContentRequest(Request $request): bool
+    {
+        $value = $request->headers()->get('X-AstrX-JS-Browser');
+        if ($value === null || trim($value) === '') {
+            return false;
+        }
+
+        $normalized = strtolower(trim($value));
+        if (in_array($normalized, ['0', 'false', 'off', 'no'], true)) {
+            return false;
+        }
+
+        $accept = strtolower($request->headers()->get('Accept', ''));
+        return $accept === '' || str_contains($accept, 'text/html') || str_contains($accept, '*/*');
+    }
+
+    private function emitServerTiming(string $name, float $started): void
+    {
+        $safe = preg_replace('/[^A-Za-z0-9_\-]/', '_', $name) ?: 'astrx';
+        $dur = max(0.0, (microtime(true) - $started) * 1000.0);
+        header('Server-Timing: ' . $safe . ';dur=' . number_format($dur, 2, '.', ''), false);
+        header('X-AstrX-Elapsed-Ms: ' . number_format($dur, 2, '.', ''));
+    }
 
     // =========================================================================
     // Error rendering

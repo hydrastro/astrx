@@ -1,0 +1,111 @@
+/* AstrX Reader Theme
+ * Static, image-free, JavaScript-free typography for long reading sessions.
+ */
+* { box-sizing: border-box; }
+html { background: #ece7dc; }
+body {
+    margin: 0;
+    padding: 2rem 1rem;
+    color: #25211a;
+    background: #ece7dc;
+    font: 17px/1.65 Georgia, "Times New Roman", serif;
+}
+a { color: #6d2f1b; text-decoration-thickness: .08em; text-underline-offset: .14em; }
+a:hover { color: #37180e; }
+a:visited { color: #5b3b5c; }
+#wrap {
+    max-width: 68rem;
+    margin: 0 auto;
+    background: #fffdf8;
+    border: 1px solid #d6cab7;
+    box-shadow: 0 .35rem 1.25rem rgba(42, 34, 22, .08);
+}
+#header, #top_nav, #user_top_nav, #admin_top_nav, #message_bar, #main, #footer {
+    padding-left: clamp(1rem, 3vw, 2rem);
+    padding-right: clamp(1rem, 3vw, 2rem);
+}
+#header { padding-top: 1.4rem; padding-bottom: 1rem; border-bottom: 1px solid #d6cab7; }
+#title { margin: 0; text-align: left; font-size: clamp(1.7rem, 5vw, 2.5rem); line-height: 1.1; }
+#title a { color: #25211a; text-decoration: none; }
+#top_nav, #user_top_nav, #admin_top_nav { border-bottom: 1px solid #e3d9ca; padding-top: .45rem; padding-bottom: .45rem; }
+#nav, #user_nav, #admin_nav { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .65rem; }
+#nav li a, #user_nav li a, #admin_nav li a, #user_nav li input, #admin_nav li input {
+    display: inline-block;
+    padding: .18rem .45rem;
+    color: #4a382a;
+    background: transparent;
+    border: 1px solid transparent;
+    font: inherit;
+}
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active,
+#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover {
+    border-color: #c8b79f;
+    background: #f3eadc;
+    color: #25211a;
+    text-decoration: none;
+}
+#message_bar { border-bottom: 1px solid #d6cab7; background: #fff7d1; color: #332500; }
+#message_bar p { margin: 0; padding: .45rem 0; }
+#main { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+h2, h3 { line-height: 1.2; color: #25211a; }
+h2 { margin: 0 0 1rem; font-size: 1.65rem; }
+h3 { margin: 1.2rem 0 .45rem; font-size: 1.2rem; }
+p { margin: 0 0 1rem; }
+hr { border: 0; border-top: 1px solid #e3d9ca; margin: 1.25rem 0; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th, td { border: 1px solid #d6cab7; padding: .45rem .55rem; vertical-align: top; }
+th { background: #f3eadc; text-align: left; }
+.input, input, textarea, select, button {
+    font: inherit;
+    color: #25211a;
+    background: #fffdf8;
+    border: 1px solid #bfae95;
+    padding: .28rem .42rem;
+}
+input[type=submit], button, .input[type=submit] { cursor: pointer; background: #f3eadc; }
+input[type=submit]:hover, button:hover { background: #e6d7c1; }
+textarea { width: 100%; min-height: 9rem; }
+img { max-width: 100%; height: auto; }
+code, pre { font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: .92em; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f0e6; border: 1px solid #d6cab7; padding: .75rem; }
+#go_top { border-top: 1px solid #e3d9ca; padding-top: .7rem; font-size: .85rem; color: #6b6258; }
+#footer { border-top: 1px solid #d6cab7; padding-top: .75rem; padding-bottom: .75rem; color: #6b6258; font-size: .9rem; }
+.left { float: left; } .right { float: right; } .clear { clear: both; }
+.flash-success, .diag-info { background: #e6f2d6; color: #203000; padding: .4rem .55rem; }
+.flash-warning, .diag-warning { background: #fff2bd; color: #3b2b00; padding: .4rem .55rem; }
+.flash-error, .diag-error { background: #f8d5ce; color: #4a120a; padding: .4rem .55rem; }
+#astrx-js-status { font-size: .85rem; color: #6b6258; }
+#astrx-js-debug { margin-bottom: 1rem; border: 1px dashed #c8b79f; padding: .5rem; background: #f8f2e8; }
+@media (max-width: 640px) {
+    body { padding: 0; }
+    #wrap { border-width: 0; min-height: 100vh; }
+    #nav, #user_nav, #admin_nav { display: block; }
+    #nav li a, #user_nav li a, #admin_nav li a { display: block; padding: .35rem 0; }
+    .left, .right { float: none; display: block; }
+}
+
+/* AstrX table overflow policy
+ * Keep admin/API/debug tables inside the page without requiring markup wrappers.
+ * Use fixed layout + aggressive wrapping; #main still gets horizontal scroll as
+ * a safety valve for preformatted data or browser-specific edge cases. */
+#main {
+    min-width: 0;
+    overflow-x: auto;
+}
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: table !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+}
+table th,
+table td {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    hyphens: auto;
+}

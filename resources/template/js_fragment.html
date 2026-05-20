@@ -1,0 +1,48 @@
+<title>{{title}}</title>
+<div id="astrx-js-fragment" data-astrx-js-fragment="1" data-title="{{title}}">
+    <div id="header">
+        <h1 id="title"><a href="{{title_url}}">{{website_name}}</a></h1>
+    </div>
+    <div id="top_nav">
+        <ul id="nav" class="nav">{{#navbar}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/navbar}}
+        </ul>
+    </div>
+    {{#user_logged_in}}
+    <div id="user_top_nav">
+        <ul id="user_nav" class="user_nav">
+            {{#user_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/user_nav}}
+        </ul>
+    </div>
+    {{/user_logged_in}}
+    {{^user_logged_in}}
+    <div id="user_top_nav">
+        <ul id="user_nav" class="user_nav">
+            <li><a href="{{user_page_url}}"{{#user_nav_guest_highlight}} class="active"{{/user_nav_guest_highlight}}>{{user_nav_guest_label}}</a></li>
+        </ul>
+    </div>
+    {{/user_logged_in}}
+    {{#is_admin}}
+    <div id="admin_top_nav">
+        <ul id="admin_nav" class="admin_nav">
+            {{#admin_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/admin_nav}}
+        </ul>
+    </div>
+    {{/is_admin}}
+    {{#has_messages}}
+    <div id="message_bar">
+        {{#messages}}<p class="{{css_class}}">{{#level_label}}[{{level_label}}] {{/level_label}}{{message}}</p>{{/messages}}
+    </div>
+    {{/has_messages}}
+    <div id="main">
+        {{>include}}
+        {{#page_comments}}{{&comments_html}}{{/page_comments}}
+        <p id="go_top">{{generated_in}} {{time}}s<span class="right"><a
+                href="#">{{go_top}}</a></span></p>
+    </div>
+    <div id="footer">
+        <p class="left"><a href="">{{ip}}</a></p>
+        <p class="right">Copyright &copy; {{year}} - <a
+                href="{{cur}}">{{website_name}}</a></p>
+        <div class="clear"></div>
+    </div>
+</div>

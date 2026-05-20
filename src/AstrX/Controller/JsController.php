@@ -26,7 +26,8 @@ use function AstrX\Support\templateDir;
  *   /<locale>/js/<page...>      shell document for a JS-side route
  *   /<locale>/js/runtime.js     generated runtime
  *   /<locale>/js/manifest.json  page/site manifest
- *   /<locale>/js/templates.json raw template cache
+ *   /<locale>/js/templates.js   compiled template bundle for the runtime
+ *   /<locale>/js/templates.json raw template cache/debug fallback
  *   /<locale>/js/api.json       API endpoint index for the JS runtime/debugging
  *
  * This intentionally does NOT replace the normal PHP-rendered site. The
@@ -40,7 +41,13 @@ final class JsController extends AbstractController
     private const ASSET_RUNTIME  = 'runtime.js';
     private const ASSET_MANIFEST = 'manifest.json';
     private const ASSET_TPLS     = 'templates.json';
+    private const ASSET_TPLS_JS  = 'templates.js';
     private const ASSET_API      = 'api.json';
+
+    private const CACHE_RUNTIME_MAX_AGE   = 604800;   // 7 days; ETag still gates upgrades.
+    private const CACHE_MANIFEST_MAX_AGE  = 86400;    // 1 day; page DB changes are ETag-gated.
+    private const CACHE_TEMPLATES_MAX_AGE = 2592000;  // 30 days; template fingerprint is content-derived.
+    private const CACHE_API_INDEX_MAX_AGE = 3600;     // 1 hour; admin/API exposure can change.
 
     public function __construct(
         DiagnosticsCollector      $collector,
@@ -65,6 +72,7 @@ final class JsController extends AbstractController
             self::ASSET_RUNTIME  => $this->emitRuntimeJs(),
             self::ASSET_MANIFEST => $this->emitManifestJson(),
             self::ASSET_TPLS     => $this->emitTemplatesJson(),
+            self::ASSET_TPLS_JS  => $this->emitTemplatesJs(),
             self::ASSET_API      => $this->emitApiIndexJson(),
             default              => $this->emitShell(),
         };
@@ -103,7 +111,7 @@ final class JsController extends AbstractController
             return '';
         }
         $first = $tail[0] ?? '';
-        if (in_array($first, [self::ASSET_RUNTIME, self::ASSET_MANIFEST, self::ASSET_TPLS], true)) {
+        if (in_array($first, [self::ASSET_RUNTIME, self::ASSET_MANIFEST, self::ASSET_TPLS, self::ASSET_TPLS_JS, self::ASSET_API], true)) {
             return '';
         }
         return implode('/', array_map('rawurlencode', $tail));
@@ -111,16 +119,36 @@ final class JsController extends AbstractController
 
     private function emitShell(): void
     {
+        $started = microtime(true);
         $locale = $this->html($this->locale());
         $siteName = $this->html($this->siteName());
         $runtime = $this->html($this->jsBasePath() . '/' . self::ASSET_RUNTIME);
+        $templatesJs = $this->html($this->jsBasePath() . '/' . self::ASSET_TPLS_JS);
         $route = $this->html($this->currentRoutePath());
+
+        $manifestPayload = [
+            'ok'           => true,
+            'version'      => 3,
+            'locale'       => $this->locale(),
+            'siteName'     => $this->siteName(),
+            'siteBase'     => $this->siteLocaleBasePath(),
+            'jsBase'       => $this->jsBasePath(),
+            'defaultRoute' => $this->defaultRouteSlug(),
+            'pages'        => $this->manifestPages(),
+            'api'          => [
+                'index' => $this->jsBasePath() . '/' . self::ASSET_API,
+                'base'  => $this->siteLocaleBasePath() . '/api',
+            ],
+        ];
+        $manifestPayload['shellContext'] = $this->shellContext($manifestPayload['pages']);
+        $manifestJson = $this->json($manifestPayload);
 
         http_response_code(200);
         if (!headers_sent()) {
             header('Content-Type: text/html; charset=utf-8');
             header('Cache-Control: no-store');
             header('X-AstrX-JS-Browser: shell');
+            $this->emitServerTiming('astrx_js_shell', $started);
         }
 
         echo <<<HTML
@@ -130,11 +158,18 @@ final class JsController extends AbstractController
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
+  <link rel="preload" href="{$templatesJs}" as="script">
+  <link rel="preload" href="{$runtime}" as="script">
   <title>{$siteName} — JS</title>
+  <script>
+  window.AstrXJSInlineManifest = {$manifestJson};
+  window.AstrXJSEarlyPreload = { startedAt: Date.now(), manifest: Promise.resolve(window.AstrXJSInlineManifest) };
+  </script>
 </head>
 <body data-astrx-js-route="{$route}">
   <noscript>To use the /js/ browser you need JavaScript enabled. The normal site remains available without JavaScript.</noscript>
-  <div id="astrx-js-boot">Loading…</div>
+  <div id="astrx-js-boot">Loading templates…</div>
+  <script defer src="{$templatesJs}"></script>
   <script defer src="{$runtime}"></script>
 </body>
 </html>
@@ -143,6 +178,7 @@ HTML;
 
     private function emitRuntimeJs(): void
     {
+        $started = microtime(true);
         $boot = [
             'locale'       => $this->locale(),
             'jsBase'       => $this->jsBasePath(),
@@ -150,25 +186,30 @@ HTML;
             'siteName'     => $this->siteName(),
             'defaultRoute' => $this->defaultRouteSlug(),
             'assets'       => [
-                'manifest'  => $this->jsBasePath() . '/' . self::ASSET_MANIFEST,
-                'templates' => $this->jsBasePath() . '/' . self::ASSET_TPLS,
-                'api'       => $this->jsBasePath() . '/' . self::ASSET_API,
+                'manifest'    => $this->jsBasePath() . '/' . self::ASSET_MANIFEST,
+                'templates'   => $this->jsBasePath() . '/' . self::ASSET_TPLS,
+                'templatesJs' => $this->jsBasePath() . '/' . self::ASSET_TPLS_JS,
+                'api'         => $this->jsBasePath() . '/' . self::ASSET_API,
             ],
         ];
         $bootJson = $this->json($boot);
-        $etag = '"astrx-js-runtime-' . sha1($bootJson . '|v6') . '"';
+        $etag = '"astrx-js-runtime-' . sha1($bootJson . '|v11') . '"';
 
         if ($this->etagMatches($etag)) {
             http_response_code(304);
+            if (!headers_sent()) {
+                $this->emitServerTiming('astrx_js_runtime', $started);
+            }
             exit;
         }
 
         http_response_code(200);
         if (!headers_sent()) {
             header('Content-Type: application/javascript; charset=utf-8');
-            header('Cache-Control: private, max-age=300, must-revalidate');
+            header('Cache-Control: private, max-age=' . self::CACHE_RUNTIME_MAX_AGE . ', stale-while-revalidate=86400');
             header('ETag: ' . $etag);
             header('X-AstrX-JS-Browser: runtime');
+            $this->emitServerTiming('astrx_js_runtime', $started);
         }
 
         echo 'window.AstrXJSBoot = ' . $bootJson . ";\n";
@@ -285,7 +326,7 @@ HTML;
       return !!value;
     }
 
-    function renderNodes(nodes, ctx, partials, parent, index) {
+    function renderNodes(nodes, ctx, partials, parent, index, compiledPartials) {
       let out = '';
       nodes.forEach(node => {
         if (node.type === 'text') {
@@ -298,37 +339,66 @@ HTML;
         } else if (node.type === '>') {
           const partialName = resolve(node.value, ctx, parent, index) || node.value;
           const partial = partials[String(partialName)] || '';
-          out += render(partial, ctx, partials, parent, index);
+          out += renderCompiled((compiledPartials && compiledPartials[String(partialName)]) || compile(partial), ctx, partials, parent, index, compiledPartials);
         } else if (node.type === '#') {
           const value = resolve(node.value, ctx, parent, index);
           if (Array.isArray(value)) {
-            value.forEach((item, i) => out += renderNodes(node.nodes, ctx, partials, value, i));
+            value.forEach((item, i) => out += renderNodes(node.nodes, ctx, partials, value, i, compiledPartials));
           } else if (truthy(value)) {
-            out += renderNodes(node.nodes, ctx, partials, value && typeof value === 'object' ? value : parent, index);
+            out += renderNodes(node.nodes, ctx, partials, value && typeof value === 'object' ? value : parent, index, compiledPartials);
           }
         } else if (node.type === '^') {
           const value = resolve(node.value, ctx, parent, index);
-          if (!truthy(value)) out += renderNodes(node.nodes, ctx, partials, parent, index);
+          if (!truthy(value)) out += renderNodes(node.nodes, ctx, partials, parent, index, compiledPartials);
         }
       });
       return out;
     }
 
-    function render(src, ctx, partials, parent, index) {
-      return renderNodes(nest(tokenize(String(src || ''))), ctx || {}, partials || {}, parent || null, index || 0);
+    function compile(src) {
+      return nest(tokenize(String(src || '')));
     }
 
-    return { render: render };
+    function compileAll(partials) {
+      const out = {};
+      Object.keys(partials || {}).forEach(name => {
+        out[name] = compile(partials[name]);
+      });
+      return out;
+    }
+
+    function renderCompiled(ast, ctx, partials, parent, index, compiledPartials) {
+      return renderNodes(ast || [], ctx || {}, partials || {}, parent || null, index || 0, compiledPartials || null);
+    }
+
+    function render(src, ctx, partials, parent, index, compiledPartials) {
+      return renderCompiled(compile(src), ctx, partials, parent, index, compiledPartials);
+    }
+
+    function renderName(name, ctx, partials, compiledPartials) {
+      partials = partials || {};
+      compiledPartials = compiledPartials || compileAll(partials);
+      const ast = compiledPartials[name] || compile(partials[name] || '');
+      return renderCompiled(ast, ctx, partials, null, 0, compiledPartials);
+    }
+
+    return { render: render, compile: compile, compileAll: compileAll, renderCompiled: renderCompiled, renderName: renderName };
   })();
 
   const App = {
     manifest: null,
     templates: null,
+    compiledTemplates: null,
+    apiIndex: null,
+    resourceStats: {},
+    profile: {},
     currentTargetUrl: null,
 
     async start() {
+      const bootStart = performance.now();
       try {
         await this.loadResources();
+        this.profile.bootResourcesMs = Math.round(performance.now() - bootStart);
         this.renderDocumentShell();
         this.bind();
         await this.openFromLocation({ replace: true });
@@ -338,15 +408,106 @@ HTML;
     },
 
     async loadResources() {
+      this.status('Loading manifest and compiled templates …');
+      const early = window.AstrXJSEarlyPreload || {};
       const [manifest, templatesPayload] = await Promise.all([
-        this.getJson(BOOT.assets.manifest),
-        this.getJson(BOOT.assets.templates)
+        this.getJsonResource('manifest', BOOT.assets.manifest, early.manifest, true),
+        this.getTemplateBundle()
       ]);
       this.manifest = manifest;
       this.templates = templatesPayload.templates || templatesPayload;
+
+      const compileStarted = performance.now();
+      this.compiledTemplates = Mustache.compileAll(this.templates || {});
+      this.profile.templateCompileMs = Math.round(performance.now() - compileStarted);
+
+      this.apiIndex = null;
+      if (this.debugEnabled()) {
+        this.apiIndex = await this.getJsonResource('api', BOOT.assets.api, null, false);
+      }
+      this.resourceStats.templateCount = this.templates ? Object.keys(this.templates).length : 0;
+      this.resourceStats.compiledTemplateCount = this.compiledTemplates ? Object.keys(this.compiledTemplates).length : 0;
+      this.resourceStats.preloadedAt = early.startedAt || null;
     },
 
-    async getJson(url) {
+    async getTemplateBundle() {
+      const started = performance.now();
+      const bundle = window.AstrXJSTemplateBundle || null;
+      if (bundle && bundle.templates && typeof bundle.templates === 'object') {
+        this.resourceStats.templates = {
+          ok: true,
+          source: 'templates-js',
+          fingerprint: bundle.fingerprint || null,
+          generatedAt: bundle.generatedAt || null,
+          ms: Math.round(performance.now() - started)
+        };
+        return bundle;
+      }
+
+      // Fallback for older/cached shells or if templates.js failed to load.
+      try {
+        const payload = await this.fetchJson(BOOT.assets.templates);
+        this.resourceStats.templates = {
+          ok: true,
+          source: 'json-fallback',
+          fingerprint: payload && payload.fingerprint ? payload.fingerprint : null,
+          ms: Math.round(performance.now() - started)
+        };
+        return payload;
+      } catch (err) {
+        this.resourceStats.templates = {
+          ok: false,
+          source: 'failed',
+          message: err && err.message ? err.message : String(err),
+          ms: Math.round(performance.now() - started)
+        };
+        throw err;
+      }
+    },
+
+    async getJsonResource(name, url, earlyPromise, required) {
+      const started = performance.now();
+      try {
+        const payload = earlyPromise ? await earlyPromise : await this.fetchJson(url);
+        this.resourceStats[name] = {
+          ok: true,
+          source: earlyPromise ? 'early-preload' : 'runtime-fetch',
+          ms: Math.round(performance.now() - started)
+        };
+        return payload;
+      } catch (earlyErr) {
+        if (earlyPromise) {
+          try {
+            const payload = await this.fetchJson(url);
+            this.resourceStats[name] = {
+              ok: true,
+              source: 'runtime-refetch',
+              ms: Math.round(performance.now() - started)
+            };
+            return payload;
+          } catch (fallbackErr) {
+            this.resourceStats[name] = {
+              ok: false,
+              source: 'failed',
+              message: fallbackErr && fallbackErr.message ? fallbackErr.message : String(fallbackErr),
+              ms: Math.round(performance.now() - started)
+            };
+            if (required) throw fallbackErr;
+            return null;
+          }
+        }
+        this.resourceStats[name] = {
+          ok: false,
+          source: 'failed',
+          message: earlyErr && earlyErr.message ? earlyErr.message : String(earlyErr),
+          ms: Math.round(performance.now() - started)
+        };
+        if (required) throw earlyErr;
+        return null;
+      }
+    },
+
+    async fetchJson(url) {
       const res = await fetch(url, {
         credentials: 'same-origin',
         headers: { 'Accept': 'application/json' }
@@ -356,14 +517,21 @@ HTML;
     },
 
     renderDocumentShell() {
+      const started = performance.now();
       const templates = Object.assign({}, this.templates, {
-        '__astrx_js_content': '<div id="astrx-js-status" aria-live="polite"></div><details id="astrx-js-debug" hidden><summary>JS runtime</summary><pre></pre></details><div id="astrx-js-content"></div>'
+        '__astrx_js_content': '<div id="astrx-js-content"></div>'
       });
       const layout = templates['default'];
       if (!layout) throw new Error('Template cache does not contain default.html');
 
-      const html = Mustache.render(layout, this.manifest.shellContext || {}, templates);
+      const renderStarted = performance.now();
+      const html = Mustache.renderName('default', this.manifest.shellContext || {}, templates, this.compiledTemplates);
+      this.profile.shellTemplateRenderMs = Math.round(performance.now() - renderStarted);
+
+      const parseStarted = performance.now();
       const parsed = new DOMParser().parseFromString(html, 'text/html');
+      this.profile.shellParseMs = Math.round(performance.now() - parseStarted);
+
       this.installDocumentHead(parsed);
       document.title = parsed.title || ((BOOT.siteName || 'AstrX') + ' — JS');
       document.body.innerHTML = parsed.body ? parsed.body.innerHTML : html;
@@ -371,6 +539,7 @@ HTML;
       const boot = byId('astrx-js-boot');
       if (boot) boot.remove();
       this.ensureRuntimeMarker();
+      this.profile.shellInstallMs = Math.round(performance.now() - started);
     },
 
     ensureRuntimeMarker() {
@@ -382,28 +551,97 @@ HTML;
         marker.textContent = 'AstrX JS runtime active';
         document.body.appendChild(marker);
       }
+
+      if (!byId('astrx-js-runtime-style')) {
+        const style = document.createElement('style');
+        style.id = 'astrx-js-runtime-style';
+        style.textContent = [
+          '#astrx-js-status{position:fixed;left:1rem;bottom:1rem;z-index:9998;max-width:min(36rem,calc(100vw - 2rem));padding:.45rem .7rem;border-radius:.45rem;background:rgba(0,0,0,.82);color:#fff;font:12px/1.35 monospace;box-shadow:0 .35rem 1rem rgba(0,0,0,.25)}',
+          '#astrx-js-status:empty{display:none}',
+          '#astrx-js-debug-toggle{position:fixed;right:1rem;bottom:1rem;z-index:9999;padding:.45rem .65rem;border-radius:999px;border:1px solid currentColor;background:rgba(0,0,0,.82);color:#fff;font:700 12px/1 monospace;cursor:pointer}',
+          '#astrx-js-debug{position:fixed;right:1rem;bottom:3.5rem;z-index:9999;width:min(34rem,calc(100vw - 2rem));max-height:min(32rem,calc(100vh - 5rem));overflow:auto;padding:1rem;border:1px solid currentColor;border-radius:.65rem;background:rgba(0,0,0,.9);color:#fff;box-shadow:0 .75rem 2rem rgba(0,0,0,.35);font:12px/1.4 monospace}',
+          '#astrx-js-debug h2{margin:0 0 .75rem;font:700 13px/1.2 monospace;color:inherit}',
+          '#astrx-js-debug pre{white-space:pre-wrap;word-break:break-word;margin:0}',
+          '#astrx-js-debug-close{float:right;border:1px solid currentColor;background:transparent;color:inherit;border-radius:.35rem;cursor:pointer;font:inherit}'
+        ].join('');
+        document.head.appendChild(style);
+      }
+
+      if (!byId('astrx-js-status')) {
+        const status = document.createElement('div');
+        status.id = 'astrx-js-status';
+        status.setAttribute('aria-live', 'polite');
+        document.body.appendChild(status);
+      }
+
+      let toggle = byId('astrx-js-debug-toggle');
+      if (!toggle) {
+        toggle = document.createElement('button');
+        toggle.id = 'astrx-js-debug-toggle';
+        toggle.type = 'button';
+        toggle.hidden = true;
+        toggle.textContent = 'JS';
+        document.body.appendChild(toggle);
+      }
+
+      let debug = byId('astrx-js-debug');
+      if (!debug) {
+        debug = document.createElement('aside');
+        debug.id = 'astrx-js-debug';
+        debug.hidden = true;
+        debug.setAttribute('aria-live', 'polite');
+        debug.innerHTML = '<button type="button" id="astrx-js-debug-close">hide</button><h2>AstrX JS runtime</h2><pre></pre>';
+        document.body.appendChild(debug);
+      }
+
+      if (!toggle.dataset.bound) {
+        toggle.dataset.bound = '1';
+        toggle.addEventListener('click', () => {
+          const panel = byId('astrx-js-debug');
+          if (panel) panel.hidden = !panel.hidden;
+        });
+      }
+
+      const close = byId('astrx-js-debug-close');
+      if (close && !close.dataset.bound) {
+        close.dataset.bound = '1';
+        close.addEventListener('click', () => {
+          localStorage.removeItem('astrx.debug');
+          const panel = byId('astrx-js-debug');
+          const btn = byId('astrx-js-debug-toggle');
+          if (panel) panel.hidden = true;
+          if (btn) btn.hidden = true;
+        });
+      }
     },
 
     installDocumentHead(doc) {
       if (!doc || !doc.head) return;
 
+      const managed = doc.head.querySelectorAll(
+        'style, link[rel~="stylesheet"], link[rel~="icon"], meta[name="description"], meta[name="keywords"], meta[name="robots"]'
+      );
+
+      // Content-only JS-browser fragments intentionally do not carry a full
+      // <head>. Preserve the shell/theme head in that case instead of deleting
+      // the current stylesheet and leaving the runtime unstyled.
+      if (managed.length === 0) return;
+
       document.head.querySelectorAll('[data-astrx-js-head]').forEach(node => node.remove());
 
-      doc.head
-        .querySelectorAll('style, link[rel~="stylesheet"], link[rel~="icon"], meta[name="description"], meta[name="keywords"], meta[name="robots"]')
-        .forEach(node => {
-          const clone = node.cloneNode(true);
-          clone.setAttribute('data-astrx-js-head', '');
+      managed.forEach(node => {
+        const clone = node.cloneNode(true);
+        clone.setAttribute('data-astrx-js-head', '');
 
-          if (clone.tagName === 'LINK' && clone.hasAttribute('href')) {
-            const raw = clone.getAttribute('href') || '';
-            if (raw && !/^(data:|https?:|\/)/i.test(raw)) {
-              clone.setAttribute('href', '/' + trimSlashes(raw));
-            }
+        if (clone.tagName === 'LINK' && clone.hasAttribute('href')) {
+          const raw = clone.getAttribute('href') || '';
+          if (raw && !/^(data:|https?:|\/)/i.test(raw)) {
+            clone.setAttribute('href', '/' + trimSlashes(raw));
           }
+        }
 
-          document.head.appendChild(clone);
-        });
+        document.head.appendChild(clone);
+      });
     },
 
     bind() {
@@ -425,6 +663,7 @@ HTML;
         route === 'runtime.js' ||
         route === 'manifest.json' ||
         route === 'templates.json' ||
+        route === 'templates.js' ||
         route === 'api.json'
       ) {
         route = '';
@@ -513,8 +752,10 @@ HTML;
     },
 
     async loadTarget(url) {
+      const navStarted = performance.now();
       this.currentTargetUrl = url;
       this.status('Loading ' + url + ' …');
+      const fetchStarted = performance.now();
       const res = await fetch(url, {
         credentials: 'same-origin',
         headers: {
@@ -522,25 +763,40 @@ HTML;
           'X-AstrX-JS-Browser': '1'
         }
       });
+      this.profile.lastFetchResponseMs = Math.round(performance.now() - fetchStarted);
+      this.profile.lastFetchStatus = res.status;
+      this.profile.lastFetchServerTiming = res.headers.get('Server-Timing') || '';
+      this.profile.lastFetchRenderMode = res.headers.get('X-AstrX-JS-Browser') || '';
       if (!res.ok) throw new Error('HTTP ' + res.status + ' while loading ' + url);
+
+      const textStarted = performance.now();
       const text = await res.text();
+      this.profile.lastFetchReadMs = Math.round(performance.now() - textStarted);
+      this.profile.lastFetchBytes = text.length;
       const finalUrl = res.url || url;
 
       this.syncHistoryToNormalUrl(finalUrl, true);
       this.applyHtmlDocument(text, finalUrl);
+      this.profile.lastNavigationTotalMs = Math.round(performance.now() - navStarted);
     },
 
     applyHtmlDocument(text, url) {
+      const parseStarted = performance.now();
       const doc = new DOMParser().parseFromString(text, 'text/html');
+      this.profile.lastDomParseMs = Math.round(performance.now() - parseStarted);
+      const fragment = doc.getElementById('astrx-js-fragment');
 
+      const installStarted = performance.now();
       this.installDocumentHead(doc);
-      if (doc.title) document.title = doc.title + ' — JS';
+      const title = doc.title || (fragment ? fragment.getAttribute('data-title') : '');
+      if (title) document.title = title + ' — JS';
       if (doc.body) this.rewriteRelativeUrls(doc.body, url);
       this.installDocumentChrome(doc);
       this.installMainContent(doc, text);
       this.ensureRuntimeMarker();
       this.markActive(url);
       this.status('');
+      this.profile.lastDomInstallMs = Math.round(performance.now() - installStarted);
       this.updateDebug(url);
       window.scrollTo(0, 0);
     },
@@ -697,8 +953,10 @@ HTML;
     },
 
     async submitMutationForm(form, url, method, submitter) {
+      const submitStarted = performance.now();
       this.status('Submitting …');
       const body = this.formData(form, submitter);
+      const fetchStarted = performance.now();
       const res = await fetch(url.href, {
         method: method,
         credentials: 'same-origin',
@@ -709,12 +967,20 @@ HTML;
         },
         body: body
       });
+      this.profile.lastFetchResponseMs = Math.round(performance.now() - fetchStarted);
+      this.profile.lastFetchStatus = res.status;
+      this.profile.lastFetchServerTiming = res.headers.get('Server-Timing') || '';
+      this.profile.lastFetchRenderMode = res.headers.get('X-AstrX-JS-Browser') || '';
       if (!res.ok) throw new Error('HTTP ' + res.status + ' while submitting ' + url.pathname);
 
+      const textStarted = performance.now();
       const text = await res.text();
+      this.profile.lastFetchReadMs = Math.round(performance.now() - textStarted);
+      this.profile.lastFetchBytes = text.length;
       const finalUrl = res.url || url.href;
       this.syncHistoryToNormalUrl(finalUrl, false);
       this.applyHtmlDocument(text, finalUrl);
+      this.profile.lastNavigationTotalMs = Math.round(performance.now() - submitStarted);
     },
 
     markActive(url) {
@@ -727,25 +993,74 @@ HTML;
     },
 
     status(text) {
+      this.ensureRuntimeMarker();
       const el = byId('astrx-js-status');
       if (el) el.textContent = text || '';
     },
 
+    performanceResources() {
+      try {
+        return performance.getEntriesByType('resource')
+          .filter(entry => entry.name.indexOf(location.origin + BOOT.jsBase) === 0 || entry.name.indexOf(location.origin + BOOT.siteBase) === 0)
+          .slice(-20)
+          .map(entry => ({
+            name: entry.name.replace(location.origin, ''),
+            type: entry.initiatorType,
+            duration: Math.round(entry.duration),
+            transferSize: entry.transferSize || 0,
+            encodedBodySize: entry.encodedBodySize || 0,
+            decodedBodySize: entry.decodedBodySize || 0
+          }));
+      } catch (_) {
+        return [];
+      }
+    },
+
+    debugEnabled() {
+      const params = new URLSearchParams(location.search);
+      return params.get('debug') === '1' || localStorage.getItem('astrx.debug') === '1';
+    },
+
     updateDebug(url) {
+      this.ensureRuntimeMarker();
       const el = byId('astrx-js-debug');
+      const btn = byId('astrx-js-debug-toggle');
       if (!el) return;
-      const enabled = new URLSearchParams(location.search).get('debug') === '1' || localStorage.getItem('astrx.debug') === '1';
+      const enabled = this.debugEnabled();
+      if (btn) btn.hidden = !enabled;
       el.hidden = !enabled;
       if (!enabled) return;
       const pre = el.querySelector('pre');
       if (!pre) return;
+
+      const route = this.routeFromLocation();
+      const page = this.manifest && this.manifest.pages
+        ? this.manifest.pages.find(p => p.slug === route) || null
+        : null;
+
       pre.textContent = JSON.stringify({
-        route: this.routeFromLocation(),
+        mode: byId('astrx-js-fragment') ? 'fragment-browse' : 'html-browse',
+        route: route,
         target: url || this.currentTargetUrl,
+        finalLocation: location.pathname + location.search + location.hash,
         jsBase: BOOT.jsBase,
+        siteBase: BOOT.siteBase,
         apiIndex: BOOT.assets && BOOT.assets.api,
-        pages: this.manifest && this.manifest.pages ? this.manifest.pages.length : 0,
-        apiEnabledPages: this.manifest && this.manifest.pages ? this.manifest.pages.filter(p => p.api_enabled).length : 0
+        resourceStats: this.resourceStats,
+        profile: this.profile,
+        resources: this.performanceResources(),
+        apiIndexLoaded: !!this.apiIndex,
+        page: page ? {
+          slug: page.slug,
+          file_name: page.file_name,
+          api_enabled: !!page.api_enabled,
+          api_url: page.api_url || null,
+          api_data_url: page.api_data_url || null
+        } : null,
+        manifestPages: this.manifest && this.manifest.pages ? this.manifest.pages.length : 0,
+        apiEnabledPages: this.manifest && this.manifest.pages ? this.manifest.pages.filter(p => p.api_enabled).length : 0,
+        templateCount: this.templates ? Object.keys(this.templates).length : 0,
+        lastUpdated: new Date().toISOString()
       }, null, 2);
     },
 
@@ -787,13 +1102,43 @@ JS;
             ],
             'shellContext' => $shell,
         ];
-        $this->emitJson($payload, privateMaxAge: 30, browserLabel: 'manifest');
+        $this->emitJson($payload, privateMaxAge: self::CACHE_MANIFEST_MAX_AGE, browserLabel: 'manifest');
     }
 
     private function emitTemplatesJson(): void
     {
         $payload = $this->buildTemplateCache();
-        $this->emitJson($payload, privateMaxAge: 300, browserLabel: 'templates');
+        $this->emitJson($payload, privateMaxAge: self::CACHE_TEMPLATES_MAX_AGE, browserLabel: 'templates');
+    }
+
+    private function emitTemplatesJs(): void
+    {
+        $started = microtime(true);
+        $payload = $this->buildTemplateCache();
+        $payload['module'] = 'astrx.templates';
+        $payload['format'] = 'js-template-bundle';
+        $payload['compiledBy'] = 'AstrX\\Controller\\JsController';
+
+        $body = "window.AstrXJSTemplateBundle=" . $this->json($payload) . ";\n"
+            . "window.AstrXJSTemplates=window.AstrXJSTemplateBundle.templates||{};\n";
+        $etag = '"astrx-js-templates-js-' . sha1($body) . '"';
+        if ($this->etagMatches($etag)) {
+            http_response_code(304);
+            if (!headers_sent()) {
+                $this->emitServerTiming('astrx_js_templates_js', $started);
+            }
+            exit;
+        }
+
+        http_response_code(200);
+        if (!headers_sent()) {
+            header('Content-Type: application/javascript; charset=utf-8');
+            header('Cache-Control: private, max-age=' . self::CACHE_TEMPLATES_MAX_AGE . ', stale-while-revalidate=86400');
+            header('ETag: ' . $etag);
+            header('X-AstrX-JS-Browser: templates-js');
+            $this->emitServerTiming('astrx_js_templates_js', $started);
+        }
+        echo $body;
     }
 
     private function emitApiIndexJson(): void
@@ -808,7 +1153,7 @@ JS;
             'endpoints'   => $this->apiManifestPages(),
         ];
 
-        $this->emitJson($payload, privateMaxAge: 30, browserLabel: 'api');
+        $this->emitJson($payload, privateMaxAge: self::CACHE_API_INDEX_MAX_AGE, browserLabel: 'api');
     }
 
     /** @param list<array<string,mixed>> $pages */
@@ -994,7 +1339,7 @@ JS;
 
         $payload = [
             'ok'          => true,
-            'version'     => 1,
+            'version'     => 2,
             'fingerprint' => $fingerprint,
             'generatedAt' => gmdate('c'),
             'templates'   => $templates,
@@ -1067,20 +1412,33 @@ JS;
     /** @param array<string,mixed> $payload */
     private function emitJson(array $payload, int $privateMaxAge, string $browserLabel): void
     {
+        $started = microtime(true);
         $body = $this->json($payload);
         $etag = '"astrx-js-' . $browserLabel . '-' . sha1($body) . '"';
         if ($this->etagMatches($etag)) {
             http_response_code(304);
+            if (!headers_sent()) {
+                $this->emitServerTiming('astrx_js_' . $browserLabel, $started);
+            }
             exit;
         }
         http_response_code(200);
         if (!headers_sent()) {
             header('Content-Type: application/json; charset=utf-8');
-            header('Cache-Control: private, max-age=' . $privateMaxAge . ', must-revalidate');
+            header('Cache-Control: private, max-age=' . $privateMaxAge . ', stale-while-revalidate=86400');
             header('ETag: ' . $etag);
             header('X-AstrX-JS-Browser: ' . $browserLabel);
+            $this->emitServerTiming('astrx_js_' . $browserLabel, $started);
         }
         echo $body;
+    }
+
+    private function emitServerTiming(string $name, float $started): void
+    {
+        $safe = preg_replace('/[^A-Za-z0-9_\-]/', '_', $name) ?: 'astrx';
+        $dur = max(0.0, (microtime(true) - $started) * 1000.0);
+        header('Server-Timing: ' . $safe . ';dur=' . number_format($dur, 2, '.', ''), false);
+        header('X-AstrX-Elapsed-Ms: ' . number_format($dur, 2, '.', ''));
     }
 
     /** @param mixed $value */

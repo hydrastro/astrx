@@ -174,6 +174,70 @@ function runSQL(PDO $pdo, string $file): string
     return '';
 }
 
+function ensureMigrationTable(PDO $pdo): string
+{
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `migration` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `file_name` VARCHAR(255) NOT NULL,
+                `checksum` CHAR(64) NOT NULL,
+                `executed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `migration_file_name_uq` (`file_name`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        return '';
+    } catch (\PDOException $e) {
+        return $e->getMessage();
+    }
+}
+
+function runMigration(PDO $pdo, string $file): string
+{
+    $err = ensureMigrationTable($pdo);
+    if ($err !== '') {
+        return 'Could not initialise migration table: ' . $err;
+    }
+    if (!file_exists($file)) {
+        return "Migration file not found: $file";
+    }
+
+    $name = basename($file);
+    $checksum = hash_file('sha256', $file);
+    if (!is_string($checksum) || $checksum === '') {
+        return "Could not checksum migration file: $file";
+    }
+
+    try {
+        $check = $pdo->prepare('SELECT checksum FROM `migration` WHERE file_name = :file_name LIMIT 1');
+        $check->execute([':file_name' => $name]);
+        $existing = $check->fetchColumn();
+        $check->closeCursor();
+        if (is_string($existing) && $existing !== '') {
+            if (hash_equals($existing, $checksum)) {
+                return '';
+            }
+            return "Migration {$name} was already executed with a different checksum. Create a new migration instead of editing an applied one.";
+        }
+    } catch (\PDOException $e) {
+        return $e->getMessage();
+    }
+
+    $err = runSQL($pdo, $file);
+    if ($err !== '') {
+        return $err;
+    }
+
+    try {
+        $record = $pdo->prepare('INSERT INTO `migration` (file_name, checksum) VALUES (:file_name, :checksum)');
+        $record->execute([':file_name' => $name, ':checksum' => $checksum]);
+        return '';
+    } catch (\PDOException $e) {
+        return $e->getMessage();
+    }
+}
+
 /**
  * Find a setup SQL file in any of the conventional locations.
  * Docker layouts vary — some mount the whole repo as /app, others mount
@@ -262,9 +326,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 // Auto-apply every migrate_*.sql found in either location.
+                // Each successful migration is recorded by filename + checksum
+                // so setup can be safely re-entered without blindly replaying
+                // the same SQL against an already-upgraded database.
+                if ($errors === []) {
+                    $err = ensureMigrationTable($conn);
+                    if ($err !== '') {
+                        $errors[] = 'Could not initialise migration table: ' . $err;
+                    }
+                }
                 if ($errors === []) {
                     foreach (listSetupMigrations() as $mf) {
-                        $err = runSQL($conn, $mf);
+                        $err = runMigration($conn, $mf);
                         if ($err !== '') {
                             $errors[] = 'SQL error in ' . basename($mf) . ': ' . $err;
                             break;

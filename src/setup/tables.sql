@@ -1,5 +1,18 @@
 USE content_manager;
 
+
+-- ============================================================
+-- SETUP / MIGRATIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `migration`
+(
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `file_name`   VARCHAR(255) NOT NULL UNIQUE,
+    `checksum`    CHAR(64)     NOT NULL,
+    `executed_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================
 -- PAGE SYSTEM
 -- ============================================================
