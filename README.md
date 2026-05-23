@@ -1,256 +1,213 @@
 # AstrX
 
-AstrX is a small PHP framework/CMS that keeps server-rendered, JavaScript-free pages as the canonical mode while also exposing two optional acceleration/benchmark paths:
+A PHP 8.4 web framework that produces plain, fast HTML — designed for
+clients that don't run JavaScript (Tor Browser's safest mode, lynx,
+w3m, elinks, screen readers, slow networks). The same controllers also
+expose an opt-in JSON API per page, an experimental JavaScript browser
+at `/<locale>/js/`, and a compiled single-file bundle for production
+benchmarking.
 
-- **Normal mode**: `/en/main`, `/en/user`, `/en/admin-*`
-- **JS browser mode**: `/en/js/main`, `/en/js/user`, `/en/js/admin-*`
-- **Compiled benchmark mode**: `/compile/en/main`, `/compile/en/user`, `/compile/en/admin-*`
-- **Compiled JS benchmark mode**: `/compile/en/js/main`, `/compile/en/js/admin-*`
-
-The normal PHP path remains the source of truth. JS mode and compiled mode are opt-in experiments for profiling and production-readiness work.
-
-## Repository layout
-
-```text
-public/                 Web root and front controllers
-public/index.php        Normal front controller
-public/compiled.php     Compiled front controller without URL prefix
-public/compile/         /compile benchmark front controller
-src/                    Framework source
-resources/config/       Local runtime configuration
-resources/template/     Server templates and themes
-setup/                  Fresh database bootstrap SQL
-tools/                  Build, verification, profiling, and cache tools
-docs/                   API, compiled-build, and profiling notes
-docker/                 Local Docker/Nginx/PHP/MariaDB setup
+```
+PHP 8.4 strict · PSR-4 · MariaDB / PDO · GD · OpenSSL · Mustache
 ```
 
-Generated/runtime files are intentionally not part of the clean source state:
+## What's distinctive
 
-```text
-build/astrx.compiled.php
-resources/template/cache/*
-xdebug-profiles/*
-*.patch
-astrx_full_repo_*.zip
-```
+- **No JavaScript required.** Every page renders fully server-side. The
+  `<script>` tag appears in exactly one place: the experimental `/js/`
+  shell. Everything else — comments, captcha, forms, navigation, admin —
+  works with JS off.
+- **Same code for HTML and API.** Opting a page in via `page.api_enabled = 1`
+  exposes it at `/<locale>/api/<slug>` using the same controller code
+  that rendered the HTML. No parallel "API controllers" to drift out of
+  sync.
+- **Themes are CSS-only.** Eleven themes (amber, cybermono, default,
+  dracula, light, newsprint, reader, sepia, synthwave, terminal, tor),
+  switchable per-user, all plain CSS.
+- **Result monad + Diagnostics.** Errors flow through `Result<T>` and a
+  `Diagnostics` collector. Exceptions are reserved for genuinely
+  exceptional faults; expected failure modes are values.
 
 ## Quick start
 
 ```bash
-mkdir -p build resources/template/cache
-php tools/warm-template-cache.php --clear
+git clone <repo>
+cd astrx
+docker compose up --build -d
+sleep 10                                  # MariaDB initialises
+# Visit http://localhost/setup.php to create the admin user.
+```
+
+Then:
+
+| URL | What you get |
+|---|---|
+| `http://localhost/en/` | Main page, JS-free |
+| `http://localhost/en/api/main?html=1` | The same page as JSON |
+| `http://localhost/en/js/` | Experimental JS browser |
+
+## Three operating modes
+
+### 1. Normal (default)
+
+```
+public/index.php  →  src/bootstrap.php  →  PSR-4 autoload from src/
+```
+
+Plain server-rendered HTML. Each request is a full page render. URLs
+follow `/<locale>/<page-slug>[/<sub-segments>]` with no client-side
+routing. This is the canonical mode and the one to use for Tor /
+text-only browsers.
+
+### 2. JS browser (experimental)
+
+```
+/<locale>/js/  →  JsController  →  shell + runtime.js + manifest + templates
+```
+
+Inspired by [miniLOL](https://github.com/meh/miniLOL). One HTML shell
+document at `/<locale>/js/` boots a small JavaScript runtime which:
+
+1. Fetches a page manifest (`manifest.json`), a compiled template bundle
+   (`templates.js`), and the runtime itself (each cacheable with ETag +
+   long `max-age`).
+2. Renders the layout client-side using the same Mustache templates the
+   server uses, via an in-runtime Mustache parser.
+3. Intercepts clicks and form submits, fetches the matching
+   `/<locale>/<page>` HTML, and swaps in the new content without a full
+   page reload. The History API keeps real URLs in the address bar.
+
+The `/js/` mode is **strictly additive**: the normal site at
+`/<locale>/<page>` remains the canonical no-JS path. Disable JavaScript
+and everything still works exactly the same way.
+
+### 3. Compiled bundle (production / benchmark)
+
+```
+public/compiled.php  →  build/astrx.compiled.php  →  Bundle::boot()
+```
+
+`php tools/compile.php` packages every PHP source file into a single
+`build/astrx.compiled.php`, with an embedded autoloader that fans them
+back out per-class on demand. Mainly useful for profiling — turns "N
+stat + N read" into "one stat + one read + map lookups". You can run
+it side-by-side with normal mode using `/compile/*` to compare numbers
+in cachegrind.
+
+See [`docs/COMPILED_BUILD.md`](docs/COMPILED_BUILD.md).
+
+## Architecture at a glance
+
+| Concept | Lives in |
+|---|---|
+| Request routing + page resolution | `AstrX\ContentManager`, `AstrX\Page\PageHandler` |
+| Controllers | `AstrX\Controller\*Controller` (one per page type) |
+| Templates | `resources/template/`, rendered by `AstrX\Template\TemplateEngine` |
+| Dependency injection | `AstrX\Injector` (constructor-based, reflection-driven) |
+| Authentication | `AstrX\User\UserSession`, `AstrX\Auth\AuthService` |
+| Permissions | `AstrX\Auth\Gate` + `AstrX\Auth\Permission` enum |
+| Result type | `AstrX\Result\Result<T>` |
+| Diagnostics | `AstrX\Result\DiagnosticsCollector` |
+| Translation | `AstrX\I18n\Translator` |
+| Themes | `AstrX\Theme\ThemeService` |
+| CAPTCHA | `AstrX\Captcha\*` |
+| Mailer | `AstrX\Mail\Mailer` |
+| Feeds | Atom XML via `FeedController` |
+
+Every controller takes its dependencies in its constructor. The
+injector resolves them via reflection. There's no service locator and
+no global state.
+
+## Project layout
+
+```
+public/
+  index.php             entry point (normal mode)
+  compiled.php          entry point (compiled bundle)
+  compile/index.php     entry point (/compile/* benchmark prefix)
+  setup.php             install wizard
+  info.php, print.php   utilities
+
+src/
+  bootstrap.php
+  AstrX/                PSR-4 root (AstrX\ namespace)
+  setup/                tables.sql + migrate_*.sql
+
+resources/
+  template/             Mustache templates + themes/
+  lang/                 translations (en, it)
+  config/               instance config (PDO creds, site config)
+
+setup/                  Docker init SQL (runs on fresh volume)
+  01-init.sql           database + user account
+  02-tables.sql         complete schema + seeds
+  migrate_*.sql         additional idempotent migrations
+
+docker/                 Dockerfiles for nginx, php-fpm, mysql
+docs/                   framework documentation
+tools/                  build + warm-cache scripts
+build/                  compiled-bundle output (gitignored)
+```
+
+## Documentation
+
+- [`docs/API.md`](docs/API.md) — HTTP API: routing, payload shape,
+  per-page opt-in, the `/js/api.json` discovery index
+- [`docs/COMPILED_BUILD.md`](docs/COMPILED_BUILD.md) — building and
+  benchmarking the single-file bundle
+- [`docs/PROFILING.md`](docs/PROFILING.md) — Xdebug profiler + the
+  `Server-Timing` headers emitted by the framework
+
+## Development
+
+```bash
+# After editing PHP, drop opcache:
+docker compose restart phpfpm
+
+# Tail logs:
+docker compose logs -f phpfpm
+
+# Reset DB to fresh schema:
+docker compose down -v && docker compose up --build -d && sleep 10
+
+# Build the compiled bundle:
 php tools/compile.php
-php tools/verify-compiled.php
 
-docker compose up -d --build
+# Apply it inside the running container (rebuilds template cache too):
+./fix-compiled-bundle.sh
 ```
 
-Open:
+## Conventions
 
-```text
-http://localhost/en/main
-```
+- **PHP 8.4 strict types.** Every file starts with `declare(strict_types=1);`.
+  PSR-4 autoloading under `AstrX\…`.
+- **Return `Result<T>`, not exceptions, for expected failures.** Use the
+  `DiagnosticsCollector` to accumulate non-fatal warnings during a
+  request. Reserve `throw` for programmer errors / unrecoverable state.
+- **Constructor injection only.** No setter injection, no annotations,
+  no compile-time DI containers. The reflection injector wires
+  everything together at runtime.
+- **Templates are Mustache.** Logicless. Helpers and computed values
+  belong in the controller's context object, not the template.
 
-## Required Docker mounts
+## Cleanup
 
-`/compile` mode requires the generated bundle to be visible inside PHP-FPM. The `phpfpm` service must mount:
-
-```yaml
-- ./build:/app/build
-```
-
-The local Nginx config should also be mounted during development so route changes apply without rebuilding the image:
-
-```yaml
-- ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-```
-
-After changing `docker/nginx/default.conf`, run:
+This repository accumulates intermediate artifacts during development
+(build outputs, working zips, debug captures). To remove them:
 
 ```bash
-docker compose up -d --force-recreate nginx phpfpm
+bash clean.sh
 ```
 
-## Normal mode
+`clean.sh` deletes build outputs (rebuildable with `tools/compile.php`),
+working release zips, leftover `.orig` backups, the
+`setup/fix124/` and `setup/setup/` directories left over from earlier
+installation attempts, and stray zero-byte files at the repo root.
 
-Normal mode uses `public/index.php` and filesystem source loading:
+It will NOT delete `build/` if you've made it read-only, and never
+touches anything under `src/`, `resources/`, `setup/01-*` `setup/02-*`,
+`public/`, `docker/`, `docs/`, or `tools/`.
 
-```text
-/en/main
-/en/user
-/en/admin-navbar
-```
+## License
 
-Request flow:
-
-```text
-Nginx → public/index.php → src/bootstrap.php → ContentManager → controller/template → HTML
-```
-
-This is the stable, JS-less framework path.
-
-## JS browser mode
-
-JS mode lives under `/en/js/...`:
-
-```text
-/en/js/main
-/en/js/user
-/en/js/admin-navbar
-```
-
-It serves a small shell and runtime, then browses normal PHP pages through server-side fragments. The runtime keeps navigation inside JS mode and preserves forms/login redirects.
-
-Generated JS endpoints:
-
-```text
-/en/js/runtime.js
-/en/js/templates.js
-/en/js/templates.json   fallback/debug only
-/en/js/manifest.json    debug/tooling
-/en/js/api.json         debug/tooling
-```
-
-Debug overlay:
-
-```text
-/en/js/main?debug=1
-```
-
-## API mode
-
-API routes are opt-in per page using `page.api_enabled`:
-
-```text
-/en/api/main
-/en/api/main?html=0
-```
-
-Controllers expose API-safe data only through scoped template context values. Ordinary web-only template values are not automatically serialized.
-
-See [`docs/API.md`](docs/API.md).
-
-## Compiled benchmark mode
-
-Build the bundle:
-
-```bash
-php tools/warm-template-cache.php --clear
-php tools/compile.php
-php tools/verify-compiled.php
-```
-
-Compiled mode uses one generated PHP bundle:
-
-```text
-build/astrx.compiled.php
-```
-
-Benchmark URLs:
-
-```text
-/compile
-/compile/en/main
-/compile/en/user
-/compile/en/admin-navbar
-/compile/en/js/main
-```
-
-Request flow:
-
-```text
-Nginx → public/compile/index.php → build/astrx.compiled.php → ContentManager
-```
-
-`/compile` is a benchmark prefix. Internally the framework still routes `/en/main`; generated internal links are prefixed back to `/compile/en/main` so navigation stays in compiled mode.
-
-If `/compile/en/...` returns the normal 404 page or links do not start with `/compile`, Nginx is not using the updated `/compile` location. Run:
-
-```bash
-docker compose exec nginx nginx -T | grep -A25 'location = /compile'
-docker compose exec phpfpm ls -lah /app/build/astrx.compiled.php
-```
-
-## Template cache
-
-Warm all server-side templates before benchmarking:
-
-```bash
-php tools/warm-template-cache.php --clear
-```
-
-This writes compiled template classes and an index under:
-
-```text
-resources/template/cache/
-```
-
-`php tools/compile.php` also warms the template cache.
-
-## Profiling
-
-Use Xdebug profiling when comparing modes. For admin pages, pass the browser session cookie so curl profiles the logged-in path instead of guest redirects.
-
-```bash
-COOKIE_HEADER='PHPSESSID=your_cookie_here' \
-HEAVY_ROUTE=admin-config-access \
-LOAD_FACTOR=3 \
-./tools/profile-modes.sh
-```
-
-The script profiles:
-
-```text
-normal
-compiled
-js_shell
-js_fragment
-compiled_js_shell
-compiled_js_fragment
-```
-
-Outputs go to:
-
-```text
-xdebug-profiles/modes-YYYYMMDD-HHMMSS/
-```
-
-Open with:
-
-```bash
-kcachegrind xdebug-profiles/modes-*/*/cachegrind.out.*
-```
-
-See [`docs/PROFILING.md`](docs/PROFILING.md).
-
-## Useful commands
-
-```bash
-# Syntax check framework PHP
-find src public tools resources/template/themes -name '*.php' -type f -print0 | xargs -0 -n1 php -l
-
-# Rebuild compiled benchmark mode
-php tools/warm-template-cache.php --clear
-php tools/compile.php
-php tools/verify-compiled.php
-
-# Check Docker can see the bundle
-docker compose exec phpfpm ls -lah /app/build/astrx.compiled.php
-
-# Show active Nginx config
-docker compose exec nginx nginx -T
-```
-
-## Development rule of thumb
-
-Keep these concerns separate:
-
-```text
-normal mode      correctness and baseline behavior
-JS mode          browser/runtime experiment
-compiled mode    PHP boot-path benchmark
-API mode         explicit JSON/data surface
-```
-
-When optimizing, compare the same page in all relevant modes before changing architecture.
+See `LICENSE` (TODO: add one).
