@@ -13,6 +13,9 @@ services:
         volumes:
             - ./public:/app/public
             - ./src:/app/src
+            - ./resources:/app/resources
+            - ./build:/app/build
+            - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
         networks:
             - php-network
         depends_on:
@@ -28,6 +31,7 @@ services:
         - ./public:/app/public
         - ./src:/app/src
         - ./resources:/app/resources
+        - ./build:/app/build
       networks:
         - php-network
     mariadb:

@@ -1,5 +1,31 @@
-/vendor
-/src/test
-.idea
-public/0
-readme
+# Generated bundles and caches
+/build/
+/resources/template/cache/
+
+# Profiling output
+/xdebug-profiles/
+/cachegrind*
+*.cachegrind
+cachegrind.out.*
+
+# Local artifacts
+*.patch
+*.diff
+*.orig
+*.rej
+*.bak
+*.tmp
+astrx_full_repo_*.zip
+astrx_*_changed_files.zip
+
+# Accidental shell redirection artifacts
+/7
+/Array
+/default
+/develop
+/no
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

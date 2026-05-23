@@ -79,6 +79,21 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     /** @var array<string, string> template name => compiled class name */
     private array $knownTemplates = [];
 
+    /**
+     * Persistent cache index: template name => cached compiled class metadata.
+     *
+     * The old hot path had to read the source template on every request just
+     * to compute md5(content) and recover the generated class name. This index
+     * lets production requests jump straight from template name + source mtime
+     * to the cached PHP class file. Source is only read when the cache is
+     * missing or stale.
+     *
+     * @var array<string,array{class:string,source_mtime:int,cache_file:string}>
+     */
+    private array $templateCacheIndex = [];
+    private bool $templateCacheIndexLoaded = false;
+    private bool $templateCacheIndexDirty = false;
+
     private string $templateDir;
     private string $templateExtension = '.html';
     private string $templateCacheDir;
@@ -233,6 +248,25 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             return null;
         }
 
+        $srcMtime = @filemtime($templateFile);
+
+        if ($this->cacheTemplates) {
+            $cacheFile = $this->templateCacheDir . $template . '.php';
+            $cachedClass = $this->cachedTemplateClassName($template, $cacheFile, $srcMtime);
+            if ($cachedClass !== null) {
+                require_once $cacheFile;
+                if (class_exists($cachedClass, false)) {
+                    $this->knownTemplates[$template] = $cachedClass;
+                    return $this->getTemplateClass($cachedClass);
+                }
+
+                // Index/cache mismatch. Remove both entries and fall through to
+                // source compilation so the next request is clean.
+                @unlink($cacheFile);
+                $this->forgetTemplateCacheIndexEntry($template);
+            }
+        }
+
         $content = file_get_contents($templateFile);
         if ($content === false) {
             $this->sink->emit(new TemplateFileReadFailedDiagnostic(
@@ -244,28 +278,6 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         }
 
         $className = $this->getTemplateClassName($template, $content);
-
-        if ($this->cacheTemplates) {
-            $cacheFile = $this->templateCacheDir . $template . '.php';
-            // Cache is valid only when it exists AND is at least as fresh as
-            // the source. mtime(source) > mtime(cache) means the template was
-            // edited since the last compile — we must recompile.
-            // This is also true for SOURCE files whose CONTENT depends on
-            // included partials, but partials trigger their own template load
-            // which would have already invalidated their own cache.
-            if (file_exists($cacheFile)) {
-                $srcMtime   = @filemtime($templateFile);
-                $cacheMtime = @filemtime($cacheFile);
-                if ($srcMtime !== false && $cacheMtime !== false && $cacheMtime >= $srcMtime) {
-                    require_once $cacheFile;
-                    $this->knownTemplates[$template] = $className;
-                    return $this->getTemplateClass($className);
-                }
-                // Stale — delete to avoid PHP's require_once cache making
-                // the next request still see the old class definition.
-                @unlink($cacheFile);
-            }
-        }
 
         if ($parseMode === self::PARSE_MODE_TEMPLATE) {
             $tokenized = $this->tokenizeTemplate($content);
@@ -296,7 +308,14 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             if (!is_dir($cacheDir)) {
                 mkdir($cacheDir, 0755, recursive: true);
             }
-            @file_put_contents($cacheFile, $code);
+            if (@file_put_contents($cacheFile, $code) !== false) {
+                $this->rememberTemplateCacheIndexEntry(
+                    template: $template,
+                    className: $className,
+                    cacheFile: $cacheFile,
+                    sourceMtime: is_int($srcMtime) ? $srcMtime : (int) @filemtime($templateFile),
+                );
+            }
         }
 
         return $this->getTemplateClass($className);
@@ -330,9 +349,25 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                 if (@unlink($file->getPathname())) { $deleted++; }
             }
         }
-        // Also drop our in-memory map so the next render reloads from disk.
+        $indexFile = $this->templateCacheIndexFile();
+        if (is_file($indexFile) && @unlink($indexFile)) {
+            $deleted++;
+        }
+
+        // Also drop our in-memory maps so the next render reloads from disk.
         $this->knownTemplates = [];
+        $this->templateCacheIndex = [];
+        $this->templateCacheIndexLoaded = true;
+        $this->templateCacheIndexDirty = false;
         return $deleted;
+    }
+
+    /**
+     * Persist any warmed cache-index entries at the end of a request/build.
+     */
+    public function __destruct()
+    {
+        $this->flushTemplateCacheIndex();
     }
 
     public function getTemplateClassName(string $templateName, string $templateContent): string
@@ -342,6 +377,121 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         // invalid PHP class name.  Replace '/' with '_'.
         $safeName = str_replace('/', '_', ltrim($templateName, self::TOKEN_OPERATOR_DEREFERENCE));
         return self::TEMPLATE_CLASS_PREFIX . $safeName . md5($templateContent);
+    }
+
+
+    // -------------------------------------------------------------------------
+    // Persistent cache index
+    // -------------------------------------------------------------------------
+
+    private function templateCacheIndexFile(): string
+    {
+        return rtrim($this->templateCacheDir, DIRECTORY_SEPARATOR)
+               . DIRECTORY_SEPARATOR . '.template-index.php';
+    }
+
+    private function loadTemplateCacheIndex(): void
+    {
+        if ($this->templateCacheIndexLoaded) {
+            return;
+        }
+
+        $this->templateCacheIndexLoaded = true;
+        $file = $this->templateCacheIndexFile();
+        if (!is_file($file)) {
+            $this->templateCacheIndex = [];
+            return;
+        }
+
+        $loaded = @include $file;
+        if (!is_array($loaded)) {
+            $this->templateCacheIndex = [];
+            return;
+        }
+
+        $index = [];
+        foreach ($loaded as $template => $row) {
+            if (!is_string($template) || !is_array($row)) {
+                continue;
+            }
+            $class = $row['class'] ?? null;
+            $mtime = $row['source_mtime'] ?? null;
+            $cache = $row['cache_file'] ?? null;
+            if (!is_string($class) || !is_int($mtime) || !is_string($cache)) {
+                continue;
+            }
+            $index[$template] = [
+                'class' => $class,
+                'source_mtime' => $mtime,
+                'cache_file' => $cache,
+            ];
+        }
+        $this->templateCacheIndex = $index;
+    }
+
+    private function cachedTemplateClassName(string $template, string $cacheFile, int|false $sourceMtime): ?string
+    {
+        $this->loadTemplateCacheIndex();
+
+        if ($sourceMtime === false || !is_file($cacheFile)) {
+            return null;
+        }
+
+        $row = $this->templateCacheIndex[$template] ?? null;
+        if ($row === null) {
+            return null;
+        }
+
+        if ($row['source_mtime'] < $sourceMtime) {
+            return null;
+        }
+
+        $cacheMtime = @filemtime($cacheFile);
+        if ($cacheMtime === false || $cacheMtime < $sourceMtime) {
+            return null;
+        }
+
+        return $row['class'];
+    }
+
+    private function rememberTemplateCacheIndexEntry(
+        string $template,
+        string $className,
+        string $cacheFile,
+        int $sourceMtime,
+    ): void {
+        $this->loadTemplateCacheIndex();
+        $this->templateCacheIndex[$template] = [
+            'class' => $className,
+            'source_mtime' => $sourceMtime,
+            'cache_file' => $cacheFile,
+        ];
+        $this->templateCacheIndexDirty = true;
+    }
+
+    private function forgetTemplateCacheIndexEntry(string $template): void
+    {
+        $this->loadTemplateCacheIndex();
+        unset($this->templateCacheIndex[$template]);
+        $this->templateCacheIndexDirty = true;
+    }
+
+    private function flushTemplateCacheIndex(): void
+    {
+        if (!$this->templateCacheIndexDirty || !$this->cacheTemplates) {
+            return;
+        }
+
+        $file = $this->templateCacheIndexFile();
+        $dir = dirname($file);
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return;
+        }
+
+        $php = '<?php return ' . var_export($this->templateCacheIndex, true) . ';' . PHP_EOL;
+        if (@file_put_contents($file, $php, LOCK_EX) !== false) {
+            $this->templateCacheIndexDirty = false;
+        }
     }
 
     // -------------------------------------------------------------------------

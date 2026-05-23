@@ -59,7 +59,7 @@ final class UrlGenerator
             $path = $locale !== ''
                 ? $base . '/' . $locale . '/' . $resolvedUrlId
                 : $base . '/' . $resolvedUrlId;
-            return $path . $extra;
+            return $this->withRoutePrefix($path . $extra);
         }
 
         $query = [];
@@ -69,7 +69,7 @@ final class UrlGenerator
         $query[$pageKey] = $resolvedUrlId;
         $query           = array_merge($query, $queryParams);
 
-        return $entryPoint . '?' . http_build_query($query);
+        return $this->withRoutePrefix($entryPoint . '?' . http_build_query($query));
     }
 
     /**
@@ -186,7 +186,7 @@ final class UrlGenerator
             : $root;
 
         $extra = $extraQuery !== [] ? '?' . http_build_query($extraQuery) : '';
-        return $path . $extra;
+        return $this->withRoutePrefix($path . $extra);
     }
 
     /** @param array<string, scalar> $extraQuery */
@@ -222,6 +222,50 @@ final class UrlGenerator
 
         $query = array_merge($query, $extraQuery);
 
-        return $entryPoint . '?' . http_build_query($query);
+        return $this->withRoutePrefix($entryPoint . '?' . http_build_query($query));
+    }
+
+    private function withRoutePrefix(string $url): string
+    {
+        if (!defined('ASTRX_COMPILED_ROUTE_PREFIX')) {
+            return $url;
+        }
+
+        $prefix = (string) constant('ASTRX_COMPILED_ROUTE_PREFIX');
+        $prefix = '/' . trim($prefix, '/');
+        if ($prefix === '/') {
+            return $url;
+        }
+
+        if ($url === '' || str_starts_with($url, '#')) {
+            return $url;
+        }
+
+        $lower = strtolower($url);
+        if (str_starts_with($lower, 'http://')
+            || str_starts_with($lower, 'https://')
+            || str_starts_with($lower, 'mailto:')
+            || str_starts_with($lower, 'tel:')
+            || str_starts_with($lower, 'data:')
+            || str_starts_with($lower, 'javascript:')) {
+            return $url;
+        }
+
+        if (str_starts_with($url, $prefix . '/') || $url === $prefix) {
+            return $url;
+        }
+
+        if ($url[0] === '/') {
+            return $prefix . ($url === '/' ? '' : $url);
+        }
+
+        // Query-mode entry points are often configured as "index.php".
+        // In compiled benchmark mode they must remain inside /compile.
+        if (preg_match('#^[A-Za-z0-9_.-]+\.php(?:\?|$)#', $url) === 1) {
+            return $prefix . '/' . $url;
+        }
+
+        return $url;
     }
 }
+

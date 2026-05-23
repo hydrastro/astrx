@@ -86,13 +86,22 @@ final class JsController extends AbstractController
         return is_scalar($lang) && (string) $lang !== '' ? (string) $lang : 'en';
     }
 
+    private function routePrefix(): string
+    {
+        if (!defined('ASTRX_COMPILED_ROUTE_PREFIX')) {
+            return '';
+        }
+        $prefix = '/' . trim((string) constant('ASTRX_COMPILED_ROUTE_PREFIX'), '/');
+        return $prefix === '/' ? '' : $prefix;
+    }
+
     private function jsBasePath(): string
     {
         $basePath = rtrim($this->config->getConfigString('Routing', 'base_path', '/'), '/');
         if ($basePath === '') {
             $basePath = '';
         }
-        return $basePath . '/' . rawurlencode($this->locale()) . '/js';
+        return $this->routePrefix() . $basePath . '/' . rawurlencode($this->locale()) . '/js';
     }
 
     private function siteLocaleBasePath(): string
@@ -101,7 +110,7 @@ final class JsController extends AbstractController
         if ($basePath === '') {
             $basePath = '';
         }
-        return $basePath . '/' . rawurlencode($this->locale());
+        return $this->routePrefix() . $basePath . '/' . rawurlencode($this->locale());
     }
 
     private function currentRoutePath(): string

@@ -11,6 +11,7 @@ This generates:
 ```text
 build/astrx.compiled.php
 public/compiled.php
+public/compile/index.php
 ```
 
 `build/astrx.compiled.php` contains:
@@ -20,7 +21,9 @@ public/compiled.php
 - the non-config, non-cache text resources needed to reconstruct templates/lang/setup files;
 - helpers for inspecting and extracting the embedded resource payload.
 
-`public/compiled.php` is a front controller equivalent to `public/index.php`, except it boots from the compiled bundle instead of `src/bootstrap.php` and the PSR-4 filesystem autoloader.
+`public/compiled.php` is a direct front controller equivalent to `public/index.php`, except it boots from the compiled bundle instead of `src/bootstrap.php` and the PSR-4 filesystem autoloader.
+
+`public/compile/index.php` is the benchmark front controller. It serves the same app under `/compile`, strips that prefix before routing, and rewrites internal links/forms/redirects back under `/compile` so navigation stays in compiled mode.
 
 ## Why it is a bundle autoloader, not raw concatenation
 
@@ -42,19 +45,23 @@ Build the bundle:
 php tools/compile.php
 ```
 
-Then point your web server to:
+For isolated benchmarking, use the generated `/compile` prefix:
 
 ```text
-public/compiled.php
+/compile
+/compile/en/main
+/compile/en/admin-navbar
 ```
 
-instead of:
+The patched Nginx config routes `/compile/*` to `public/compile/index.php`. The front controller rewrites internal links/forms/redirects under `/compile`, so clicking around does not silently fall back to normal `public/index.php` mode.
+
+For production, you can still choose either strategy:
 
 ```text
-public/index.php
+public/index.php              normal development/runtime mode
+public/compiled.php           compiled mode as the site root
+public/compile/index.php      compiled benchmark mode under /compile
 ```
-
-For a quick manual test, temporarily change your Nginx `try_files`/FastCGI target from `index.php` to `compiled.php`, or request it directly if your server allows it.
 
 ## Resources
 
@@ -98,7 +105,8 @@ This is deliberate. It lets the PHP code be compiled first, while keeping resour
 ```bash
 php tools/compile.php \
   --out=build/astrx.compiled.php \
-  --front=public/compiled.php
+  --front=public/compiled.php \
+  --compile-front=public/compile/index.php
 ```
 
 ## Profiling comparison
@@ -106,8 +114,9 @@ php tools/compile.php \
 Compare normal and compiled front controllers:
 
 ```text
-/en/main?XDEBUG_TRIGGER=1             normal public/index.php
-/en/main?XDEBUG_TRIGGER=1             compiled public/compiled.php, after web server switch
+/en/main?XDEBUG_TRIGGER=1                  normal public/index.php
+/compile/en/main?XDEBUG_TRIGGER=1          compiled benchmark prefix
+/compiled.php?XDEBUG_TRIGGER=1             compiled direct front controller
 ```
 
 Useful functions to compare in Cachegrind:
@@ -136,6 +145,12 @@ Compiled mode is:
 
 ```text
 public/compiled.php → build/astrx.compiled.php → AstrX\Compiled\Bundle::boot()
+```
+
+Benchmark-prefix compiled mode is:
+
+```text
+/compile/* → public/compile/index.php → build/astrx.compiled.php → AstrX\Compiled\Bundle::boot()
 ```
 
 So you can keep both front controllers side by side and switch at the web server level.

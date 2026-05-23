@@ -1,97 +1,256 @@
-# fix123 — Single comprehensive fix
+# AstrX
 
-This replaces the broken three-file `setup/` layout with **two files** that
-produce a fully-working database on first boot. No more manual migrations.
+AstrX is a small PHP framework/CMS that keeps server-rendered, JavaScript-free pages as the canonical mode while also exposing two optional acceleration/benchmark paths:
 
-## What's in this fix
+- **Normal mode**: `/en/main`, `/en/user`, `/en/admin-*`
+- **JS browser mode**: `/en/js/main`, `/en/js/user`, `/en/js/admin-*`
+- **Compiled benchmark mode**: `/compile/en/main`, `/compile/en/user`, `/compile/en/admin-*`
+- **Compiled JS benchmark mode**: `/compile/en/js/main`, `/compile/en/js/admin-*`
 
+The normal PHP path remains the source of truth. JS mode and compiled mode are opt-in experiments for profiling and production-readiness work.
+
+## Repository layout
+
+```text
+public/                 Web root and front controllers
+public/index.php        Normal front controller
+public/compiled.php     Compiled front controller without URL prefix
+public/compile/         /compile benchmark front controller
+src/                    Framework source
+resources/config/       Local runtime configuration
+resources/template/     Server templates and themes
+setup/                  Fresh database bootstrap SQL
+tools/                  Build, verification, profiling, and cache tools
+docs/                   API, compiled-build, and profiling notes
+docker/                 Local Docker/Nginx/PHP/MariaDB setup
 ```
-fix123/
-├── setup/
-│   ├── 01-init.sql       # creates content_manager DB + user account
-│   └── 02-tables.sql     # complete schema + all data seeds (everything baked in)
-└── README.md             # this file
+
+Generated/runtime files are intentionally not part of the clean source state:
+
+```text
+build/astrx.compiled.php
+resources/template/cache/*
+xdebug-profiles/*
+*.patch
+astrx_full_repo_*.zip
 ```
 
-## What's been fixed at the SQL level
-
-`02-tables.sql` is the OLD `tables.sql` with all migration content folded in:
-
-| Change                                                        | Was in (manual migration)         |
-|---------------------------------------------------------------|-----------------------------------|
-| `page.api_enabled` column (TINYINT DEFAULT 0)                 | migrate_api.sql                   |
-| `resolved_page` view now selects `p.api_enabled`              | migrate_api.sql                   |
-| `api_key` table CREATE                                        | migrate_api.sql                   |
-| `captcha.regen_count` + `captcha.last_regen_at` columns       | migrate_captcha_abuse.sql         |
-| Page row `WORDING_CAPTCHA_IMAGE` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
-| Page row `WORDING_CAPTCHA_FRAME` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
-| Page row `WORDING_FEED` (template=0, controller=1, index=1)   | migrate_feed.sql                  |
-| Page row `WORDING_JS_APP` (template=0, controller=1)          | migrate_js_spa.sql                |
-| `api_enabled=1` on MAIN/USER_HOME/PROFILE/LOGIN/REGISTER/RECOVER | migrate_api_profile + migrate_spa_api_enable |
-
-The old `setup/migrate_themes.sql` is gone — its content (theme column on
-user, admin_themes page row) was already in `tables.sql`, and its presence
-in the Docker init dir was causing the alphabetical-ordering bug (it ran
-BEFORE tables.sql, on an empty database, and the ALTER silently failed).
-
-The numeric file prefixes (`01-`, `02-`) make the init order explicit
-instead of relying on alphabetical coincidence.
-
-## How to apply
-
-You're in dev mode, so the cleanest path is a **clean DB rebuild**:
+## Quick start
 
 ```bash
-# 1. Apply the fix (REPLACE setup/ contents — both old files go away)
-unzip fix123.zip
-rm -f setup/init.sql setup/migrate_themes.sql setup/tables.sql
-cp -r fix123/setup/. setup/
+mkdir -p build resources/template/cache
+php tools/warm-template-cache.php --clear
+php tools/compile.php
+php tools/verify-compiled.php
 
-# 2. Nuke the database volume and rebuild everything
-docker compose down -v
-docker compose up --build -d
-
-# 3. Wait ~10 seconds for MariaDB to finish initialising, then verify:
-sleep 10
-docker compose exec -T mariadb mysql -u user -ppassword content_manager -e "
-SELECT id, url_id, api_enabled, \`index\`, follow, title, template_file_name
-  FROM resolved_page
- WHERE url_id IN ('WORDING_MAIN','WORDING_FEED','WORDING_JS_APP','WORDING_CAPTCHA_FRAME')
- ORDER BY id;
-"
+docker compose up -d --build
 ```
 
-Expected: 4 rows, all without errors. If you see this, the framework
-will boot cleanly:
-- The main page loads (no more `Unknown column 'index'`)
-- `/en/api/main?html=1` returns JSON instead of 404
-- `/en/js/#main` SPA fetches and renders
-- `/en/feed.xml` serves Atom XML
-- Captcha iframe pages route correctly
+Open:
 
-## Optional cleanup
+```text
+http://localhost/en/main
+```
 
-Two harmless brace-expansion artifact directories exist in your repo from
-earlier `cp -r` commands where brace expansion didn't fire (likely zsh
-shell behavior). They're invisible to the PSR-4 autoloader. To remove:
+## Required Docker mounts
+
+`/compile` mode requires the generated bundle to be visible inside PHP-FPM. The `phpfpm` service must mount:
+
+```yaml
+- ./build:/app/build
+```
+
+The local Nginx config should also be mounted during development so route changes apply without rebuilding the image:
+
+```yaml
+- ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+```
+
+After changing `docker/nginx/default.conf`, run:
 
 ```bash
-rm -rf 'src/{src' 'src/AstrX/{Controller,User,Auth'
+docker compose up -d --force-recreate nginx phpfpm
 ```
 
-(The quoting is essential — those directory names literally start with `{`.)
+## Normal mode
 
-## Why this is different from earlier fixes
+Normal mode uses `public/index.php` and filesystem source loading:
 
-The previous twelve attempts to fix the view were piecemeal patches that
-assumed your Docker init was already producing a correct base state. It
-wasn't. Every `docker compose down -v` reset you back to a broken init
-(`migrate_themes.sql` failing before `tables.sql`, no `api_enabled`
-column, no view rebuild). The manual migrations in `src/setup/` could
-restore correctness, but only if you ran ALL of them in the right
-order — and we both lost track of which had been run.
+```text
+/en/main
+/en/user
+/en/admin-navbar
+```
 
-This fix removes the moving parts. The Docker init dir contains exactly
-two files that always produce a complete, correct schema. No manual
-migrations are needed for a fresh boot. The files in `src/setup/` are
-now historical reference only.
+Request flow:
+
+```text
+Nginx → public/index.php → src/bootstrap.php → ContentManager → controller/template → HTML
+```
+
+This is the stable, JS-less framework path.
+
+## JS browser mode
+
+JS mode lives under `/en/js/...`:
+
+```text
+/en/js/main
+/en/js/user
+/en/js/admin-navbar
+```
+
+It serves a small shell and runtime, then browses normal PHP pages through server-side fragments. The runtime keeps navigation inside JS mode and preserves forms/login redirects.
+
+Generated JS endpoints:
+
+```text
+/en/js/runtime.js
+/en/js/templates.js
+/en/js/templates.json   fallback/debug only
+/en/js/manifest.json    debug/tooling
+/en/js/api.json         debug/tooling
+```
+
+Debug overlay:
+
+```text
+/en/js/main?debug=1
+```
+
+## API mode
+
+API routes are opt-in per page using `page.api_enabled`:
+
+```text
+/en/api/main
+/en/api/main?html=0
+```
+
+Controllers expose API-safe data only through scoped template context values. Ordinary web-only template values are not automatically serialized.
+
+See [`docs/API.md`](docs/API.md).
+
+## Compiled benchmark mode
+
+Build the bundle:
+
+```bash
+php tools/warm-template-cache.php --clear
+php tools/compile.php
+php tools/verify-compiled.php
+```
+
+Compiled mode uses one generated PHP bundle:
+
+```text
+build/astrx.compiled.php
+```
+
+Benchmark URLs:
+
+```text
+/compile
+/compile/en/main
+/compile/en/user
+/compile/en/admin-navbar
+/compile/en/js/main
+```
+
+Request flow:
+
+```text
+Nginx → public/compile/index.php → build/astrx.compiled.php → ContentManager
+```
+
+`/compile` is a benchmark prefix. Internally the framework still routes `/en/main`; generated internal links are prefixed back to `/compile/en/main` so navigation stays in compiled mode.
+
+If `/compile/en/...` returns the normal 404 page or links do not start with `/compile`, Nginx is not using the updated `/compile` location. Run:
+
+```bash
+docker compose exec nginx nginx -T | grep -A25 'location = /compile'
+docker compose exec phpfpm ls -lah /app/build/astrx.compiled.php
+```
+
+## Template cache
+
+Warm all server-side templates before benchmarking:
+
+```bash
+php tools/warm-template-cache.php --clear
+```
+
+This writes compiled template classes and an index under:
+
+```text
+resources/template/cache/
+```
+
+`php tools/compile.php` also warms the template cache.
+
+## Profiling
+
+Use Xdebug profiling when comparing modes. For admin pages, pass the browser session cookie so curl profiles the logged-in path instead of guest redirects.
+
+```bash
+COOKIE_HEADER='PHPSESSID=your_cookie_here' \
+HEAVY_ROUTE=admin-config-access \
+LOAD_FACTOR=3 \
+./tools/profile-modes.sh
+```
+
+The script profiles:
+
+```text
+normal
+compiled
+js_shell
+js_fragment
+compiled_js_shell
+compiled_js_fragment
+```
+
+Outputs go to:
+
+```text
+xdebug-profiles/modes-YYYYMMDD-HHMMSS/
+```
+
+Open with:
+
+```bash
+kcachegrind xdebug-profiles/modes-*/*/cachegrind.out.*
+```
+
+See [`docs/PROFILING.md`](docs/PROFILING.md).
+
+## Useful commands
+
+```bash
+# Syntax check framework PHP
+find src public tools resources/template/themes -name '*.php' -type f -print0 | xargs -0 -n1 php -l
+
+# Rebuild compiled benchmark mode
+php tools/warm-template-cache.php --clear
+php tools/compile.php
+php tools/verify-compiled.php
+
+# Check Docker can see the bundle
+docker compose exec phpfpm ls -lah /app/build/astrx.compiled.php
+
+# Show active Nginx config
+docker compose exec nginx nginx -T
+```
+
+## Development rule of thumb
+
+Keep these concerns separate:
+
+```text
+normal mode      correctness and baseline behavior
+JS mode          browser/runtime experiment
+compiled mode    PHP boot-path benchmark
+API mode         explicit JSON/data surface
+```
+
+When optimizing, compare the same page in all relevant modes before changing architecture.

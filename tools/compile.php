@@ -18,6 +18,7 @@ final class AstrXCompiler
     private string $root;
     private string $outFile;
     private string $frontController;
+    private string $compileFrontController;
 
     /** @var array<string,string> */
     private array $sourcePayload = [];
@@ -39,12 +40,14 @@ final class AstrXCompiler
         $this->root = dirname(__DIR__);
         $this->outFile = $this->root . '/build/astrx.compiled.php';
         $this->frontController = $this->root . '/public/compiled.php';
+        $this->compileFrontController = $this->root . '/public/compile/index.php';
 
         foreach (array_slice($argv, 1) as $arg) {
             if (str_starts_with($arg, '--root=')) {
                 $this->root = rtrim(substr($arg, 7), DIRECTORY_SEPARATOR);
                 $this->outFile = $this->root . '/build/astrx.compiled.php';
                 $this->frontController = $this->root . '/public/compiled.php';
+                $this->compileFrontController = $this->root . '/public/compile/index.php';
                 continue;
             }
             if (str_starts_with($arg, '--out=')) {
@@ -53,6 +56,10 @@ final class AstrXCompiler
             }
             if (str_starts_with($arg, '--front=')) {
                 $this->frontController = $this->absoluteOrRoot(substr($arg, 8));
+                continue;
+            }
+            if (str_starts_with($arg, '--compile-front=')) {
+                $this->compileFrontController = $this->absoluteOrRoot(substr($arg, 16));
                 continue;
             }
             if ($arg === '-h' || $arg === '--help') {
@@ -69,15 +76,20 @@ final class AstrXCompiler
         $this->collectResources();
         $this->writeBundle();
         $this->writeFrontController();
+        $this->writeCompileFrontController();
+        $this->warmTemplateCache();
         $this->lint($this->outFile);
         $this->lint($this->frontController);
+        $this->lint($this->compileFrontController);
 
         $sourceBytes = filesize($this->outFile) ?: 0;
         $frontBytes  = filesize($this->frontController) ?: 0;
+        $compileFrontBytes = filesize($this->compileFrontController) ?: 0;
 
         echo "AstrX compiled bundle written.\n";
         echo "  bundle:  " . $this->relative($this->outFile) . ' (' . $this->fmtBytes($sourceBytes) . ")\n";
         echo "  front:   " . $this->relative($this->frontController) . ' (' . $this->fmtBytes($frontBytes) . ")\n";
+        echo "  prefix:  " . $this->relative($this->compileFrontController) . ' (' . $this->fmtBytes($compileFrontBytes) . ")\n";
         echo "  classes: " . count($this->classMap) . "\n";
         echo "  source files: " . count($this->sourcePayload) . "\n";
         echo "  embedded resources: " . count($this->resourcePayload) . "\n";
@@ -222,6 +234,7 @@ namespace AstrX\Compiled;
 final class Bundle
 {
     public const VERSION = '{$version}';
+    public const MODE = 'compiled-bundle';
 
     /** @var array<string,string> */
     private const CLASS_MAP = {$classMapExport};
@@ -330,14 +343,45 @@ PHP;
         file_put_contents($this->outFile, $bundle);
     }
 
+
+    private function warmTemplateCache(): void
+    {
+        $script = $this->root . '/tools/warm-template-cache.php';
+        if (!is_file($script)) {
+            $this->warnings[] = 'template cache warm skipped; tools/warm-template-cache.php not found';
+            return;
+        }
+
+        $cmd = PHP_BINARY . ' ' . escapeshellarg($script) . ' --quiet 2>&1';
+        exec($cmd, $out, $code);
+        if ($code !== 0) {
+            $this->warnings[] = 'template cache warm failed: ' . implode(' | ', $out);
+            return;
+        }
+
+        $this->warnings[] = 'server-side template cache warmed';
+    }
+
     private function writeFrontController(): void
     {
-        $dir = dirname($this->frontController);
+        $this->writeFrontControllerFile($this->frontController, null);
+    }
+
+    private function writeCompileFrontController(): void
+    {
+        $this->writeFrontControllerFile($this->compileFrontController, '/compile');
+    }
+
+    private function writeFrontControllerFile(string $target, ?string $prefix): void
+    {
+        $dir = dirname($target);
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new RuntimeException("Could not create {$dir}");
         }
 
-        $front = <<<'PHP'
+        $prefixExport = var_export($prefix, true);
+
+        $front = <<<PHP
 <?php
 
 declare(strict_types=1);
@@ -355,7 +399,7 @@ declare(strict_types=1);
 
 define(
     'INDEX_DIR',
-    realpath(__DIR__ . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR
+    realpath(__DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . (basename(__DIR__) === 'compile' ? '..' : '')) . DIRECTORY_SEPARATOR
 );
 const RESOURCES_DIR = INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR;
 const LANG_DIR = RESOURCES_DIR . 'lang' . DIRECTORY_SEPARATOR;
@@ -369,19 +413,125 @@ const TEMPLATE_HANDLER_DIR = SRC_DIR . 'template_handler' . DIRECTORY_SEPARATOR;
 
 set_include_path(__DIR__);
 
-$bundle = INDEX_DIR . 'build' . DIRECTORY_SEPARATOR . 'astrx.compiled.php';
-if (!is_file($bundle)) {
+\$compilePrefix = {$prefixExport};
+if (\$compilePrefix !== null) {
+    define('ASTRX_COMPILED_ROUTE_PREFIX', \$compilePrefix);
+    \$_SERVER['ASTRX_COMPILED_MODE'] = '1';
+    \$_SERVER['ASTRX_COMPILED_ROUTE_PREFIX'] = \$compilePrefix;
+
+    if (!headers_sent()) {
+        header('X-AstrX-Compiled: prefix=' . \$compilePrefix);
+    }
+
+    \$astrxPrefixPath = static function (string \$path) use (\$compilePrefix): string {
+        if (\$path === '' || \$path[0] !== '/') {
+            return \$path;
+        }
+        if (\$path === \$compilePrefix || str_starts_with(\$path, \$compilePrefix . '/')) {
+            return \$path;
+        }
+        if (preg_match('#^/(?:[a-z]{2})(?:/|\$)#i', \$path) === 1 || \$path === '/') {
+            return rtrim(\$compilePrefix, '/') . (\$path === '/' ? '' : \$path);
+        }
+        return \$path;
+    };
+
+    \$astrxStripPrefix = static function (string \$uri) use (\$compilePrefix): string {
+        \$parts = parse_url(\$uri);
+        \$path = is_array(\$parts) && isset(\$parts['path']) ? (string) \$parts['path'] : \$uri;
+        \$query = is_array(\$parts) && isset(\$parts['query']) ? '?' . (string) \$parts['query'] : '';
+
+        if (\$path === \$compilePrefix) {
+            return '/' . \$query;
+        }
+        if (str_starts_with(\$path, \$compilePrefix . '/')) {
+            \$stripped = substr(\$path, strlen(\$compilePrefix));
+            return (\$stripped !== '' ? \$stripped : '/') . \$query;
+        }
+        return \$uri;
+    };
+
+    \$originalRequestUri = \$_SERVER['REQUEST_URI'] ?? '/';
+    \$_SERVER['ASTRX_ORIGINAL_REQUEST_URI'] = \$originalRequestUri;
+    \$_SERVER['REQUEST_URI'] = \$astrxStripPrefix(\$originalRequestUri);
+    \$_SERVER['SCRIPT_NAME'] = \$compilePrefix . '/index.php';
+    \$_SERVER['PHP_SELF'] = \$compilePrefix . '/index.php';
+
+    header_register_callback(static function () use (\$compilePrefix, \$astrxPrefixPath): void {
+        foreach (headers_list() as \$headerLine) {
+            if (stripos(\$headerLine, 'Location:') !== 0) {
+                continue;
+            }
+            \$location = trim(substr(\$headerLine, 9));
+            \$newLocation = \$location;
+
+            if (str_starts_with(\$location, '/')) {
+                \$newLocation = \$astrxPrefixPath(\$location);
+            } else {
+                \$parts = parse_url(\$location);
+                \$host = \$_SERVER['HTTP_HOST'] ?? '';
+                if (is_array(\$parts) && isset(\$parts['host'], \$parts['path']) && strcasecmp((string) \$parts['host'], \$host) === 0) {
+                    \$path = \$astrxPrefixPath((string) \$parts['path']);
+                    \$query = isset(\$parts['query']) ? '?' . (string) \$parts['query'] : '';
+                    \$fragment = isset(\$parts['fragment']) ? '#' . (string) \$parts['fragment'] : '';
+                    \$scheme = isset(\$parts['scheme']) ? (string) \$parts['scheme'] : 'http';
+                    \$newLocation = \$scheme . '://' . \$host . \$path . \$query . \$fragment;
+                }
+            }
+
+            if (\$newLocation !== \$location) {
+                header_remove('Location');
+                header('Location: ' . \$newLocation, true, http_response_code() ?: 302);
+            }
+        }
+    });
+
+    ob_start(static function (string \$html) use (\$compilePrefix, \$astrxPrefixPath): string {
+        \$contentType = '';
+        foreach (headers_list() as \$headerLine) {
+            if (stripos(\$headerLine, 'Content-Type:') === 0) {
+                \$contentType = strtolower(\$headerLine);
+                break;
+            }
+        }
+        if (\$contentType !== '' && !str_contains(\$contentType, 'text/html')) {
+            return \$html;
+        }
+
+        \$rewriteAttr = static function (array \$m) use (\$astrxPrefixPath): string {
+            \$url = html_entity_decode(\$m[3], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            \$parts = parse_url(\$url);
+            \$path = is_array(\$parts) && isset(\$parts['path']) ? (string) \$parts['path'] : \$url;
+            if (\$path === '' || \$path[0] !== '/') {
+                return \$m[0];
+            }
+            \$query = is_array(\$parts) && isset(\$parts['query']) ? '?' . (string) \$parts['query'] : '';
+            \$fragment = is_array(\$parts) && isset(\$parts['fragment']) ? '#' . (string) \$parts['fragment'] : '';
+            \$rewritten = \$astrxPrefixPath(\$path) . \$query . \$fragment;
+            if (\$rewritten === \$url) {
+                return \$m[0];
+            }
+            return \$m[1] . '=' . \$m[2] . htmlspecialchars(\$rewritten, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . \$m[2];
+        };
+
+        \$html = preg_replace_callback('/\b(href|src|action|formaction|poster)=("|\')([^"\']*)\\2/i', \$rewriteAttr, \$html) ?? \$html;
+        return \$html;
+    });
+}
+
+\$bundle = INDEX_DIR . 'build' . DIRECTORY_SEPARATOR . 'astrx.compiled.php';
+if (!is_file(\$bundle)) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
     echo "AstrX compiled bundle is missing. Run: php tools/compile.php\n";
     exit;
 }
 
-require $bundle;
+require \$bundle;
 \AstrX\Compiled\Bundle::boot();
 PHP;
 
-        file_put_contents($this->frontController, $front);
+        file_put_contents($target, $front);
     }
 
     /** @return list<SplFileInfo> */
@@ -534,11 +684,12 @@ PHP;
     {
         $msg = <<<'TXT'
 Usage:
-  php tools/compile.php [--root=/path/to/repo] [--out=build/astrx.compiled.php] [--front=public/compiled.php]
+  php tools/compile.php [--root=/path/to/repo] [--out=build/astrx.compiled.php] [--front=public/compiled.php] [--compile-front=public/compile/index.php]
 
 Generates:
-  build/astrx.compiled.php  Single PHP source bundle + embedded text resources
-  public/compiled.php       Front controller that boots from the bundle
+  build/astrx.compiled.php       Single PHP source bundle + embedded text resources
+  public/compiled.php            Direct front controller that boots from the bundle
+  public/compile/index.php       /compile-prefixed benchmark front controller
 TXT;
         fwrite($code === 0 ? STDOUT : STDERR, $msg . PHP_EOL);
         exit($code);
