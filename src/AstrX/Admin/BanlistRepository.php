@@ -384,12 +384,12 @@ final class BanlistRepository
     {
         try {
             $stmt = $this->pdo->prepare(
-                'SELECT COUNT(*) FROM `ban` WHERE `ban_route` = :route'
+                'SELECT COUNT(*) FROM `banlist` WHERE `ban_route` = :route'
             );
             $stmt->execute([':route' => $routeKey]);
             return Result::ok((int) $stmt->fetchColumn());
         } catch (\PDOException $e) {
-            return $this->dbErr($e);
+            return $this->err($e);
         }
     }
 

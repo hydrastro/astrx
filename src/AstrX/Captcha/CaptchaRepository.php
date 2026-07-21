@@ -154,11 +154,13 @@ final class CaptchaRepository
                 new CaptchaDbDiagnostic(
                     'astrx.captcha/regenerate_failed',
                     DiagnosticLevel::ERROR,
+                    $e->getMessage(),
                 ),
             ));
         }
     }
 
+    /** @return Result<int> */
     public function deleteExpired(): Result
     {
         try {

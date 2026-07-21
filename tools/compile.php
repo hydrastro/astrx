@@ -35,6 +35,7 @@ final class AstrXCompiler
     /** @var list<string> */
     private array $warnings = [];
 
+    /** @param list<string> $argv */
     public function __construct(array $argv)
     {
         $this->root = dirname(__DIR__);
@@ -386,6 +387,8 @@ PHP;
 
 declare(strict_types=1);
 
+// @phpstan-ignore-file
+
 /**
  * AstrX compiled front controller.
  *
@@ -418,10 +421,6 @@ if (\$compilePrefix !== null) {
     define('ASTRX_COMPILED_ROUTE_PREFIX', \$compilePrefix);
     \$_SERVER['ASTRX_COMPILED_MODE'] = '1';
     \$_SERVER['ASTRX_COMPILED_ROUTE_PREFIX'] = \$compilePrefix;
-
-    if (!headers_sent()) {
-        header('X-AstrX-Compiled: prefix=' . \$compilePrefix);
-    }
 
     \$astrxPrefixPath = static function (string \$path) use (\$compilePrefix): string {
         if (\$path === '' || \$path[0] !== '/') {
@@ -456,6 +455,10 @@ if (\$compilePrefix !== null) {
     \$_SERVER['REQUEST_URI'] = \$astrxStripPrefix(\$originalRequestUri);
     \$_SERVER['SCRIPT_NAME'] = \$compilePrefix . '/index.php';
     \$_SERVER['PHP_SELF'] = \$compilePrefix . '/index.php';
+
+    if (!headers_sent()) {
+        header('X-AstrX-Compiled: prefix=' . \$compilePrefix);
+    }
 
     header_register_callback(static function () use (\$compilePrefix, \$astrxPrefixPath): void {
         foreach (headers_list() as \$headerLine) {
@@ -607,6 +610,7 @@ PHP;
     }
 
     /** @param array<int,mixed> $tokens */
+    /** @param list<string|array{0:int,1:string,2?:int}> $tokens */
     private function previousMeaningfulTokenId(array $tokens, int $index): ?int
     {
         for ($i = $index - 1; $i >= 0; $i--) {
@@ -615,9 +619,9 @@ PHP;
                 if (in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
-                return $t[0];
+                return is_int($t[0]) ? $t[0] : null;
             }
-            if (trim((string) $t) === '') {
+            if (trim($t) === '') {
                 continue;
             }
             return null;

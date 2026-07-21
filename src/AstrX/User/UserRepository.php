@@ -355,6 +355,7 @@ final class UserRepository
         );
     }
 
+    /** @return Result<array<string,mixed>|null> */
     public function adminFindById(string $hexId): Result
     {
         return $this->fetchOne(

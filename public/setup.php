@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+
 /**
  * AstrX First-Run Setup Wizard — single-file, no JS, site-CSS styled.
  * DELETE THIS FILE after setup is complete.

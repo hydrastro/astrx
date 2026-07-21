@@ -231,7 +231,8 @@ final class UrlGenerator
             return $url;
         }
 
-        $prefix = (string) constant('ASTRX_COMPILED_ROUTE_PREFIX');
+        $prefixValue = constant('ASTRX_COMPILED_ROUTE_PREFIX');
+        $prefix = is_scalar($prefixValue) ? (string) $prefixValue : '';
         $prefix = '/' . trim($prefix, '/');
         if ($prefix === '/') {
             return $url;

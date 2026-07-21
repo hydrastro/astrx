@@ -456,7 +456,7 @@ final class ContentManager
         $ctx->buildBase($page);
         if ($adminViewingHidden) {
             $this->collector->emit(new PageHiddenNoticeDiagnostic(
-                                       'astrx.content/page_hidden', DiagnosticLevel::NOTICE
+                                       'astrx.content/page_hidden', DiagnosticLevel::DEBUG
                                    ));
         }
 
@@ -811,7 +811,8 @@ final class ContentManager
             return false;
         }
 
-        $accept = strtolower($request->headers()->get('Accept', ''));
+        $acceptRaw = $request->headers()->get('Accept', '');
+        $accept = is_string($acceptRaw) ? strtolower($acceptRaw) : '';
         return $accept === '' || str_contains($accept, 'text/html') || str_contains($accept, '*/*');
     }
 

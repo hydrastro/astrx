@@ -10,7 +10,6 @@ use AstrX\News\NewsRepository;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
-use AstrX\Routing\UrlGenerator;
 
 /**
  * Serves the site's news as an Atom 1.0 feed.
@@ -35,7 +34,6 @@ final class FeedController extends AbstractController
         DiagnosticsCollector              $collector,
         private readonly Request          $request,
         private readonly NewsRepository   $news,
-        private readonly UrlGenerator     $urlGen,
         private readonly Translator       $t,
         private readonly CurrentUrl       $currentUrl,
         private readonly Config           $config,

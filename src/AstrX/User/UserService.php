@@ -539,6 +539,37 @@ final class UserService
     }
 
     /** @return Result<bool> */
+    public function adminSetPassword(string $hexId, string $password): Result
+    {
+        if ($password === '') {
+            return $this->opErr('empty_fields');
+        }
+
+        $pwErr = $this->checkRegex($this->passwordRegex, $password);
+        if ($pwErr !== null) {
+            return $this->opErr('invalid_password', $pwErr);
+        }
+
+        return $this->repo->updatePassword($hexId, password_hash($password, PASSWORD_ARGON2ID));
+    }
+
+    /** @return Result<bool> */
+    public function adminSetPasswordHash(string $hexId, string $passwordHash): Result
+    {
+        if ($passwordHash === '') {
+            return $this->opErr('empty_fields');
+        }
+
+        $info = password_get_info($passwordHash);
+        $algo = $info['algo'] ?? 0;
+        if ($algo === 0) {
+            return $this->opErr('invalid_password', 'Password hash is not recognised by password_get_info().');
+        }
+
+        return $this->repo->updatePassword($hexId, $passwordHash);
+    }
+
+    /** @return Result<bool> */
     public function changeUsername(string $hexId, string $username): Result
     {
         if ($username === '') {

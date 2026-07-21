@@ -387,13 +387,8 @@ final class AdminConfigSystemController extends AbstractController
         $this->ctx->set('cfg_env_options', $this->envOptions());
         $this->ctx->set(
             'cfg_available_languages',
-            implode(
-                ', ',
-                (array)$this->config->getConfig(
-                    'Prelude',
-                    'available_languages',
-                    ['en']
-                )
+            $this->joinConfigStringList(
+                $this->config->getConfig('Prelude', 'available_languages', ['en'])
             )
         );
         $this->ctx->set(
@@ -680,13 +675,8 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_extra_lang_domains',
-            implode(
-                ', ',
-                (array)$this->config->getConfig(
-                    'ContentManager',
-                    'extra_lang_domains',
-                    []
-                )
+            $this->joinConfigStringList(
+                $this->config->getConfig('ContentManager', 'extra_lang_domains', [])
             )
         );
         $this->ctx->set(
@@ -751,6 +741,23 @@ final class AdminConfigSystemController extends AbstractController
         if (!is_array($loaded)) { return []; }
         /** @var array<string,array<string,mixed>> $loaded */
         return $loaded;
+    }
+
+
+    private function joinConfigStringList(mixed $value): string
+    {
+        if (!is_array($value)) {
+            return is_scalar($value) ? (string) $value : '';
+        }
+
+        $out = [];
+        foreach ($value as $item) {
+            if (is_scalar($item)) {
+                $out[] = (string) $item;
+            }
+        }
+
+        return implode(', ', $out);
     }
 
     /** @return list<array{value:int,label:string,selected:bool}> */

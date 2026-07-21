@@ -15,7 +15,6 @@ function configDir(): string
 {
     if (!defined('CONFIG_DIR')) { return ''; }
     $v = \constant('CONFIG_DIR');
-    // @phpstan-ignore-next-line
     return is_string($v) ? $v : '';
 }
 
@@ -23,7 +22,6 @@ function templateDir(): string
 {
     if (!defined('TEMPLATE_DIR')) { return ''; }
     $v = \constant('TEMPLATE_DIR');
-    // @phpstan-ignore-next-line
     return is_string($v) ? $v : '';
 }
 
@@ -31,7 +29,6 @@ function langDir(): string
 {
     if (!defined('LANG_DIR')) { return ''; }
     $v = \constant('LANG_DIR');
-    // @phpstan-ignore-next-line
     return is_string($v) ? $v : '';
 }
 
@@ -39,6 +36,5 @@ function cacheDir(): string
 {
     if (!defined('TEMPLATE_CACHE_DIR')) { return ''; }
     $v = \constant('TEMPLATE_CACHE_DIR');
-    // @phpstan-ignore-next-line
     return is_string($v) ? $v : '';
 }

@@ -8,7 +8,6 @@ use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
-use AstrX\Routing\UrlGenerator;
 use AstrX\Routing\CurrentUrl;
 
 /**
@@ -43,7 +42,6 @@ final class CaptchaFrameController extends AbstractController
         DiagnosticsCollector                $collector,
         private readonly Request            $request,
         private readonly CaptchaService     $captchaService,
-        private readonly UrlGenerator       $urlGen,
         private readonly Translator         $t,
         private readonly CurrentUrl         $currentUrl,
     ) {

@@ -5,7 +5,6 @@ namespace AstrX\Controller;
 
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
-use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -40,7 +39,6 @@ final class AdminThemesController extends AbstractController
         DiagnosticsCollector                    $collector,
         private readonly DefaultTemplateContext $ctx,
         private readonly Request                $request,
-        private readonly Config                 $config,
         private readonly ConfigWriter           $writer,
         private readonly Gate                   $gate,
         private readonly CsrfHandler            $csrf,

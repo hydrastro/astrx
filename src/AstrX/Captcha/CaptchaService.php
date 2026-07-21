@@ -155,13 +155,14 @@ final class CaptchaService
             // earlier find() is fine: it is stale if a concurrent regen
             // just succeeded, but the rendering is idempotent on the text
             // value so the user still sees a valid captcha image.
-            $existingText = is_scalar($row['text'] ?? null) ? (string) $row['text'] : '';
+            $existingText = $row['text'];
             return Result::ok($this->renderer->render($existingText));
         }
 
         return Result::ok($this->renderer->render($newText));
     }
 
+    /** @return Result<bool> */
     public function verify(string $id, string $submittedText): Result
     {
         $findResult = $this->repository->find($id);

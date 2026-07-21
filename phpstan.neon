@@ -1,0 +1,14 @@
+parameters:
+    level: 10
+    paths:
+        - src
+        - public
+        - tools
+    treatPhpDocTypesAsCertain: false
+    excludePaths:
+        analyse:
+            - build/*
+            - resources/template/cache/*
+            - public/compiled.php
+            - public/compile/index.php
+            - public/setup.php

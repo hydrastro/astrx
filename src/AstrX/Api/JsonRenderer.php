@@ -239,9 +239,6 @@ final class JsonRenderer
         if (is_array($value)) {
             $out = [];
             foreach ($value as $key => $item) {
-                if (!is_int($key) && !is_string($key)) {
-                    continue;
-                }
                 $normalised = $this->normaliseContextValue($item);
                 if ($normalised !== null) {
                     $out[$key] = $normalised;

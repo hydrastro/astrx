@@ -125,6 +125,7 @@ final class Mailer
      *         - filename     : displayed name in the receiving client
      *         - content_type : MIME type (e.g. 'application/pdf')
      *         - data         : RAW bytes (not base64; we encode internally)
+     * @return Result<bool>
      */
     public function send(
         string $toAddress,
@@ -161,7 +162,10 @@ final class Mailer
     // Internal
     // =========================================================================
 
-    /** @return Result<bool> */
+    /**
+     * @param list<array{filename:string,content_type:string,data:string}> $attachments
+     * @return Result<bool>
+     */
     private function doSend(
         string $toAddress,
         string $toName,
@@ -584,11 +588,9 @@ final class Mailer
         $out .= $altBody . "\r\n";
 
         foreach ($attachments as $att) {
-            $filename    = isset($att['filename']) && is_scalar($att['filename'])
-                ? (string) $att['filename'] : 'attachment';
-            $contentType = isset($att['content_type']) && is_scalar($att['content_type'])
-                ? (string) $att['content_type'] : 'application/octet-stream';
-            $data        = isset($att['data']) && is_string($att['data']) ? $att['data'] : '';
+            $filename    = $att['filename'];
+            $contentType = $att['content_type'];
+            $data        = $att['data'];
             if ($data === '') { continue; }
 
             // Sanitise filename — strip path components and CRLF (header

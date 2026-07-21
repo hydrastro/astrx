@@ -66,7 +66,7 @@ final class JsController extends AbstractController
     public function handle(): Result
     {
         $tail = $this->currentUrl->tail();
-        $first = $tail[0] ?? '';
+        $first = $tail[0];
 
         match ($first) {
             self::ASSET_RUNTIME  => $this->emitRuntimeJs(),
@@ -91,7 +91,9 @@ final class JsController extends AbstractController
         if (!defined('ASTRX_COMPILED_ROUTE_PREFIX')) {
             return '';
         }
-        $prefix = '/' . trim((string) constant('ASTRX_COMPILED_ROUTE_PREFIX'), '/');
+        $prefixValue = constant('ASTRX_COMPILED_ROUTE_PREFIX');
+        $prefixString = is_scalar($prefixValue) ? (string) $prefixValue : '';
+        $prefix = '/' . trim($prefixString, '/');
         return $prefix === '/' ? '' : $prefix;
     }
 
@@ -119,7 +121,7 @@ final class JsController extends AbstractController
         if ($tail === []) {
             return '';
         }
-        $first = $tail[0] ?? '';
+        $first = $tail[0];
         if (in_array($first, [self::ASSET_RUNTIME, self::ASSET_MANIFEST, self::ASSET_TPLS, self::ASSET_TPLS_JS, self::ASSET_API], true)) {
             return '';
         }
@@ -1165,11 +1167,13 @@ JS;
         $this->emitJson($payload, privateMaxAge: self::CACHE_API_INDEX_MAX_AGE, browserLabel: 'api');
     }
 
-    /** @param list<array<string,mixed>> $pages */
+    /**
+     * @param list<array<string,mixed>> $pages
+     * @return array<string,mixed>
+     */
     private function shellContext(array $pages): array
     {
-        $cssRaw = $this->themeService->activeStylesheetContent();
-        $css = is_string($cssRaw) ? $this->minifyCss($cssRaw) : '';
+        $css = $this->minifyCss($this->themeService->activeStylesheetContent());
         $now = $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
         $time = is_float($now) ? round(microtime(true) - $now, 4) : 0;
 
@@ -1242,7 +1246,7 @@ JS;
             }
             $normalUrl = $this->urlGenerator->toPage($slug);
             $pages[] = [
-                'id'        => (int) ($row['id'] ?? 0),
+                'id'        => is_numeric($row['id'] ?? null) ? (int) $row['id'] : 0,
                 'url_id'    => $urlId,
                 'file_name' => $fileName,
                 'slug'      => $slug,
@@ -1297,7 +1301,7 @@ JS;
 
             $url = $this->siteLocaleBasePath() . '/api/' . rawurlencode($slug);
             $endpoints[] = [
-                'id'        => (int) ($row['id'] ?? 0),
+                'id'        => is_numeric($row['id'] ?? null) ? (int) $row['id'] : 0,
                 'url_id'    => $urlId,
                 'file_name' => $fileName,
                 'slug'      => $slug,

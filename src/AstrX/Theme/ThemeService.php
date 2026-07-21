@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace AstrX\Theme;
 
-use AstrX\Config\Config;
 use AstrX\Config\InjectConfig;
 use AstrX\User\UserSession;
 use function AstrX\Support\templateDir;
@@ -32,7 +31,6 @@ final class ThemeService
     private bool   $allowUserOverride = true;
 
     public function __construct(
-        private readonly Config      $config,
         private readonly UserSession $session,
     ) {}
 

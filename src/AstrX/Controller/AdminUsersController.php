@@ -290,6 +290,7 @@ final class AdminUsersController extends AbstractController
             $editId     = (is_scalar($vedit = $this->request->query()->get('edit') ?? '') ? (string)$vedit : '');
             $listResult = $this->userRepo->listAll();
             $listResult->drainTo($this->collector);
+            /** @var list<array<string,mixed>> $rawList */
             $rawList  = $listResult->isOk() ? $listResult->unwrap() : [];
 
             $userList = [];
@@ -298,6 +299,7 @@ final class AdminUsersController extends AbstractController
                 if ($isEditing) {
                     $full = $this->userRepo->adminFindById($editId);
                     $full->drainTo($this->collector);
+                    /** @var array<string,mixed> $fd */
                     $fd = ($full->isOk() && $full->unwrap() !== null) ? $full->unwrap() : $row;
                     $typeV = $fd['type'] ?? 0;
                     $fd['type_options'] = $this->buildTypeOptions(is_int($typeV) ? $typeV : (is_numeric($typeV) ? (int)$typeV : 0));

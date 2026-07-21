@@ -103,11 +103,13 @@ final class NewsRepository
                 new \AstrX\News\Diagnostic\NewsDbDiagnostic(
                     'astrx.news/db_error',
                     \AstrX\Result\DiagnosticLevel::ERROR,
+                    $e->getMessage(),
                 ),
             ));
         }
     }
 
+    /** @return Result<int> */
     public function countVisible(): Result
     {
         try {
