@@ -52,4 +52,8 @@ return [
     'astrx.comment/gate_denied' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'You do not have permission to perform this action.',
+
+    'astrx.comment/unknown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'An error occurred while processing your comment.',
 ];

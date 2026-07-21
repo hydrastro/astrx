@@ -237,6 +237,10 @@ final class ContentManager
         ]);
 
         if (session_status() === PHP_SESSION_NONE) {
+            // Enforce strict session mode regardless of php.ini so an
+            // uninitialised/attacker-supplied session ID is never adopted.
+            // This activates SecureSessionHandler::validateId() on the incoming ID.
+            ini_set('session.use_strict_mode', '1');
             session_start();
         }
 
@@ -664,6 +668,10 @@ final class ContentManager
             if (!headers_sent()) {
                 $this->emitServerTiming('astrx_html', $astrxRequestStarted);
             }
+            // Baseline security headers for the main HTML document (CSP etc.).
+            // NOT emitted on the /js/ fragment path above — JsController owns a
+            // more permissive CSP for the JS shell.
+            $this->emitSecurityHeaders();
             echo $renderResult->unwrap();
             return;
         }
@@ -822,6 +830,42 @@ final class ContentManager
         $dur = max(0.0, (microtime(true) - $started) * 1000.0);
         header('Server-Timing: ' . $safe . ';dur=' . number_format($dur, 2, '.', ''), false);
         header('X-AstrX-Elapsed-Ms: ' . number_format($dur, 2, '.', ''));
+    }
+
+    /**
+     * Emit the baseline security headers for the main HTML document response.
+     *
+     * The canonical site is designed to run with JavaScript OFF, so a strict
+     * Content-Security-Policy (default-src 'none') is safe and neutralises any
+     * injected script/frame. The CSP is config-driven
+     * (ContentManager.content_security_policy) so operators can relax it per
+     * deployment without editing code; a hard-coded strict default is used when
+     * the config key is absent or empty.
+     *
+     * No-op if headers have already been sent (e.g. a controller streamed bytes).
+     */
+    private function emitSecurityHeaders(): void
+    {
+        if (headers_sent()) {
+            return;
+        }
+
+        $defaultCsp = "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                    . "frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+        $csp = $this->config->getConfigString(
+            'ContentManager',
+            'content_security_policy',
+            $defaultCsp,
+        );
+        if ($csp === '') {
+            $csp = $defaultCsp;
+        }
+
+        header('Content-Security-Policy: ' . $csp);
+        header('Referrer-Policy: no-referrer');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
     }
 
     // =========================================================================

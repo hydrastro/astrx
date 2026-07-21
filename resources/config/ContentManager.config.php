@@ -15,6 +15,16 @@ return [
         'user_navbar_id'    => 2,
         'admin_navbar_id'   => 3,
 
+        // Content-Security-Policy for the main HTML render path. The canonical
+        // site runs with JavaScript OFF, so a strict default-src 'none' policy
+        // is safe and blocks any injected script/frame. Relax per-deployment if
+        // needed. Emitted alongside Referrer-Policy / X-Content-Type-Options /
+        // X-Frame-Options by ContentManager. (The /js/ shell uses its own,
+        // more permissive CSP owned by JsController.)
+        'content_security_policy' =>
+            "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            . "frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+
         // Lang domains loaded globally (on every page load) before the page-specific domain.
         // Useful for shared string sets like all user pages sharing one 'User' lang file.
         'extra_lang_domains' => ['User', 'Http'],

@@ -30,7 +30,7 @@ final class Prelude
             $config->getConfigInt(
                 'Prelude',
                 'environment',
-                EnvironmentType::DEVELOPMENT->value
+                EnvironmentType::PRODUCTION->value
             )
         );
         $errorHandler->setEnvironment($env);

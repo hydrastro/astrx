@@ -59,6 +59,16 @@ final class UserService
     public const int TOKEN_EMAIL_VERIFY  = 2;
     public const int TOKEN_DELETE        = 3;
 
+    /**
+     * A fixed, valid Argon2id hash used ONLY as a constant-time decoy on the
+     * "user not found" login branch (FIX M5). Running password_verify() against
+     * it when no user exists makes that branch cost the same as a real
+     * verification, closing a timing-based username-enumeration oracle. It is
+     * never expected to match any real password.
+     */
+    private const string DUMMY_ARGON2ID =
+        '$argon2id$v=19$m=65536,t=4,p=1$cDJiZmhhblJSVGFOS0Z1aA$ZIZhHVT4t7sWknDok3QU8wQQ4S1fnijafr8qCdFRY5c';
+
 
     /**
      * Normalise a username for availability checking.
@@ -95,6 +105,8 @@ final class UserService
     /** @var array<int, array{regex:string,checking_for:bool,message:string,enabled:bool}> */
     private array  $passwordRegex         = [];
     private bool   $caseSensitiveUsernames = false;
+    private int    $loginLockoutThreshold  = 10;    // failed logins before lockout; 0 = disabled
+    private int    $loginLockoutCooldown   = 900;   // seconds a lockout lasts once triggered
 
     #[InjectConfig('token_expiration_time')]
     public function setTokenTtl(int $v): void { $this->tokenTtl = max(60, $v); }
@@ -147,6 +159,13 @@ final class UserService
      */
     #[InjectConfig('case_sensitive_usernames')]
     public function setCaseSensitiveUsernames(bool $v): void { $this->caseSensitiveUsernames = $v; }
+
+    /** Number of failed logins that triggers a temporary lockout. 0 disables the feature. */
+    #[InjectConfig('login_lockout_threshold')]
+    public function setLoginLockoutThreshold(int $v): void { $this->loginLockoutThreshold = max(0, $v); }
+    /** How long (seconds) a triggered lockout lasts. */
+    #[InjectConfig('login_lockout_cooldown')]
+    public function setLoginLockoutCooldown(int $v): void { $this->loginLockoutCooldown = max(1, $v); }
 
     // -------------------------------------------------------------------------
 
@@ -211,6 +230,28 @@ final class UserService
         return Result::ok(false);
     }
 
+    /**
+     * Decide whether the LOGIN form needs a captcha based on a caller-supplied
+     * failure count (kept in the session, independent of account existence).
+     *
+     * shouldShowCaptcha('login', $username) does a DB lookup keyed on the
+     * username, which leaks account existence: real users start showing a
+     * captcha after N fails while unknown usernames never do. This variant is
+     * driven purely by the caller's session counter so the captcha requirement
+     * is identical whether or not the account exists (FIX M5b). The captcha
+     * *policy* (always / never / on-N-failed) is still honoured.
+     *
+     * @return Result<bool>
+     */
+    public function shouldShowLoginCaptcha(int $failCount): Result
+    {
+        return match ($this->loginCaptchaType) {
+            self::CAPTCHA_SHOW_ALWAYS => Result::ok(true),
+            self::CAPTCHA_SHOW_NEVER  => Result::ok(false),
+            default                   => Result::ok($failCount >= $this->loginCaptchaAttempts),
+        };
+    }
+
     // -------------------------------------------------------------------------
     // Login
     // -------------------------------------------------------------------------
@@ -241,10 +282,35 @@ final class UserService
 
         /** @var array<string,mixed>|null $row */
         $row = $findResult->unwrap();
-        if ($row === null || !password_verify($password, (is_scalar($row['password']) ? (string)$row['password'] : ''))) {
-            // Increment attempts if we found a user (don't leak existence otherwise)
+
+        // FIX M4: brute-force lockout. If this account is currently locked,
+        // reject immediately WITHOUT running password_verify. (No lockout can
+        // exist for a non-existent user, so this never leaks existence.)
+        if ($row !== null && $this->loginLockoutThreshold > 0) {
+            $lockedUntil = $this->intVal($row['login_locked_until'] ?? null);
+            if ($lockedUntil > time()) {
+                return $this->opErr('login_restricted');
+            }
+        }
+
+        // FIX M5a: constant-time verification. Always call password_verify —
+        // even when the user does not exist — against a dummy hash, so the
+        // "not found" branch costs the same as a real one (no timing oracle).
+        $storedHash = ($row !== null && isset($row['password']) && is_scalar($row['password']))
+            ? (string) $row['password']
+            : self::DUMMY_ARGON2ID;
+        $passwordOk = password_verify($password, $storedHash);
+
+        if ($row === null || !$passwordOk) {
+            // Only touch the DB / count attempts when the user actually exists
+            // (never leak existence for unknown usernames).
             if ($row !== null) {
-                $this->repo->updateLoginAttempts((is_scalar($row['id']) ? (string)$row['id'] : ''), +1);
+                $hexId    = is_scalar($row['id']) ? (string) $row['id'] : '';
+                $attempts = $this->intVal($row['login_attempts'] ?? null);
+                $this->repo->updateLoginAttempts($hexId, +1);
+                if ($this->loginLockoutThreshold > 0 && ($attempts + 1) >= $this->loginLockoutThreshold) {
+                    $this->repo->setLockout($hexId, time() + $this->loginLockoutCooldown);
+                }
             }
             return $this->opErr('login_failed');
         }
@@ -255,26 +321,46 @@ final class UserService
 
         // Success: update DB, set session
         $hexId = (is_scalar($row['id']) ? (string)$row['id'] : '');
+
+        // FIX (rehash-on-verify): transparently upgrade the stored hash if the
+        // algorithm/parameters have changed since it was written.
+        if (password_needs_rehash($storedHash, PASSWORD_ARGON2ID)) {
+            $this->repo->updatePassword($hexId, password_hash($password, PASSWORD_ARGON2ID));
+        }
+
         $this->repo->updateLoginAttempts($hexId, -1); // reset to 0
+        $this->repo->setLockout($hexId, null);        // FIX M4: clear any lockout
         $this->repo->updateLastAccess($hexId);
+
+        // FIX (remember-me): regenerate the session ID FIRST — the old order set
+        // the cookie to a session id that session_regenerate_id(true) destroyed
+        // one line later. Then write the cookie carrying the NEW id, using the
+        // array-options form of setcookie so we can pin SameSite.
+        session_regenerate_id(true);
 
         if ($rememberMe && $this->rememberMeTime > 0) {
             $params = session_get_cookie_params();
             setcookie(
                 (string) session_name(),
                 (string) session_id(),
-                time() + $this->rememberMeTime,
-                $params['path'],
-                $params['domain'],
-                $params['secure'],
-                $params['httponly'],
+                [
+                    'expires'  => time() + $this->rememberMeTime,
+                    'path'     => $params['path'],
+                    'domain'   => $params['domain'],
+                    'secure'   => $params['secure'],
+                    'httponly' => true,
+                    'samesite' => 'Lax',
+                ],
             );
         }
 
-        // Regenerate session ID on login to prevent session fixation
-        session_regenerate_id(true);
-
         return Result::ok($row);
+    }
+
+    /** Coerce a mixed DB/scalar value to int, defaulting to 0. */
+    private function intVal(mixed $v): int
+    {
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
     }
 
     // -------------------------------------------------------------------------

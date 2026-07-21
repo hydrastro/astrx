@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace AstrX\Session;
 
-use RuntimeException;
-
 final class PrgHandler
 {
     private const POST_PREFIX = 'POST_';
@@ -141,16 +139,15 @@ final class PrgHandler
     }
 
 
-    // todo change this.
     public function getUrl(string $prgId, ?string $token = null): string
     {
         $url = $this->getTarget($prgId);
 
+        // Unknown id → return '' to mirror CommentPrgHandler::getUrl. Callers
+        // already guard with hasTarget(), so an empty URL is a safe no-op rather
+        // than a programmer-error exception on ordinary expired/absent targets.
         if ($url === null) {
-            throw new RuntimeException(sprintf(
-                                           'Unknown PRG target id "%s".',
-                                           $prgId,
-                                       ));
+            return '';
         }
 
         if ($token === null || $token === '') {

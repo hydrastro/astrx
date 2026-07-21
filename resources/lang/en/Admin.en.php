@@ -367,6 +367,7 @@ return [
     'admin.users.deletion_mode.keep_visible'   => 'Keep visible (close account, content remains)',
     'admin.users.deletion_mode.keep_suspended' => 'Keep suspended (hide from public, admin can see)',
     'admin.users.permission_denied' => 'You cannot modify this account.',
+    'admin.users.promote_denied'    => 'You are not allowed to change this user\'s role.',
     'admin.users.display_name'      => 'Display name',
     'admin.users.mailbox'           => 'Mailbox',
     'admin.users.email'             => 'Recovery email',

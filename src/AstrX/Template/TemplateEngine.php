@@ -234,12 +234,44 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
     public function loadTemplate(string $template, int $parseMode = self::PARSE_MODE_TEMPLATE, bool $phpProcessing = false): ?object
     {
+        // Defence-in-depth: template sources are trusted (compiled via eval), so
+        // a name containing '..', a leading path separator, or a null byte must
+        // never be turned into a filesystem path — for either the source OR the
+        // cache path. Reject before any path is built.
+        if (str_contains($template, "\0")
+            || str_contains($template, '..')
+            || str_starts_with($template, '/')
+            || str_starts_with($template, '\\')
+        ) {
+            $this->sink->emit(new TemplateFileNotFoundDiagnostic(
+                                  self::ID_TEMPLATE_FILE_NOT_FOUND,
+                                  self::LVL_TEMPLATE_FILE_NOT_FOUND,
+                                  $this->templateDir . $template . $this->templateExtension,
+                              ));
+            return null;
+        }
+
         if (array_key_exists($template, $this->knownTemplates)) {
             return $this->getTemplateClass($this->knownTemplates[$template]);
         }
 
         $templateFile = $this->templateDir . $template . $this->templateExtension;
         if (!file_exists($templateFile)) {
+            $this->sink->emit(new TemplateFileNotFoundDiagnostic(
+                                  self::ID_TEMPLATE_FILE_NOT_FOUND,
+                                  self::LVL_TEMPLATE_FILE_NOT_FOUND,
+                                  $templateFile,
+                              ));
+            return null;
+        }
+
+        // Assert the resolved file really lives inside the template directory.
+        // Catches symlink escapes and any traversal the string checks miss.
+        $realBase = realpath($this->templateDir);
+        $realFile = realpath($templateFile);
+        if ($realBase === false || $realFile === false
+            || !str_starts_with($realFile, $realBase . DIRECTORY_SEPARATOR)
+        ) {
             $this->sink->emit(new TemplateFileNotFoundDiagnostic(
                                   self::ID_TEMPLATE_FILE_NOT_FOUND,
                                   self::LVL_TEMPLATE_FILE_NOT_FOUND,
@@ -702,12 +734,13 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             $type       = $ast[$i][self::AST_TYPE] ?? self::TOKEN_TYPE_TEXT;
             $val        = $ast[$i][self::AST_VALUE] ?? '';
             $valueExpr  = in_array($type, [self::TOKEN_TYPE_VAR, self::TOKEN_TYPE_UNESCAPED_VAR], true)
-                ? '$this->TemplateEngine->resolveValue("' . $val . '",$args,$parent,$i)'
+                ? '$this->TemplateEngine->resolveValue("' . addslashes($val) . '",$args,$parent,$i)'
                 : $val;
 
             switch ($type) {
                 case self::TOKEN_TYPE_VAR:
-                    $code .= '$buffer.=htmlspecialchars((string)' . $valueExpr . ');';
+                    $code .= '$buffer.=htmlspecialchars((string)' . $valueExpr
+                             . ', ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, \'UTF-8\');';
                     break;
 
                 case self::TOKEN_TYPE_UNESCAPED_VAR:

@@ -137,6 +137,13 @@ final class JsController extends AbstractController
         $templatesJs = $this->html($this->jsBasePath() . '/' . self::ASSET_TPLS_JS);
         $route = $this->html($this->currentRoutePath());
 
+        // Per-response nonce for the single inline bootstrap <script> below. The
+        // strict CSP emitted for this shell uses script-src 'self' plus this
+        // nonce so the inline manifest is allowed while everything else stays
+        // locked down.
+        $nonce     = base64_encode(random_bytes(16));
+        $nonceHtml = $this->html($nonce);
+
         $manifestPayload = [
             'ok'           => true,
             'version'      => 3,
@@ -159,6 +166,20 @@ final class JsController extends AbstractController
             header('Content-Type: text/html; charset=utf-8');
             header('Cache-Control: no-store');
             header('X-AstrX-JS-Browser: shell');
+            // The normal site emits a strict default-src 'none' CSP; the /js/
+            // shell needs its own permissive-but-scoped policy or it breaks.
+            // Only the shell's own inline bootstrap (nonce), same-origin scripts
+            // (runtime + templates.js), same-origin XHR (connect-src), inline
+            // styles from rendered site templates, and data:/self images are
+            // allowed — nothing else.
+            header(
+                "Content-Security-Policy: default-src 'none'; "
+                . "script-src 'self' 'nonce-{$nonce}'; "
+                . "style-src 'self' 'unsafe-inline'; "
+                . "img-src 'self' data:; "
+                . "connect-src 'self'; "
+                . "form-action 'self'"
+            );
             $this->emitServerTiming('astrx_js_shell', $started);
         }
 
@@ -172,7 +193,7 @@ final class JsController extends AbstractController
   <link rel="preload" href="{$templatesJs}" as="script">
   <link rel="preload" href="{$runtime}" as="script">
   <title>{$siteName} — JS</title>
-  <script>
+  <script nonce="{$nonceHtml}">
   window.AstrXJSInlineManifest = {$manifestJson};
   window.AstrXJSEarlyPreload = { startedAt: Date.now(), manifest: Promise.resolve(window.AstrXJSInlineManifest) };
   </script>
@@ -1393,6 +1414,12 @@ JS;
             }
             // Email templates are intentionally not needed in the browser cache.
             if (str_starts_with($rel, 'email/')) {
+                continue;
+            }
+            // Admin templates carry privileged markup and are never rendered by
+            // the anonymous /js/ browser — keep them out of the public bundle
+            // (bandwidth + hygiene), mirroring the email/ skip above.
+            if (str_starts_with($rel, 'admin/')) {
                 continue;
             }
             $name = substr($rel, 0, -5);

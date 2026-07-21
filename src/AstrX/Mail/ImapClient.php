@@ -284,6 +284,18 @@ final class ImapClient
         $parsed['flags'] = $flags;
         $parsed['seen']  = in_array('\\Seen', $flags, true);
 
+        // M6: if the MIME walk hit the depth/parts bound, the message is still
+        // usable but incomplete — surface a non-fatal warning alongside it.
+        if ($this->mimeLimitHit) {
+            return Result::ok($parsed, Diagnostics::of(
+                new ImapFetchDiagnostic(
+                    'astrx.mail/imap.fetch',
+                    DiagnosticLevel::WARNING,
+                    "message MIME structure exceeded safe limits; some parts were not parsed (uid {$uid})"
+                )
+            ));
+        }
+
         return Result::ok($parsed);
     }
 
@@ -466,7 +478,14 @@ final class ImapClient
             throw new \RuntimeException("SOCKS5 CONNECT refused");
         }
         if ($this->encryption === 'ssl') {
-            stream_socket_enable_crypto($proxy, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+            // H7: pin peer_name + verification on the tunnelled stream BEFORE
+            // the handshake, then capture the result and FAIL CLOSED. Without
+            // this the client would silently continue and LOGIN over an
+            // unencrypted / unauthenticated channel.
+            $this->applyTlsContext($proxy);
+            if (stream_socket_enable_crypto($proxy, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
+                throw new \RuntimeException('IMAP TLS handshake over SOCKS5 proxy failed');
+            }
         }
         return $proxy;
     }
@@ -477,10 +496,30 @@ final class ImapClient
         $r = $this->command('STARTTLS');
         if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
         assert($this->socket !== null);
+        // H7: pin the certificate to the configured host and honour
+        // imap_verify_ssl before upgrading the plaintext IMAP stream to TLS.
+        $this->applyTlsContext($this->socket);
         if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }
         return Result::ok(true);
+    }
+
+    /**
+     * Apply TLS verification + SNI/peer_name to a stream before its handshake.
+     * peer_name pins the certificate to the configured host — required on the
+     * STARTTLS and SOCKS5 paths, where the stream is opened as tcp:// and would
+     * otherwise carry no expected peer name. Verification honours imap_verify_ssl
+     * so onion-only deployments (authenticated by Tor) can opt out.
+     *
+     * @param resource $stream
+     */
+    private function applyTlsContext(mixed $stream): void
+    {
+        stream_context_set_option($stream, 'ssl', 'peer_name', $this->host);
+        stream_context_set_option($stream, 'ssl', 'verify_peer', $this->verifySsl);
+        stream_context_set_option($stream, 'ssl', 'verify_peer_name', $this->verifySsl);
+        stream_context_set_option($stream, 'ssl', 'allow_self_signed', !$this->verifySsl);
     }
 
     // =========================================================================
@@ -725,6 +764,15 @@ final class ImapClient
     // MIME message parsing
     // =========================================================================
 
+    // ── MIME parsing bounds (M6) ───────────────────────────────────────────────
+    // A crafted message can nest multipart/* indefinitely (stack exhaustion) or
+    // carry an absurd number of parts (CPU/memory). Bound both and parse what
+    // fits, flagging truncation via $mimeLimitHit.
+    private const MAX_MIME_DEPTH = 20;
+    private const MAX_MIME_PARTS = 2000;
+    private bool  $mimeLimitHit  = false;
+    private int   $mimePartsSeen = 0;
+
     /**
      * Parse a raw RFC 2822 message into structured fields.
      * Handles text/plain, text/html, multipart/alternative, multipart/mixed.
@@ -732,6 +780,10 @@ final class ImapClient
      */
     private function parseMimeMessage(string $raw): array
     {
+        // Reset the per-message MIME bounds before walking this message.
+        $this->mimeLimitHit  = false;
+        $this->mimePartsSeen = 0;
+
         [$rawHeaders, $rawBody] = $this->splitHeadersBody($raw);
         $headers  = $this->parseHeaders($rawHeaders);
         $ct       = strtolower($headers['content-type'] ?? 'text/plain');
@@ -777,13 +829,25 @@ final class ImapClient
      * @param-out list<array{name:string,content_type:string,size:int,encoding:string,raw:mixed}> $attachments
      * @return array{0:string,1:string} [text_body, html_body]
      */
-    private function parseMultipart(string $body, string $boundary, string $parentCt, array &$attachments = []): array
+    private function parseMultipart(string $body, string $boundary, string $parentCt, array &$attachments = [], int $depth = 0): array
     {
         $textBody = '';
         $htmlBody = '';
 
+        // M6: stop descending once the structure is unreasonably deep — return
+        // whatever has been parsed rather than recursing without bound.
+        if ($depth > self::MAX_MIME_DEPTH) {
+            $this->mimeLimitHit = true;
+            return [$textBody, $htmlBody];
+        }
+
         $parts = $this->splitMultipart($body, $boundary);
         foreach ($parts as $part) {
+            // M6: cap the total number of parts examined across the whole tree.
+            if (++$this->mimePartsSeen > self::MAX_MIME_PARTS) {
+                $this->mimeLimitHit = true;
+                break;
+            }
             [$partRawHeaders, $partBody] = $this->splitHeadersBody($part);
             $partHeaders     = $this->parseHeaders($partRawHeaders);
             $partCt          = strtolower($partHeaders['content-type'] ?? 'text/plain');
@@ -792,7 +856,7 @@ final class ImapClient
 
             if (str_starts_with($partCt, 'multipart/')) {
                 if (preg_match('/boundary="?([^";]+)"?/i', $partHeaders['content-type'] ?? '', $m)) {
-                    [$t, $h] = $this->parseMultipart($partBody, $m[1], $partCt, $attachments);
+                    [$t, $h] = $this->parseMultipart($partBody, $m[1], $partCt, $attachments, $depth + 1);
                     if ($textBody === '') { $textBody = $t; }
                     if ($htmlBody === '') { $htmlBody = $h; }
                 }

@@ -222,6 +222,7 @@ CREATE TABLE `user`
     `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_access`      TIMESTAMP    NULL,
     `login_attempts`   INT          NOT NULL DEFAULT 0,
+    `login_locked_until` INT UNSIGNED NULL,                  -- unix ts; brute-force lockout expiry (NULL = not locked)
     `verified`         TINYINT      NOT NULL DEFAULT 0,
     `avatar`           TINYINT      NOT NULL DEFAULT 0,
     `deleted`          TINYINT      NOT NULL DEFAULT 0,
@@ -653,8 +654,7 @@ VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 -- Captcha test page (remove before production)
 -- ----------------------------------------------------------
 
-INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
-VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
+-- Intentionally NOT seeded (security): 'captcha-test' was an unauthenticated,
+-- CSRF-less test endpoint wired to the production captcha table. It is no longer
+-- seeded. Run migrate_remove_captcha_test.sql to drop it from an existing DB,
+-- and delete src/AstrX/Controller/CaptchaTestController.php.

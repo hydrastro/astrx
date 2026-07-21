@@ -14,6 +14,11 @@ return [
         'from_name'    => getenv('MAIL_FROM_NAME')    ?: 'App',
         'encryption'   => getenv('MAIL_ENCRYPTION')   ?: '',
         'timeout'      => 30,
+        // Verify the SMTP server's TLS certificate (STARTTLS + implicit TLS,
+        // including over a SOCKS5 tunnel). Keep true for clearnet delivery.
+        // Onion-only deployments may set this false because Tor already
+        // authenticates the hidden service.
+        'smtp_verify_ssl' => (getenv('MAIL_VERIFY_SSL') ?: 'true') === 'true',
     ],
     'ImapClient' => [
         'imap_host'       => getenv('IMAP_HOST')      ?: 'localhost',
@@ -23,6 +28,9 @@ return [
         'imap_port'       => (int)(getenv('IMAP_PORT')?: 993),
         'imap_encryption' => getenv('IMAP_ENCRYPTION')?: 'ssl',
         'imap_timeout'    => 30,
+        // Verify the IMAP server's TLS certificate (implicit TLS, STARTTLS, and
+        // over a SOCKS5 tunnel). Keep true for clearnet. Onion-only deployments
+        // where Tor already authenticates the hidden service may set this false.
         'imap_verify_ssl' => (getenv('IMAP_VERIFY_SSL') ?: 'true') === 'true',
     ],
     'WebmailService' => [

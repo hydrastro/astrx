@@ -40,6 +40,16 @@ final class SecureSessionHandler implements
      *  decrypted without also knowing the application secret. */
     private string $serverSecret = '';
 
+    /**
+     * The server_secret value that was, for a time, committed to the public
+     * repository in Session.config.php. It is therefore no longer secret. If an
+     * install still carries this exact value (e.g. copied from an old checkout),
+     * we IGNORE it and fall through to the per-install generated fallback so a
+     * site can never run on a globally-known key.
+     */
+    private const LEAKED_SERVER_SECRET =
+        '2cadc3c3e1e0509c705e758f02e9d39c27446c2a509bc828b5ddbd6af4026ec4';
+
     /** Holds the freshly generated SID so validateId() can confirm it in-process. */
     private ?string $currentSessionId = null;
 
@@ -79,7 +89,12 @@ final class SecureSessionHandler implements
      */
     private function ikm(): string
     {
-        if ($this->serverSecret !== '') {
+        // Ignore the old leaked/committed secret: treat it as if unset so we
+        // fall through to the unique per-install generated fallback below.
+        // hash_equals for constant-time comparison (defence-in-depth).
+        if ($this->serverSecret !== ''
+            && !hash_equals(self::LEAKED_SERVER_SECRET, $this->serverSecret)
+        ) {
             return $this->serverSecret;
         }
         // No configured server_secret → use a lazily-generated per-installation

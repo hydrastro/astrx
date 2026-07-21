@@ -141,7 +141,10 @@ final class CommentService
             if ($this->requireEmail && ($email === null || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
                 return $this->opErr('invalid_email');
             }
-            $name = ($name !== null && trim($name) !== '') ? trim($name) : 'Anonymous';
+            // Store NULL for anonymous commenters with no name; the display
+            // fallback (comment.anonymous) is rendered at the view layer so the
+            // label stays translatable instead of a hardcoded English literal.
+            $name = ($name !== null && trim($name) !== '') ? trim($name) : null;
         }
 
         // Reply validation
@@ -210,7 +213,15 @@ final class CommentService
     /** @return Result<bool> */
     public function hide(int $commentId): Result
     {
-        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY)) {
+        $loaded = $this->loadResource($commentId);
+        if (!$loaded->isOk()) {
+            return $loaded;
+        }
+        $resource = $loaded->unwrap();
+        if ($resource === null) {
+            return $this->opErr('comment_not_found');
+        }
+        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setHidden($commentId, true);
@@ -219,7 +230,15 @@ final class CommentService
     /** @return Result<bool> */
     public function unhide(int $commentId): Result
     {
-        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY)) {
+        $loaded = $this->loadResource($commentId);
+        if (!$loaded->isOk()) {
+            return $loaded;
+        }
+        $resource = $loaded->unwrap();
+        if ($resource === null) {
+            return $this->opErr('comment_not_found');
+        }
+        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setHidden($commentId, false);
@@ -228,10 +247,38 @@ final class CommentService
     /** @return Result<bool> */
     public function delete(int $commentId): Result
     {
-        if ($this->gate->cannot(Permission::COMMENT_DELETE_ANY)) {
+        $loaded = $this->loadResource($commentId);
+        if (!$loaded->isOk()) {
+            return $loaded;
+        }
+        $resource = $loaded->unwrap();
+        if ($resource === null) {
+            return $this->opErr('comment_not_found');
+        }
+        if ($this->gate->cannot(Permission::COMMENT_DELETE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->delete($commentId);
+    }
+
+    /**
+     * Load a comment as a policy resource object so CommentPolicy can see the
+     * author's user_type (needed to stop mods moderating admin comments).
+     *
+     * The repository returns a flat associative array; casting to object yields
+     * the stdClass shape CommentPolicy is registered against. Propagates DB
+     * failures; a missing comment resolves to Result::ok(null).
+     *
+     * @return Result<object|null>
+     */
+    private function loadResource(int $commentId): Result
+    {
+        $result = $this->repo->findById($commentId);
+        if (!$result->isOk()) {
+            return $result;
+        }
+        $row = $result->unwrap();
+        return Result::ok($row === null ? null : (object) $row);
     }
 
     /** @return Result<bool> */

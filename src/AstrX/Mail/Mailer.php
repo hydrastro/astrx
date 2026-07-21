@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
+use AstrX\Mail\Diagnostic\MailInvalidRecipientDiagnostic;
 use AstrX\Mail\Diagnostic\MailSendFailedDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
@@ -41,6 +42,12 @@ final class Mailer
     private int $timeout = 30;
     private string $socks5Host = '';
     private int $socks5Port = 9050;
+    /**
+     * Verify the SMTP server's TLS certificate (STARTTLS + implicit-TLS paths).
+     * Keep true for clearnet. Onion-only deployments may set it false because
+     * Tor already authenticates the hidden service.
+     */
+    private bool $smtpVerifySsl = true;
 
     #[InjectConfig('host')]
     public function setHost(string $v)
@@ -100,6 +107,12 @@ final class Mailer
     public function setSocks5Port(int $v)
     : void {
         $this->socks5Port = $v;
+    }
+
+    #[InjectConfig('smtp_verify_ssl')]
+    public function setSmtpVerifySsl(bool $v)
+    : void {
+        $this->smtpVerifySsl = $v;
     }
 
     // =========================================================================
@@ -181,6 +194,25 @@ final class Mailer
     : Result {
         $effectiveFromAddress = $fromAddressOverride !== '' ? $fromAddressOverride : $this->fromAddress;
         $effectiveFromName    = $fromAddressOverride !== '' ? $fromNameOverride    : $this->fromName;
+
+        // ── SMTP header / command injection defence (H2) ─────────────────────
+        // A CR/LF/NUL in any envelope address would let a caller inject extra
+        // SMTP commands (RCPT TO smuggling) once written to the socket; the same
+        // bytes in a display name or subject forge mail headers. Validate the
+        // address SHAPE and header-safety of every operator-influenced field
+        // BEFORE opening the socket — on any violation we return a Result and
+        // never dial the server.
+        foreach ([$effectiveFromAddress, $toAddress] as $addr) {
+            if (!$this->validAddress($addr)) {
+                return $this->invalidRecipient($addr);
+            }
+        }
+        foreach ([$effectiveFromName, $toName, $subject] as $headerText) {
+            if (!$this->headerSafe($headerText)) {
+                return $this->invalidRecipient($headerText);
+            }
+        }
+
         $sock = $this->connect();
 
         $this->read($sock);                         // 220 greeting
@@ -196,6 +228,9 @@ final class Mailer
             }
             $this->cmd($sock, "STARTTLS");
             $this->read($sock, '220');
+            // H7: pin the certificate to the configured host (SNI + peer_name)
+            // and honour smtp_verify_ssl BEFORE upgrading the plaintext socket.
+            $this->applyTlsContext($sock);
             if (!stream_socket_enable_crypto(
                 $sock,
                 true,
@@ -296,7 +331,12 @@ final class Mailer
         if ($this->socks5Host !== '') {
             $sock = $this->connectViaSocks5();
         } elseif ($this->encryption === 'ssl') {
-            $ctx = stream_context_create(['ssl' => ['verify_peer' => true]]);
+            $ctx = stream_context_create(['ssl' => [
+                'peer_name'         => $this->host,
+                'verify_peer'       => $this->smtpVerifySsl,
+                'verify_peer_name'  => $this->smtpVerifySsl,
+                'allow_self_signed' => !$this->smtpVerifySsl,
+            ]]);
             $sock = stream_socket_client(
                 "ssl://{$this->host}:{$this->port}",
                 $errno,
@@ -323,12 +363,17 @@ final class Mailer
         stream_set_timeout($sock, $this->timeout);
 
         if ($this->encryption === 'ssl' && $this->socks5Host !== '') {
-            // Wrap in TLS after SOCKS5 tunnel is open (implicit TLS)
-            if (!stream_socket_enable_crypto(
+            // Wrap in TLS after the SOCKS5 tunnel is open (implicit TLS).
+            // H7: pin peer_name + verification on the tunnelled stream first,
+            // then capture the handshake result and fail closed. A failed or
+            // unverified handshake must never fall through to a cleartext send;
+            // the throw is converted to Result::err() by send()'s catch.
+            $this->applyTlsContext($sock);
+            if (stream_socket_enable_crypto(
                 $sock,
                 true,
                 STREAM_CRYPTO_METHOD_TLS_CLIENT
-            )) {
+            ) !== true) {
                 throw new \RuntimeException(
                     "TLS handshake failed after SOCKS5 tunnel"
                 );
@@ -607,6 +652,71 @@ final class Mailer
 
         $out .= "--{$boundary}--";
         return $out;
+    }
+
+    /**
+     * True when $v carries no header/command-injection bytes (CR, LF, NUL).
+     * A single one of these lets a caller break out of the intended header or
+     * SMTP command and inject their own.
+     */
+    private function headerSafe(string $v): bool
+    {
+        return strpbrk($v, "\r\n\0") === false;
+    }
+
+    /**
+     * True when $addr is a syntactically valid, header-safe email address.
+     *
+     * FILTER_VALIDATE_EMAIL is the primary shape check. It rejects single-label
+     * domains, however — including the shipped default "noreply@localhost" and
+     * the "localpart@localhost" addresses produced when mail_domain=localhost —
+     * so a bare-label fallback keeps local/dev delivery working. The fallback is
+     * still injection-safe: header-safety is enforced first and the pattern
+     * forbids whitespace and every SMTP/header metacharacter.
+     */
+    private function validAddress(string $addr): bool
+    {
+        if ($addr === '' || !$this->headerSafe($addr)) {
+            return false;
+        }
+        if (filter_var($addr, FILTER_VALIDATE_EMAIL) !== false) {
+            return true;
+        }
+        return preg_match(
+            '/^[^\s@<>,;:"\\\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/',
+            $addr
+        ) === 1;
+    }
+
+    /**
+     * Apply TLS verification + SNI/peer_name to a stream before the handshake.
+     * peer_name pins the certificate to the configured host (essential on the
+     * STARTTLS and SOCKS5 paths, where the socket is opened as tcp:// and would
+     * otherwise have no expected peer name). Verification follows
+     * smtp_verify_ssl so onion-only deployments can opt out.
+     *
+     * @param resource $sock
+     */
+    private function applyTlsContext(mixed $sock): void
+    {
+        stream_context_set_option($sock, 'ssl', 'peer_name', $this->host);
+        stream_context_set_option($sock, 'ssl', 'verify_peer', $this->smtpVerifySsl);
+        stream_context_set_option($sock, 'ssl', 'verify_peer_name', $this->smtpVerifySsl);
+        stream_context_set_option($sock, 'ssl', 'allow_self_signed', !$this->smtpVerifySsl);
+    }
+
+    /**
+     * Expected failure: an address/name/subject failed the injection guard.
+     * The offending value is carried on the diagnostic for logs only — the
+     * translation renders a generic message so nothing is echoed to users.
+     *
+     * @return Result<never>
+     */
+    private function invalidRecipient(string $offending): Result
+    {
+        return Result::err(null, Diagnostics::of(
+            new MailInvalidRecipientDiagnostic('astrx.mail/invalid_recipient', DiagnosticLevel::ERROR, $offending)
+        ));
     }
 
     /** @return Result<never> */

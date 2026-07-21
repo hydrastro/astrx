@@ -17,6 +17,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
+use AstrX\User\Diagnostic\UserNotFoundDiagnostic;
 
 /**
  * Password recovery controller.
@@ -95,8 +96,29 @@ final class RecoverController extends AbstractController
 
         $recoveryResult = $this->userService->initiateRecovery($identifier);
         if (!$recoveryResult->isOk()) {
+            // Distinguish "user not found" from genuine failures (e.g. DB error).
+            // Previously the success path 302-redirected while not-found
+            // re-rendered the form (200) — a differential that leaks account
+            // existence. Treat not-found as a NON-LEAKING success: keep the
+            // diagnostic server-side only and fall through to the exact same
+            // generic flash + redirect the success path performs below.
+            $isNotFound = false;
+            foreach ($recoveryResult->diagnostics() as $d) {
+                if ($d instanceof UserNotFoundDiagnostic) {
+                    $isNotFound = true;
+                    break;
+                }
+            }
             $recoveryResult->drainTo($this->collector);
-            return $this->renderForm();
+            if (!$isNotFound) {
+                // Genuine error (DB failure, empty input) — safe to surface.
+                return $this->renderForm();
+            }
+            // User not found → mirror the success path exactly.
+            $this->flash->set('info', $this->t->t('user.recover.sent'));
+            Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))
+                ->send()->drainTo($this->collector);
+            exit;
         }
         $userRow = $recoveryResult->unwrap();
         $tokenResult = $this->userService->generateToken(

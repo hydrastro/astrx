@@ -304,6 +304,35 @@ return [
     },
 
 
+    // Config — unused key / missing setter key (from fix41)
+    'astrx.config/key_unused' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic);
+            return "La chiave di configurazione \"{$d->key()}\" nel dominio \"{$d->domain()}\" è definita ma non viene mai letta.";
+        },
+
+    'astrx.config/setter.key_missing' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic);
+            return "Il setter di configurazione dichiara la chiave \"{$d->getConfigName()}\" ma è assente dalla configurazione di \"{$d->getClassShortName()}\".";
+        },
+
+    // Content — page hidden notice (admin viewing a hidden page)
+    'astrx.content/page_hidden' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        '\u{26A0} Vista amministratore: questa pagina è nascosta ai visitatori pubblici.',
+
+    // Auth — diagnostic visibility DB errors
+    'astrx.auth/diag_visibility.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            return "Errore del database per la visibilità dei diagnostici (" . $d->id() . ").";
+        },
+
+    'astrx.auth/diag_level_override.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            return "Errore del database per la sostituzione del livello dei diagnostici (" . $d->id() . ").";
+        },
+
     // Injector — method call threw a runtime exception
     'astrx.injector/method_call_exception' =>
         function (DiagnosticInterface $d, Translator $t): string {

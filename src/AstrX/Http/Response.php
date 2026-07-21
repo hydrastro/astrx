@@ -15,6 +15,15 @@ final class Response
     public const string ID_HEADERS_ALREADY_SENT = 'astrx.http/headers_already_sent';
     public const DiagnosticLevel LVL_HEADERS_ALREADY_SENT = DiagnosticLevel::ERROR;
 
+    /**
+     * Baseline Content-Security-Policy applied to controller-driven HTML/JSON
+     * responses. Mirrors ContentManager::emitSecurityHeaders(): the canonical
+     * site runs with JavaScript OFF, so default-src 'none' is safe.
+     */
+    private const string SECURITY_CSP =
+        "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        . "frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
     private int $status;
     private string $body;
     private HeaderBag $headers;
@@ -117,6 +126,7 @@ final class Response
     ): self {
         $response = new self($body, $status, $headers);
         $response->headers()->set('Content-Type', 'text/html; charset=utf-8');
+        self::applySecurityHeaders($response);
         return $response;
     }
 
@@ -138,7 +148,22 @@ final class Response
             headers: $headers,
         );
         $response->headers()->set('Content-Type', 'application/json; charset=utf-8');
+        self::applySecurityHeaders($response);
         return $response;
+    }
+
+    /**
+     * Apply the baseline security header set (CSP + hardening headers).
+     * Kept in sync with ContentManager::emitSecurityHeaders() so controller
+     * responses carry the same protections as the main render path.
+     */
+    private static function applySecurityHeaders(self $response): void
+    {
+        $h = $response->headers();
+        $h->set('Content-Security-Policy', self::SECURITY_CSP);
+        $h->set('Referrer-Policy', 'no-referrer');
+        $h->set('X-Content-Type-Options', 'nosniff');
+        $h->set('X-Frame-Options', 'DENY');
     }
 
     public static function redirect(

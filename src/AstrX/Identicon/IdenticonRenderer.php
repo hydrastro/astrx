@@ -30,6 +30,17 @@ final class IdenticonRenderer
     // Configuration
     // -------------------------------------------------------------------------
 
+    // Hard upper bounds. Identicon geometry is config-driven, so the setters
+    // clamp to these caps and draw() enforces a fixed pixel budget — a bad
+    // config value can never request a canvas large enough to exhaust memory.
+    private const int MAX_SIZE      = 512;   // output edge, px
+    private const int MAX_TILES     = 16;    // tiles per axis
+    // Colors are capped so the worst case (MAX_COLORS colors + MAX_TILES tiles)
+    // stays within SHA-256's 64 hex chars: 4*6 + 3 + (9*8/2) = 63 <= 64. A higher
+    // cap would read past the digest (uninitialised-offset warnings, black tiles).
+    private const int MAX_COLORS    = 4;     // distinct derived colors
+    private const int MAX_CANVAS_PX = 2048;  // internal working-canvas edge, px
+
     /** Output image size in pixels (square). */
     private int $size = 256;
     /** Number of tiles along each axis. More tiles → more complex pattern. */
@@ -46,7 +57,7 @@ final class IdenticonRenderer
     public function setSize(int $v)
     : void {
         if ($v > 0) {
-            $this->size = $v;
+            $this->size = min($v, self::MAX_SIZE);
         }
     }
 
@@ -54,7 +65,7 @@ final class IdenticonRenderer
     public function setTiles(int $v)
     : void {
         if ($v >= 2) {
-            $this->tiles = $v;
+            $this->tiles = min($v, self::MAX_TILES);
         }
     }
 
@@ -62,7 +73,7 @@ final class IdenticonRenderer
     public function setColors(int $v)
     : void {
         if ($v >= 1) {
-            $this->colors = $v;
+            $this->colors = min($v, self::MAX_COLORS);
         }
     }
 
@@ -145,6 +156,16 @@ final class IdenticonRenderer
                 (int)(ceil($renderSize / $tiles / $res) * $res) :
                 (int)ceil($renderSize / $tiles)
         );
+
+        // Enforce the working-canvas pixel budget. Clamping $tileSize (rather
+        // than the canvas dimension) keeps every downstream coordinate — tile
+        // offsets and the final resample source — consistent, since they all
+        // derive from $tileSize. With the setter caps this never triggers for
+        // sane configs; it exists purely as a memory-exhaustion backstop.
+        $maxTileSize = max(1, intdiv(self::MAX_CANVAS_PX, $tiles));
+        if ($tileSize > $maxTileSize) {
+            $tileSize = $maxTileSize;
+        }
 
         $this->tile->allocate($tileSize);
 

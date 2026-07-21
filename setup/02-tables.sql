@@ -675,11 +675,10 @@ VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 -- Captcha test page (remove before production)
 -- ----------------------------------------------------------
 
-INSERT INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
-VALUES ('captcha-test', 0, 'captcha_test', 1, 1, 1, 0);
-
-INSERT INTO `page_closure` (ancestor, descendant)
-VALUES (LAST_INSERT_ID(), LAST_INSERT_ID());
+-- Intentionally NOT seeded (security): 'captcha-test' was an unauthenticated,
+-- CSRF-less test endpoint wired to the production captcha table. It is no longer
+-- seeded. Run migrate_remove_captcha_test.sql to drop it from an existing DB,
+-- and delete src/AstrX/Controller/CaptchaTestController.php.
 
 -- ============================================================
 -- fix123: Additional page rows (was scattered across migrations)

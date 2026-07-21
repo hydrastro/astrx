@@ -44,7 +44,7 @@ final class UserRepository
         return $this->fetchOne(
             'SELECT LOWER(HEX(`id`)) AS id, `username`, `password`, `mailbox`,
                     `email`, `display_name`, `type`, `verified`, `avatar`,
-                    `login_attempts`, `deleted`, `theme`
+                    `login_attempts`, `login_locked_until`, `deleted`, `theme`
                FROM `user`
               WHERE LOWER(`username`) = LOWER(:u) AND `deleted` = 0',
             [':u' => $username],
@@ -276,6 +276,21 @@ final class UserRepository
             : 'UPDATE `user` SET `login_attempts` = 0 WHERE `id` = UNHEX(:id)';
 
         return $this->exec($sql, [':d' => abs($delta), ':id' => $hexId]);
+    }
+
+    /**
+     * Set or clear the brute-force lockout expiry for a user.
+     * Pass a unix timestamp to lock the account until that moment, or null to
+     * clear the lock. Stored in the `login_locked_until` INT UNSIGNED column.
+     *
+     * @return Result<bool>
+     */
+    public function setLockout(string $hexId, ?int $until): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `login_locked_until` = :u WHERE `id` = UNHEX(:id)',
+            [':u' => $until, ':id' => $hexId],
+        );
     }
 
     /** @return Result<bool> */

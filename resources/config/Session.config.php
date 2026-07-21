@@ -17,10 +17,16 @@ return [
 
         // Server-side secret mixed into the per-session HKDF key derivation.
         // A stolen database row cannot be decrypted without this secret.
-        // CHANGE THIS to a long random string before deploying to production.
-        // Generate one with: php -r "echo bin2hex(random_bytes(32));" 
+        //
+        // Leave this EMPTY: when empty, a unique secret is generated per-install
+        // on first run (SecureSessionHandler writes a random
+        // .server_secret_generated file in the config dir) or you can set it
+        // explicitly here via the installer (tools/install.php / setup wizard).
+        // Generate one with: php -r "echo bin2hex(random_bytes(32));"
         // WARNING: changing this value invalidates ALL existing sessions.
-        'server_secret' => '2cadc3c3e1e0509c705e758f02e9d39c27446c2a509bc828b5ddbd6af4026ec4',
+        // NOTE: the old public value that once shipped here is now hard-ignored
+        // by the handler, so it can never be used even if pasted back in.
+        'server_secret' => '',
 
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)

@@ -4,6 +4,9 @@ declare(strict_types=1);
 namespace AstrX\Mail;
 
 use AstrX\Config\InjectConfig;
+use AstrX\Mail\Diagnostic\MailInvalidRecipientDiagnostic;
+use AstrX\Result\DiagnosticLevel;
+use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 
 /**
@@ -128,6 +131,9 @@ final class WebmailService
         $draftFrom = $fromAddress !== '' && !str_contains($fromAddress, '@')
             ? $fromAddress . '@' . $this->mailDomain
             : $fromAddress;
+        if (($bad = $this->guardHeaders($draftFrom, $fromName, $toAddress, $subject, $cc, $bcc)) !== null) {
+            return $bad;
+        }
         $raw = $this->buildRawMessage($draftFrom, $fromName, $toAddress, $subject, $bodyText, '', $cc, $bcc, '');
         return $this->imap->appendToSent($raw, $this->draftsFolder);
     }
@@ -314,6 +320,13 @@ final class WebmailService
             ? $fromAddress . '@' . $this->mailDomain
             : $fromAddress;
 
+        // Header/command injection guard (H2). Mailer re-validates the SMTP
+        // envelope, but cc/bcc/reply-to/in-reply-to only reach the raw IMAP
+        // APPEND copy — guard every header field here before either path runs.
+        if (($bad = $this->guardHeaders($resolvedFrom, $fromName, $toAddress, $subject, $cc, $bcc, $inReplyTo, $replyTo)) !== null) {
+            return $bad;
+        }
+
         // Send via SMTP (Mailer only accepts a single To: for now)
         $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName, $priority, $readReceipt);
         if (!$r->isOk()) { return $r; }
@@ -358,6 +371,29 @@ final class WebmailService
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Header / command injection guard for the raw-message (IMAP APPEND) path.
+     * Mirrors Mailer's SMTP guard: a CR/LF/NUL in any address, display name,
+     * subject, cc/bcc list, or Message-ID reference would forge extra headers
+     * in the Sent/Drafts copy composed by buildRawMessage(), so callers reject
+     * before composing rather than smuggling bytes into the raw message.
+     *
+     * @return Result<never>|null  null when every value is header-safe.
+     */
+    private function guardHeaders(string ...$values): ?Result
+    {
+        foreach ($values as $v) {
+            if (strpbrk($v, "\r\n\0") !== false) {
+                return Result::err(null, Diagnostics::of(
+                    new MailInvalidRecipientDiagnostic(
+                        'astrx.mail/invalid_recipient', DiagnosticLevel::ERROR, $v
+                    )
+                ));
+            }
+        }
+        return null;
+    }
 
     private function buildRawMessage(
         string $from,

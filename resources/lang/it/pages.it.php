@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Slug URL pagine — locale it.
- * File completo con le 7 nuove pagine di configurazione admin.
+ * File completo con le nuove pagine di configurazione admin, webmail e audit log.
  */
 return [
     // Pagine framework
@@ -43,6 +43,17 @@ return [
     'WORDING_ADMIN_CONFIG_CAPTCHA'  => 'admin-config-captcha',
     'WORDING_ADMIN_CONFIG_USERS'    => 'admin-config-utenti',
     'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-posta',
+
+    // Webmail
+    'WORDING_WEBMAIL'                     => 'webmail',
+    'WORDING_WEBMAIL.title'               => 'Webmail',
+    'WORDING_WEBMAIL.description'         => 'Leggi e invia email dalla tua casella di posta.',
+    'WORDING_ADMIN_AUDIT_LOG'             => 'admin-registro-attivita',
+    'WORDING_ADMIN_AUDIT_LOG.title'       => 'Admin — Registro attività',
+    'WORDING_ADMIN_AUDIT_LOG.description' => 'Cronologia di tutte le azioni amministrative.',
+    'WORDING_ADMIN_CONFIG_WEBMAIL'        => 'admin-config-webmail',
+    'WORDING_ADMIN_THEMES.title'          => 'Admin — Temi',
+    'WORDING_ADMIN_THEMES.description'    => 'Scegli il tema globale del sito.',
 
     // Pagina test commenti
     'WORDING_COMMENTS_TEST' => 'commenti-test',

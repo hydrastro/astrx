@@ -25,11 +25,92 @@ if (file_exists($configDir . '.setup_complete')) {
     exit;
 }
 
+// ── Fail-closed install guard + per-install setup token ─────────────────────────
+// (a) The .setup_complete lock file above is NOT created by Docker's automatic
+//     DB init, so it can be absent even on a fully-provisioned site. Fail closed
+//     on REAL state: if the database already holds an administrator, the site is
+//     installed — anonymous/tokenless callers get a 404 immediately. A caller
+//     presenting the valid setup token (which proves server filesystem access)
+//     may still proceed, so the wizard can finish step 4 after step 3 has created
+//     the first admin, and an operator can legitimately re-enter setup.
+// (b) Require a per-install setup token, stored OUTSIDE the docroot in the config
+//     dir (0600, generated on first load), on every step that writes anything.
+$setupToken     = setupToken($configDir);
+$submittedToken = post('setup_token', '');
+$tokenValid     = $submittedToken !== '' && hash_equals($setupToken, $submittedToken);
+
+if (alreadyInstalled($configDir) && !$tokenValid) {
+    http_response_code(404);
+    echo '<!DOCTYPE html><html><body><h1>404</h1></body></html>';
+    exit;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function e(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function post(string $k, string $d = ''): string { return is_string($_POST[$k] ?? null) ? trim((string)$_POST[$k]) : $d; }
 function pb(string $k): bool { return !empty($_POST[$k]); }
 function currentStep(): int { return max(1, min(5, (int)(($_GET['step'] ?? $_POST['_step'] ?? 1)))); }
+
+// ── Setup token (fail-closed installer) ─────────────────────────────────────────
+// Read-or-create the per-install setup token. Lives OUTSIDE the docroot in the
+// config dir so it is not web-readable; the operator must read it from the server
+// filesystem and paste it into the form. Generated 0600 on first load.
+function setupToken(string $configDir): string
+{
+    $path = $configDir . '.setup_token';
+    $existing = @file_get_contents($path);
+    if (is_string($existing) && trim($existing) !== '') {
+        return trim($existing);
+    }
+    $token = bin2hex(random_bytes(32));
+    @file_put_contents($path, $token, LOCK_EX);
+    @chmod($path, 0600);
+    return $token;
+}
+
+// Fail-closed install detection: true only if we can connect to the configured
+// database AND it already contains an admin (type = 1, not deleted). If the DB
+// is unreachable or the schema is absent we return false and let the token gate
+// protect the (still-uninstalled) site.
+function alreadyInstalled(string $configDir): bool
+{
+    $cfgPath = $configDir . 'PDO.config.php';
+    if (!is_file($cfgPath)) { return false; }
+    /** @var mixed $cfg */
+    $cfg = require $cfgPath;
+    if (!is_array($cfg) || !isset($cfg['PDO']) || !is_array($cfg['PDO'])) { return false; }
+    /** @var array<string,mixed> $db */
+    $db = $cfg['PDO'];
+    $conn = tryConn(
+        (string)($db['db_host']     ?? 'localhost'),
+        (string)($db['db_name']     ?? ''),
+        (string)($db['db_username'] ?? ''),
+        (string)($db['db_password'] ?? ''),
+        (int)($db['db_port']        ?? 3306),
+    );
+    if (is_string($conn)) { return false; }
+    try {
+        $stmt = $conn->query('SELECT 1 FROM `user` WHERE `type` = 1 AND `deleted` = 0 LIMIT 1');
+        if ($stmt === false) { return false; }
+        $found = $stmt->fetchColumn();
+        $stmt->closeCursor();
+        return $found !== false;
+    } catch (\PDOException) {
+        return false;
+    }
+}
+
+// Renders the setup-token input, carried on every write step's form. Pre-filled
+// with the SUBMITTED value only (never the real token — that must be read from
+// the server file), so loading the page never leaks the token.
+function tokenFieldHtml(string $submitted): string
+{
+    return '<p><label>Setup token<br>'
+         . '<input type="text" class="input" name="setup_token" autocomplete="off" '
+         . 'style="width:100%" value="' . e($submitted) . '"></label>'
+         . '<br><small>Paste the contents of <code>resources/config/.setup_token</code> '
+         . '(readable on the server only).</small></p>';
+}
 
 // ── Requirements ──────────────────────────────────────────────────────────────
 function checkReqs(): array
@@ -296,7 +377,12 @@ function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 $step = currentStep();
 $errors = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$tokenValid) {
+    // No write happens without a valid setup token.
+    $errors[] = 'Invalid or missing setup token. Open resources/config/.setup_token '
+              . 'on the server and paste its contents into the "Setup token" field below.';
+    $step = currentStep();
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ps = (int)post('_step','1');
 
     if ($ps === 1) {
@@ -385,6 +471,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($lockBytes === false) {
                 $errors[] = "Cannot write lock file at {$configDir}.setup_complete";
             } else {
+                // Setup done — the one-time token is no longer needed.
+                @unlink($configDir . '.setup_token');
                 $step = 5;
             }
         }
@@ -430,6 +518,12 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
 
   <div id="main">
 
+<?php if ($step < 5): ?>
+    <p>&#128273; This installer is protected by a one-time <strong>setup token</strong>.
+    Open <code>resources/config/.setup_token</code> on the server and paste its contents
+    into the Setup token field on each step below.</p>
+<?php endif ?>
+
 <?php if ($step === 1): /* ── Requirements ── */ ?>
 <h2>Step 1 — Requirements</h2>
 <table>
@@ -447,6 +541,7 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
 <?php if (!allOk($checks)): ?><p>Resolve the failing checks, then re-check.</p><?php endif ?>
 <form method="POST">
   <input type="hidden" name="_step" value="1">
+  <?= tokenFieldHtml($submittedToken) ?>
   <input type="submit" class="input" value="<?= allOk($checks) ? 'Continue &rarr;' : 'Re-check' ?>">
 </form>
 
@@ -454,6 +549,7 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
 <h2>Step 2 — Database connection</h2>
 <form method="POST">
   <input type="hidden" name="_step" value="2">
+  <?= tokenFieldHtml($submittedToken) ?>
   <table>
     <tbody>
       <tr><td>Host</td>          <td><input type="text"     class="input" name="db_host" value="<?= e(post('db_host','localhost')) ?>"></td></tr>
@@ -472,6 +568,7 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
 <p>Creates the first administrator. More users can be added via the admin panel.</p>
 <form method="POST">
   <input type="hidden" name="_step" value="3">
+  <?= tokenFieldHtml($submittedToken) ?>
   <table>
     <tbody>
       <tr><td>Username</td>     <td><input type="text"     class="input" name="admin_user"    value="<?= e(post('admin_user','admin')) ?>"></td></tr>
@@ -493,6 +590,7 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
 <h2>Step 4 — Security &amp; environment</h2>
 <form method="POST">
   <input type="hidden" name="_step" value="4">
+  <?= tokenFieldHtml($submittedToken) ?>
   <table>
     <tbody>
       <tr>

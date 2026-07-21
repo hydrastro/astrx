@@ -51,6 +51,11 @@ final class CaptchaFrameController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
+        // Load the Captcha translation domain up front so both the error path
+        // and the reload label resolve to localized strings. This controller
+        // renders its own iframe document and pulls in no other domains.
+        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+
         $cid     = self::queryStr($this->request, 'cid', '');
         $refresh = self::queryStr($this->request, 'refresh', '') === '1';
 
@@ -73,8 +78,12 @@ final class CaptchaFrameController extends AbstractController
         // is belt-and-braces).
         $lang       = $this->currentUrl->get('lang', 'en');
         $locale     = is_scalar($lang) ? (string) $lang : 'en';
-        $imageSlug  = $this->t->t('WORDING_CAPTCHA_IMAGE', fallback: 'captcha-image');
-        $frameSlug  = $this->t->t('WORDING_CAPTCHA_FRAME', fallback: 'captcha-frame');
+        // Routing slugs live in the shared 'pages' domain (loaded globally — the
+        // router already resolved this very slug to reach us), so we look them up
+        // by id without a hardcoded English fallback, exactly like the sibling
+        // controllers (Login/Comment/Register) do.
+        $imageSlug  = $this->t->t('WORDING_CAPTCHA_IMAGE');
+        $frameSlug  = $this->t->t('WORDING_CAPTCHA_FRAME');
 
         $imageUrl   = '/' . $locale . '/' . $imageSlug . '?cid=' . $cid
                     . '&v=' . bin2hex(random_bytes(4));
@@ -128,7 +137,12 @@ HTML;
             header('Content-Type: text/html; charset=utf-8');
             header('Cache-Control: no-store');
         }
-        echo '<!DOCTYPE html><body style="font:13px sans-serif">captcha unavailable</body>';
+        $msg = htmlspecialchars(
+            $this->t->t('captcha.frame.unavailable', fallback: 'Captcha unavailable'),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+        echo '<!DOCTYPE html><body style="font:13px sans-serif">' . $msg . '</body>';
         exit;
     }
 }

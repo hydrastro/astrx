@@ -30,6 +30,11 @@ return [
         'maximum_age' => 0,
         'login_captcha_type' => 2,
         'login_captcha_attempts' => 3,
+        // Brute-force lockout (fix M4): after this many consecutive failed
+        // logins the account is temporarily locked for `login_lockout_cooldown`
+        // seconds. Set the threshold to 0 to disable the feature entirely.
+        'login_lockout_threshold' => 10,
+        'login_lockout_cooldown' => 900,
         'register_captcha_type' => 0,
         'recover_captcha_type' => 0,
         'remember_me_time' => 2592000,

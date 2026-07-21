@@ -23,6 +23,7 @@ use AstrX\User\UserGroup;
 use AstrX\User\DeletionMode;
 use AstrX\User\UserRepository;
 use AstrX\User\UserService;
+use AstrX\User\UserSession;
 
 /**
  * Admin users — user account management + user service configuration on one page.
@@ -59,6 +60,7 @@ final class AdminUsersController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly UserService           $userService,
+        private readonly UserSession           $session,
     ) {
         parent::__construct($collector);
     }
@@ -161,6 +163,35 @@ final class AdminUsersController extends AbstractController
                 $rawPassword = trim(self::mStr($posted, 'password', ''));
                 $hashIt      = self::mBool($posted, 'hash_password');
 
+                // FIX H6: role (`type`) privilege-escalation guard. USER_EDIT_ANY
+                // (checked above) is NOT enough to change a user's group. A role
+                // change is only allowed when the acting user holds USER_PROMOTE,
+                // the new group value is <= the acting user's own group value, and
+                // it is not a self-promotion to a higher group. Without this, any
+                // editor could raise `type` straight from POST.
+                $postedType  = self::mInt($posted, 'type', 0);
+                $currentType = is_int($target->type ?? null)
+                    ? $target->type
+                    : (is_numeric($target->type ?? null) ? (int) $target->type : 0);
+                if ($postedType !== $currentType) {
+                    // Compare by PRIVILEGE RANK, not the raw enum value: UserGroup
+                    // values are not privilege-ordered (USER=0, ADMIN=1, MOD=2,
+                    // GUEST=3), so a numeric `<=` would let a MOD mint an ADMIN.
+                    $newGroup    = UserGroup::tryFrom($postedType);
+                    $actingRank  = $this->session->userType()->rank();
+                    $currentRank = (UserGroup::tryFrom($currentType) ?? UserGroup::GUEST)->rank();
+                    $isSelf      = strtolower($hexId) === strtolower($this->session->userId());
+                    $promotionAllowed =
+                        $newGroup !== null                                    // must be a real group
+                        && $this->gate->can(Permission::USER_PROMOTE, $target) // must hold USER_PROMOTE
+                        && $newGroup->rank() <= $actingRank                    // never above the actor's own rank
+                        && !($isSelf && $newGroup->rank() > $currentRank);     // no self-promotion to a higher rank
+                    if (!$promotionAllowed) {
+                        $this->flash->set('error', $this->t->t('admin.users.promote_denied'));
+                        return;
+                    }
+                }
+
                 $r = $this->userRepo->adminUpdate(
                     $hexId,
                     trim(self::mStr($posted, 'username', '')),
@@ -168,7 +199,7 @@ final class AdminUsersController extends AbstractController
                     self::mNullableTrimmed($posted, 'mailbox'),
                     self::mNullableTrimmed($posted, 'email'),
                     self::mNullableTrimmed($posted, 'display_name'),
-                    self::mInt($posted, 'type', 0),
+                    $postedType,
                     self::mNullableTrimmed($posted, 'birth'),
                     self::mInt($posted, 'login_attempts', 0),
                     self::mBool($posted, 'verified'),
@@ -234,6 +265,10 @@ final class AdminUsersController extends AbstractController
                 'maximum_age'                    => max(0, self::mInt($p, 'maximum_age', 0)),
                 'login_captcha_type'             => self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED),
                 'login_captcha_attempts'         => max(1, self::mInt($p, 'login_captcha_attempts', 3)),
+                // Brute-force lockout (fix M4) has no form field yet; preserve the
+                // current on-disk values so saving this page never silently drops them.
+                'login_lockout_threshold'        => max(0, $this->config->getConfigInt('UserService', 'login_lockout_threshold', 10)),
+                'login_lockout_cooldown'         => max(1, $this->config->getConfigInt('UserService', 'login_lockout_cooldown', 900)),
                 'register_captcha_type'          => self::mInt($p, 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
                 'recover_captcha_type'           => self::mInt($p, 'recover_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
                 'remember_me_time'               => max(0, self::mInt($p, 'remember_me_time', 2592000)),

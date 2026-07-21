@@ -5,6 +5,7 @@ namespace AstrX\Api;
 
 use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\Http\Request;
+use AstrX\Result\DiagnosticContextInterface;
 use AstrX\Result\DiagnosticInterface;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticRenderer;
@@ -41,9 +42,11 @@ use AstrX\Template\DefaultTemplateContext;
  *   - API data is filtered through ContextScope: only SHARED, API_PUBLIC, and
  *     (for admins) API_ADMIN keys are exposed.
  *   - Diagnostics are serialised from the same DiagnosticInterface objects the
- *     controllers/template engine emit. The renderer does not assume a
- *     context() method; it extracts context from public zero-argument accessors
- *     such as token(), file(), message(), detail(), captchaId(), etc.
+ *     controllers/template engine emit. Only stable fields (id, level,
+ *     level_value, rendered message) are exposed; extra context is included
+ *     ONLY when a diagnostic opts in via DiagnosticContextInterface::context().
+ *     Arbitrary getters are never reflected, so internal details (file paths,
+ *     eval text, temp paths) cannot leak into API responses.
  *   - Diagnostic visibility follows DiagnosticVisibilityChecker, just like the
  *     HTML message bar. Hidden diagnostics still influence the HTTP status, but
  *     their details are not leaked in the JSON body.
@@ -113,12 +116,13 @@ final class JsonRenderer
             if ($worst !== null && $this->visibilityChecker->canSee($worst)) {
                 $envelope['error'] = $this->serialiseDiagnostic($worst);
             } else {
-                $envelope['error'] = [
-                    'id'          => 'astrx.api/internal_error',
-                    'level'       => 'error',
-                    'level_value' => DiagnosticLevel::ERROR->value,
-                    'message'     => 'Internal error',
-                ];
+                // The dominant diagnostic is hidden from this caller (or absent):
+                // do not leak it. Emit a generic, id-first envelope rendered
+                // through the DiagnosticRenderer path the class already uses, so
+                // the message is translated once an 'astrx.api/internal_error'
+                // catalog entry exists and stays a clearly-marked fallback until
+                // then — never a hardcoded English literal.
+                $envelope['error'] = $this->serialiseDiagnostic($this->internalErrorDiagnostic());
             }
         } else {
             $envelope['data'] = $ctx->getApiData($isAdmin);
@@ -175,55 +179,49 @@ final class JsonRenderer
     }
 
     /**
-     * Extract diagnostic payload without requiring every diagnostic class to
-     * implement a parallel context() method.
+     * Structured context for a diagnostic — ONLY from diagnostics that opt in
+     * via DiagnosticContextInterface. Arbitrary public getters are never
+     * reflected, since that could surface internal details (file paths, eval
+     * text, temp paths) to API clients. The implementer decides exactly what is
+     * exposed.
      *
      * @return array<string,mixed>
      */
     private function diagnosticContext(DiagnosticInterface $diagnostic): array
     {
+        if (!$diagnostic instanceof DiagnosticContextInterface) {
+            return [];
+        }
+
         $context = [];
-        $reflection = new \ReflectionObject($diagnostic);
-
-        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->isStatic() || $method->getNumberOfRequiredParameters() !== 0) {
+        foreach ($diagnostic->context() as $key => $value) {
+            if (!is_string($key)) {
                 continue;
             }
-
-            $name = $method->getName();
-            if (in_array($name, ['id', 'level', '__toString'], true)) {
-                continue;
-            }
-            if (str_starts_with($name, '__')) {
-                continue;
-            }
-
-            try {
-                $value = $method->invoke($diagnostic);
-            } catch (\Throwable) {
-                continue;
-            }
-
             $normalised = $this->normaliseContextValue($value);
             if ($normalised === null) {
                 continue;
             }
-
-            $context[$this->contextKeyFromMethodName($name)] = $normalised;
+            $context[$key] = $normalised;
         }
 
         ksort($context);
         return $context;
     }
 
-    private function contextKeyFromMethodName(string $methodName): string
+    /**
+     * Synthetic diagnostic backing the generic "internal error" envelope when
+     * the dominant diagnostic must not be disclosed. Carries the stable id and
+     * ERROR level; it is rendered through the normal DiagnosticRenderer path so
+     * the message translates once an 'astrx.api/internal_error' catalog entry
+     * exists and remains a clearly-marked fallback until then.
+     */
+    private function internalErrorDiagnostic(): DiagnosticInterface
     {
-        if (str_starts_with($methodName, 'get') && strlen($methodName) > 3) {
-            $methodName = substr($methodName, 3);
-        }
-
-        $key = preg_replace('/(?<!^)[A-Z]/', '_$0', $methodName);
-        return strtolower((string) $key);
+        return new class implements DiagnosticInterface {
+            public function id(): string { return 'astrx.api/internal_error'; }
+            public function level(): DiagnosticLevel { return DiagnosticLevel::ERROR; }
+        };
     }
 
     private function normaliseContextValue(mixed $value): mixed

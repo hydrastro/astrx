@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 return [
     'Prelude' => [
-        'environment' => 0,
+        // EnvironmentType: DEVELOPMENT=0, PRODUCTION=1, TESTING=2, STAGING=3.
+        // Default to PRODUCTION so a fresh/undefined install fails closed
+        // (errors hidden, assertions off). Set to 0 locally for development.
+        'environment' => 1,
         'available_languages' => [
             'en',
             'it',

@@ -6,6 +6,7 @@ return [
     'comment.heading'        => 'Comments',
     'comment.none'           => 'No comments yet. Be the first!',
     'comment.submit_heading' => 'Leave a comment',
+    'comment.anonymous'      => 'Anonymous',
 
     // ── Form labels ──────────────────────────────────────────────────────────
     'comment.label.name'         => 'Name',

@@ -82,8 +82,12 @@ final class LoginController extends AbstractController
             return $this->renderForm($username);
         }
 
-        // Captcha check (before login attempt — don't reveal if user exists)
-        $showCaptchaResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
+        // Captcha check (before login attempt). Driven by a per-session failure
+        // counter rather than a DB lookup on the username, so the captcha
+        // requirement is identical whether or not the account exists — closing
+        // the enumeration oracle that shouldShowCaptcha('login', $username) had
+        // (real users showed a captcha after N fails, unknown ones never did).
+        $showCaptchaResult = $this->userService->shouldShowLoginCaptcha($this->loginFailCount());
         $showCaptcha = $showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap();
 
         if ($showCaptcha) {
@@ -98,11 +102,17 @@ final class LoginController extends AbstractController
         $loginResult = $this->userService->login($username, $password, $rememberMe);
         if (!$loginResult->isOk()) {
             $loginResult->drainTo($this->collector);
-            // Check if captcha is NOW needed after this failure
-            $showAfterResult = $this->userService->shouldShowCaptcha(self::FORM, $username);
+            // Count EVERY failed attempt (independent of whether the username
+            // exists), then decide whether a captcha is now required.
+            $failCount = $this->bumpLoginFailCount();
+            $showAfterResult = $this->userService->shouldShowLoginCaptcha($failCount);
             $showAfter = $showAfterResult->isOk() && (bool) $showAfterResult->unwrap();
             return $this->renderForm($username, $showAfter);
         }
+
+        // Success — clear the failure counter so the next visitor to this
+        // session starts clean.
+        $this->resetLoginFailCount();
 
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
         $userData = $loginResult->unwrap();
@@ -123,9 +133,10 @@ final class LoginController extends AbstractController
         $pageUrl      = $this->request->uri()->path();
         $prgId        = $this->prg->createId($pageUrl);
 
-        // Captcha for initial render (ALWAYS policy or passed explicitly)
+        // Captcha for initial render (ALWAYS policy or passed explicitly).
+        // Driven by the session failure counter, independent of the username.
         if (!$showCaptcha) {
-            $captchaResult = $this->userService->shouldShowCaptcha(self::FORM, $usernameValue);
+            $captchaResult = $this->userService->shouldShowLoginCaptcha($this->loginFailCount());
             $showCaptcha = $captchaResult->isOk() && (bool) $captchaResult->unwrap();
         }
 
@@ -176,6 +187,30 @@ final class LoginController extends AbstractController
         $this->setI18n();
 
         return $this->ok();
+    }
+
+    // ── Login-failure counter (session) ───────────────────────────────────────
+    // Kept in the session so the login captcha threshold is driven by attempts
+    // from THIS browser session, independent of whether the submitted username
+    // maps to a real account. The DB `login_attempts` column is still used
+    // separately by UserService for the brute-force lockout.
+
+    private function loginFailCount(): int
+    {
+        $v = $_SESSION['astrx_login_fail'] ?? 0;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
+    }
+
+    private function bumpLoginFailCount(): int
+    {
+        $n = $this->loginFailCount() + 1;
+        $_SESSION['astrx_login_fail'] = $n;
+        return $n;
+    }
+
+    private function resetLoginFailCount(): void
+    {
+        $_SESSION['astrx_login_fail'] = 0;
     }
 
     private function setI18n(): void

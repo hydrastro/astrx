@@ -221,6 +221,10 @@ final class CommentController extends AbstractController
         $replyToPreFill  = (is_numeric($vq_reply_to = $this->request->query()->get('reply_to')) ? (int)$vq_reply_to : 0);
         $cancelReplyUrl  = $pageBase;
 
+        // Translatable display fallback for anonymous authors (stored as NULL in
+        // the DB by CommentService). Resolved once; the loop reuses it per row.
+        $anonymousName = $this->t->t('comment.anonymous', fallback: 'Anonymous');
+
         $comments = [];
         foreach ($flat as $i => $row) {
             $isHidden = self::mBool($row, 'hidden');
@@ -228,12 +232,12 @@ final class CommentController extends AbstractController
                 ? (is_int($row['reply_to']) ? $row['reply_to'] : 0) : null;
 
             if ($row['user_id'] !== null) {
-                $dnRaw = $row['user_display_name'] ?? $row['name'] ?? 'Anonymous';
-                $displayName = is_scalar($dnRaw) ? (string)$dnRaw : 'Anonymous';
+                $dnRaw = $row['user_display_name'] ?? $row['name'] ?? $anonymousName;
+                $displayName = is_scalar($dnRaw) ? (string)$dnRaw : $anonymousName;
                 $avatarSrc   = $this->urlGen->toPage('avatar', ['uid' => (is_scalar($row['user_id']) ? (string)$row['user_id'] : '')]);
                 $profileUrl  = $profileBase . '?uid=' . rawurlencode((is_scalar($row['user_id']) ? (string)$row['user_id'] : ''));
             } else {
-                $displayName = ($row['name'] ?? '') !== '' ? (is_scalar($row['name']) ? (string)$row['name'] : '') : 'Anonymous';
+                $displayName = ($row['name'] ?? '') !== '' ? (is_scalar($row['name']) ? (string)$row['name'] : '') : $anonymousName;
                 $profileUrl  = '';
                 $avatarSrc   = $useIdenticons
                     ? $this->urlGen->toPage('avatar', [

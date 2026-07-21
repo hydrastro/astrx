@@ -96,9 +96,12 @@ final class CommentRepository
     {
         try {
             $stmt = $this->pdo->prepare(
-                'SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
-                        name, email, content, reply_to, flagged, hidden, created_at
-                   FROM comment WHERE id = :id'
+                'SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                        c.name, c.email, c.content, c.reply_to, c.flagged, c.hidden, c.created_at,
+                        u.type AS user_type
+                   FROM comment c
+                   LEFT JOIN user u ON u.id = c.user_id
+                  WHERE c.id = :id'
             );
             $stmt->execute([':id' => $id]);
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -125,14 +128,16 @@ final class CommentRepository
             if (!in_array($col, $allowed, true)) {
                 continue;
             }
-            $where[]       = "{$col} = :{$col}";
+            $where[]       = "c.{$col} = :{$col}";
             $params[":{$col}"] = $val;
         }
-        $sql = "SELECT id, page_id, LOWER(HEX(user_id)) AS user_id,
-                       name, email, content, reply_to, flagged, hidden, created_at
-                  FROM comment"
+        $sql = "SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                       c.name, c.email, c.content, c.reply_to, c.flagged, c.hidden, c.created_at,
+                       u.type AS user_type
+                  FROM comment c
+                  LEFT JOIN user u ON u.id = c.user_id"
                . ($where !== [] ? ' WHERE ' . implode(' AND ', $where) : '')
-               . " ORDER BY created_at {$order}";
+               . " ORDER BY c.created_at {$order}";
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);

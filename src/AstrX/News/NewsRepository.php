@@ -99,13 +99,7 @@ final class NewsRepository
             $typed = is_array($rows) ? $rows : [];
             return Result::ok($typed);
         } catch (\PDOException $e) {
-            return Result::err([], Diagnostics::of(
-                new \AstrX\News\Diagnostic\NewsDbDiagnostic(
-                    'astrx.news/db_error',
-                    \AstrX\Result\DiagnosticLevel::ERROR,
-                    $e->getMessage(),
-                ),
-            ));
+            return Result::err([], $this->pdoDiagnostic($e));
         }
     }
 
