@@ -6,9 +6,10 @@ parameters:
         - tools
     treatPhpDocTypesAsCertain: false
     excludePaths:
-        analyse:
+        analyseAndScan:
             - build/*
             - resources/template/cache/*
             - public/compiled.php
             - public/compile/index.php
             - public/setup.php
+            - tools/verify-compiled.php

@@ -27,6 +27,10 @@ $deny = static function (): void {
     exit;
 };
 
+// Coerce a mixed config value to a scalar without tripping level-10 casts.
+$asStr = static fn(mixed $v, string $default = ''): string => is_scalar($v) ? (string) $v : $default;
+$asInt = static fn(mixed $v, int $default = 0): int => is_int($v) ? $v : (is_numeric($v) ? (int) $v : $default);
+
 // ── Minimal boot: only the dir constants index.php defines ────────────────────
 if (!defined('INDEX_DIR')) {
     $root = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..');
@@ -65,14 +69,14 @@ if (!is_array($pdoCfgRaw) || !isset($pdoCfgRaw['PDO']) || !is_array($pdoCfgRaw['
 $db = $pdoCfgRaw['PDO'];
 
 try {
-    $dsn = (string)($db['db_type'] ?? 'mysql')
-         . ':host=' . (string)($db['db_host'] ?? 'localhost')
-         . ';dbname=' . (string)($db['db_name'] ?? '')
+    $dsn = $asStr($db['db_type'] ?? null, 'mysql')
+         . ':host=' . $asStr($db['db_host'] ?? null, 'localhost')
+         . ';dbname=' . $asStr($db['db_name'] ?? null)
          . ';charset=utf8mb4';
     $pdo = new PDO(
         $dsn,
-        (string)($db['db_username'] ?? ''),
-        (string)($db['db_password'] ?? ''),
+        $asStr($db['db_username'] ?? null),
+        $asStr($db['db_password'] ?? null),
     );
     $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, (bool)($db['emulate_prepares'] ?? false));
     $pdo->setAttribute(
@@ -98,15 +102,15 @@ if (is_file($sessionCfgPath)) {
     if (is_array($sessionCfgRaw) && isset($sessionCfgRaw['Session']) && is_array($sessionCfgRaw['Session'])) {
         /** @var array<string,mixed> $s */
         $s = $sessionCfgRaw['Session'];
-        if (isset($s['sid_bytes']))       { $handler->setSidBytes((int)$s['sid_bytes']); }
+        if (isset($s['sid_bytes']))       { $handler->setSidBytes($asInt($s['sid_bytes'])); }
         if (isset($s['encrypt']))         { $handler->setEncrypt((bool)$s['encrypt']); }
-        if (isset($s['max_sid_retries'])) { $handler->setMaxRetries((int)$s['max_sid_retries']); }
-        if (isset($s['server_secret']))   { $handler->setServerSecret((string)$s['server_secret']); }
+        if (isset($s['max_sid_retries'])) { $handler->setMaxRetries($asInt($s['max_sid_retries'])); }
+        if (isset($s['server_secret']))   { $handler->setServerSecret($asStr($s['server_secret'])); }
     }
 }
 
 // No session cookie → nobody to authenticate. Avoid creating a stray session row.
-if ((string)($_COOKIE[session_name()] ?? '') === '') { $deny(); }
+if ($asStr($_COOKIE[session_name()] ?? null) === '') { $deny(); }
 
 // Strict mode: reject uninitialised/forged IDs (activates validateId()).
 ini_set('session.use_strict_mode', '1');
@@ -122,9 +126,7 @@ session_set_cookie_params([
 
 session_set_save_handler($handler, true);
 
-try {
-    session_start();
-} catch (\Throwable) {
+if (@session_start() === false) {
     $deny();
 }
 

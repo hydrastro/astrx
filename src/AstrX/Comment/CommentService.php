@@ -215,7 +215,7 @@ final class CommentService
     {
         $loaded = $this->loadResource($commentId);
         if (!$loaded->isOk()) {
-            return $loaded;
+            return Result::err($loaded->error(), $loaded->diagnostics());
         }
         $resource = $loaded->unwrap();
         if ($resource === null) {
@@ -232,7 +232,7 @@ final class CommentService
     {
         $loaded = $this->loadResource($commentId);
         if (!$loaded->isOk()) {
-            return $loaded;
+            return Result::err($loaded->error(), $loaded->diagnostics());
         }
         $resource = $loaded->unwrap();
         if ($resource === null) {
@@ -249,7 +249,7 @@ final class CommentService
     {
         $loaded = $this->loadResource($commentId);
         if (!$loaded->isOk()) {
-            return $loaded;
+            return Result::err($loaded->error(), $loaded->diagnostics());
         }
         $resource = $loaded->unwrap();
         if ($resource === null) {
@@ -275,7 +275,7 @@ final class CommentService
     {
         $result = $this->repo->findById($commentId);
         if (!$result->isOk()) {
-            return $result;
+            return Result::err($result->error(), $result->diagnostics());
         }
         $row = $result->unwrap();
         return Result::ok($row === null ? null : (object) $row);

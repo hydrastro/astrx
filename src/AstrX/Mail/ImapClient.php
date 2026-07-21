@@ -495,11 +495,14 @@ final class ImapClient
     {
         $r = $this->command('STARTTLS');
         if (!$r->isOk()) { return Result::err(null, $r->diagnostics()); }
-        assert($this->socket !== null);
+        $socket = $this->socket;
+        if ($socket === null) {
+            return $this->err('starttls', 'IMAP socket is not connected');
+        }
         // H7: pin the certificate to the configured host and honour
         // imap_verify_ssl before upgrading the plaintext IMAP stream to TLS.
-        $this->applyTlsContext($this->socket);
-        if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+        $this->applyTlsContext($socket);
+        if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }
         return Result::ok(true);

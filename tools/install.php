@@ -341,7 +341,7 @@ function runMigration(PDO $pdo, string $file): string
 
     $name = basename($file);
     $checksum = hash_file('sha256', $file);
-    if (!is_string($checksum) || $checksum === '') { return "Could not checksum: {$file}"; }
+    if (!is_string($checksum)) { return "Could not checksum: {$file}"; }
 
     try {
         $check = $pdo->prepare('SELECT checksum FROM `migration` WHERE file_name = :f LIMIT 1');
