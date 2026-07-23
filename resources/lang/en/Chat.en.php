@@ -16,6 +16,7 @@ return [
     'chat.message'         => 'Message',
     'chat.placeholder'     => 'Type a message…',
     'chat.send'            => 'Send',
+    'chat.attach'          => 'Attach image',
     'chat.send_to'         => 'Send to',
     'chat.to_everyone'     => 'Everyone',
     'chat.formatting_hint' => 'Formatting: [b]bold[/b] [i]italic[/i] [u]underline[/u] [s]strike[/s] [quote]…[/quote] [code]…[/code] [color=red]…[/color] · /me action',
@@ -32,6 +33,7 @@ return [
     'chat.join_prompt' => 'Join the chat',
     'chat.no_messages' => 'No messages yet. Say hello!',
     'chat.delete'      => 'Delete',
+    'chat.report'      => 'Report',
     'chat.not_in_chat' => 'You are not in the chat.',
 
     // ── Online users & moderation ──────────────────────────────────────────────
@@ -75,6 +77,13 @@ return [
     'chat.admin.broadcast'         => 'Send broadcast',
     'chat.admin.broadcast_ph'      => 'Announcement to everyone…',
     'chat.admin.config_link'       => 'Full chat configuration →',
+    'chat.admin.reports'           => 'Reported messages',
+    'chat.admin.reports_none'      => 'No pending reports.',
+    'chat.admin.report_col_msg'    => 'Message',
+    'chat.admin.report_col_by'     => 'Nick',
+    'chat.admin.report_col_count'  => 'Reports',
+    'chat.admin.report_dismiss'    => 'Dismiss',
+    'chat.admin.report_block'      => 'Block link',
     'chat.broadcast_tag'           => 'Broadcast',
 
     // ── Managed word / link filters (enforcement — admin_chat_filters) ──────────
@@ -89,6 +98,7 @@ return [
     'chat.filter.col_manage'    => 'Manage',
     'chat.filter.kind_word'     => 'word',
     'chat.filter.kind_link'     => 'link',
+    'chat.filter.kind_nick'     => 'nick',
     'chat.filter.action_block'  => 'block',
     'chat.filter.action_kick'   => 'kick',
     'chat.filter.yes'           => 'yes',

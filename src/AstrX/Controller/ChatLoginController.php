@@ -8,12 +8,14 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaService;
 use AstrX\Chat\ChatConfig;
+use AstrX\Chat\ChatFilterService;
 use AstrX\Chat\ChatIdentity;
 use AstrX\Chat\ChatPresenceService;
 use AstrX\Chat\ChatService;
 use AstrX\Chat\ChatStyles;
 use AstrX\Chat\Diagnostic\ChatBannedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatEntryPasswordDiagnostic;
+use AstrX\Chat\Diagnostic\ChatNickBlockedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNickInvalidDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNickTakenDiagnostic;
 use AstrX\Csrf\CsrfHandler;
@@ -68,6 +70,7 @@ final class ChatLoginController extends AbstractController
         private readonly UserRepository         $users,
         private readonly BanlistRepository      $banlist,
         private readonly ChatService            $chat,
+        private readonly ChatFilterService      $filters,
         private readonly Gate                   $gate,
     ) {
         parent::__construct($collector);
@@ -172,6 +175,12 @@ final class ChatLoginController extends AbstractController
         }
         if (preg_match($pattern, $nick) !== 1) {
             $this->emit(new ChatNickInvalidDiagnostic('astrx.chat/nick_invalid', DiagnosticLevel::NOTICE));
+            return;
+        }
+
+        // Managed nickname filter (#134): a matched nick pattern is refused entry.
+        if ($this->filters->nickBlocked($nick) !== null) {
+            $this->emit(new ChatNickBlockedDiagnostic('astrx.chat/nick_blocked', DiagnosticLevel::NOTICE));
             return;
         }
 

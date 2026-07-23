@@ -7,6 +7,7 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatModerationService;
+use AstrX\Chat\ChatReportService;
 use AstrX\Chat\ChatNav;
 use AstrX\Chat\ChatPresenceService;
 use AstrX\Chat\ChatService;
@@ -44,6 +45,7 @@ final class ChatAdminController extends AbstractController
         private readonly ChatPresenceService    $presence,
         private readonly ChatModerationService  $mod,
         private readonly ChatService            $chat,
+        private readonly ChatReportService      $reports,
         private readonly ChatConfig             $config,
         private readonly Gate                   $gate,
         private readonly CsrfHandler            $csrf,
@@ -120,6 +122,12 @@ final class ChatAdminController extends AbstractController
                 $by       = $identity !== null ? $identity->nick : '';
                 $this->chat->broadcast($by, self::mStr($posted, 'message', ''))->drainTo($this->collector);
                 break;
+            case 'report_dismiss':
+                $this->reports->dismiss(self::mInt($posted, 'id', 0))->drainTo($this->collector);
+                break;
+            case 'report_block':
+                $this->reports->blockLink(self::mInt($posted, 'id', 0))->drainTo($this->collector);
+                break;
         }
     }
 
@@ -186,6 +194,29 @@ final class ChatAdminController extends AbstractController
         $this->ctx->set('room_topic',    $this->chat->effectiveTopic());
         $this->ctx->set('config_url',    $this->urlGen->toPage($this->t->t('WORDING_ADMIN_CONFIG_CHAT')));
 
+        // #132 report queue.
+        $reportsResult = $this->reports->pending();
+        $reportsResult->drainTo($this->collector);
+        $reportRows = $reportsResult->isOk() ? $reportsResult->unwrap() : [];
+        $reports    = [];
+        foreach ($reportRows as $rr) {
+            $mid = self::mInt($rr, 'message_id', 0);
+            if ($mid <= 0) {
+                continue;
+            }
+            $url = self::mStr($rr, 'first_url', '');
+            $reports[] = [
+                'message_id' => $mid,
+                'nick'       => self::mStr($rr, 'nick', ''),
+                'preview'    => mb_strimwidth(self::mStr($rr, 'content', ''), 0, 140, '…'),
+                'count'      => self::mInt($rr, 'report_count', 0),
+                'has_link'   => $url !== '',
+            ];
+        }
+        $this->ctx->set('reports',      $reports);
+        $this->ctx->set('has_reports',  $reports !== []);
+        $this->ctx->set('report_count', count($reports));
+
         $this->setLabels();
         $this->nav->apply($this->ctx, 'admin');
         return $this->ok();
@@ -218,6 +249,13 @@ final class ChatAdminController extends AbstractController
             'chat_admin_heading'       => 'chat.admin.heading',
             'chat_admin_sessions_h'    => 'chat.admin.sessions',
             'chat_admin_sessions_none' => 'chat.admin.sessions_none',
+            'reports_h'                => 'chat.admin.reports',
+            'reports_none'             => 'chat.admin.reports_none',
+            'report_col_msg'           => 'chat.admin.report_col_msg',
+            'report_col_by'            => 'chat.admin.report_col_by',
+            'report_col_count'         => 'chat.admin.report_col_count',
+            'report_dismiss'           => 'chat.admin.report_dismiss',
+            'report_block'             => 'chat.admin.report_block',
             'col_select'               => 'chat.admin.col_select',
             'col_nick'                 => 'chat.admin.col_nick',
             'col_type'                 => 'chat.admin.col_type',

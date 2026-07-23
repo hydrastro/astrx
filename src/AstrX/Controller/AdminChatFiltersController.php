@@ -89,8 +89,11 @@ final class AdminChatFiltersController extends AbstractController
                     $this->flash->set('error', $this->t->t('chat.filter.err_empty'));
                     break;
                 }
-                $kind   = self::mStr($posted, 'kind', 'word') === 'link'
-                    ? ChatFilterService::KIND_LINK : ChatFilterService::KIND_WORD;
+                $kind   = match (self::mStr($posted, 'kind', 'word')) {
+                    'link'  => ChatFilterService::KIND_LINK,
+                    'nick'  => ChatFilterService::KIND_NICK,
+                    default => ChatFilterService::KIND_WORD,
+                };
                 $action = self::mStr($posted, 'act', 'block') === 'kick'
                     ? ChatFilterService::ACTION_KICK : ChatFilterService::ACTION_BLOCK;
                 $mods   = self::mBool($posted, 'apply_to_mods');
@@ -132,9 +135,11 @@ final class AdminChatFiltersController extends AbstractController
             $items[] = [
                 'id'      => $id,
                 'pattern' => self::mStr($row, 'pattern', ''),
-                'kind'    => self::mInt($row, 'kind', 0) === ChatFilterService::KIND_LINK
-                    ? $this->t->t('chat.filter.kind_link')
-                    : $this->t->t('chat.filter.kind_word'),
+                'kind'    => match (self::mInt($row, 'kind', 0)) {
+                    ChatFilterService::KIND_LINK => $this->t->t('chat.filter.kind_link'),
+                    ChatFilterService::KIND_NICK => $this->t->t('chat.filter.kind_nick'),
+                    default                      => $this->t->t('chat.filter.kind_word'),
+                },
                 'action'  => self::mInt($row, 'action', 0) === ChatFilterService::ACTION_KICK
                     ? $this->t->t('chat.filter.action_kick')
                     : $this->t->t('chat.filter.action_block'),
@@ -160,6 +165,7 @@ final class AdminChatFiltersController extends AbstractController
             'filter_pattern_ph'    => 'chat.filter.pattern_ph',
             'filter_kind_word'     => 'chat.filter.kind_word',
             'filter_kind_link'     => 'chat.filter.kind_link',
+            'filter_kind_nick'     => 'chat.filter.kind_nick',
             'filter_action_block'  => 'chat.filter.action_block',
             'filter_action_kick'   => 'chat.filter.action_kick',
             'filter_apply_to_mods' => 'chat.filter.apply_to_mods',

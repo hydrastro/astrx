@@ -73,6 +73,34 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Sei stato rimosso dalla chat da un filtro.',
 
+    'astrx.chat/nick_blocked' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Quel nickname non è consentito. Scegline un altro.',
+
+    'astrx.chat/upload_disabled' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Gli allegati immagine non sono abilitati.',
+
+    'astrx.chat/upload_error' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Il caricamento del file non è riuscito. Riprova.',
+
+    'astrx.chat/upload_too_big' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Quell\'immagine è troppo grande.',
+
+    'astrx.chat/upload_type' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Quel tipo di file non è consentito.',
+
+    'astrx.chat/upload_invalid' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Quel file non è un\'immagine valida.',
+
+    'astrx.chat/upload_failed' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Impossibile salvare l\'immagine.',
+
     'astrx.chat/pm_target' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Quell\'utente non è attualmente nella chat.',

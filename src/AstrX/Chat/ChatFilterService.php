@@ -30,6 +30,7 @@ final class ChatFilterService
 {
     public const KIND_WORD    = 0;
     public const KIND_LINK    = 1;
+    public const KIND_NICK    = 2;  // matched against the chosen nick at entry, not on messages
     public const ACTION_BLOCK = 0;
     public const ACTION_KICK  = 1;
 
@@ -61,7 +62,7 @@ final class ChatFilterService
         if ($pattern === '') {
             return $this->denied();
         }
-        $kind   = $kind === self::KIND_LINK ? self::KIND_LINK : self::KIND_WORD;
+        $kind   = in_array($kind, [self::KIND_WORD, self::KIND_LINK, self::KIND_NICK], true) ? $kind : self::KIND_WORD;
         $action = $action === self::ACTION_KICK ? self::ACTION_KICK : self::ACTION_BLOCK;
         return $this->repo->add(mb_substr($pattern, 0, 255), $kind, $action, $applyToMods);
     }
@@ -103,8 +104,12 @@ final class ChatFilterService
             if ($pattern === '') {
                 continue;
             }
+            $kind = self::toInt($f['kind'] ?? 0);
+            if ($kind === self::KIND_NICK) {
+                continue; // nick filters are checked at entry (nickBlocked), not on messages
+            }
 
-            if (self::toInt($f['kind'] ?? 0) === self::KIND_LINK) {
+            if ($kind === self::KIND_LINK) {
                 if ($urls === null) {
                     $urls = $this->extractUrls($content);
                 }
@@ -117,6 +122,31 @@ final class ChatFilterService
             }
 
             if (mb_stripos($content, $pattern) !== false) {
+                return $f;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The first NICK filter that matches $nick (case-insensitive substring), or
+     * null. Checked at chat entry (not post time) so a blocked nick can't join.
+     * Pure, ungated, fail-open.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function nickBlocked(string $nick): ?array
+    {
+        $r = $this->repo->all();
+        if (!$r->isOk()) {
+            return null;
+        }
+        foreach ($r->unwrap() as $f) {
+            if (self::toInt($f['kind'] ?? 0) !== self::KIND_NICK) {
+                continue;
+            }
+            $pattern = is_scalar($f['pattern'] ?? null) ? (string) $f['pattern'] : '';
+            if ($pattern !== '' && mb_stripos($nick, $pattern) !== false) {
                 return $f;
             }
         }

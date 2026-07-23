@@ -72,7 +72,7 @@
     </div>
 
     {{#can_post}}
-    <form method="POST" class="chat-post">
+    <form method="POST" class="chat-post"{{#uploads_ok}} enctype="multipart/form-data"{{/uploads_ok}}>
         <input type="hidden" name="prg_id" value="{{prg_id}}">
         <input type="hidden" name="_csrf"  value="{{csrf_token}}">
         <input type="hidden" name="action" value="post">
@@ -83,14 +83,17 @@
                 <option value="">{{chat_to_everyone}}</option>
                 {{#pm_recipients}}<option value="{{nick}}">{{nick}}</option>{{/pm_recipients}}
             </select>
-            {{#allow_pm}}<input type="text" name="to_name" class="input" placeholder="{{chat_pm_to_name}}" maxlength="64" autocomplete="off">{{/allow_pm}}
         </p>
         {{#postbox_multiline}}
-        <textarea name="content" id="chat_content" rows="3" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" autocomplete="off"></textarea><br>
+        <textarea name="content" id="chat_content" rows="3" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" aria-label="{{chat_placeholder}}" autocomplete="off"></textarea><br>
         {{/postbox_multiline}}
         {{^postbox_multiline}}
-        <input type="text" name="content" id="chat_content" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" autocomplete="off">
+        <input type="text" name="content" id="chat_content" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" aria-label="{{chat_placeholder}}" autocomplete="off">
         {{/postbox_multiline}}
+        {{#uploads_ok}}
+        <p class="chat-upload"><label for="chat_attach">{{chat_attach_label}}</label>
+            <input type="file" name="attachment" id="chat_attach" class="input" accept="image/*"></p>
+        {{/uploads_ok}}
         <input type="submit" class="input" value="{{chat_send}}">
     </form>
     <p class="chat-hint"><small>{{chat_formatting_hint}}</small></p>

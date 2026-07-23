@@ -15,6 +15,8 @@ use AstrX\Chat\Diagnostic\ChatMutedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNotFoundDiagnostic;
 use AstrX\Chat\Diagnostic\ChatRoomNotFoundDiagnostic;
 use AstrX\Chat\Diagnostic\ChatTooLongDiagnostic;
+use AstrX\Chat\Diagnostic\ChatUploadDiagnostic;
+use AstrX\Http\UploadedFile;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
@@ -40,6 +42,7 @@ final class ChatService
         private readonly ChatFilterService   $filters,
         private readonly ChatPresenceService $presence,
         private readonly ChatKickPenalty     $kickPenalty,
+        private readonly ChatAttachmentService $attachments,
         private readonly ChatConfig          $config,
     ) {}
 
@@ -101,12 +104,20 @@ final class ChatService
         $links  = $this->config->linkConversion();
 
         $enriched = [];
+        $ids      = [];
         foreach ($rows as $row) {
             $contentRaw      = $row['content'] ?? '';
             $content         = is_scalar($contentRaw) ? (string) $contentRaw : '';
             $row['html']     = $this->bbcode->render($content, $bbcode, $links, $this->config->imageEmbed());
             $row['is_member'] = ($row['user_id'] ?? null) !== null;
+            $mid = $this->int($row, 'id', 0);
+            if ($mid > 0) { $ids[] = $mid; }
             $enriched[]      = $row;
+        }
+        // Attach image-attachment metadata (token/mime/dimensions) per message.
+        $attachMap = $this->attachments->forMessages($ids);
+        foreach ($enriched as $k => $row) {
+            $enriched[$k]['attachment'] = $attachMap[$this->int($row, 'id', 0)] ?? null;
         }
         return Result::ok($enriched);
     }
@@ -121,7 +132,7 @@ final class ChatService
      *
      * @return Result<int> new message id
      */
-    public function post(ChatIdentity $identity, string $content, ?string $packedIp): Result
+    public function post(ChatIdentity $identity, string $content, ?string $packedIp, ?UploadedFile $attachment = null): Result
     {
         if ($this->gate->cannot(Permission::CHAT_POST)) {
             return $this->opErr('gate_denied');
@@ -137,7 +148,7 @@ final class ChatService
         }
         $roomId = $this->int($room, 'id', 0);
 
-        if (trim($content) === '') {
+        if (trim($content) === '' && $attachment === null) {
             return $this->opErr('empty');
         }
 
@@ -214,8 +225,35 @@ final class ChatService
             }
         }
 
-        $expiresAt = date('Y-m-d H:i:s', time() + $this->config->retentionMinutes() * 60);
-        return $this->repo->create($roomId, $hexUserId, $nick, $color, $content, $expiresAt, $packedIp, $type);
+        // Image attachment: validated + stripped + stored BEFORE the message row,
+        // so a bad upload rejects the post without leaving a message behind.
+        $attachMeta = null;
+        if ($attachment !== null) {
+            if (!$this->attachments->mayUpload($identity->isMember)) {
+                return $this->opErr('upload_disabled');
+            }
+            $storeResult = $this->attachments->store($attachment);
+            if (!$storeResult->isOk()) {
+                return Result::err(null, $storeResult->diagnostics());
+            }
+            $attachMeta = $storeResult->unwrap();
+        }
+
+        $expiresAt    = date('Y-m-d H:i:s', time() + $this->config->retentionMinutes() * 60);
+        $createResult = $this->repo->create($roomId, $hexUserId, $nick, $color, $content, $expiresAt, $packedIp, $type);
+
+        if ($attachMeta !== null) {
+            if ($createResult->isOk()) {
+                $persist = $this->attachments->persist($createResult->unwrap(), $attachMeta);
+                if (!$persist->isOk()) {
+                    // Row failed: drop the orphan file, keep the (text) message.
+                    $this->attachments->discard($attachMeta['stored_name']);
+                }
+            } else {
+                $this->attachments->discard($attachMeta['stored_name']);
+            }
+        }
+        return $createResult;
     }
 
     /**
@@ -463,6 +501,7 @@ final class ChatService
             'censored'       => new ChatCensoredDiagnostic('astrx.chat/censored', DiagnosticLevel::NOTICE),
             'filter_blocked' => new ChatFilterBlockedDiagnostic('astrx.chat/filter_blocked', DiagnosticLevel::NOTICE),
             'filter_kicked'  => new ChatFilterKickedDiagnostic('astrx.chat/filter_kicked', DiagnosticLevel::WARNING),
+            'upload_disabled' => new ChatUploadDiagnostic('astrx.chat/upload_disabled', DiagnosticLevel::NOTICE),
             'muted'          => new ChatMutedDiagnostic('astrx.chat/muted', DiagnosticLevel::NOTICE),
             'flood'          => new ChatFloodDiagnostic('astrx.chat/flood', DiagnosticLevel::NOTICE),
             'not_found'      => new ChatNotFoundDiagnostic('astrx.chat/not_found', DiagnosticLevel::WARNING),

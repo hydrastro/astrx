@@ -1,4 +1,4 @@
-CREATE USER 'user'@'%' IDENTIFIED BY 'password';
-CREATE DATABASE content_manager;
+CREATE USER IF NOT EXISTS 'user'@'%' IDENTIFIED BY 'password';
+CREATE DATABASE IF NOT EXISTS content_manager;
 GRANT ALL PRIVILEGES ON content_manager.* TO 'user'@'%';
 FLUSH PRIVILEGES;

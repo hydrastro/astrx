@@ -16,6 +16,7 @@ use AstrX\Chat\Diagnostic\ChatKickedDiagnostic;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
+use AstrX\Http\UploadedFile;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticsCollector;
@@ -166,7 +167,12 @@ final class ChatController extends AbstractController
             $this->pm->send($identity, $to, $content)->drainTo($this->collector);
             return $this->selfUrl();
         }
-        $this->chat->post($identity, $content, $this->packedIp())->drainTo($this->collector);
+        $attachment = null;
+        $uploaded   = $this->request->files()->get('attachment');
+        if ($uploaded instanceof UploadedFile && $uploaded->isValid()) {
+            $attachment = $uploaded;
+        }
+        $this->chat->post($identity, $content, $this->packedIp(), $attachment)->drainTo($this->collector);
         return $this->selfUrl();
     }
 
@@ -304,6 +310,12 @@ final class ChatController extends AbstractController
         $this->ctx->set('chat_pm_no_recipients', $this->t->t('chat.pm_no_recipients'));
         $this->ctx->set('chat_css',          ChatStyles::shellCss());
         $this->ctx->set('hide_chatters',     self::mBool($settings, 'hide_chatters'));
+
+        // Image attachments: show the file input only when enabled and this user
+        // (member, or guest when guests are permitted) may upload.
+        $this->ctx->set('uploads_ok', $this->config->uploadsEnabled()
+            && ($identity->isMember || $this->config->uploadsGuests()));
+        $this->ctx->set('chat_attach_label', $this->t->t('chat.attach'));
 
         // Shell control bar (reload / rearrange) visibility + the layout state.
         $this->ctx->set('nav_show_reload',    !$this->config->hideReloadButton());

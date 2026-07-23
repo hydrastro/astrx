@@ -43,13 +43,13 @@ services:
             - '3306:3306'
         volumes:
             - './docker/mysql/config/mariadb.cnf:/etc/mysql/conf.d/custom.cnf:ro'
-            - './setup:/docker-entrypoint-initdb.d'
+            - './src/setup/init.sql:/docker-entrypoint-initdb.d/init.sql'
             #- './docker/mysql/dbdata:/var/lib/mysql'
         networks:
             - php-network
         environment:
             MARIADB_ROOT_PASSWORD_HASH: "*2470C0C06DEE42FD1618BB99005ADCA2EC9D1E19"
-            MYSQL_DATABASE: astrx
+            MYSQL_DATABASE: content_manager
 
 networks:
   php-network:

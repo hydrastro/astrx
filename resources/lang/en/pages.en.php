@@ -68,6 +68,7 @@ return [
     'WORDING_CHAT_SETTINGS'     => 'chat-settings',
     'WORDING_CHAT_HELP'         => 'chat-help',
     'WORDING_CHAT_ADMIN'        => 'chat-admin',
+    'WORDING_CHAT_FILE'         => 'chat-file',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
     'WORDING_ADMIN_CHAT_FILTERS' => 'admin-chat-filters',
     'WORDING_ADMIN_CHAT_FILTERS.title'       => 'Chat filters',

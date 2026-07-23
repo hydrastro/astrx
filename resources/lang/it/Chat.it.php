@@ -16,6 +16,7 @@ return [
     'chat.message'         => 'Messaggio',
     'chat.placeholder'     => 'Scrivi un messaggio…',
     'chat.send'            => 'Invia',
+    'chat.attach'          => 'Allega immagine',
     'chat.send_to'         => 'Invia a',
     'chat.to_everyone'     => 'Tutti',
     'chat.formatting_hint' => 'Formattazione: [b]grassetto[/b] [i]corsivo[/i] [u]sottolineato[/u] [s]barrato[/s] [quote]…[/quote] [code]…[/code] [color=red]…[/color] · /me azione',
@@ -32,6 +33,7 @@ return [
     'chat.join_prompt' => 'Entra nella chat',
     'chat.no_messages' => 'Ancora nessun messaggio. Saluta tutti!',
     'chat.delete'      => 'Elimina',
+    'chat.report'      => 'Segnala',
     'chat.not_in_chat' => 'Non sei nella chat.',
 
     // ── Utenti online e moderazione ────────────────────────────────────────────
@@ -75,6 +77,13 @@ return [
     'chat.admin.broadcast'         => 'Invia trasmissione',
     'chat.admin.broadcast_ph'      => 'Annuncio a tutti…',
     'chat.admin.config_link'       => 'Configurazione completa della chat →',
+    'chat.admin.reports'           => 'Messaggi segnalati',
+    'chat.admin.reports_none'      => 'Nessuna segnalazione in sospeso.',
+    'chat.admin.report_col_msg'    => 'Messaggio',
+    'chat.admin.report_col_by'     => 'Nick',
+    'chat.admin.report_col_count'  => 'Segnalazioni',
+    'chat.admin.report_dismiss'    => 'Ignora',
+    'chat.admin.report_block'      => 'Blocca link',
     'chat.broadcast_tag'           => 'Trasmissione',
 
     // ── Filtri gestiti di parole / link (enforcement — admin_chat_filters) ──────
@@ -89,6 +98,7 @@ return [
     'chat.filter.col_manage'    => 'Gestisci',
     'chat.filter.kind_word'     => 'parola',
     'chat.filter.kind_link'     => 'link',
+    'chat.filter.kind_nick'     => 'nick',
     'chat.filter.action_block'  => 'blocca',
     'chat.filter.action_kick'   => 'espelli',
     'chat.filter.yes'           => 'sì',

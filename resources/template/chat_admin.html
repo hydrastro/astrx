@@ -48,6 +48,40 @@
         <input type="submit" class="input" value="{{chat_admin_logout}}">
     </form>
 
+    {{! ── Reported messages (#132) ─────────────────────────────────────────── }}
+    <h3>{{reports_h}} ({{report_count}})</h3>
+    {{#has_reports}}
+    <table>
+        <tr><th>{{report_col_msg}}</th><th>{{report_col_by}}</th><th>{{report_col_count}}</th><th></th></tr>
+        {{#reports}}
+        <tr>
+            <td>{{preview}}</td>
+            <td>{{nick}}</td>
+            <td>{{count}}</td>
+            <td>
+                {{#has_link}}
+                <form method="POST" class="chat-inline">
+                    <input type="hidden" name="prg_id" value="{{prg_id}}">
+                    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                    <input type="hidden" name="action" value="report_block">
+                    <input type="hidden" name="id"     value="{{message_id}}">
+                    <input type="submit" class="input" value="{{report_block}}">
+                </form>
+                {{/has_link}}
+                <form method="POST" class="chat-inline">
+                    <input type="hidden" name="prg_id" value="{{prg_id}}">
+                    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                    <input type="hidden" name="action" value="report_dismiss">
+                    <input type="hidden" name="id"     value="{{message_id}}">
+                    <input type="submit" class="input" value="{{report_dismiss}}">
+                </form>
+            </td>
+        </tr>
+        {{/reports}}
+    </table>
+    {{/has_reports}}
+    {{^has_reports}}<p>{{reports_none}}</p>{{/has_reports}}
+
     {{! ── Clean messages ───────────────────────────────────────────────────── }}
     <h3>{{chat_admin_clean_h}}</h3>
     <form method="POST" class="chat-inline">

@@ -95,6 +95,14 @@ final class ChatConfig
     private bool   $hideReloadButton    = false;  // hide the shell reload controls
     private bool   $hideRearrangeButton = false;  // hide the shell rearrange-layout control
 
+    // ── Phase 5: image attachments ────────────────────────────────────────────
+    private bool   $uploadsEnabled     = false;  // allow image attachments in posts
+    private bool   $uploadsGuests      = false;  // guests may attach (members may whenever enabled)
+    private int    $uploadMaxKb        = 2048;   // hard per-file size cap (KB)
+    private int    $uploadMaxDimension = 1600;   // downscale over this many px on the longest side (0 = off)
+    private string $uploadTypesRaw     = 'jpg,jpeg,png,gif,webp'; // accepted extensions (comma list)
+    private string $uploadDir          = '';     // absolute storage directory for stored images
+
     // =========================================================================
     // Setters (config injection)
     // =========================================================================
@@ -156,6 +164,13 @@ final class ChatConfig
     #[InjectConfig('hide_clone_button')]     public function setHideCloneButton(bool $v): void     { $this->hideCloneButton = $v; }
     #[InjectConfig('hide_reload_button')]    public function setHideReloadButton(bool $v): void    { $this->hideReloadButton = $v; }
     #[InjectConfig('hide_rearrange_button')] public function setHideRearrangeButton(bool $v): void  { $this->hideRearrangeButton = $v; }
+
+    #[InjectConfig('uploads_enabled')]       public function setUploadsEnabled(bool $v): void      { $this->uploadsEnabled = $v; }
+    #[InjectConfig('uploads_guests')]        public function setUploadsGuests(bool $v): void       { $this->uploadsGuests = $v; }
+    #[InjectConfig('upload_max_kb')]         public function setUploadMaxKb(int $v): void          { $this->uploadMaxKb = max(1, $v); }
+    #[InjectConfig('upload_max_dimension')]  public function setUploadMaxDimension(int $v): void   { $this->uploadMaxDimension = max(0, $v); }
+    #[InjectConfig('upload_types')]          public function setUploadTypes(string $v): void       { $this->uploadTypesRaw = trim($v); }
+    #[InjectConfig('upload_dir')]            public function setUploadDir(string $v): void         { $this->uploadDir = rtrim(trim($v), '/\\'); }
 
     // =========================================================================
     // Getters
@@ -219,4 +234,23 @@ final class ChatConfig
     public function hideCloneButton(): bool     { return $this->hideCloneButton; }
     public function hideReloadButton(): bool    { return $this->hideReloadButton; }
     public function hideRearrangeButton(): bool { return $this->hideRearrangeButton; }
+
+    public function uploadsEnabled(): bool      { return $this->uploadsEnabled; }
+    public function uploadsGuests(): bool       { return $this->uploadsGuests; }
+    public function uploadMaxKb(): int          { return $this->uploadMaxKb; }
+    public function uploadMaxBytes(): int       { return $this->uploadMaxKb * 1024; }
+    public function uploadMaxDimension(): int   { return $this->uploadMaxDimension; }
+    public function uploadDir(): string         { return $this->uploadDir; }
+    public function uploadTypesRaw(): string    { return $this->uploadTypesRaw; }
+
+    /** @return list<string> */
+    public function uploadTypes(): array
+    {
+        $out = [];
+        foreach (explode(',', strtolower($this->uploadTypesRaw)) as $t) {
+            $t = trim($t);
+            if ($t !== '') { $out[] = $t; }
+        }
+        return $out === [] ? ['jpg', 'jpeg', 'png', 'gif', 'webp'] : $out;
+    }
 }

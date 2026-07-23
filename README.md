@@ -1,97 +1,66 @@
-# fix123 — Single comprehensive fix
+# AstrX
 
-This replaces the broken three-file `setup/` layout with **two files** that
-produce a fully-working database on first boot. No more manual migrations.
+A zero-dependency PHP 8.4 content-management framework with a built-in real-time
+chat, designed for privacy-first deployments (Tor hidden services) and a
+**no-JavaScript-first** experience — every feature works with scripting disabled.
 
-## What's in this fix
+## Highlights
+
+- **No external dependencies.** Pure PHP 8.4 (+ MariaDB/MySQL and the GD
+  extension for image handling). No Composer packages at runtime.
+- **No-JS-first.** Pages, forms, moderation, and the live chat all function
+  without JavaScript; server-rendered, PRG-based navigation throughout.
+- **Native i18n.** All user-facing text comes from translation keys, shipped in
+  English and Italian and kept in lockstep by `tools/check_lang_parity.php`.
+- **`Result`/`Diagnostic` core.** Operations return a `Result<T>` monad carrying
+  typed diagnostics rather than throwing; verified at **PHPStan level 10**.
+- **Reflection-autowired DI** (`AstrX\Injector`) and attribute-driven config
+  (`#[InjectConfig]`).
+
+## The chat
+
+A real-time, no-JS chat: auto-refreshing message stream, guest and member
+posting, private messages, per-user settings, themes, and a full moderation
+surface — an in-chat admin panel (sessions, kick/ban via the shared banlist,
+broadcast, topic, clean), guest-access modes with optional moderator approval, a
+public notes board, managed word/link/nick **filters** with auto-kick, a user
+**report → moderator queue**, and EXIF-stripped **image attachments**. Every
+limit is admin-configurable.
+
+## Requirements
+
+- PHP **8.4** with the `gd`, `pdo_mysql`, `fileinfo`, and `mbstring` extensions
+- MariaDB **10.4+** / MySQL 8+
+- A web server pointed at `public/`
+
+## Setup
+
+1. Point your web server's document root at `public/`.
+2. Create an empty database named `content_manager`.
+3. Visit `public/setup.php` and follow the wizard — it loads the schema from
+   `src/setup/tables.sql` and writes the config files under `resources/config/`.
+   (To initialise manually, import `src/setup/tables.sql` and configure
+   `resources/config/PDO.config.php`.)
+4. Ensure the image-upload directory (`upload_dir` in the chat config, default
+   `resources/chat_uploads`) and `resources/avatar` are writable by the web
+   server.
+
+The database schema is a **single file** — `src/setup/tables.sql`. This project
+does not use incremental migration files; schema changes are folded into that
+file, and an existing database is updated by applying the delta by hand.
+
+## Layout
 
 ```
-fix123/
-├── setup/
-│   ├── 01-init.sql       # creates content_manager DB + user account
-│   └── 02-tables.sql     # complete schema + all data seeds (everything baked in)
-└── README.md             # this file
+public/      entry points (index.php router, setup.php, avatar/captcha/… endpoints)
+src/AstrX/   the framework (Chat/, Controller/, Auth/, Admin/, Http/, Injector/, …)
+resources/   templates (Mustache-style), lang/ (en, it), config/ (*.config.php)
+src/setup/   tables.sql — the complete database schema
+tools/       maintenance scripts (e.g. check_lang_parity.php)
+docs/        API.md, COMPILED_BUILD.md, PROFILING.md
 ```
 
-## What's been fixed at the SQL level
+## Development
 
-`02-tables.sql` is the OLD `tables.sql` with all migration content folded in:
-
-| Change                                                        | Was in (manual migration)         |
-|---------------------------------------------------------------|-----------------------------------|
-| `page.api_enabled` column (TINYINT DEFAULT 0)                 | migrate_api.sql                   |
-| `resolved_page` view now selects `p.api_enabled`              | migrate_api.sql                   |
-| `api_key` table CREATE                                        | migrate_api.sql                   |
-| `captcha.regen_count` + `captcha.last_regen_at` columns       | migrate_captcha_abuse.sql         |
-| Page row `WORDING_CAPTCHA_IMAGE` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
-| Page row `WORDING_CAPTCHA_FRAME` (template=0, hidden=0)       | migrate_captcha_iframe + unhide   |
-| Page row `WORDING_FEED` (template=0, controller=1, index=1)   | migrate_feed.sql                  |
-| Page row `WORDING_JS_APP` (template=0, controller=1)          | migrate_js_spa.sql                |
-| `api_enabled=1` on MAIN/USER_HOME/PROFILE/LOGIN/REGISTER/RECOVER | migrate_api_profile + migrate_spa_api_enable |
-
-The old `setup/migrate_themes.sql` is gone — its content (theme column on
-user, admin_themes page row) was already in `tables.sql`, and its presence
-in the Docker init dir was causing the alphabetical-ordering bug (it ran
-BEFORE tables.sql, on an empty database, and the ALTER silently failed).
-
-The numeric file prefixes (`01-`, `02-`) make the init order explicit
-instead of relying on alphabetical coincidence.
-
-## How to apply
-
-You're in dev mode, so the cleanest path is a **clean DB rebuild**:
-
-```bash
-# 1. Apply the fix (REPLACE setup/ contents — both old files go away)
-unzip fix123.zip
-rm -f setup/init.sql setup/migrate_themes.sql setup/tables.sql
-cp -r fix123/setup/. setup/
-
-# 2. Nuke the database volume and rebuild everything
-docker compose down -v
-docker compose up --build -d
-
-# 3. Wait ~10 seconds for MariaDB to finish initialising, then verify:
-sleep 10
-docker compose exec -T mariadb mysql -u user -ppassword content_manager -e "
-SELECT id, url_id, api_enabled, \`index\`, follow, title, template_file_name
-  FROM resolved_page
- WHERE url_id IN ('WORDING_MAIN','WORDING_FEED','WORDING_JS_APP','WORDING_CAPTCHA_FRAME')
- ORDER BY id;
-"
-```
-
-Expected: 4 rows, all without errors. If you see this, the framework
-will boot cleanly:
-- The main page loads (no more `Unknown column 'index'`)
-- `/en/api/main?html=1` returns JSON instead of 404
-- `/en/js/#main` SPA fetches and renders
-- `/en/feed.xml` serves Atom XML
-- Captcha iframe pages route correctly
-
-## Optional cleanup
-
-Two harmless brace-expansion artifact directories exist in your repo from
-earlier `cp -r` commands where brace expansion didn't fire (likely zsh
-shell behavior). They're invisible to the PSR-4 autoloader. To remove:
-
-```bash
-rm -rf 'src/{src' 'src/AstrX/{Controller,User,Auth'
-```
-
-(The quoting is essential — those directory names literally start with `{`.)
-
-## Why this is different from earlier fixes
-
-The previous twelve attempts to fix the view were piecemeal patches that
-assumed your Docker init was already producing a correct base state. It
-wasn't. Every `docker compose down -v` reset you back to a broken init
-(`migrate_themes.sql` failing before `tables.sql`, no `api_enabled`
-column, no view rebuild). The manual migrations in `src/setup/` could
-restore correctness, but only if you ran ALL of them in the right
-order — and we both lost track of which had been run.
-
-This fix removes the moving parts. The Docker init dir contains exactly
-two files that always produce a complete, correct schema. No manual
-migrations are needed for a fresh boot. The files in `src/setup/` are
-now historical reference only.
+- Static analysis: `php phpstan.phar analyse` (level 10, clean).
+- Translation parity: `php tools/check_lang_parity.php` (en/it must match).

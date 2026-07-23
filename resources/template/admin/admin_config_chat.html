@@ -201,6 +201,24 @@
       <td><input type="checkbox" name="hide_rearrange_button" value="1"{{#cfg_hide_rearrange_button}} checked{{/cfg_hide_rearrange_button}} class="input"></td></tr>
   </table>
 
+  <h3>{{section_uploads}}</h3>
+  <table>
+    <tr><th>{{label_uploads_enabled}}</th>
+      <td><input type="checkbox" name="uploads_enabled" value="1"{{#cfg_uploads_enabled}} checked{{/cfg_uploads_enabled}} class="input"></td></tr>
+    <tr><th>{{label_uploads_guests}}</th>
+      <td><input type="checkbox" name="uploads_guests" value="1"{{#cfg_uploads_guests}} checked{{/cfg_uploads_guests}} class="input"></td></tr>
+    <tr><th>{{label_upload_max_kb}}</th>
+      <td><input type="number" name="upload_max_kb" value="{{cfg_upload_max_kb}}" min="1" class="input" style="width:8em"></td></tr>
+    <tr><th>{{label_upload_max_dimension}}</th>
+      <td><input type="number" name="upload_max_dimension" value="{{cfg_upload_max_dimension}}" min="0" class="input" style="width:8em"></td></tr>
+    <tr><th>{{label_upload_types}}</th>
+      <td><input type="text" name="upload_types" value="{{cfg_upload_types}}" maxlength="128" class="input" style="width:18em"></td></tr>
+    <tr><th>{{label_upload_dir}}</th>
+      <td><input type="text" name="upload_dir" value="{{cfg_upload_dir}}" maxlength="255" class="input" style="width:24em"></td></tr>
+  </table>
+
   <p><input type="submit" value="{{btn_save}}" class="input"></p>
 </form>
+
+<p><a href="{{chat_console_url}}">{{chat_console_link}}</a></p>
 {{/admin_forbidden}}

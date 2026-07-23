@@ -92,5 +92,13 @@ return [
         'hide_clone_button'       => false, // hide the "open in new window" item
         'hide_reload_button'      => false, // hide the shell reload controls
         'hide_rearrange_button'   => false, // hide the shell rearrange-layout control
+
+        // ── Phase 5: image attachments ──
+        'uploads_enabled'         => false, // allow image attachments in posts
+        'uploads_guests'          => false, // guests may attach (members may whenever enabled)
+        'upload_max_kb'           => 2048,  // hard per-file size cap (KB)
+        'upload_max_dimension'    => 1600,  // downscale over this many px on the longest side (0 = off)
+        'upload_types'            => 'jpg,jpeg,png,gif,webp', // accepted extensions (comma list)
+        'upload_dir'              => '/app/resources/chat_uploads', // absolute storage directory
     ],
 ];

@@ -156,9 +156,17 @@ ul.chat-messages { list-style: none; margin: 0; padding: 0; line-height: 1.5; }
 .chat-body blockquote.chat-quote { margin: .2em 0 .2em .8em; padding-left: .5em; border-left: 3px solid rgba(128,128,128,.5); opacity: .9; }
 .chat-body code.chat-code { background: rgba(128,128,128,.18); padding: 0 .25em; border-radius: 2px; }
 .chat-body img.chat-img { max-width: 100%; max-height: 260px; height: auto; display: block; margin: .2em 0; border: 1px solid rgba(128,128,128,.3); }
+.chat-attachment { margin: .25em 0; }
+.chat-attachment img { max-width: 100%; max-height: 320px; width: auto; height: auto; display: block; border: 1px solid rgba(128,128,128,.35); border-radius: 3px; }
+/* a11y (#110): a visible keyboard-focus ring in the stream */
+.chat-messages a:focus-visible, .chat-del button:focus-visible, .chat-report button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .chat-del { display: inline; }
 .chat-del button { font-size: 11px; line-height: 1; padding: 0 .3em; margin-left: .3em; cursor: pointer; }
 .chat-empty { opacity: .7; padding: .5em .2em; }
+
+/* admin public notes / greeting board pinned above the stream (theme-neutral) */
+.chat-greeting { margin: 0 0 .6em; padding: .4em .65em; border: 1px solid rgba(128,128,128,.35); border-left: 3px solid rgba(128,128,128,.6); background: rgba(128,128,128,.07); line-height: 1.5; }
+.chat-greeting a { word-break: break-all; }
 
 /* /me emotes: "* nick does something" */
 .chat-msg.chat-action { font-style: italic; opacity: .95; }
@@ -217,6 +225,10 @@ CSS;
 #chat .chat-meta { opacity: .75; margin: .1em 0; }
 #chat .chat-hint { opacity: .7; font-size: 12px; margin: .1em 0 .3em; }
 #chat form.chat-inline { display: inline; margin-right: .5em; }
+#chat .chat-upload { margin: .35em 0; }
+#chat .chat-upload label { margin-right: .3em; }
+/* a11y (#110): keyboard-focus ring on shell controls */
+#chat a:focus-visible, #chat button:focus-visible, #chat input:focus-visible, #chat select:focus-visible, #chat textarea:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 /* Rearrange: swap the messages / online panes left-to-right (per-session toggle). */
 #chat.chat-alt .chat-panes { flex-direction: row-reverse; }
 @media (max-width: 640px) {

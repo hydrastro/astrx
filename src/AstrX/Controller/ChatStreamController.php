@@ -6,6 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatPmService;
 use AstrX\Chat\ChatPresenceService;
+use AstrX\Chat\ChatReportService;
 use AstrX\Chat\ChatService;
 use AstrX\Chat\ChatSettingsService;
 use AstrX\Chat\ChatStyles;
@@ -47,6 +48,7 @@ final class ChatStreamController extends AbstractController
         private readonly ChatService         $chat,
         private readonly ChatPmService       $pm,
         private readonly ChatPresenceService $presence,
+        private readonly ChatReportService   $reports,
         private readonly ChatSettingsService $settings,
         private readonly ChatConfig          $config,
         private readonly ThemeService        $themeService,
@@ -88,10 +90,16 @@ final class ChatStreamController extends AbstractController
             return;
         }
 
-        if (self::mStr($posted, 'action', '') === 'delete') {
+        $action = self::mStr($posted, 'action', '');
+        if ($action === 'delete') {
             $id = self::mInt($posted, 'id', 0);
             if ($id > 0) {
                 $this->chat->deleteMessage($id)->drainTo($this->collector);
+            }
+        } elseif ($action === 'report') {
+            $id = self::mInt($posted, 'id', 0);
+            if ($id > 0) {
+                $this->reports->report($id, $this->presence->currentIdent())->drainTo($this->collector);
             }
         }
     }
@@ -157,10 +165,12 @@ final class ChatStreamController extends AbstractController
         foreach ($pmRows as $r) {
             $items[] = ['kind' => 'pm', 'ts' => self::mInt($r, 'created_ts', 0), 'row' => $r];
         }
-        // Admin greeting / MOTD, shown above the feed (and on an empty room).
-        $greeting     = $this->config->greetingMessage();
-        $greetingHtml = $greeting !== ''
-            ? '<div class="chat-greeting">' . $this->esc($greeting) . '</div>'
+        // Admin greeting / public notes board, shown above the feed (and on an
+        // empty room). Pre-rendered by the service through the same BBCode
+        // pipeline as messages: multi-line + formatted, already a safe fragment.
+        $greetingBody = $this->chat->greetingHtml();
+        $greetingHtml = $greetingBody !== ''
+            ? '<div class="chat-greeting">' . $greetingBody . '</div>'
             : '';
 
         if ($items === []) {
@@ -175,15 +185,18 @@ final class ChatStreamController extends AbstractController
         $prgId        = $this->prg->createId($this->streamUrl());
         $token        = $this->csrf->generate(self::FORM);
         $deleteLabel  = $this->t->t('chat.delete');
+        $reportLabel  = $this->t->t('chat.report');
         $linkProfiles = $this->config->namesLinkToProfile();
         $tsFormat     = $this->config->timestampFormat();
         $profileBase  = $this->urlGen->toPage($this->t->t('WORDING_PROFILE'));
+        $fileBase     = $this->urlGen->toPage($this->t->t('WORDING_CHAT_FILE'));
         $pmTag        = $this->t->t('chat.pm_tag');
         $fromWord     = $this->t->t('chat.pm.from');
         $toWord       = $this->t->t('chat.pm.to');
         $ignored      = $this->presence->ignoredNicks();   // lowercased nicks the viewer muted
 
-        $out = $greetingHtml . '<ul class="chat-messages">';
+        $out = $greetingHtml . '<ul class="chat-messages" role="log" aria-label="'
+            . $this->esc($this->t->t('chat.messages')) . '">';
         foreach ($items as $item) {
             $row      = $item['row'];
             $timeHtml = '';
@@ -276,6 +289,18 @@ final class ChatStreamController extends AbstractController
                     . '</form>';
             }
 
+            $attachHtml = $this->attachmentHtml($row['attachment'] ?? null, $fileBase);
+
+            // #132: a Report control on every participant message → moderator queue.
+            $reportHtml =
+                '<form method="post" class="chat-report">'
+                . '<input type="hidden" name="prg_id" value="' . $this->esc($prgId) . '">'
+                . '<input type="hidden" name="_csrf" value="' . $this->esc($token) . '">'
+                . '<input type="hidden" name="action" value="report">'
+                . '<input type="hidden" name="id" value="' . $id . '">'
+                . '<button type="submit">' . $this->esc($reportLabel) . '</button>'
+                . '</form>';
+
             if ($isAction) {
                 // Emote: "* nick does something" — no colon, italicised via CSS.
                 $out .=
@@ -285,6 +310,8 @@ final class ChatStreamController extends AbstractController
                     . $nameHtml . ' '
                     . '<span class="chat-body"' . $style . '>' . $bodyHtml . '</span>'
                     . ($deleteHtml !== '' ? ' ' . $deleteHtml : '')
+                    . ' ' . $reportHtml
+                    . $attachHtml
                     . '</li>';
             } else {
                 $out .=
@@ -294,6 +321,8 @@ final class ChatStreamController extends AbstractController
                     . '<span class="chat-sep">:</span> '
                     . '<span class="chat-body"' . $style . '>' . $bodyHtml . '</span>'
                     . ($deleteHtml !== '' ? ' ' . $deleteHtml : '')
+                    . ' ' . $reportHtml
+                    . $attachHtml
                     . '</li>';
             }
         }
@@ -393,6 +422,30 @@ final class ChatStreamController extends AbstractController
             }
         }
         return date($fmt, $ts);
+    }
+
+    /**
+     * Inline <img> for a message's image attachment (or '' if none). The token is
+     * strictly hex-validated; the serve route (ChatFileController) sends it with
+     * no-referrer + nosniff headers. The link opens the full image in a new tab.
+     *
+     * @param mixed $att the row's 'attachment' field (array|null)
+     */
+    private function attachmentHtml(mixed $att, string $fileBase): string
+    {
+        if (!is_array($att)) {
+            return '';
+        }
+        $tok = is_scalar($att['token'] ?? null) ? (string) $att['token'] : '';
+        if (strlen($tok) !== 32 || !ctype_xdigit($tok)) {
+            return '';
+        }
+        $w   = is_scalar($att['width'] ?? null)  ? (int) $att['width']  : 0;
+        $h   = is_scalar($att['height'] ?? null) ? (int) $att['height'] : 0;
+        $dim = ($w > 0 && $h > 0) ? ' width="' . $w . '" height="' . $h . '"' : '';
+        $url = $this->esc($fileBase) . '?t=' . $tok;
+        return '<div class="chat-attachment"><a href="' . $url . '" target="_blank" rel="noopener noreferrer nofollow">'
+            . '<img src="' . $url . '"' . $dim . ' alt="" referrerpolicy="no-referrer" loading="lazy"></a></div>';
     }
 
     private function esc(string $s): string

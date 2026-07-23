@@ -180,6 +180,13 @@ final class AdminConfigChatController extends AbstractController
             'hide_clone_button'       => self::mBool($p, 'hide_clone_button'),
             'hide_reload_button'      => self::mBool($p, 'hide_reload_button'),
             'hide_rearrange_button'   => self::mBool($p, 'hide_rearrange_button'),
+            // ── Attachments (Phase 5) ───────────────────────────────────────
+            'uploads_enabled'         => self::mBool($p, 'uploads_enabled'),
+            'uploads_guests'          => self::mBool($p, 'uploads_guests'),
+            'upload_max_kb'           => self::mInt($p, 'upload_max_kb', 2048),
+            'upload_max_dimension'    => self::mInt($p, 'upload_max_dimension', 1600),
+            'upload_types'            => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
+            'upload_dir'              => self::mStr($p, 'upload_dir', ''),
         ];
     }
 
@@ -283,6 +290,14 @@ final class AdminConfigChatController extends AbstractController
         $this->ctx->set('cfg_access_approval_selected', $gm === ChatConfig::ACCESS_APPROVAL);
         $this->ctx->set('cfg_access_members_selected',  $gm === ChatConfig::ACCESS_MEMBERS_ONLY);
 
+        // ── Attachments (Phase 5) ────────────────────────────────────────────
+        $this->ctx->set('cfg_uploads_enabled',      $c->uploadsEnabled());
+        $this->ctx->set('cfg_uploads_guests',       $c->uploadsGuests());
+        $this->ctx->set('cfg_upload_max_kb',        $c->uploadMaxKb());
+        $this->ctx->set('cfg_upload_max_dimension', $c->uploadMaxDimension());
+        $this->ctx->set('cfg_upload_types',         $c->uploadTypesRaw());
+        $this->ctx->set('cfg_upload_dir',           $c->uploadDir());
+
         $this->setI18n();
     }
 
@@ -302,6 +317,9 @@ final class AdminConfigChatController extends AbstractController
         $this->ctx->set('section_censor',     $this->t->t('admin.config.chat.section_censor'));
         $this->ctx->set('chat_filters_url',   $this->urlGen->toPage($this->t->t('WORDING_ADMIN_CHAT_FILTERS')));
         $this->ctx->set('chat_filters_link',  $this->t->t('admin.config.chat.filters_link'));
+        $this->ctx->set('section_uploads',    $this->t->t('admin.config.chat.section_uploads'));
+        $this->ctx->set('chat_console_url',   $this->urlGen->toPage($this->t->t('WORDING_CHAT_ADMIN')));
+        $this->ctx->set('chat_console_link',  $this->t->t('admin.config.chat.console_link'));
         $this->ctx->set('section_room',       $this->t->t('admin.config.chat.section_room'));
         $this->ctx->set('section_timestamps', $this->t->t('admin.config.chat.section_timestamps'));
         $this->ctx->set('section_moderation', $this->t->t('admin.config.chat.section_moderation'));
@@ -356,6 +374,12 @@ final class AdminConfigChatController extends AbstractController
         $this->ctx->set('label_default_timezone',        $this->t->t('admin.config.chat.field.default_timezone'));
         $this->ctx->set('label_disable_guest_pm',        $this->t->t('admin.config.chat.field.disable_guest_pm'));
         $this->ctx->set('label_kick_penalty_minutes',    $this->t->t('admin.config.chat.field.kick_penalty_minutes'));
+        $this->ctx->set('label_uploads_enabled',         $this->t->t('admin.config.chat.field.uploads_enabled'));
+        $this->ctx->set('label_uploads_guests',          $this->t->t('admin.config.chat.field.uploads_guests'));
+        $this->ctx->set('label_upload_max_kb',           $this->t->t('admin.config.chat.field.upload_max_kb'));
+        $this->ctx->set('label_upload_max_dimension',    $this->t->t('admin.config.chat.field.upload_max_dimension'));
+        $this->ctx->set('label_upload_types',            $this->t->t('admin.config.chat.field.upload_types'));
+        $this->ctx->set('label_upload_dir',              $this->t->t('admin.config.chat.field.upload_dir'));
         $this->ctx->set('label_hide_help_button',        $this->t->t('admin.config.chat.field.hide_help_button'));
         $this->ctx->set('label_hide_profile_button',     $this->t->t('admin.config.chat.field.hide_profile_button'));
         $this->ctx->set('label_hide_notes_button',       $this->t->t('admin.config.chat.field.hide_notes_button'));
