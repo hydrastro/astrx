@@ -72,26 +72,26 @@ h3 {
     color: #1a1a1a;
 }
 
-#top_nav, #user_top_nav, #admin_top_nav {
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{
     border-bottom: 1px solid #1a1a1a;
     border-top:    1px solid #1a1a1a;
     padding: .5em 0;
     margin-bottom: 1.5em;
 }
 
-#nav, #user_nav, #admin_nav, #wm-nav {
+#nav, #user_nav, #admin_nav, #wm-nav, .chat_nav{
     text-align: center;
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
-#nav li, #user_nav li, #admin_nav li {
+#nav li, #user_nav li, #admin_nav li, .chat_nav li{
     display: inline-block;
 }
 
 #nav li a, #user_nav li a, #user_nav li input,
-#admin_nav li a, #admin_nav li input {
+#admin_nav li a, #admin_nav li input, .chat_nav li a, .chat_nav li input{
     color: #1a1a1a;
     background: transparent;
     border: none;
@@ -106,17 +106,17 @@ h3 {
 
 #nav li:not(:last-child)::after,
 #user_nav li:not(:last-child)::after,
-#admin_nav li:not(:last-child)::after {
+#admin_nav li:not(:last-child)::after, .chat_nav li:not(:last-child)::after{
     content: "•"; color: #999;
     display: inline-block; vertical-align: middle;
 }
 
 #nav li a:hover, #user_nav li a:hover, #user_nav li input:hover,
-#admin_nav li a:hover, #admin_nav li input:hover {
+#admin_nav li a:hover, #admin_nav li input:hover, .chat_nav li a:hover, .chat_nav li input:hover{
     color: #8b0000;
 }
 
-#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a.active{
     color: #8b0000;
     font-weight: 700;
     text-decoration: none;

@@ -39,24 +39,24 @@ h2::before { content: ">> "; color: #ffff33; }
 h3 { margin: 1em 0 .5em; }
 h3::before { content: "## "; color: #ffff33; }
 
-#top_nav, #user_top_nav, #admin_top_nav {
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{
     border-bottom: 1px solid #33ff33;
     padding: 0;
 }
 
-#nav, #user_nav, #admin_nav, #wm-nav {
+#nav, #user_nav, #admin_nav, #wm-nav, .chat_nav{
     list-style: none;
     margin: 0;
     padding: 0;
     text-align: left;
 }
 
-#nav li, #user_nav li, #admin_nav li {
+#nav li, #user_nav li, #admin_nav li, .chat_nav li{
     display: inline-block;
 }
 
 #nav li a, #user_nav li a, #user_nav li input,
-#admin_nav li a, #admin_nav li input {
+#admin_nav li a, #admin_nav li input, .chat_nav li a, .chat_nav li input{
     color: #33ff33;
     background: transparent;
     border: none;
@@ -69,15 +69,15 @@ h3::before { content: "## "; color: #ffff33; }
 
 #nav li a::before { content: "["; color: #ffff33; }
 #nav li a::after  { content: "]"; color: #ffff33; }
-#user_nav li a::before, #admin_nav li a::before { content: "["; color: #ffff33; }
-#user_nav li a::after, #admin_nav li a::after   { content: "]"; color: #ffff33; }
+#user_nav li a::before, #admin_nav li a::before, .chat_nav li a::before{ content: "["; color: #ffff33; }
+#user_nav li a::after, #admin_nav li a::after, .chat_nav li a::after{ content: "]"; color: #ffff33; }
 
-#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover {
+#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover, .chat_nav li a:hover{
     background: #33ff33;
     color: #000;
 }
 
-#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a.active{
     background: #33ff33;
     color: #000;
     text-decoration: none;

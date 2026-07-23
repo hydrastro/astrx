@@ -1,0 +1,206 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{heading}}</h2>
+
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+
+  {{! ── Access ─────────────────────────────────────────────────────────── }}
+  <h3>{{section_access}}</h3>
+  <table>
+    <tr><th>{{label_guest_posting}}</th>
+      <td><input type="checkbox" name="guest_posting" value="1"{{#cfg_guest_posting}} checked{{/cfg_guest_posting}} class="input"></td></tr>
+    <tr><th>{{label_guest_captcha}}</th>
+      <td><input type="checkbox" name="guest_captcha" value="1"{{#cfg_guest_captcha}} checked{{/cfg_guest_captcha}} class="input"></td></tr>
+    <tr><th>{{label_require_login_to_read}}</th>
+      <td><input type="checkbox" name="require_login_to_read" value="1"{{#cfg_require_login_to_read}} checked{{/cfg_require_login_to_read}} class="input"></td></tr>
+    <tr><th>{{label_chat_enabled}}</th>
+      <td><input type="checkbox" name="chat_enabled" value="1"{{#cfg_chat_enabled}} checked{{/cfg_chat_enabled}} class="input"></td></tr>
+    <tr><th>{{label_guest_access_mode}}</th>
+      <td>
+        <select name="guest_access_mode" class="input">
+          <option value="open"{{#cfg_access_open_selected}} selected{{/cfg_access_open_selected}}>{{label_access_open}}</option>
+          <option value="waiting_room"{{#cfg_access_waiting_selected}} selected{{/cfg_access_waiting_selected}}>{{label_access_waiting}}</option>
+          <option value="moderator_approval"{{#cfg_access_approval_selected}} selected{{/cfg_access_approval_selected}}>{{label_access_approval}}</option>
+          <option value="members_only"{{#cfg_access_members_selected}} selected{{/cfg_access_members_selected}}>{{label_access_members}}</option>
+        </select>
+      </td></tr>
+    <tr><th>{{label_approval_fallback_waiting}}</th>
+      <td><input type="checkbox" name="approval_fallback_waiting" value="1"{{#cfg_approval_fallback_waiting}} checked{{/cfg_approval_fallback_waiting}} class="input"></td></tr>
+    <tr><th>{{label_disabled_message}}</th>
+      <td><input type="text" name="disabled_message" value="{{cfg_disabled_message}}" style="width:30em" class="input"></td></tr>
+    <tr><th>{{label_entry_password}}</th>
+      <td><input type="text" name="entry_password" value="{{cfg_entry_password}}" maxlength="128" style="width:16em" class="input"></td></tr>
+  </table>
+
+  {{! ── Waiting room ───────────────────────────────────────────────────── }}
+  <h3>{{section_waiting}}</h3>
+  <table>
+    <tr><th>{{label_waiting_room_seconds}}</th>
+      <td><input type="number" name="waiting_room_seconds" value="{{cfg_waiting_room_seconds}}" min="0" class="input"> s</td></tr>
+    <tr><th>{{label_waiting_room_mandatory}}</th>
+      <td><input type="checkbox" name="waiting_room_mandatory" value="1"{{#cfg_waiting_room_mandatory}} checked{{/cfg_waiting_room_mandatory}} class="input"></td></tr>
+  </table>
+
+  {{! ── Messages ───────────────────────────────────────────────────────── }}
+  <h3>{{section_messages}}</h3>
+  <table>
+    <tr><th>{{label_max_length}}</th>
+      <td><input type="number" name="max_length" value="{{cfg_max_length}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_messages_shown}}</th>
+      <td><input type="number" name="messages_shown" value="{{cfg_messages_shown}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_retention_minutes}}</th>
+      <td><input type="number" name="retention_minutes" value="{{cfg_retention_minutes}}" min="1" class="input"> min</td></tr>
+    <tr><th>{{label_newest_first}}</th>
+      <td><input type="checkbox" name="newest_first" value="1"{{#cfg_newest_first}} checked{{/cfg_newest_first}} class="input"></td></tr>
+    <tr><th>{{label_bbcode_enabled}}</th>
+      <td><input type="checkbox" name="bbcode_enabled" value="1"{{#cfg_bbcode_enabled}} checked{{/cfg_bbcode_enabled}} class="input"></td></tr>
+    <tr><th>{{label_link_conversion}}</th>
+      <td><input type="checkbox" name="link_conversion" value="1"{{#cfg_link_conversion}} checked{{/cfg_link_conversion}} class="input"></td></tr>
+    <tr><th>{{label_announce_join_leave}}</th>
+      <td><input type="checkbox" name="announce_join_leave" value="1"{{#cfg_announce_join_leave}} checked{{/cfg_announce_join_leave}} class="input"></td></tr>
+    <tr><th>{{label_announce_mod_actions}}</th>
+      <td><input type="checkbox" name="announce_mod_actions" value="1"{{#cfg_announce_mod_actions}} checked{{/cfg_announce_mod_actions}} class="input"></td></tr>
+    <tr><th>{{label_image_embed}}</th>
+      <td><input type="checkbox" name="image_embed" value="1"{{#cfg_image_embed}} checked{{/cfg_image_embed}} class="input"></td></tr>
+  </table>
+
+  {{! ── Rate limiting / flood ──────────────────────────────────────────── }}
+  <h3>{{section_flood}}</h3>
+  <table>
+    <tr><th>{{label_min_flood_secs}}</th>
+      <td><input type="number" name="min_flood_secs" value="{{cfg_min_flood_secs}}" min="0" class="input"> s</td></tr>
+    <tr><th>{{label_flood_mute_secs}}</th>
+      <td><input type="number" name="flood_mute_secs" value="{{cfg_flood_mute_secs}}" min="0" class="input"> s</td></tr>
+  </table>
+
+  {{! ── Refresh / presence ─────────────────────────────────────────────── }}
+  <h3>{{section_refresh}}</h3>
+  <table>
+    <tr><th>{{label_default_refresh_secs}}</th>
+      <td><input type="number" name="default_refresh_secs" value="{{cfg_default_refresh_secs}}" min="1" class="input"> s</td></tr>
+    <tr><th>{{label_min_refresh_secs}}</th>
+      <td><input type="number" name="min_refresh_secs" value="{{cfg_min_refresh_secs}}" min="1" class="input"> s</td></tr>
+    <tr><th>{{label_max_refresh_secs}}</th>
+      <td><input type="number" name="max_refresh_secs" value="{{cfg_max_refresh_secs}}" min="1" class="input"> s</td></tr>
+    <tr><th>{{label_online_window_secs}}</th>
+      <td><input type="number" name="online_window_secs" value="{{cfg_online_window_secs}}" min="5" class="input"> s</td></tr>
+  </table>
+
+  {{! ── Nicknames ──────────────────────────────────────────────────────── }}
+  <h3>{{section_nicknames}}</h3>
+  <table>
+    <tr><th>{{label_nick_min_len}}</th>
+      <td><input type="number" name="nick_min_len" value="{{cfg_nick_min_len}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_nick_max_len}}</th>
+      <td><input type="number" name="nick_max_len" value="{{cfg_nick_max_len}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_names_link_to_profile}}</th>
+      <td><input type="checkbox" name="names_link_to_profile" value="1"{{#cfg_names_link_to_profile}} checked{{/cfg_names_link_to_profile}} class="input"></td></tr>
+    <tr><th>{{label_nick_regex}}</th>
+      <td><input type="text" name="nick_regex" value="{{cfg_nick_regex}}" maxlength="128" style="width:20em" class="input"></td></tr>
+  </table>
+
+  {{! ── Colours ────────────────────────────────────────────────────────── }}
+  <h3>{{section_colors}}</h3>
+  <table>
+    <tr><th>{{label_allow_user_color}}</th>
+      <td><input type="checkbox" name="allow_user_color" value="1"{{#cfg_allow_user_color}} checked{{/cfg_allow_user_color}} class="input"></td></tr>
+    <tr><th>{{label_default_color}}</th>
+      <td><input type="text" name="default_color" value="{{cfg_default_color}}" maxlength="32" style="width:8em" class="input"></td></tr>
+    <tr><th>{{label_default_bg_color}}</th>
+      <td><input type="text" name="default_bg_color" value="{{cfg_default_bg_color}}" maxlength="32" style="width:8em" class="input"></td></tr>
+    <tr><th>{{label_default_font_family}}</th>
+      <td><input type="text" name="default_font_family" value="{{cfg_default_font_family}}" maxlength="32" style="width:12em" class="input"></td></tr>
+  </table>
+
+  {{! ── Private messages ───────────────────────────────────────────────── }}
+  <h3>{{section_pm}}</h3>
+  <table>
+    <tr><th>{{label_allow_pm}}</th>
+      <td><input type="checkbox" name="allow_pm" value="1"{{#cfg_allow_pm}} checked{{/cfg_allow_pm}} class="input"></td></tr>
+    <tr><th>{{label_pm_retention_minutes}}</th>
+      <td><input type="number" name="pm_retention_minutes" value="{{cfg_pm_retention_minutes}}" min="1" class="input"> min</td></tr>
+    <tr><th>{{label_disable_guest_pm}}</th>
+      <td><input type="checkbox" name="disable_guest_pm" value="1"{{#cfg_disable_guest_pm}} checked{{/cfg_disable_guest_pm}} class="input"></td></tr>
+  </table>
+
+  {{! ── Word censor ────────────────────────────────────────────────────── }}
+  <h3>{{section_censor}}</h3>
+  <table>
+    <tr><th>{{label_censor_words}}</th>
+      <td><textarea name="censor_words" rows="6" cols="40" class="input">{{cfg_censor_words}}</textarea></td></tr>
+    <tr><th>{{label_censor_mode}}</th>
+      <td>
+        <select name="censor_mode" class="input">
+          <option value="replace"{{#cfg_censor_mode_replace_selected}} selected{{/cfg_censor_mode_replace_selected}}>{{label_censor_mode_replace}}</option>
+          <option value="block"{{#cfg_censor_mode_block_selected}} selected{{/cfg_censor_mode_block_selected}}>{{label_censor_mode_block}}</option>
+        </select>
+      </td></tr>
+    <tr><th>{{label_censor_replacement}}</th>
+      <td><input type="text" name="censor_replacement" value="{{cfg_censor_replacement}}" maxlength="32" style="width:8em" class="input"></td></tr>
+  </table>
+  <p><a href="{{chat_filters_url}}">{{chat_filters_link}}</a></p>
+
+  {{! ── Room ───────────────────────────────────────────────────────────── }}
+  <h3>{{section_room}}</h3>
+  <table>
+    <tr><th>{{label_room_topic}}</th>
+      <td><input type="text" name="room_topic" value="{{cfg_room_topic}}" style="width:30em" class="input"></td></tr>
+    <tr><th>{{label_room_rules}}</th>
+      <td><textarea name="room_rules" rows="4" cols="40" class="input">{{cfg_room_rules}}</textarea></td></tr>
+    <tr><th>{{label_max_online}}</th>
+      <td><input type="number" name="max_online" value="{{cfg_max_online}}" min="0" class="input"></td></tr>
+    <tr><th>{{label_chat_name}}</th>
+      <td><input type="text" name="chat_name" value="{{cfg_chat_name}}" maxlength="64" style="width:20em" class="input"></td></tr>
+    <tr><th>{{label_greeting_message}}</th>
+      <td><textarea name="greeting_message" rows="3" cols="40" class="input">{{cfg_greeting_message}}</textarea></td></tr>
+  </table>
+
+  {{! ── Timestamps ─────────────────────────────────────────────────────── }}
+  <h3>{{section_timestamps}}</h3>
+  <table>
+    <tr><th>{{label_show_timestamps_default}}</th>
+      <td><input type="checkbox" name="show_timestamps_default" value="1"{{#cfg_show_timestamps_default}} checked{{/cfg_show_timestamps_default}} class="input"></td></tr>
+    <tr><th>{{label_timestamp_format}}</th>
+      <td><input type="text" name="timestamp_format" value="{{cfg_timestamp_format}}" maxlength="32" style="width:8em" class="input"></td></tr>
+    <tr><th>{{label_default_timezone}}</th>
+      <td><input type="text" name="default_timezone" value="{{cfg_default_timezone}}" maxlength="48" style="width:16em" class="input"></td></tr>
+  </table>
+
+  {{! ── Moderation ─────────────────────────────────────────────────────── }}
+  <h3>{{section_moderation}}</h3>
+  <table>
+    <tr><th>{{label_kick_penalty_minutes}}</th>
+      <td><input type="number" name="kick_penalty_minutes" value="{{cfg_kick_penalty_minutes}}" min="0" class="input"> min</td></tr>
+  </table>
+
+  {{! ── Toolbar ────────────────────────────────────────────────────────── }}
+  <h3>{{section_toolbar}}</h3>
+  <table>
+    <tr><th>{{label_hide_profile_button}}</th>
+      <td><input type="checkbox" name="hide_profile_button" value="1"{{#cfg_hide_profile_button}} checked{{/cfg_hide_profile_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_help_button}}</th>
+      <td><input type="checkbox" name="hide_help_button" value="1"{{#cfg_hide_help_button}} checked{{/cfg_hide_help_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_notes_button}}</th>
+      <td><input type="checkbox" name="hide_notes_button" value="1"{{#cfg_hide_notes_button}} checked{{/cfg_hide_notes_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_rules_button}}</th>
+      <td><input type="checkbox" name="hide_rules_button" value="1"{{#cfg_hide_rules_button}} checked{{/cfg_hide_rules_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_clone_button}}</th>
+      <td><input type="checkbox" name="hide_clone_button" value="1"{{#cfg_hide_clone_button}} checked{{/cfg_hide_clone_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_admin_button}}</th>
+      <td><input type="checkbox" name="hide_admin_button" value="1"{{#cfg_hide_admin_button}} checked{{/cfg_hide_admin_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_reload_button}}</th>
+      <td><input type="checkbox" name="hide_reload_button" value="1"{{#cfg_hide_reload_button}} checked{{/cfg_hide_reload_button}} class="input"></td></tr>
+    <tr><th>{{label_hide_rearrange_button}}</th>
+      <td><input type="checkbox" name="hide_rearrange_button" value="1"{{#cfg_hide_rearrange_button}} checked{{/cfg_hide_rearrange_button}} class="input"></td></tr>
+  </table>
+
+  <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+{{/admin_forbidden}}

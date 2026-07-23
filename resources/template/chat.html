@@ -1,0 +1,101 @@
+<div id="chat"{{#chat_alt_layout}} class="chat-alt"{{/chat_alt_layout}}>
+    <style>{{&chat_css}}</style>
+
+    {{#chat_disabled}}<div class="chat-disabled"><p>{{chat_disabled_message}}</p></div>{{/chat_disabled}}
+    {{^chat_disabled}}
+    <div class="chat-header">
+        <h2>{{chat_heading}}</h2>
+        {{#room_topic_present}}<p class="chat-topic">{{room_topic}}</p>{{/room_topic_present}}
+    </div>
+
+    <div class="chat-controls">
+        {{#nav_show_reload}}
+        <a class="input" href="{{stream_url}}" target="astrx_chat_stream">{{chat_reload_messages}}</a>
+        {{^hide_chatters}}<a class="input" href="{{users_url}}" target="astrx_chat_users">{{chat_reload_online}}</a>{{/hide_chatters}}
+        {{#can_post}}<a class="input" href="{{self_url}}" target="_top">{{chat_reload_postbox}}</a>{{/can_post}}
+        {{/nav_show_reload}}
+        {{#can_post}}
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="postbox">
+            <input type="submit" class="input" value="{{chat_postbox_toggle_label}}">
+        </form>
+        {{/can_post}}
+        {{#nav_show_rearrange}}
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="rearrange">
+            <input type="submit" class="input" value="{{chat_rearrange}}">
+        </form>
+        {{/nav_show_rearrange}}
+        {{#is_mod}}
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="clean">
+            <input type="submit" class="input" value="{{chat_clean_room}}">
+        </form>
+        {{/is_mod}}
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="leave">
+            <input type="submit" class="input" value="{{chat_leave}}">
+        </form>
+        {{#has_unread_pm}}<span class="chat-pm-badge">{{chat_unread_pm}}: {{unread_pm}}</span>{{/has_unread_pm}}
+    </div>
+
+    {{#is_mod}}
+    <div class="chat-mod-tools">
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="topic">
+            <input type="text" name="topic" class="input" value="{{room_topic}}" placeholder="{{chat_topic_ph}}" maxlength="255" autocomplete="off">
+            <input type="submit" class="input" value="{{chat_set_topic}}">
+        </form>
+        <form method="POST" class="chat-inline">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+            <input type="hidden" name="action" value="clean_nick">
+            <input type="text" name="nick" class="input" placeholder="{{chat_clean_nick_ph}}" maxlength="64" autocomplete="off">
+            <input type="submit" class="input" value="{{chat_clean_nick}}">
+        </form>
+    </div>
+    {{/is_mod}}
+
+    <div class="chat-panes">
+        <iframe class="chat-stream" name="astrx_chat_stream" src="{{stream_url}}" title="{{chat_messages_title}}"></iframe>
+        {{^hide_chatters}}<iframe class="chat-users" name="astrx_chat_users" src="{{users_url}}" title="{{chat_users_title}}"></iframe>{{/hide_chatters}}
+    </div>
+
+    {{#can_post}}
+    <form method="POST" class="chat-post">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="post">
+        <p class="chat-meta"><small>{{chat_posting_as}}: <strong>{{my_nick}}</strong>{{^is_member}} <em>{{chat_guest_tag}}</em>{{/is_member}}</small></p>
+        <p class="chat-send-to">
+            <label for="chat_to">{{chat_send_to}}:</label>
+            <select name="to" id="chat_to" class="input">
+                <option value="">{{chat_to_everyone}}</option>
+                {{#pm_recipients}}<option value="{{nick}}">{{nick}}</option>{{/pm_recipients}}
+            </select>
+            {{#allow_pm}}<input type="text" name="to_name" class="input" placeholder="{{chat_pm_to_name}}" maxlength="64" autocomplete="off">{{/allow_pm}}
+        </p>
+        {{#postbox_multiline}}
+        <textarea name="content" id="chat_content" rows="3" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" autocomplete="off"></textarea><br>
+        {{/postbox_multiline}}
+        {{^postbox_multiline}}
+        <input type="text" name="content" id="chat_content" class="input chat-postbox" maxlength="{{max_length}}" placeholder="{{chat_placeholder}}" autocomplete="off">
+        {{/postbox_multiline}}
+        <input type="submit" class="input" value="{{chat_send}}">
+    </form>
+    <p class="chat-hint"><small>{{chat_formatting_hint}}</small></p>
+    {{/can_post}}
+
+    {{^can_post}}<p class="chat-hint"><small>{{chat_cannot_post}}</small></p>{{/can_post}}
+    {{/chat_disabled}}
+</div>

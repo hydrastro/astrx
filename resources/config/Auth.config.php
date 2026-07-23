@@ -12,6 +12,10 @@ return [
                 'comment.post',
                 'comment.flag',
                 'user.view.public',
+                // Chat
+                'chat.view',
+                'chat.post',
+                'chat.pm',
             ],
             'USER' => [
                 'news.view',
@@ -30,6 +34,11 @@ return [
                 // Remove these two lines to lock the API to admin-provisioned keys only.
                 'api.key.create',
                 'api.key.revoke',
+                // Chat
+                'chat.view',
+                'chat.post',
+                'chat.delete.own',
+                'chat.pm',
             ],
             'MOD' => [
                 'news.view',
@@ -50,6 +59,13 @@ return [
                 'admin.config.mail',
                 'api.key.create',
                 'api.key.revoke',
+                // Chat
+                'chat.view',
+                'chat.post',
+                'chat.delete.own',
+                'chat.delete.any',
+                'chat.moderate',
+                'admin.config.chat',
             ],
         ],
     ],

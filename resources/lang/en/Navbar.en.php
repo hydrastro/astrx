@@ -40,4 +40,6 @@ return [
     'WORDING_ADMIN_CONFIG_WEBMAIL.label'  => 'Webmail / IMAP',
     'WORDING_ADMIN_AUDIT_LOG.label'       => 'Audit Log',
     'WORDING_WEBMAIL.label'               => 'Webmail',
+    'WORDING_CHAT.label'                  => 'Chat',
+    'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
 ];

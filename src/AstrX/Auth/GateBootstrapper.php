@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Auth;
 
+use AstrX\Auth\Policy\ChatPolicy;
 use AstrX\Auth\Policy\CommentPolicy;
 use AstrX\Auth\Policy\NewsPolicy;
 use AstrX\Auth\Policy\UserPolicy;
@@ -35,6 +36,7 @@ final class GateBootstrapper
         $gate->registerPolicy(\AstrX\Comment\CommentRepository::class, new CommentPolicy());
         $gate->registerPolicy(\AstrX\News\NewsRepository::class,       new NewsPolicy());
         $gate->registerPolicy(\AstrX\User\UserRepository::class,       new UserPolicy());
+        $gate->registerPolicy(\AstrX\Chat\ChatMessageResource::class,  new ChatPolicy());
 
         // stdClass resources (used in CommentService for anonymous comments)
         $gate->registerPolicy(\stdClass::class, new CommentPolicy());

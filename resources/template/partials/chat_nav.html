@@ -1,0 +1,9 @@
+{{#chat_nav_show}}
+<div id="chat_top_nav" class="chat_top_nav">
+    {{! Layout safety-net (horizontal, no list markers) even if a theme stylesheet lacks the .chat_nav clone. }}
+    <style>.chat_nav { list-style: none; margin: 0; padding: 0; } .chat_nav li { display: inline-block; vertical-align: top; }</style>
+    {{! The <li> items are kept WHITESPACE-FREE (no newlines between them), exactly like the site's own
+        navbars — otherwise the theme's nav underline renders on the gaps and looks like dashes between items. }}
+    <ul id="chat_nav" class="chat_nav"><li><a href="{{nav_chat_url}}"{{#nav_on_chat}} class="active"{{/nav_on_chat}}>{{nav_chat_label}}</a></li>{{#nav_show_profile}}<li><a href="{{nav_profile_url}}"{{#nav_on_profile}} class="active"{{/nav_on_profile}}>{{nav_profile_label}}</a></li>{{/nav_show_profile}}{{#nav_show_notes}}<li><a href="{{nav_notes_url}}">{{nav_notes_label}}</a></li>{{/nav_show_notes}}{{#nav_show_rules}}<li><a href="{{nav_rules_url}}">{{nav_rules_label}}</a></li>{{/nav_show_rules}}{{#nav_show_help}}<li><a href="{{nav_help_url}}"{{#nav_on_help}} class="active"{{/nav_on_help}}>{{nav_help_label}}</a></li>{{/nav_show_help}}{{#nav_show_clone}}<li><a href="{{nav_chat_url}}" target="_blank" rel="noopener">{{nav_clone_label}}</a></li>{{/nav_show_clone}}{{#nav_show_admin}}<li><a href="{{nav_admin_url}}"{{#nav_on_admin}} class="active"{{/nav_on_admin}}>{{nav_admin_label}}</a></li>{{/nav_show_admin}}</ul>
+</div>
+{{/chat_nav_show}}

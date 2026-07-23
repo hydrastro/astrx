@@ -173,10 +173,16 @@ function writeSecurity(string $secret, string $env): string
         foreach ($replacements as $pattern => $replacement) {
             $content = preg_replace($pattern, $replacement, $content) ?? $content;
         }
-        // Fix: check write return value.
-        $bytes = @file_put_contents($path, $content);
-        if ($bytes === false) {
-            return "Cannot write {$path}. Check directory permissions.";
+        // Write atomically via a temp file + rename so this succeeds even when
+        // the existing config file itself is read-only — a common cause of a
+        // step-4-only failure (files shipped 0644 owned by a different user than
+        // the web server). rename() only needs the CONFIG DIRECTORY to be
+        // writable, which the step-1 requirements check already verifies.
+        $tmp = $path . '.tmp.' . bin2hex(random_bytes(4));
+        if (@file_put_contents($tmp, $content, LOCK_EX) === false || !@rename($tmp, $path)) {
+            @unlink($tmp);
+            return "Cannot write {$path}. Make sure the resources/config/ directory is "
+                 . "writable by the web-server user (chown/chmod so PHP can write into it).";
         }
     }
     return '';

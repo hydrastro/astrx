@@ -112,7 +112,10 @@ final class AdminThemesController extends AbstractController
                 return '';
             }
             $r = $this->writer->write('Theme', [
-                'Theme' => [
+                // Section keyed by the consuming class short name so ThemeService's
+                // #[InjectConfig] setters bind it on the next request (see
+                // Theme.config.php). A 'Theme' key here would never take effect.
+                'ThemeService' => [
                     'theme'               => $themeKey,
                     'allow_user_override' => self::mBool($posted, 'allow_user_override'),
                 ],

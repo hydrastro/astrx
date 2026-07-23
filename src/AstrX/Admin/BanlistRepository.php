@@ -41,6 +41,7 @@ final class BanlistRepository
     public const string ROUTE_PERMANENT    = 'permanent';
     public const string ROUTE_BAD_COMMENT  = 'bad_comment';
     public const string ROUTE_FAILED_LOGIN = 'failed_login';
+    public const string ROUTE_CHAT         = 'chat';
 
     // -------------------------------------------------------------------------
 
@@ -128,6 +129,12 @@ final class BanlistRepository
                         CONCAT(INET6_NTOA(bi.network), '/', bi.prefix_len)
                    FROM banlist b
                    JOIN banlist_ip bi ON bi.ban_id = b.id
+                 UNION ALL
+                 SELECT b.id, b.ban_route,
+                        b.reason, b.start, b.end, b.active,
+                        'nick', bn.nick
+                   FROM banlist b
+                   JOIN banlist_nick bn ON bn.ban_id = b.id
                  ORDER BY id DESC"
             );
             assert($stmt !== false);
@@ -147,10 +154,12 @@ final class BanlistRepository
                 'SELECT b.id, b.ban_route, b.reason, b.start, b.end, b.active,
                         bu.user_id,
                         be.email,
+                        bn.nick,
                         CONCAT(INET6_NTOA(bi.network),\'/\',bi.prefix_len) AS cidr
                    FROM banlist b
                    LEFT JOIN banlist_user  bu ON bu.ban_id = b.id
                    LEFT JOIN banlist_email be ON be.ban_id = b.id
+                   LEFT JOIN banlist_nick  bn ON bn.ban_id = b.id
                    LEFT JOIN banlist_ip    bi ON bi.ban_id = b.id
                   WHERE b.id = :id LIMIT 1'
             );
@@ -264,6 +273,62 @@ final class BanlistRepository
                 'INSERT INTO banlist_user (ban_id, user_id) VALUES (:id, UNHEX(:uid))'
             )->execute([':id' => $banId, ':uid' => $hexUserId]);
             return Result::ok($banId);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<int> */
+    public function banNick(string $nick, string $reason, string $route, ?string $end = null): Result
+    {
+        $coreResult = $this->insertCore($reason, $route, $end);
+        if (!$coreResult->isOk()) { return $coreResult; }
+        $banId = $coreResult->unwrap();
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO banlist_nick (ban_id, nick) VALUES (:id, :nick)'
+            )->execute([':id' => $banId, ':nick' => $nick]);
+            return Result::ok($banId);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<int|null> */
+    public function findActiveBanForNick(string $nick): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT b.id FROM banlist b
+                   JOIN banlist_nick bn ON bn.ban_id = b.id
+                  WHERE b.active = 1 AND LOWER(bn.nick) = LOWER(:nick) LIMIT 1'
+            );
+            $stmt->execute([':nick' => $nick]);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            $idV = $fetched['id'];
+            return Result::ok(is_int($idV) ? $idV : (is_numeric($idV) ? (int) $idV : 0));
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /** @return Result<int|null> */
+    public function findActiveBanForUser(string $hexUserId): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT b.id FROM banlist b
+                   JOIN banlist_user bu ON bu.ban_id = b.id
+                  WHERE b.active = 1 AND bu.user_id = UNHEX(:uid) LIMIT 1'
+            );
+            $stmt->execute([':uid' => $hexUserId]);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            $idV = $fetched['id'];
+            return Result::ok(is_int($idV) ? $idV : (is_numeric($idV) ? (int) $idV : 0));
         } catch (PDOException $e) {
             return $this->err($e);
         }

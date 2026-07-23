@@ -1,0 +1,66 @@
+{{#forbidden}}
+<div class="error-page"><h2>{{forbidden_message}}</h2></div>
+{{/forbidden}}
+
+{{^forbidden}}
+<h2>{{filter_heading}}</h2>
+<p>{{filter_intro}}</p>
+
+<table>
+    <thead><tr>
+        <th>{{col_pattern}}</th>
+        <th>{{col_kind}}</th>
+        <th>{{col_action}}</th>
+        <th>{{col_mods}}</th>
+        <th>{{col_manage}}</th>
+    </tr></thead>
+    <tbody>
+    {{#filters}}
+    <tr>
+        <td><code>{{pattern}}</code></td>
+        <td>{{kind}}</td>
+        <td>{{action}}</td>
+        <td>{{mods}}</td>
+        <td>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id"    value="{{prg_id}}">
+                <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+                <input type="hidden" name="action"    value="delete">
+                <input type="hidden" name="filter_id" value="{{id}}">
+                <input type="submit" value="{{filter_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/filters}}
+    {{^has_filters}}
+    <tr><td colspan="5"><em>{{filter_none}}</em></td></tr>
+    {{/has_filters}}
+    </tbody>
+</table>
+
+{{! ── Add filter ───────────────────────────────────────────────────────── }}
+<h3>{{filter_add_heading}}</h3>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="add">
+    <p>
+        <input type="text" name="pattern" class="input" placeholder="{{filter_pattern_ph}}" maxlength="255" autocomplete="off" style="width:20em">
+        &nbsp;
+        <select name="kind" class="input">
+            <option value="word">{{filter_kind_word}}</option>
+            <option value="link">{{filter_kind_link}}</option>
+        </select>
+        <select name="act" class="input">
+            <option value="block">{{filter_action_block}}</option>
+            <option value="kick">{{filter_action_kick}}</option>
+        </select>
+        &nbsp;
+        <label><input type="checkbox" name="apply_to_mods" value="1"> {{filter_apply_to_mods}}</label>
+        &nbsp;
+        <input type="submit" value="+ {{filter_add}}" class="input">
+    </p>
+</form>
+
+<p><a href="{{config_url}}">{{filter_config_link}}</a></p>
+{{/forbidden}}

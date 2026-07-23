@@ -277,6 +277,7 @@ final class DefaultTemplateContext
             'follow'       => $page->follow,
             'include'      => $this->buildIncludePath($page),
             'captcha'      => 'partials/captcha',  // partial name — {{> captcha}} resolves to captcha.html
+            'chat_nav'     => 'partials/chat_nav', // {{> chat_nav}} — chat toolbar (only rendered by chat pages)
 
             'website_name' => $this->config->getConfigString('ContentManager', 'website_name', 'AstrX'),
             'title_url'    => $this->config->getConfigString('ContentManager', 'title_url', '/'),

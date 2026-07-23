@@ -43,24 +43,24 @@ h1 { margin: 0; font-size: 1.8em; color: #073642; font-weight: 300; }
 h2 { margin: 0 0 1em; color: #073642; font-weight: 400; }
 h3 { margin: 0 0 .5em; color: #586e75; font-weight: 500; }
 
-#top_nav, #user_top_nav, #admin_top_nav {
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{
     background: #eee8d5;
     border-bottom: 1px solid #93a1a1;
 }
 
-#nav, #user_nav, #admin_nav, #wm-nav {
+#nav, #user_nav, #admin_nav, #wm-nav, .chat_nav{
     text-align: center;
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
-#nav li, #user_nav li, #admin_nav li {
+#nav li, #user_nav li, #admin_nav li, .chat_nav li{
     display: inline-block;
 }
 
 #nav li a, #user_nav li a, #user_nav li input,
-#admin_nav li a, #admin_nav li input {
+#admin_nav li a, #admin_nav li input, .chat_nav li a, .chat_nav li input{
     color: #657b83;
     background: transparent;
     border: none;
@@ -72,12 +72,12 @@ h3 { margin: 0 0 .5em; color: #586e75; font-weight: 500; }
 }
 
 #nav li a:hover, #user_nav li a:hover, #user_nav li input:hover,
-#admin_nav li a:hover, #admin_nav li input:hover {
+#admin_nav li a:hover, #admin_nav li input:hover, .chat_nav li a:hover, .chat_nav li input:hover{
     background: #fdf6e3;
     color: #268bd2;
 }
 
-#nav li a.active, #user_nav li a.active, #admin_nav li a.active {
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a.active{
     background: #fdf6e3;
     color: #d33682;
     text-decoration: none;

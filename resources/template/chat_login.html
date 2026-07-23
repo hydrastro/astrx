@@ -1,0 +1,52 @@
+<div id="chat-login">
+    <style>
+    #chat-login .chat-online-now { margin: .2em 0 .8em; opacity: .9; }
+    #chat-login .chat-online-now .chat-member { text-decoration: underline; }
+    </style>
+    {{#chat_disabled}}<div class="chat-disabled"><p>{{chat_disabled_message}}</p></div>{{/chat_disabled}}
+    {{^chat_disabled}}
+    <h2>{{chat_login_heading}}</h2>
+
+    <div class="chat-online-now">
+        {{#online_present}}<p>{{online_heading}} ({{online_count}}): {{#online_users}}<span class="chat-user{{#is_member}} chat-member{{/is_member}}">{{nick}}</span>{{sep}}{{/online_users}}</p>{{/online_present}}
+        {{^online_present}}<p><em>{{online_empty}}</em></p>{{/online_present}}
+    </div>
+
+    {{#has_room_rules}}
+    <div class="chat-rules">
+        <h3>{{chat_login_rules_heading}}</h3>
+        <p class="chat-rules-body">{{room_rules}}</p>
+    </div>
+    {{/has_room_rules}}
+
+    <form method="POST" class="chat-login-form">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <p>
+            <label for="chat_nick">{{chat_login_nick_label}}: </label>
+            <input type="text" name="nick" id="chat_nick" class="input"
+                   maxlength="{{nick_max}}" autocomplete="off" spellcheck="false">
+        </p>
+        {{#allow_color}}
+        <p>
+            <label for="chat_color">{{chat_login_color_label}}: </label>
+            <select name="color" id="chat_color" class="input">
+                <option value="">{{color_default_label}}</option>
+                <option value="random">{{color_random_label}}</option>
+                {{#color_options}}<option value="{{value}}" style="color:{{value}}">{{label}}</option>{{/color_options}}
+            </select>
+            <input type="text" name="color_custom" class="input" placeholder="{{color_custom_label}}"
+                   maxlength="7" autocomplete="off" spellcheck="false">
+        </p>
+        {{/allow_color}}
+        {{#has_entry_password}}
+        <p>
+            <label for="chat_entry_password">{{chat_entry_password_label}}: </label>
+            <input type="password" name="entry_password" id="chat_entry_password" class="input" autocomplete="off">
+        </p>
+        {{/has_entry_password}}
+        {{> captcha}}
+        <input type="submit" class="input" value="{{chat_login_submit}}">
+    </form>
+    {{/chat_disabled}}
+</div>

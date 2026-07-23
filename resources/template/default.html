@@ -54,6 +54,8 @@
         </ul>
     </div>
     {{/is_admin}}
+    {{! Chat toolbar — joins the nav stack only on chat pages (self-hides via chat_nav_show). }}
+    {{> chat_nav}}
     {{#has_messages}}
     <div id="message_bar">
         {{#messages}}<p class="{{css_class}}">{{#level_label}}[{{level_label}}] {{/level_label}}{{message}}</p>{{/messages}}

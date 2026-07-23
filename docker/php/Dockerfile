@@ -4,13 +4,25 @@ WORKDIR /app
 
 COPY /docker/php/php.ini /usr/local/etc/php/php.ini
 
-RUN apt-get update && apt-get install -y \
-        libfreetype6-dev libjpeg62-turbo-dev libpng-dev \
+# NOTE: this is the Alpine image, so packages come from apk (not apt-get).
+# gettext + gettext-dev provide libintl for the PHP gettext extension, which
+# DanWin le-chat uses for its .po/.mo translations.
+RUN apk add --no-cache --virtual .build-deps \
+        $PHPIZE_DEPS \
+        freetype-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
+        gettext-dev \
+    && apk add --no-cache \
+        freetype \
+        libjpeg-turbo \
+        libpng \
+        gettext \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd \
-    && rm -rf /var/lib/apt/lists/*
+    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql gettext \
+    && apk del --no-network .build-deps
 
-CMD [ "php-fpm"]
+CMD [ "php-fpm" ]
 
 # =============================================================================
 # Development stage — NOT for production use
@@ -38,13 +50,15 @@ RUN apk add --no-cache --virtual .build-deps \
         freetype-dev \
         libjpeg-turbo-dev \
         libpng-dev \
+        gettext-dev \
         linux-headers \
     && apk add --no-cache \
         freetype \
         libjpeg-turbo \
         libpng \
+        gettext \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif \
+    && docker-php-ext-install -j"$(nproc)" gd pdo pdo_mysql exif gettext \
     && pecl install xdebug \
     && docker-php-ext-enable xdebug \
     && apk del --no-network .build-deps

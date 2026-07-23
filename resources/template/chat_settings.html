@@ -1,0 +1,113 @@
+<div id="chat-settings">
+    <style>
+    #chat-settings h3 { margin: 1em 0 .2em; padding-bottom: .15em; border-bottom: 1px solid rgba(128,128,128,.3); }
+    #chat-settings .chat-set-id { opacity: .85; margin: .2em 0 .4em; }
+    #chat-settings .chat-set-row { margin: .35em 0; }
+    #chat-settings .chat-set-row label.lbl { display: inline-block; min-width: 14em; }
+    #chat-settings .chat-set-hint { opacity: .65; font-size: 12px; }
+    </style>
+    <h2>{{settings_heading}}</h2>
+
+    <p class="chat-set-id">{{posting_as_label}}: <strong>{{posting_as_nick}}</strong>{{^is_member}} <em>{{guest_tag}}</em>{{/is_member}}</p>
+
+    <form method="POST" class="chat-settings">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+
+        <h3>{{section_display}}</h3>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_refresh_secs">{{label_refresh_secs}}</label>
+            <input type="number" name="refresh_secs" id="chat_refresh_secs" class="input"
+                   value="{{refresh_secs}}" min="{{min_refresh}}" max="{{max_refresh}}" step="1">
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_messages_shown">{{label_messages_shown}}</label>
+            <input type="number" name="messages_shown" id="chat_messages_shown" class="input"
+                   value="{{messages_shown}}" min="1" max="200" step="1">
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_sort_dir">{{label_sort_dir}}</label>
+            <select name="sort_dir" id="chat_sort_dir" class="input">
+                <option value=""{{#sort_default_selected}} selected{{/sort_default_selected}}>{{opt_sort_default}}</option>
+                <option value="1"{{#sort_newest_selected}} selected{{/sort_newest_selected}}>{{opt_sort_newest}}</option>
+                <option value="0"{{#sort_oldest_selected}} selected{{/sort_oldest_selected}}>{{opt_sort_oldest}}</option>
+            </select>
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_timezone">{{label_timezone}}</label>
+            <select name="timezone" id="chat_timezone" class="input">
+                <option value=""{{#tz_default_selected}} selected{{/tz_default_selected}}>{{opt_tz_default}}</option>
+                {{#tz_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{value}}</option>{{/tz_options}}
+            </select>
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_font_size">{{label_font_size}}</label>
+            <input type="number" name="font_size" id="chat_font_size" class="input"
+                   value="{{font_size}}" min="8" max="28" step="1">
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_font_family">{{label_font_family}}</label>
+            <select name="font_family" id="chat_font_family" class="input">
+                <option value=""{{#font_default_selected}} selected{{/font_default_selected}}>{{opt_font_default}}</option>
+                {{#font_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/font_options}}
+            </select>
+        </p>
+        <p class="chat-set-row">
+            <label>
+                <input type="checkbox" name="show_timestamps" value="1" {{#show_timestamps}}checked{{/show_timestamps}}>
+                {{label_show_timestamps}}
+            </label>
+        </p>
+
+        <h3>{{section_colours}}</h3>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_text_color">{{label_text_color}}</label>
+            <select name="text_color" id="chat_text_color" class="input">
+                <option value=""{{#color_default_selected}} selected{{/color_default_selected}}>{{color_default_label}}</option>
+                <option value="random">{{color_random_label}}</option>
+                {{#color_options}}<option value="{{value}}" style="color:{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/color_options}}
+            </select>
+            <input type="text" name="text_color_custom" id="chat_text_color_custom" class="input"
+                   value="{{text_color_custom}}" maxlength="7" placeholder="{{color_custom_label}}" autocomplete="off" spellcheck="false">
+        </p>
+        <p class="chat-set-row">
+            <label class="lbl" for="chat_bg_color">{{label_bg_color}}</label>
+            <select name="bg_color" id="chat_bg_color" class="input">
+                <option value=""{{#bg_default_selected}} selected{{/bg_default_selected}}>{{color_default_label}}</option>
+                <option value="random">{{color_random_label}}</option>
+                {{#bg_options}}<option value="{{value}}" style="color:{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/bg_options}}
+            </select>
+            <input type="text" name="bg_color_custom" id="chat_bg_color_custom" class="input"
+                   value="{{bg_color_custom}}" maxlength="7" placeholder="{{color_custom_label}}" autocomplete="off" spellcheck="false">
+        </p>
+
+        <h3>{{section_privacy}}</h3>
+        <p class="chat-set-row">
+            <label>
+                <input type="checkbox" name="hide_chatters" value="1" {{#hide_chatters}}checked{{/hide_chatters}}>
+                {{label_hide_chatters}}
+            </label>
+        </p>
+        <p class="chat-set-row">
+            <label>
+                <input type="checkbox" name="incognito" value="1" {{#incognito}}checked{{/incognito}}>
+                {{label_incognito}}
+            </label>
+        </p>
+        <p class="chat-set-row">
+            <label>
+                <input type="checkbox" name="link_conversion" value="1" {{#link_conversion}}checked{{/link_conversion}}>
+                {{label_link_conversion}}
+            </label>
+        </p>
+
+        <h3>{{section_notes}}</h3>
+        <p class="chat-set-row">
+            <textarea name="notes" id="chat_notes" rows="4" cols="48" class="input" placeholder="{{label_notes}}">{{notes}}</textarea>
+        </p>
+
+        <p class="chat-set-row">
+            <input type="submit" class="input" value="{{label_submit}}">
+        </p>
+    </form>
+</div>

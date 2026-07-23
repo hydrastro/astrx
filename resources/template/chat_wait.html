@@ -1,0 +1,15 @@
+<div id="chat-wait" class="chat-wait">
+    <style>
+    .chat-wait { max-width: 26em; margin: 2em auto; text-align: center; }
+    .chat-wait h2 { margin: 0 0 .4em; }
+    .chat-wait p { margin: .3em 0; opacity: .85; }
+    .chat-wait-count { font-size: 2.6em; font-weight: bold; opacity: 1 !important; margin: .2em 0; }
+    </style>
+    <h2>{{wait_heading}}</h2>
+    <p>{{wait_message}}</p>
+    {{#wait_show_count}}
+    <p class="chat-wait-count">{{wait_remaining}}</p>
+    <p>{{wait_seconds_label}}</p>
+    {{/wait_show_count}}
+    {{#wait_continue_url}}<p class="chat-wait-continue"><a href="{{wait_continue_url}}">{{wait_continue_label}}</a></p>{{/wait_continue_url}}
+</div>

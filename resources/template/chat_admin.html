@@ -1,0 +1,89 @@
+{{#chat_admin_forbidden}}
+<div class="error-page"><h2>{{chat_admin_forbidden_msg}}</h2></div>
+{{/chat_admin_forbidden}}
+
+{{^chat_admin_forbidden}}
+<div id="chat-admin">
+    <style>
+    #chat-admin h3 { margin: 1em 0 .3em; padding-bottom: .15em; border-bottom: 1px solid rgba(128,128,128,.3); }
+    #chat-admin table { border-collapse: collapse; margin: .3em 0; }
+    #chat-admin th, #chat-admin td { padding: .15em .55em; text-align: left; border-bottom: 1px solid rgba(128,128,128,.2); }
+    #chat-admin form.chat-inline { display: inline-block; margin: 0 .5em .35em 0; vertical-align: top; }
+    #chat-admin .chat-admin-row { margin: .45em 0; }
+    </style>
+    <h2>{{chat_admin_heading}}</h2>
+
+    {{! ── Active sessions + multi-kick ─────────────────────────────────────── }}
+    <h3>{{chat_admin_sessions_h}} ({{session_count}})</h3>
+    {{#has_sessions}}
+    <form method="POST">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="kick">
+        <table>
+            <tr><th>{{col_select}}</th><th>{{col_nick}}</th><th>{{col_type}}</th><th>{{col_role}}</th><th>{{col_ip}}</th><th>{{col_status}}</th><th>{{col_joined}}</th></tr>
+            {{#sessions}}
+            <tr>
+                <td><input type="checkbox" name="idents[]" value="{{ident}}"></td>
+                <td>{{nick}}</td><td>{{type}}</td><td>{{role}}</td><td>{{ip}}</td><td>{{status}}</td><td>{{joined}}</td>
+            </tr>
+            {{/sessions}}
+        </table>
+        <p class="chat-admin-row">
+            <label for="chat_kick_msg">{{chat_admin_kick_msg}}</label>
+            <input type="text" name="message" id="chat_kick_msg" class="input" maxlength="128" autocomplete="off" style="width:18em">
+        </p>
+        <p class="chat-admin-row">
+            <label><input type="checkbox" name="all_guests" value="1"> {{chat_admin_all_guests}}</label>
+            &nbsp; <input type="submit" class="input" value="{{chat_admin_kick_sel}}">
+        </p>
+    </form>
+    {{/has_sessions}}
+    {{^has_sessions}}<p>{{chat_admin_sessions_none}}</p>{{/has_sessions}}
+
+    <form method="POST" class="chat-inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="logout_inactive">
+        <input type="submit" class="input" value="{{chat_admin_logout}}">
+    </form>
+
+    {{! ── Clean messages ───────────────────────────────────────────────────── }}
+    <h3>{{chat_admin_clean_h}}</h3>
+    <form method="POST" class="chat-inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="clean">
+        <input type="submit" class="input" value="{{chat_admin_clean_room}}">
+    </form>
+    <form method="POST" class="chat-inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="clean_nick">
+        <input type="text" name="nick" class="input" placeholder="{{chat_admin_clean_nick_ph}}" maxlength="64" autocomplete="off">
+        <input type="submit" class="input" value="{{chat_admin_clean_nick}}">
+    </form>
+
+    {{! ── Topic ────────────────────────────────────────────────────────────── }}
+    <h3>{{chat_admin_topic_h}}</h3>
+    <form method="POST" class="chat-inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="topic">
+        <input type="text" name="topic" class="input" value="{{room_topic}}" placeholder="{{chat_admin_topic_ph}}" maxlength="255" autocomplete="off" style="width:22em">
+        <input type="submit" class="input" value="{{chat_admin_set_topic}}">
+    </form>
+
+    {{! ── Broadcast ────────────────────────────────────────────────────────── }}
+    <h3>{{chat_admin_broadcast_h}}</h3>
+    <form method="POST">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="broadcast">
+        <input type="text" name="message" class="input" placeholder="{{chat_admin_broadcast_ph}}" maxlength="2000" autocomplete="off" style="width:28em">
+        <input type="submit" class="input" value="{{chat_admin_broadcast}}">
+    </form>
+
+    <p><a href="{{config_url}}">{{chat_admin_config_link}}</a></p>
+</div>
+{{/chat_admin_forbidden}}

@@ -6,7 +6,7 @@ return [
         'db_host'             => 'mariadb',
         'db_name'             => 'content_manager',
         'db_port'             => 3306,
-        'db_username'         => 'user',
+        'db_username'         => 'root',
         'db_password'         => 'password',
         'emulate_prepares'    => false,
         'errmode_exception'   => true,

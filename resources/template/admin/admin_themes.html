@@ -1,0 +1,82 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{admin_themes_heading}}</h2>
+<p>{{admin_themes_intro}}</p>
+
+{{^has_themes}}
+<p><em>{{no_themes}}</em></p>
+{{/has_themes}}
+
+{{#has_themes}}
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="global">
+
+  <table>
+    <thead>
+      <tr>
+        <th>&nbsp;</th>
+        <th>{{label_theme}}</th>
+        <th>{{label_author}}</th>
+        <th>{{label_version}}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#themes}}
+      <tr>
+        <td>
+          <input type="radio"
+                 name="theme"
+                 value="{{key}}"
+                 id="theme_{{key}}"
+                 {{#active}}checked{{/active}}>
+        </td>
+        <td>
+          <label for="theme_{{key}}">
+            <strong>{{name}}</strong><br>
+            <small>{{description}}</small>
+          </label>
+        </td>
+        <td>{{author}}</td>
+        <td>{{version}}</td>
+      </tr>
+      {{/themes}}
+    </tbody>
+  </table>
+
+  <p>
+    <label>
+      <input type="checkbox"
+             name="allow_user_override"
+             value="1"
+             {{#allow_user_override}}checked{{/allow_user_override}}>
+      {{label_allow_user_override}}
+    </label>
+    <br><small>{{label_allow_user_override_hint}}</small>
+  </p>
+
+  <p>
+    <input type="submit" class="input" value="{{btn_save}}">
+  </p>
+</form>
+
+
+<hr>
+<h3>{{cache_heading}}</h3>
+<p>{{cache_desc}}</p>
+<form method="POST">
+  <input type="hidden" name="prg_id"  value="{{prg_id}}">
+  <input type="hidden" name="_csrf"   value="{{csrf_token}}">
+  <input type="hidden" name="section" value="clear_cache">
+  <p>
+    <input type="submit" class="input" value="{{btn_clear_cache}}">
+  </p>
+</form>
+{{/has_themes}}
+{{/admin_forbidden}}

@@ -30,6 +30,15 @@ enum Permission: string
     case COMMENT_DELETE_ANY  = 'comment.delete.any';
     case COMMENT_FLAG        = 'comment.flag';
 
+    // ---- Chat ---------------------------------------------------------------
+    case CHAT_VIEW         = 'chat.view';
+    case CHAT_POST         = 'chat.post';
+    case CHAT_DELETE_OWN   = 'chat.delete.own';
+    case CHAT_DELETE_ANY   = 'chat.delete.any';
+    case CHAT_MODERATE     = 'chat.moderate';
+    case CHAT_PM           = 'chat.pm';
+    case ADMIN_CONFIG_CHAT = 'admin.config.chat';   // Chat service + rooms
+
     // ---- Users --------------------------------------------------------------
     case USER_VIEW_PUBLIC   = 'user.view.public';
     case USER_EDIT_OWN      = 'user.edit.own';
