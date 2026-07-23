@@ -658,3 +658,1098 @@ VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
 -- CSRF-less test endpoint wired to the production captcha table. It is no longer
 -- seeded. Run migrate_remove_captcha_test.sql to drop it from an existing DB,
 -- and delete src/AstrX/Controller/CaptchaTestController.php.
+
+
+-- ============================================================
+-- CONSOLIDATED MIGRATIONS (folded in setup order; formerly migrate_*.sql)
+-- Each block ran as a separate migration; concatenated here so a fresh
+-- install needs only this one file. All are idempotent (IF NOT EXISTS /
+-- INSERT IGNORE / safe ALTER-MODIFY / order-preserved UPDATE+DELETE).
+-- ============================================================
+
+
+-- ---------- migrate_add_chat.sql ----------
+-- ============================================================
+-- AstrX migration: Chat feature (le-chat rebuild)
+-- Single-room chat with entry/login, a timed waiting room, presence,
+-- private messages, per-user settings, moderation (kick/ban/mute/censor),
+-- and an admin config editor.
+--
+-- Tables:  chat_room, chat_message, chat_presence, chat_pm, chat_settings,
+--          banlist_nick (extends the existing banlist).
+-- Pages:   chat (shell), chat_stream, chat_users, chat_pm (frames, template=0),
+--          chat_login, chat_settings (templated), chat_wait (template=0),
+--          admin_config_chat (admin, templated).
+-- Idempotent: safe to re-run.
+-- ============================================================
+
+-- ----------------------------------------------------------
+-- Tables
+-- ----------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `chat_room`
+(
+    `id`         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `name`       VARCHAR(64)  NOT NULL UNIQUE,
+    `topic`      VARCHAR(255) NOT NULL DEFAULT '',
+    `min_level`  TINYINT      NOT NULL DEFAULT 0,
+    `active`     TINYINT      NOT NULL DEFAULT 1,
+    `sort_order` INT          NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `chat_message`
+(
+    `id`         INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `room_id`    INT           NOT NULL,
+    `user_id`    BINARY(16)    NULL,
+    `nick`       VARCHAR(32)   NULL,
+    `color`      VARCHAR(16)   NULL,
+    `type`       VARCHAR(16)   NOT NULL DEFAULT 'user',   -- user | system
+    `content`    TEXT          NOT NULL,
+    `created_at` TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `expires_at` TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `ip`         VARBINARY(16) NULL,
+    INDEX idx_room_created (room_id, created_at),
+    INDEX idx_expires (expires_at),
+    FOREIGN KEY (room_id) REFERENCES chat_room (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES `user` (id)    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Presence: who is in the chat right now. Identity is `ident` — a member's
+-- lowercase-hex user id (32 chars) or a guest's random 32-char token.
+CREATE TABLE IF NOT EXISTS `chat_presence`
+(
+    `ident`      VARCHAR(32)   NOT NULL PRIMARY KEY,
+    `is_member`  TINYINT       NOT NULL DEFAULT 0,
+    `user_id`    BINARY(16)    NULL,
+    `nick`       VARCHAR(64)   NOT NULL,
+    `color`      VARCHAR(16)   NULL,
+    `role`       TINYINT       NOT NULL DEFAULT 3,        -- UserGroup value (0 user,1 admin,2 mod,3 guest)
+    `status`     TINYINT       NOT NULL DEFAULT 0,        -- 0 waiting, 1 active, 2 kicked
+    `ip`         VARBINARY(16) NULL,
+    `joined_at`  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_seen`  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_last_seen (last_seen),
+    INDEX idx_status (status),
+    INDEX idx_nick (nick),
+    FOREIGN KEY (user_id) REFERENCES `user` (id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Private messages between two idents.
+CREATE TABLE IF NOT EXISTS `chat_pm`
+(
+    `id`          INT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `from_ident`  VARCHAR(32) NOT NULL,
+    `from_nick`   VARCHAR(64) NOT NULL,
+    `from_user_id` BINARY(16) NULL,
+    `to_ident`    VARCHAR(32) NOT NULL,
+    `to_nick`     VARCHAR(64) NOT NULL,
+    `color`       VARCHAR(16) NULL,
+    `content`     TEXT        NOT NULL,
+    `created_at`  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `expires_at`  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `read_at`     TIMESTAMP   NULL,
+    INDEX idx_to (to_ident, created_at),
+    INDEX idx_from (from_ident, created_at),
+    INDEX idx_expires (expires_at)
+) ENGINE=InnoDB;
+
+-- Per-identity display settings.
+CREATE TABLE IF NOT EXISTS `chat_settings`
+(
+    `ident`           VARCHAR(32) NOT NULL PRIMARY KEY,
+    `refresh_secs`    INT         NOT NULL DEFAULT 5,
+    `messages_shown`  INT         NOT NULL DEFAULT 50,
+    `show_timestamps` TINYINT     NOT NULL DEFAULT 1,
+    `font_size`       TINYINT     NOT NULL DEFAULT 13,
+    `text_color`      VARCHAR(16) NULL,
+    `link_conversion` TINYINT     NOT NULL DEFAULT 1
+) ENGINE=InnoDB;
+
+-- Nick bans — extends the existing banlist (mirrors banlist_email/banlist_ip).
+CREATE TABLE IF NOT EXISTS `banlist_nick`
+(
+    `ban_id` INT         NOT NULL PRIMARY KEY,
+    `nick`   VARCHAR(64) NOT NULL,
+    FOREIGN KEY (ban_id) REFERENCES banlist (id) ON UPDATE CASCADE ON DELETE CASCADE,
+    INDEX idx_nick (nick)
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- Single default room
+-- ----------------------------------------------------------
+
+INSERT IGNORE INTO `chat_room` (name, topic, min_level, active, sort_order)
+VALUES ('General', '', 0, 1, 0);
+
+-- ----------------------------------------------------------
+-- Pages
+-- ----------------------------------------------------------
+-- Templated pages (template=1): chat shell, entry, settings.
+-- Frame/interstitial pages (template=0): stream, users, pm, wait.
+-- Admin config page (templated, child of admin).
+
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_CHAT',            1, 'chat',              1, 1, 0, 0),
+    ('WORDING_CHAT_LOGIN',      1, 'chat_login',        1, 1, 0, 0),
+    ('WORDING_CHAT_SETTINGS',   1, 'chat_settings',     1, 1, 0, 0),
+    ('WORDING_CHAT_STREAM',     1, 'chat_stream',       0, 1, 0, 0),
+    ('WORDING_CHAT_USERS',      1, 'chat_users',        0, 1, 0, 0),
+    ('WORDING_CHAT_PM',         1, 'chat_pm',           0, 1, 0, 0),
+    ('WORDING_CHAT_WAIT',       1, 'chat_wait',         1, 1, 0, 0),
+    ('WORDING_ADMIN_CONFIG_CHAT', 1, 'admin_config_chat', 1, 1, 0, 0);
+
+-- The waiting room renders inside the site chrome (template=1); upgrade any
+-- row created by an earlier version of this migration on re-run.
+UPDATE `page` SET template = 1 WHERE url_id = 'WORDING_CHAT_WAIT';
+
+-- Self-closures + meta + robots for every new page.
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page`
+ WHERE url_id IN ('WORDING_CHAT','WORDING_CHAT_LOGIN','WORDING_CHAT_SETTINGS',
+                  'WORDING_CHAT_STREAM','WORDING_CHAT_USERS','WORDING_CHAT_PM',
+                  'WORDING_CHAT_WAIT','WORDING_ADMIN_CONFIG_CHAT');
+
+-- admin_config_chat is a child of the admin root (file_name 'admin') so its
+-- template resolves under admin/ and it inherits the admin section.
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT a.id, d.id
+  FROM `page` a, `page` d
+ WHERE a.url_id = 'WORDING_ADMIN' AND d.url_id = 'WORDING_ADMIN_CONFIG_CHAT';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page`
+ WHERE url_id IN ('WORDING_CHAT','WORDING_CHAT_LOGIN','WORDING_CHAT_SETTINGS',
+                  'WORDING_CHAT_STREAM','WORDING_CHAT_USERS','WORDING_CHAT_PM',
+                  'WORDING_CHAT_WAIT','WORDING_ADMIN_CONFIG_CHAT');
+
+-- The chat shell + login may be indexed; frames, waiting room and admin are not.
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 1, 1 FROM `page` WHERE url_id IN ('WORDING_CHAT','WORDING_CHAT_LOGIN');
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page`
+ WHERE url_id IN ('WORDING_CHAT_SETTINGS','WORDING_CHAT_STREAM','WORDING_CHAT_USERS',
+                  'WORDING_CHAT_PM','WORDING_CHAT_WAIT','WORDING_ADMIN_CONFIG_CHAT');
+
+-- ----------------------------------------------------------
+-- Public navbar entry for the chat shell
+-- ----------------------------------------------------------
+
+SET @chat_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_CHAT' LIMIT 1);
+SET @public_navbar_id := (SELECT id FROM `navbar` WHERE name = 'public' LIMIT 1);
+SET @public_pin_id := (
+    SELECT id FROM `navbar_pin`
+     WHERE navbar_id = @public_navbar_id
+     ORDER BY sort_order ASC, id ASC LIMIT 1
+);
+SET @existing_chat_nav := (
+    SELECT ni.id FROM `navbar_internal` ni
+      JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @chat_page_id AND e.pin_id = @public_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL
+ WHERE @chat_page_id IS NOT NULL AND @public_pin_id IS NOT NULL AND @existing_chat_nav IS NULL;
+SET @chat_nav_id := COALESCE(@existing_chat_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @chat_nav_id, @public_pin_id, 1, 'WORDING_CHAT', 1, 1, 0
+ WHERE @chat_page_id IS NOT NULL AND @public_pin_id IS NOT NULL AND @chat_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @chat_nav_id, @chat_page_id
+ WHERE @chat_page_id IS NOT NULL AND @chat_nav_id IS NOT NULL;
+
+-- ----------------------------------------------------------
+-- Admin navbar entry for the chat config editor (pin 6, alpha group)
+-- ----------------------------------------------------------
+
+SET @admin_chat_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_CONFIG_CHAT' LIMIT 1);
+SET @admin_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+SET @admin_pin_id := (
+    SELECT id FROM `navbar_pin`
+     WHERE navbar_id = @admin_navbar_id
+     ORDER BY sort_order DESC, id DESC LIMIT 1
+);
+SET @existing_admin_chat_nav := (
+    SELECT ni.id FROM `navbar_internal` ni
+      JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @admin_chat_page_id AND e.pin_id = @admin_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL
+ WHERE @admin_chat_page_id IS NOT NULL AND @admin_pin_id IS NOT NULL AND @existing_admin_chat_nav IS NULL;
+SET @admin_chat_nav_id := COALESCE(@existing_admin_chat_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @admin_chat_nav_id, @admin_pin_id, 1, 'WORDING_ADMIN_CONFIG_CHAT', 1, 1, 0
+ WHERE @admin_chat_page_id IS NOT NULL AND @admin_pin_id IS NOT NULL AND @admin_chat_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @admin_chat_nav_id, @admin_chat_page_id
+ WHERE @admin_chat_page_id IS NOT NULL AND @admin_chat_nav_id IS NOT NULL;
+
+-- Verify:
+--   SELECT * FROM chat_room;
+--   SELECT url_id, file_name, template FROM page WHERE url_id LIKE 'WORDING_CHAT%' OR url_id='WORDING_ADMIN_CONFIG_CHAT';
+
+
+-- ---------- migrate_add_login_lockout.sql ----------
+-- ============================================================
+-- AstrX migration: brute-force login lockout column (fix M4)
+-- Adds a per-account temporary-lockout expiry to the `user` table.
+-- Safe to re-run (idempotent ADD COLUMN IF NOT EXISTS).
+-- ============================================================
+
+-- login_locked_until : unix timestamp until which login is refused for this
+--                      account, set once `login_lockout_threshold` consecutive
+--                      failed logins are reached and held for
+--                      `login_lockout_cooldown` seconds. NULL = not locked.
+ALTER TABLE `user`
+    ADD COLUMN IF NOT EXISTS `login_locked_until` INT UNSIGNED NULL AFTER `login_attempts`;
+
+
+-- ---------- migrate_api.sql ----------
+-- ============================================================
+-- AstrX migration: API core (fix99)
+-- Adds the api_key table and the page.api_enabled flag.
+-- Safe to re-run.
+-- ============================================================
+
+-- 1. Per-page opt-in flag. Defaults to 0 — pages must be explicitly
+--    api-enabled before they appear under /api/.
+ALTER TABLE `page`
+    ADD COLUMN IF NOT EXISTS `api_enabled` TINYINT NOT NULL DEFAULT 0
+    AFTER `comments`;
+
+-- 2. Rebuild resolved_page view to include api_enabled.
+--    DROP + CREATE is required because MariaDB doesn't support ALTER VIEW
+--    column lists. The view is just a read projection over the underlying
+--    tables — it has no data of its own.
+DROP VIEW IF EXISTS `resolved_page`;
+CREATE VIEW `resolved_page` AS
+SELECT p.id,
+       p.url_id,
+       p.i18n,
+       p.file_name,
+       p.template,
+       p.controller,
+       p.hidden,
+       p.comments,
+       p.api_enabled,
+       pr.`index`,
+       pr.follow,
+       pm.title,
+       pm.description,
+       t.file_name AS template_file_name
+FROM `page` p
+         LEFT JOIN `page_robots`   pr ON pr.page_id   = p.id
+         LEFT JOIN `page_meta`     pm ON pm.page_id   = p.id
+         LEFT JOIN `page_template` pt ON pt.page_id   = p.id
+         LEFT JOIN `template`      t  ON t.id          = pt.template_id;
+
+-- 3. API keys. One user can have many keys; each key has a label so the
+--    user can remember what it's for ("My CLI tool", "Mobile app", etc.).
+--    key_hash is sha256(raw_key) — the raw key is shown to the user once
+--    on creation and is never recoverable.
+CREATE TABLE IF NOT EXISTS `api_key`
+(
+    `id`           BINARY(16)   NOT NULL PRIMARY KEY,
+    `user_id`      BINARY(16)   NOT NULL,
+    `label`        VARCHAR(64)  NOT NULL,
+    `key_hash`     CHAR(64)     NOT NULL UNIQUE,    -- sha256 hex, 64 chars
+    `created_at`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_used_at` TIMESTAMP    NULL,
+    `expires_at`   TIMESTAMP    NULL,                -- NULL = never expires
+    `revoked`      TINYINT      NOT NULL DEFAULT 0,
+    FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    INDEX idx_user (`user_id`),
+    INDEX idx_revoked (`revoked`)
+);
+
+
+-- ---------- migrate_api_profile.sql ----------
+-- ============================================================
+-- AstrX migration: enable the profile page as the first API endpoint (fix100)
+-- ============================================================
+
+-- The profile page is now a public read-only endpoint exposing
+-- safe-to-share user fields. Tagged at the controller via
+-- ContextScope::SHARED — see ProfileController.php.
+UPDATE `page` SET `api_enabled` = 1 WHERE `url_id` = 'WORDING_PROFILE';
+
+
+-- ---------- migrate_captcha_abuse.sql ----------
+-- ============================================================
+-- AstrX migration: captcha abuse policy columns (fix105)
+-- Limits how often a captcha can be reloaded and adds a cooldown.
+-- Safe to re-run.
+-- ============================================================
+
+-- regen_count : number of times this captcha has been reloaded.
+--               Capped at CaptchaService::MAX_REGENS (default 5) — past that,
+--               the regenerate call is a no-op and returns the existing image.
+-- last_regen_at: timestamp of the most recent regeneration. Used by the
+--               cooldown check (default 2s between regens for the same id).
+ALTER TABLE `captcha`
+    ADD COLUMN IF NOT EXISTS `regen_count`   INT       NOT NULL DEFAULT 0 AFTER `expires_at`,
+    ADD COLUMN IF NOT EXISTS `last_regen_at` TIMESTAMP NULL              AFTER `regen_count`;
+
+
+-- ---------- migrate_captcha_iframe.sql ----------
+-- ============================================================
+-- AstrX migration: iframe-reloadable captcha pages (fix111)
+-- Re-delivery of fix104's migrate_captcha_iframe.sql, but without the
+-- api_enabled column reference — that column only exists after
+-- migrate_api.sql has run, and the original migration would silently
+-- fail on a DB that hadn't seen the API migration yet.
+--
+-- This version uses only columns present in the canonical schema in
+-- src/setup/tables.sql, so it works regardless of which other
+-- migrations have or haven't been applied.
+--
+-- Safe to re-run.
+-- ============================================================
+
+-- 1. The two page rows. Default api_enabled=0 is fine if the column exists;
+--    if it doesn't, the column is simply not referenced.
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_CAPTCHA_IMAGE', 1, 'captcha_image', 0, 1, 0, 0),
+    ('WORDING_CAPTCHA_FRAME', 1, 'captcha_frame', 0, 1, 0, 0);
+
+-- 2. Closure self-references (used by the routing layer for ancestor lookups).
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+
+-- 3. Page meta — both hidden from search engines via page_robots.
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+
+-- ============================================================
+-- VERIFICATION (run separately to check state):
+--
+-- SELECT id, url_id, file_name, template, controller, hidden
+--   FROM `page`
+--  WHERE url_id IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+--
+-- Expected output: 2 rows, both with template=0, controller=1, hidden=1.
+-- If you get 0 rows, this migration didn't succeed — check the schema
+-- of the `page` table and re-run.
+-- ============================================================
+
+
+-- ---------- migrate_captcha_unhide.sql ----------
+-- ============================================================
+-- AstrX migration: unhide captcha-iframe pages (fix112)
+--
+-- Context: fix104 created the captcha-image and captcha-frame page rows
+-- with hidden=1, on the assumption that `hidden` only meant "hide from
+-- the navbar". It doesn't — the framework's ContentManager also 404s
+-- any hidden page for non-admin users:
+--
+--     if (!$adminViewingHidden && $page->hidden) {
+--         http_response_code(HttpStatus::NOT_FOUND->value);
+--     }
+--
+-- These captcha endpoints are hit by anonymous users during registration,
+-- so they MUST be reachable without admin perms. The right pattern (same
+-- as 'avatar' id=10 and 'WORDING_LOGOUT' id=19) is hidden=0 — internal,
+-- not user-facing, but routable. The navbar is built from the `navbar`
+-- table anyway, not by listing non-hidden pages, so flipping the flag
+-- has zero impact on what users see in navigation.
+--
+-- Safe to re-run.
+-- ============================================================
+
+UPDATE `page`
+   SET `hidden` = 0
+ WHERE `url_id` IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+
+-- ============================================================
+-- VERIFICATION:
+--
+-- SELECT id, url_id, file_name, template, controller, hidden
+--   FROM `page`
+--  WHERE url_id IN ('WORDING_CAPTCHA_IMAGE', 'WORDING_CAPTCHA_FRAME');
+--
+-- Expected: 2 rows, template=0, controller=1, hidden=0.
+-- ============================================================
+
+
+-- ---------- migrate_chat_admin_panel.sql ----------
+-- ============================================================
+-- AstrX migration: in-chat Administrative-functions panel page
+-- ============================================================
+-- Registers the moderator admin panel page (file_name `chat_admin` →
+-- ChatAdminController), reached from the chat toolbar's Admin button and gated
+-- by CHAT_MODERATE inside the controller. No schema change — the panel reuses
+-- `chat_presence` (the sessions view) and `chat_message.type` = 'broadcast'.
+-- New migration file (never edit an applied one — the setup runner rejects an
+-- applied migration whose checksum changed). Idempotent.
+-- ============================================================
+
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_CHAT_ADMIN', 1, 'chat_admin', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_CHAT_ADMIN';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_CHAT_ADMIN';
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_CHAT_ADMIN';
+
+
+-- ---------- migrate_chat_filters.sql ----------
+-- Phase 4 — managed word + link filters (enforcement layer).
+--
+-- Distinct from the cosmetic WordCensor (config textarea that stars-out/blocks):
+-- each row here is a literal pattern matched against the whole message (word) or
+-- only within its http(s) URLs (link); on a hit the action fires — block the
+-- post, or kick the poster. Staff are exempt unless apply_to_mods is set.
+--
+-- Idempotent: CREATE TABLE IF NOT EXISTS + INSERT IGNORE page registration.
+-- Independent of every other migration's order.
+
+CREATE TABLE IF NOT EXISTS `chat_filters`
+(
+    `id`            INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `pattern`       VARCHAR(255) NOT NULL,
+    `kind`          TINYINT      NOT NULL DEFAULT 0,   -- 0 word, 1 link
+    `action`        TINYINT      NOT NULL DEFAULT 0,   -- 0 block, 1 kick
+    `apply_to_mods` TINYINT      NOT NULL DEFAULT 0,   -- 0 mods exempt, 1 applies to mods too
+    `created_at`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- Register the admin management page (file_name admin_chat_filters →
+-- AstrX\Controller\AdminChatFiltersController, template=1 site chrome).
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_ADMIN_CHAT_FILTERS', 1, 'admin_chat_filters', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_ADMIN_CHAT_FILTERS';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_ADMIN_CHAT_FILTERS';
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_ADMIN_CHAT_FILTERS';
+
+
+-- ---------- migrate_chat_parity_cde.sql ----------
+-- ============================================================
+-- AstrX migration: chat parity phases C/D/E
+-- ============================================================
+-- Adds the per-user "incognito" flag to chat_settings (hide from the roster).
+-- The phase C/D/E CONFIG keys (announce_join_leave, image_embed, entry_password,
+-- chat_enabled, disabled_message) live in Chat.config.php, not the DB.
+-- New migration file (never edit an applied one). Idempotent.
+--
+-- NOTE: no `AFTER <col>` clause. Migrations run in alphabetical filename order,
+-- and this file sorts BEFORE migrate_chat_profile.sql — so the columns that
+-- file adds (e.g. hide_chatters) may not exist yet. Column position is
+-- cosmetic; the app reads columns by name, so we just append.
+-- ============================================================
+
+ALTER TABLE `chat_settings`
+    ADD COLUMN IF NOT EXISTS `incognito` TINYINT NOT NULL DEFAULT 0;
+
+
+-- ---------- migrate_chat_profile.sql ----------
+-- ============================================================
+-- AstrX migration: chat profile expansion (le-chat parity, phase A)
+-- ============================================================
+-- Adds per-user profile fields to chat_settings (background colour, font
+-- family, per-user sort direction, hide-chatters) and registers the chat Help
+-- page. New migration file (never edit migrate_add_chat.sql — the setup runner
+-- rejects an applied migration whose checksum changed). Idempotent.
+-- ============================================================
+
+-- ---- chat_settings: new per-user profile columns --------------------------
+ALTER TABLE `chat_settings`
+    ADD COLUMN IF NOT EXISTS `bg_color`      VARCHAR(16) NULL       AFTER `text_color`,
+    ADD COLUMN IF NOT EXISTS `font_family`   VARCHAR(32) NULL       AFTER `bg_color`,
+    ADD COLUMN IF NOT EXISTS `sort_dir`      TINYINT     NULL       AFTER `font_family`,
+    ADD COLUMN IF NOT EXISTS `hide_chatters` TINYINT     NOT NULL DEFAULT 0 AFTER `sort_dir`;
+
+-- ---- Chat Help page (templated, no navbar entry — reached via the chat toolbar)
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_CHAT_HELP', 1, 'chat_help', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_CHAT_HELP';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_CHAT_HELP';
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_CHAT_HELP';
+
+
+-- ---------- migrate_chat_profile_tz.sql ----------
+-- ============================================================
+-- AstrX migration: per-user chat timezone + notes (profile enrichment)
+-- ============================================================
+-- Adds a per-user timezone (timestamps render in the viewer's zone) and a
+-- personal notes scratchpad to chat_settings. New migration file (never edit an
+-- applied one). Idempotent.
+--
+-- NOTE: no `AFTER <col>` clause — migrations run alphabetically and must not
+-- depend on a column another migration adds. Column position is cosmetic.
+-- ============================================================
+
+ALTER TABLE `chat_settings`
+    ADD COLUMN IF NOT EXISTS `timezone` VARCHAR(48) NULL,
+    ADD COLUMN IF NOT EXISTS `notes`    TEXT        NULL;
+
+
+-- ---------- migrate_feed.sql ----------
+-- ============================================================
+-- AstrX migration: Atom feed page (fix115)
+-- Registers the /<locale>/feed.xml endpoint backed by FeedController.
+-- Idempotent.
+-- ============================================================
+
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_FEED', 1, 'feed', 0, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_FEED';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_FEED';
+
+-- Crawlers should know about the feed — index=1, follow=1.
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 1, 1 FROM `page` WHERE url_id = 'WORDING_FEED';
+
+-- Verify:
+--   SELECT * FROM page WHERE url_id = 'WORDING_FEED';
+
+
+-- ---------- migrate_fix_banlist_ip_prefix.sql ----------
+-- ============================================================
+-- AstrX migration: fix banlist_ip.prefix_len overflow (IPv4 bans)
+--
+-- Bug: `banlist_ip.prefix_len` was TINYINT — signed, max 127. But an IPv4
+-- address is stored as an IPv4-mapped IPv6 network (::ffff:a.b.c.d), so
+-- BanlistRepository::parseCidr() reports a /128 prefix (a bare IPv4 /32 + 96).
+-- 128 > 127, so EVERY IPv4 ban overflowed the column and the INSERT failed
+-- silently (banCidr returned an error the callers treat as best-effort). Net
+-- effect: kicked/banned guests were only nick-banned, never IP-banned, so they
+-- could rejoin from the same IP by changing nickname.
+--
+-- Fix: widen to TINYINT UNSIGNED (0-255), which holds 128. Existing values
+-- (0-127) are preserved. Idempotent — MODIFY to the same type is a no-op.
+--
+-- This is a framework-level banlist fix; it also repairs admin IPv4/`/32` bans,
+-- not just chat kicks.
+-- ============================================================
+
+ALTER TABLE `banlist_ip` MODIFY COLUMN `prefix_len` TINYINT UNSIGNED NOT NULL;
+
+-- ============================================================
+-- VERIFICATION:
+--   SHOW COLUMNS FROM `banlist_ip` LIKE 'prefix_len';   -- Type: tinyint(3) unsigned
+-- ============================================================
+
+
+-- ---------- migrate_fix_view.sql ----------
+-- ============================================================
+-- AstrX migration: bulletproof resolved_page view rebuild (fix122)
+-- Resolves "Unknown column 'index' in 'SELECT'" from PageHandler.
+--
+-- Run with:
+--   docker compose exec -T mariadb mysql -u user -ppassword content_manager \
+--       < src/setup/migrate_fix_view.sql
+--
+-- This is the same as fix121 but with extra safety steps and explicit
+-- error-on-failure. Idempotent. Safe to re-run.
+-- ============================================================
+
+-- 1. Make sure page.api_enabled exists (no-op if it already does).
+ALTER TABLE `page`
+    ADD COLUMN IF NOT EXISTS `api_enabled` TINYINT NOT NULL DEFAULT 0;
+
+-- 2. Drop the view unconditionally. We want a clean recreate, no merge
+--    behavior. If the view doesn't exist, IF EXISTS prevents an error.
+DROP VIEW IF EXISTS `resolved_page`;
+
+-- 3. Recreate. Column names match PageHandler::getPage()'s SELECT exactly:
+--    `id`, `url_id`, `i18n`, `file_name`, `template`, `controller`,
+--    `hidden`, `comments`, `api_enabled`, `index`, `follow`, `title`,
+--    `description`, `template_file_name`.
+--    `index` and `follow` come from page_robots; `title`/`description`
+--    from page_meta; `template_file_name` from the template table joined
+--    via page_template.
+CREATE VIEW `resolved_page` AS
+SELECT p.id,
+       p.url_id,
+       p.i18n,
+       p.file_name,
+       p.template,
+       p.controller,
+       p.hidden,
+       p.comments,
+       p.api_enabled,
+       COALESCE(pr.`index`, 1) AS `index`,
+       COALESCE(pr.follow, 1) AS follow,
+       COALESCE(pm.title, '') AS title,
+       COALESCE(pm.description, '') AS description,
+       COALESCE(t.file_name, '') AS template_file_name
+FROM `page` p
+         LEFT JOIN `page_robots`   pr ON pr.page_id = p.id
+         LEFT JOIN `page_meta`     pm ON pm.page_id = p.id
+         LEFT JOIN `page_template` pt ON pt.page_id = p.id
+         LEFT JOIN `template`      t  ON t.id       = pt.template_id;
+
+-- 4. Inline verification (will fail loudly if anything is wrong).
+--    The SELECT below uses the exact column list PageHandler expects.
+--    If this returns rows (or even "Empty set"), the view is healthy.
+--    If it errors out, the view is STILL broken and the rebuild above
+--    didn't take.
+SELECT `id`, `url_id`, `i18n`, `file_name`, `template`, `controller`,
+       `hidden`, `comments`, `api_enabled`,
+       `index`, `follow`,
+       `title`, `description`,
+       `template_file_name`
+  FROM `resolved_page`
+ LIMIT 1;
+
+
+-- ---------- migrate_js_browser.sql ----------
+-- ============================================================
+-- AstrX migration: JS browser namespace hardening (fix-js-browser)
+-- Ensures /<locale>/js/ is a visible, template-less controller page.
+-- ============================================================
+
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_JS_APP', 1, 'js', 0, 1, 0, 0);
+
+UPDATE `page`
+   SET `file_name` = 'js',
+       `template` = 0,
+       `controller` = 1,
+       `hidden` = 0,
+       `comments` = 0
+ WHERE `url_id` = 'WORDING_JS_APP';
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_JS_APP';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, 'JS browser', 'Experimental client-side browser runtime.'
+  FROM `page`
+ WHERE url_id = 'WORDING_JS_APP';
+
+UPDATE `page_meta` pm
+JOIN `page` p ON p.id = pm.page_id
+   SET pm.title = CASE WHEN pm.title = '' THEN 'JS browser' ELSE pm.title END,
+       pm.description = CASE WHEN pm.description = '' THEN 'Experimental client-side browser runtime.' ELSE pm.description END
+ WHERE p.url_id = 'WORDING_JS_APP';
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_JS_APP';
+
+UPDATE `page_robots` pr
+JOIN `page` p ON p.id = pr.page_id
+   SET pr.`index` = 0,
+       pr.follow = 0
+ WHERE p.url_id = 'WORDING_JS_APP';
+
+
+-- ---------- migrate_js_spa.sql ----------
+-- ============================================================
+-- AstrX migration: experimental JS SPA page (fix117)
+-- Registers /<locale>/js/ backed by JsController.
+-- ============================================================
+
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_JS_APP', 1, 'js', 0, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_JS_APP';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_JS_APP';
+
+-- Search engines should NOT crawl the SPA — it's an experimental client
+-- view of the same content that's already served the traditional way.
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_JS_APP';
+
+
+-- ---------- migrate_remove_captcha_test.sql ----------
+-- Remove the leftover 'captcha-test' page: an unauthenticated, CSRF-less test
+-- endpoint that was wired to the production captcha table. Idempotent — safe to
+-- run repeatedly. After running this, delete the controller class file:
+--   src/AstrX/Controller/CaptchaTestController.php
+DELETE pc
+  FROM `page_closure` pc
+  JOIN `page` p ON (p.id = pc.ancestor OR p.id = pc.descendant)
+ WHERE p.url_id = 'captcha-test';
+
+DELETE FROM `page` WHERE url_id = 'captcha-test';
+
+
+-- ---------- migrate_remove_seed_admin.sql ----------
+-- Remove the legacy seeded Administrator account if it was created by an older
+-- setup SQL file. The setup wizard now creates the first administrator from the
+-- submitted setup form. This is intentionally narrow: it deletes only the exact
+-- historical seed account/hash, not a real admin whose password was changed.
+
+DELETE FROM `user`
+WHERE username = 'Administrator'
+  AND password = '$argon2id$v=19$m=65536,t=4,p=1$b2Z2cnVLM0pSMy9xUVVicw$6KUaczD3Y6rGl28q61y6YXxriNmGqKv2I6xucl8rcSE'
+  AND type = 1
+  AND verified = 1
+  AND deleted = 0;
+
+
+-- ---------- migrate_spa_api_enable.sql ----------
+-- ============================================================
+-- AstrX migration: enable API for SPA + safety-net view rebuild (fix120)
+--
+-- This re-delivers fix119's enablement and ALSO rebuilds the resolved_page
+-- view in case the api_enabled column was missing from it (which would
+-- cause $page->apiEnabled to always be NULL → /api/<slug> always 404).
+--
+-- Safe to re-run. Idempotent. No data loss.
+-- ============================================================
+
+-- 1. Ensure the column exists. NOTE: this is from migrate_api.sql (fix99);
+--    we run it again here defensively in case the user has an older schema.
+ALTER TABLE `page`
+    ADD COLUMN IF NOT EXISTS `api_enabled` TINYINT NOT NULL DEFAULT 0;
+
+-- 2. Drop and recreate the resolved_page view so it includes api_enabled.
+--    A view referencing a column that didn't exist when the view was
+--    created will NOT pick up the column post-hoc — the view must be
+--    rebuilt. DROP+CREATE is the simplest path.
+DROP VIEW IF EXISTS `resolved_page`;
+CREATE VIEW `resolved_page` AS
+SELECT p.id,
+       p.url_id,
+       p.i18n,
+       p.file_name,
+       p.template,
+       p.controller,
+       p.hidden,
+       p.comments,
+       p.api_enabled,
+       COALESCE(pr.`index`, 1) AS `index`,
+       COALESCE(pr.follow, 1) AS follow,
+       COALESCE(pm.title, '') AS title,
+       COALESCE(pm.description, '') AS description,
+       COALESCE(t.file_name, '') AS template_file_name
+FROM `page` p
+         LEFT JOIN `page_robots`   pr ON pr.page_id   = p.id
+         LEFT JOIN `page_meta`     pm ON pm.page_id   = p.id
+         LEFT JOIN `page_template` pt ON pt.page_id   = p.id
+         LEFT JOIN `template`      t  ON t.id          = pt.template_id;
+
+-- 3. Flip api_enabled=1 on the pages the SPA needs.
+UPDATE `page`
+   SET `api_enabled` = 1
+ WHERE `url_id` IN (
+       'WORDING_MAIN',
+       'WORDING_USER_HOME',
+       'WORDING_PROFILE',
+       'WORDING_LOGIN',
+       'WORDING_REGISTER',
+       'WORDING_RECOVER'
+ );
+
+-- ============================================================
+-- VERIFICATION (paste these into a separate mysql session):
+--
+-- -- (a) Schema check: does page.api_enabled exist?
+-- SHOW COLUMNS FROM page LIKE 'api_enabled';
+-- -- expected: one row with Type=tinyint(4), Default=0
+--
+-- -- (b) View check: does resolved_page include api_enabled?
+-- SHOW COLUMNS FROM resolved_page LIKE 'api_enabled';
+-- -- expected: one row
+--
+-- -- (c) Data check: which pages have api_enabled=1?
+-- SELECT url_id, api_enabled FROM page WHERE api_enabled = 1 ORDER BY url_id;
+-- -- expected: 6 rows (MAIN, USER_HOME, PROFILE, LOGIN, REGISTER, RECOVER)
+-- ============================================================
+
+
+-- ---------- migrate_themes.sql ----------
+-- ============================================================
+-- AstrX migration: theme system (fix95)
+-- Run ONCE on an existing database. Safe to re-run (uses IF NOT EXISTS).
+-- ============================================================
+
+-- 1. User table: per-user theme preference. NULL = use global theme.
+ALTER TABLE `user`
+    ADD COLUMN IF NOT EXISTS `theme` VARCHAR(64) NULL DEFAULT NULL
+    AFTER `deletion_mode`;
+
+-- 2. Register the admin themes page (idempotent — uses INSERT IGNORE).
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES ('WORDING_ADMIN_THEMES', 1, 'admin_themes', 1, 1, 0, 0);
+
+-- 3. Closure self-reference for the new page (no parent — top-level admin page).
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_ADMIN_THEMES';
+
+-- 4. Page meta (title + description come from the lang file via WORDING_*).
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_ADMIN_THEMES';
+
+-- 5. Robots: no-index, no-follow for admin pages.
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_ADMIN_THEMES';
+
+
+-- ---------- migrate_zz_repair_resolved_page.sql ----------
+-- ============================================================
+-- AstrX migration: final resolved_page shape repair.
+--
+-- Several older migrations rebuilt `resolved_page` with transitional
+-- column names such as robots_index/meta_title. PageHandler expects the
+-- canonical names below, especially `index` and `follow`.
+--
+-- This file is intentionally named migrate_zz_* so the setup wizard runs it
+-- after older migrations that may recreate the view.
+-- Safe to re-run.
+-- ============================================================
+
+ALTER TABLE `page`
+    ADD COLUMN IF NOT EXISTS `api_enabled` TINYINT NOT NULL DEFAULT 0
+    AFTER `comments`;
+
+DROP VIEW IF EXISTS `resolved_page`;
+CREATE VIEW `resolved_page` AS
+SELECT p.id,
+       p.url_id,
+       p.i18n,
+       p.file_name,
+       p.template,
+       p.controller,
+       p.hidden,
+       p.comments,
+       p.api_enabled,
+       COALESCE(pr.`index`, 1) AS `index`,
+       COALESCE(pr.follow, 1) AS follow,
+       COALESCE(pm.title, '') AS title,
+       COALESCE(pm.description, '') AS description,
+       COALESCE(t.file_name, '') AS template_file_name
+FROM `page` p
+         LEFT JOIN `page_robots`   pr ON pr.page_id   = p.id
+         LEFT JOIN `page_meta`     pm ON pm.page_id   = p.id
+         LEFT JOIN `page_template` pt ON pt.page_id   = p.id
+         LEFT JOIN `template`      t  ON t.id          = pt.template_id;
+
+SELECT `id`, `url_id`, `i18n`, `file_name`, `template`, `controller`,
+       `hidden`, `comments`, `api_enabled`, `index`, `follow`, `title`,
+       `description`, `template_file_name`
+  FROM `resolved_page`
+ LIMIT 1;
+
+
+-- ---------- migrate_zz_theme_nav_entry.sql ----------
+-- ============================================================
+-- AstrX migration: expose the global theme selector in admin nav
+-- ============================================================
+-- The theme manager page already exists on upgraded installs, but older
+-- migrations created the page without adding it to the admin navbar.
+
+SET @theme_page_id := (
+    SELECT id FROM `page`
+    WHERE url_id = 'WORDING_ADMIN_THEMES'
+    LIMIT 1
+);
+
+SET @admin_navbar_id := (
+    SELECT id FROM `navbar`
+    WHERE name = 'admin'
+    LIMIT 1
+);
+
+SET @admin_pin_id := (
+    SELECT id FROM `navbar_pin`
+    WHERE navbar_id = @admin_navbar_id
+    ORDER BY sort_order DESC, id DESC
+    LIMIT 1
+);
+
+SET @existing_theme_nav_entry_id := (
+    SELECT ni.id
+      FROM `navbar_internal` ni
+      JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @theme_page_id
+       AND e.pin_id   = @admin_pin_id
+     LIMIT 1
+);
+
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL
+ WHERE @theme_page_id IS NOT NULL
+   AND @admin_pin_id   IS NOT NULL
+   AND @existing_theme_nav_entry_id IS NULL;
+
+SET @theme_nav_entry_id := COALESCE(@existing_theme_nav_entry_id, LAST_INSERT_ID());
+
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @theme_nav_entry_id, @admin_pin_id, 1, 'WORDING_ADMIN_THEMES', 1, 1, 0
+ WHERE @theme_page_id IS NOT NULL
+   AND @admin_pin_id   IS NOT NULL
+   AND @theme_nav_entry_id IS NOT NULL;
+
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @theme_nav_entry_id, @theme_page_id
+ WHERE @theme_page_id IS NOT NULL
+   AND @theme_nav_entry_id IS NOT NULL;
+
+
+-- ---------- migrate_zzz_admin_nav_consolidate.sql ----------
+-- ============================================================
+-- AstrX migration: consolidate the admin navbar into one group
+-- ============================================================
+-- An earlier chat migration created its own admin navbar pin, and the
+-- theme-nav migration appends its entry to the LAST admin pin — so upgraded
+-- databases could end up with a stray trailing admin group AND a duplicated
+-- "Themes" entry living in it. A fresh install is already correct, so on a
+-- clean database every statement below is a no-op.
+--
+-- This migration converges ANY admin navbar to the shipped shape: the
+-- Dashboard pin, plus a single alpha-sorted group that holds every other admin
+-- entry, with no duplicate entries and no empty pins.
+--
+-- FK chain (all ON DELETE CASCADE): navbar_entry_ids <- navbar_entry <-
+-- navbar_internal / navbar_external. Deleting an id from navbar_entry_ids
+-- removes the entry and its internal/external row in one shot.
+--
+-- Idempotent and destructive-safe: it only ever removes exact duplicates
+-- (two entries pointing at the same page) and moves entries between pins.
+-- ============================================================
+
+SET @admin_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+
+-- The Dashboard pin = the pin that holds the WORDING_ADMIN entry (kept as-is).
+SET @dash_pin_id := (
+    SELECT e.pin_id
+      FROM `navbar_entry` e
+      JOIN `navbar_pin` p ON p.id = e.pin_id
+     WHERE p.navbar_id = @admin_navbar_id
+       AND e.internal = 1 AND e.name = 'WORDING_ADMIN'
+     ORDER BY e.pin_id
+     LIMIT 1
+);
+
+-- The canonical group pin = the alpha-sorted (sort_mode = 0) admin pin with the
+-- lowest id; fall back to the lowest non-dashboard admin pin if none is alpha.
+SET @alpha_pin_id := (
+    SELECT p.id FROM `navbar_pin` p
+     WHERE p.navbar_id = @admin_navbar_id AND p.sort_mode = 0
+     ORDER BY p.id
+     LIMIT 1
+);
+SET @alpha_pin_id := COALESCE(@alpha_pin_id, (
+    SELECT p.id FROM `navbar_pin` p
+     WHERE p.navbar_id = @admin_navbar_id
+       AND (@dash_pin_id IS NULL OR p.id <> @dash_pin_id)
+     ORDER BY p.id
+     LIMIT 1
+));
+
+-- 1) Remove duplicate internal admin entries (same page_id): keep the lowest id.
+DELETE FROM `navbar_entry_ids`
+ WHERE id IN (
+    SELECT id FROM (
+        SELECT ni.id AS id
+          FROM `navbar_internal` ni
+          JOIN `navbar_entry` e ON e.id = ni.id
+          JOIN `navbar_pin`   p ON p.id = e.pin_id
+         WHERE p.navbar_id = @admin_navbar_id
+           AND ni.id > (
+               SELECT MIN(ni2.id)
+                 FROM `navbar_internal` ni2
+                 JOIN `navbar_entry` e2 ON e2.id = ni2.id
+                 JOIN `navbar_pin`   p2 ON p2.id = e2.pin_id
+                WHERE p2.navbar_id = @admin_navbar_id
+                  AND ni2.page_id = ni.page_id
+           )
+    ) AS dupes
+ );
+
+-- 2) Move every remaining admin entry EXCEPT the Dashboard onto the group pin.
+UPDATE `navbar_entry` e
+   JOIN `navbar_pin` p ON p.id = e.pin_id
+   SET e.pin_id = @alpha_pin_id
+ WHERE @alpha_pin_id IS NOT NULL
+   AND p.navbar_id = @admin_navbar_id
+   AND e.pin_id <> @alpha_pin_id
+   AND NOT (e.internal = 1 AND e.name = 'WORDING_ADMIN');
+
+-- 3) Drop any now-empty admin pins, keeping the Dashboard and the group pin.
+DELETE FROM `navbar_pin`
+ WHERE navbar_id = @admin_navbar_id
+   AND (@dash_pin_id  IS NULL OR id <> @dash_pin_id)
+   AND (@alpha_pin_id IS NULL OR id <> @alpha_pin_id)
+   AND id NOT IN (SELECT DISTINCT pin_id FROM `navbar_entry`);
+
+-- Verify:
+--   SELECT e.id, e.pin_id, e.name FROM navbar_entry e
+--     JOIN navbar_pin p ON p.id = e.pin_id JOIN navbar n ON n.id = p.navbar_id
+--    WHERE n.name = 'admin' ORDER BY e.pin_id, e.sort_order, e.id;
+
+
+-- ---------- migrate_zzz_chat_unhide.sql ----------
+-- ============================================================
+-- AstrX migration: unhide chat pages
+--
+-- Symptom: an admin viewing a chat page (e.g. the in-chat Admin panel or the
+-- chat configuration page) sees the banner
+--     "⚠ Admin view: this page is hidden from public visitors."
+--
+-- Cause: that page's row carries hidden=1 on a long-lived install. The
+-- framework's ContentManager 404s a hidden page for non-admins AND shows
+-- admins that banner (astrx.content/page_hidden):
+--
+--     $adminViewingHidden = $page->hidden && $gate->can(ADMIN_ACCESS);
+--     if (!$adminViewingHidden && $page->hidden) { http_response_code(404); }
+--
+-- The chat pages are internal / gated by their own controllers, not public
+-- navbar entries — the navbar is built from the `navbar` table, so `hidden`
+-- has ZERO impact on navigation (same rationale as migrate_captcha_unhide.sql).
+-- The correct value is hidden=0: routable, with the controller enforcing
+-- access (CHAT_MODERATE / ADMIN_CONFIG_CHAT). A registration migration's
+-- INSERT IGNORE cannot rewrite an existing row, so this UPDATE corrects it.
+--
+-- Named zzz_* so it runs after every page-registration migration. Idempotent,
+-- safe to re-run (the guard skips rows already at 0).
+-- ============================================================
+
+UPDATE `page`
+   SET `hidden` = 0
+ WHERE `hidden` <> 0
+   AND `url_id` IN (
+       'WORDING_CHAT',
+       'WORDING_CHAT_STREAM',
+       'WORDING_CHAT_LOGIN',
+       'WORDING_CHAT_WAIT',
+       'WORDING_CHAT_USERS',
+       'WORDING_CHAT_PM',
+       'WORDING_CHAT_SETTINGS',
+       'WORDING_CHAT_HELP',
+       'WORDING_CHAT_ADMIN',
+       'WORDING_ADMIN_CONFIG_CHAT',
+       'WORDING_ADMIN_CHAT_FILTERS'
+   );
+
+-- ============================================================
+-- VERIFICATION:
+--   SELECT url_id, file_name, hidden FROM `page`
+--    WHERE url_id LIKE '%CHAT%';
+--   Expected: every chat page hidden=0.
+-- ============================================================
