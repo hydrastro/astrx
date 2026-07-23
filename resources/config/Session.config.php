@@ -26,7 +26,7 @@ return [
         // WARNING: changing this value invalidates ALL existing sessions.
         // NOTE: the old public value that once shipped here is now hard-ignored
         // by the handler, so it can never be used even if pasted back in.
-        'server_secret' => '30ceb60471b7a1602ff0535d26a7e61180751d8f8219f4c11e673cc02ed351eb',
+        'server_secret' => '',
 
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)

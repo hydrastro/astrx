@@ -10,45 +10,74 @@ moderation stack, the mail/webmail layer, and the live chat are all pure PHP on
 top of MariaDB and a handful of standard extensions. There is no build step
 required to run it, no CDN dependency, and no client-side framework.
 
-## Design principles
+## What's distinctive
 
-**No external dependencies.** Runtime is PHP 8.4 plus `pdo_mysql`, `gd`,
-`fileinfo`, and `mbstring`. Everything else — routing, templating, DI, i18n,
-sessions, auth, the crypto envelope — is in `src/`.
+- **No JavaScript required.** Every page, form, moderation control, and the live
+  chat function with scripting disabled. Navigation is server-rendered and
+  Post/Redirect/Get throughout; the chat "streams" by auto-refreshing iframes,
+  not XHR.
+- **One controller, HTML *and* JSON.** The web view and the JSON API are the
+  same code path. A page opts into the API with a flag, and per-value
+  `ContextScope` tags decide exactly what crosses into JSON — no parallel "API
+  controllers" to keep in sync.
+- **CSS-only themes.** A theme is a directory of metadata plus a stylesheet;
+  switching it changes no markup and ships no script.
+- **Errors are values, not control flow.** Operations return a `Result<T>` monad
+  carrying typed `Diagnostic` objects rather than throwing — all the way to the
+  edge, and into the API envelope.
+- **Zero runtime dependencies**, **native English/Italian i18n** enforced by a
+  parity check, and a tree that is clean at **PHPStan level 10**.
 
-**No-JavaScript-first.** Every page, form, moderation control, and the live
-chat itself function with scripting disabled. Navigation is server-rendered and
-Post/Redirect/Get throughout; the chat "streams" by auto-refreshing iframes, not
-XHR. JavaScript, where present, is strictly progressive enhancement.
+## Operating modes
 
-**Errors are values, not control flow.** Operations return a `Result<T>` monad
-carrying typed `Diagnostic` objects rather than throwing. Diagnostics have
-stable ids, severity levels, and locale-resolved messages, and they compose up
-the call stack — so a failure deep in a repository surfaces as structured,
-translatable data at the edge instead of an exception or a bare `false`.
+The same application runs through three front controllers, selected at the
+web-server level:
 
-**Native internationalization.** No user-facing string is hardcoded. Every
-message is a translation key shipped in English and Italian and kept in lockstep
-by `tools/check_lang_parity.php`, which fails the build if the two locales drift.
-
-**Verified, not asserted.** The whole `src/`, `public/`, and `tools/` tree is
-clean at **PHPStan level 10**, the strictest setting.
+- **Server-rendered (default)** — `public/index.php`. Plain, fast HTML with PRG
+  navigation; the mode the whole framework is designed around.
+- **Experimental `/js/` browser** — a progressive-enhancement client served
+  under `/<locale>/js/`, with a same-origin API index at
+  `/<locale>/js/api.json`. Entirely optional; the site is fully usable without
+  it.
+- **Compiled bundle** — `php tools/compile.php` packs all of `src/` and the
+  read-only resources into a single `build/astrx.compiled.php` with an on-demand
+  autoloader (not naive concatenation). Serve it directly via
+  `public/compiled.php`, or benchmark it side-by-side under `/compile`
+  (`public/compile/index.php`). Config and uploaded state stay external and
+  mutable. See `docs/COMPILED_BUILD.md`.
 
 ## Architecture
 
-A single front controller (`public/index.php`) resolves the request through the
-router into a page record, then into a controller. Controllers are constructed
-by a reflection-based dependency injector (`AstrX\Injector`) that autowires
-services from their constructor type-hints, and configuration is bound
-declaratively through the `#[InjectConfig]` attribute — a config setter is
-matched to a key in a `*.config.php` file and invoked at wiring time.
+A single front controller resolves the request through the router into a page
+record, then into a controller. Controllers are constructed by a
+reflection-based dependency injector (`AstrX\Injector`) that autowires services
+from their constructor type-hints, and configuration is bound declaratively
+through the `#[InjectConfig]` attribute — a config setter is matched to a key in
+a `*.config.php` file and invoked at wiring time.
 
 Pages live in a database table with a closure table for the hierarchy, are
 rendered through a Mustache-style template engine (escape-by-default, with
 path-traversal-guarded partial loading), and can be decorated with per-page
 meta, robots, keywords, and templates. A navbar builder assembles the menu tree
-from pinned and grouped entries. Optional modules — news, comments, an API, a
+from pinned and grouped entries. Optional modules — news, comments, the API, a
 feed, mail and IMAP webmail — hang off the same core.
+
+| Concern | Where it lives |
+|---|---|
+| Front controllers | `public/index.php`, `public/compiled.php`, `public/compile/` |
+| Routing & dispatch | `src/AstrX/Routing/`, `src/AstrX/ContentManager.php` |
+| Dependency injection | `src/AstrX/Injector/` (reflection autowiring) |
+| Configuration | `#[InjectConfig]` → `resources/config/*.config.php` |
+| Templating | `src/AstrX/Template/` (Mustache-style, escape-by-default) |
+| Result / diagnostics | `src/AstrX/Result/` |
+| Internationalization | `src/AstrX/I18n/`, `resources/lang/{en,it}/` |
+| Auth, sessions, CSRF | `src/AstrX/Auth/`, `src/AstrX/Session/`, `src/AstrX/Csrf/` |
+| Pages & hierarchy | `src/AstrX/Page/` (+ closure table) |
+| Chat | `src/AstrX/Chat/`, `src/AstrX/Controller/Chat*` |
+| Admin & moderation | `src/AstrX/Admin/`, `src/AstrX/Controller/Admin*` |
+| HTTP API | `src/AstrX/Api/` |
+| Mail & webmail | `src/AstrX/Mail/` |
+| Themes | `src/AstrX/Theme/`, `resources/template/themes/` |
 
 ## The chat
 
@@ -64,6 +93,26 @@ protection** with auto-mute, and **EXIF-stripped image attachments** (uploads
 are re-encoded through GD, so metadata and polyglot payloads are discarded and
 only pixels survive). Every limit — retention, message count, refresh interval,
 upload size and dimensions, capacity — is admin-configurable.
+
+## The HTTP API
+
+Any page becomes a JSON endpoint by setting `api_enabled = 1`; the controller
+that renders the web view serves the API unchanged. A response carries both
+structured `data` and the fully-rendered `html` in a single round trip (drop the
+HTML with `?html=0`). What appears in `data` is governed by per-value
+`ContextScope` tags, so enabling the API never blanket-exposes a controller's
+internals — an enabled page with nothing tagged returns `"data": {}`.
+
+| Scope | Web HTML | API JSON |
+|---|---|---|
+| `WEB_ONLY` (default) | yes | never |
+| `SHARED` | yes | yes |
+| `API_PUBLIC` | no | yes |
+| `API_ADMIN` | no | admin callers only |
+
+Authentication is by `astrx_`-prefixed bearer key (192-bit, scoped to one user),
+an existing session cookie, or anonymous — and permissions and policies apply
+exactly as they do on the web. Full reference in `docs/API.md`.
 
 ## Security model
 
@@ -81,6 +130,14 @@ IPv6 so v4 and v6 bans share one code path. An append-only **admin audit log**
 records significant admin actions — who did what, to which resource, from which
 address, and when — across user management, moderation, the banlist, and every
 configuration save.
+
+## Themes
+
+Themes are CSS-only. Each lives in `resources/template/themes/<name>/` as a
+`theme.config.php` (name, description, author, version) plus a stylesheet;
+selecting one swaps the stylesheet without touching markup or shipping any
+script. A site-wide default and per-user overrides are set from the admin and
+user-settings surfaces.
 
 ## Requirements
 
@@ -137,17 +194,26 @@ divergence — run it before committing.
 ```
 php phpstan.phar analyse        # static analysis, level 10, must be clean
 php tools/check_lang_parity.php # en / it translation parity
+php tools/compile.php           # (re)build the single-file compiled bundle
 ```
+
+## Documentation
+
+- `docs/API.md` — the HTTP API: opt-in, context scopes, auth, response envelope.
+- `docs/COMPILED_BUILD.md` — the compiled single-file bundle and how to serve it.
+- `docs/PROFILING.md` — profiling normal vs. compiled front controllers.
 
 ## Project layout
 
 ```
-public/      entry points (index.php router, setup.php, avatar/captcha endpoints)
+public/      entry points — index.php (dev), compiled.php + compile/ (bundle),
+             setup.php, avatar/captcha endpoints
 src/AstrX/   the framework — Chat/, Controller/, Auth/, Admin/, Http/, Api/,
-             Template/, Routing/, Injector/, Result/, Mail/, News/, Comment/, …
+             Template/, Routing/, Injector/, Result/, Mail/, News/, Comment/,
+             Theme/, Navbar/, Page/, …
 src/setup/   init.sql (database bootstrap) + tables.sql (the complete schema)
-resources/   templates (Mustache-style), lang/ (en, it), config/ (*.config.php)
+resources/   templates (Mustache-style + themes/), lang/ (en, it), config/
 docker/      Dockerfiles and service config for the compose stack
-tools/       maintenance scripts (e.g. check_lang_parity.php)
+tools/       maintenance scripts (check_lang_parity.php, compile.php, …)
 docs/        API.md, COMPILED_BUILD.md, PROFILING.md
 ```
