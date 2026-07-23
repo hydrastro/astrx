@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Admin\Diagnostic\AdminDbDiagnostic;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
@@ -53,6 +54,7 @@ final class AdminPagesController extends AbstractController
         private readonly Page                  $page,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -223,6 +225,7 @@ final class AdminPagesController extends AbstractController
 
             $this->pdo->commit();
             $this->flash->set('success', $this->t->t('admin.pages.added'));
+            $this->audit->log('page.create', "page:{$newId}")->drainTo($this->collector);
         } catch (\PDOException $e) {
             if ($this->pdo->inTransaction()) { $this->pdo->rollBack(); }
             // Fix 5.3: friendly message for duplicate-key violations.
@@ -284,6 +287,7 @@ final class AdminPagesController extends AbstractController
                         ':idx2' => $indexFlag, ':follow2' => $followFlag]);
 
             $this->flash->set('success', $this->t->t('admin.pages.updated'));
+            $this->audit->log('page.update', "page:{$id}")->drainTo($this->collector);
         } catch (\PDOException $e) {
             // Fix 5.3: friendly duplicate-key message on update too.
             if ((string) $e->getCode() === '23000') {
@@ -318,6 +322,7 @@ final class AdminPagesController extends AbstractController
             $this->pdo->prepare('DELETE FROM page WHERE id = :id')
                 ->execute([':id' => $id]);
             $this->flash->set('success', $this->t->t('admin.pages.deleted'));
+            $this->audit->log('page.delete', "page:{$id}")->drainTo($this->collector);
         } catch (\PDOException $e) {
             $this->emitDiag($e);
         }

@@ -65,7 +65,8 @@ final class ChatRepository
     }
 
     /**
-     * Fetch the visible (non-expired) messages for a room, oldest first.
+     * Fetch the most recent (non-expired) messages for a room: the newest
+     * `$limit` messages, returned oldest-first for chronological display.
      *
      * @return Result<list<array<string,mixed>>>
      */
@@ -73,14 +74,16 @@ final class ChatRepository
     {
         try {
             $stmt = $this->pdo->prepare(
-                "SELECT m.id, LOWER(HEX(m.user_id)) AS user_id, m.nick, m.color, m.content, m.type,
-                        UNIX_TIMESTAMP(m.created_at) AS created_ts, m.created_at,
-                        u.type AS user_type,
-                        COALESCE(u.display_name, u.username) AS user_display_name,
-                        u.avatar AS user_has_avatar
-                   FROM chat_message m LEFT JOIN user u ON u.id = m.user_id
-                  WHERE m.room_id = :room AND m.expires_at > NOW()
-                  ORDER BY m.created_at ASC, m.id ASC LIMIT :lim"
+                "SELECT * FROM (
+                     SELECT m.id, LOWER(HEX(m.user_id)) AS user_id, m.nick, m.color, m.content, m.type,
+                            UNIX_TIMESTAMP(m.created_at) AS created_ts, m.created_at,
+                            u.type AS user_type,
+                            COALESCE(u.display_name, u.username) AS user_display_name,
+                            u.avatar AS user_has_avatar
+                       FROM chat_message m LEFT JOIN user u ON u.id = m.user_id
+                      WHERE m.room_id = :room AND m.expires_at > NOW()
+                      ORDER BY m.id DESC LIMIT :lim
+                 ) sub ORDER BY sub.id ASC"
             );
             $stmt->bindValue(':room', $roomId, PDO::PARAM_INT);
             $stmt->bindValue(':lim',  $limit,  PDO::PARAM_INT);

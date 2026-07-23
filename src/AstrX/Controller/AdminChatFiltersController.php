@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Chat\ChatFilterService;
@@ -43,6 +44,7 @@ final class AdminChatFiltersController extends AbstractController
         private readonly FlashBag               $flash,
         private readonly UrlGenerator           $urlGen,
         private readonly Translator             $t,
+        private readonly AuditLogger            $audit,
     ) {
         parent::__construct($collector);
     }
@@ -101,6 +103,7 @@ final class AdminChatFiltersController extends AbstractController
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('chat.filter.added'));
+                    $this->audit->log('chatfilter.add', 'chatfilter')->drainTo($this->collector);
                 }
                 break;
 
@@ -110,6 +113,7 @@ final class AdminChatFiltersController extends AbstractController
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('chat.filter.deleted'));
+                    $this->audit->log('chatfilter.delete', "chatfilter:{$id}")->drainTo($this->collector);
                 }
                 break;
         }

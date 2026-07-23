@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
@@ -34,6 +35,7 @@ final class AdminNewsController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Page                  $page,
         private readonly Translator            $t,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -113,6 +115,7 @@ final class AdminNewsController extends AbstractController
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('admin.news.created'));
+                    $this->audit->log('news.create', 'news', $title)->drainTo($this->collector);
                 }
                 break;
             case 'update':
@@ -120,6 +123,7 @@ final class AdminNewsController extends AbstractController
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('admin.news.updated'));
+                    $this->audit->log('news.update', "news:{$id}")->drainTo($this->collector);
                 }
                 break;
             case 'delete':
@@ -127,6 +131,7 @@ final class AdminNewsController extends AbstractController
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {
                     $this->flash->set('success', $this->t->t('admin.news.deleted'));
+                    $this->audit->log('news.delete', "news:{$id}")->drainTo($this->collector);
                 }
                 break;
         }

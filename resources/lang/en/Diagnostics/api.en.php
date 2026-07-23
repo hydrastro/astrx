@@ -54,4 +54,8 @@ return [
             assert($d instanceof InvalidApiKeyDiagnostic);
             return 'You do not have permission to revoke API keys.';
         },
+
+    'astrx.api/internal_error' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+            'An internal error occurred.',
 ];

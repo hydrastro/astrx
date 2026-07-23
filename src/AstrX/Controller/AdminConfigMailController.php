@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
@@ -51,6 +52,7 @@ final class AdminConfigMailController extends AbstractController
         private readonly Page $page,
         private readonly UrlGenerator $urlGen,
         private readonly Translator $t,
+        private readonly AuditLogger $audit,
     ) {
         parent::__construct($collector);
     }
@@ -107,6 +109,7 @@ final class AdminConfigMailController extends AbstractController
                         'success',
                         $this->t->t('admin.config.saved')
                     );
+                    $this->audit->log('config.save', 'Mail.config.php')->drainTo($this->collector);
                 }
                 break;
 
@@ -118,6 +121,7 @@ final class AdminConfigMailController extends AbstractController
                         'success',
                         $this->t->t('admin.config.saved')
                     );
+                    $this->audit->log('config.save', 'Mail.config.php')->drainTo($this->collector);
                 }
                 break;
 
@@ -155,7 +159,9 @@ final class AdminConfigMailController extends AbstractController
                 $full['Mailer']['test_recipient'] = trim(
                     self::mStr($posted, 'test_recipient', '')
                 );
-                $this->writer->write('Mail', $full)->drainTo($this->collector);
+                $writeResult = $this->writer->write('Mail', $full);
+                $writeResult->drainTo($this->collector);
+                if ($writeResult->isOk()) { $this->audit->log('config.save', 'Mail.config.php', 'test_recipient')->drainTo($this->collector); }
                 $this->flash->set('success', $this->t->t('admin.config.saved'));
                 break;
         }

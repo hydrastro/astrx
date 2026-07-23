@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
@@ -44,6 +45,7 @@ final class AdminBanlistController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly FlashBag              $flash,
         private readonly Translator            $t,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -103,7 +105,10 @@ final class AdminBanlistController extends AbstractController
                 };
                 if ($r !== null) {
                     $r->drainTo($this->collector);
-                    if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.banned')); }
+                    if ($r->isOk()) {
+                        $this->flash->set('success', $this->t->t('admin.banlist.banned'));
+                        $this->audit->log('banlist.add', "ban:{$value}", $type)->drainTo($this->collector);
+                    }
                 }
                 break;
 
@@ -124,7 +129,10 @@ final class AdminBanlistController extends AbstractController
                 }
                 $r = $this->banlist->updateBan($banId, $reason, $route, $end, $active);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.updated')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.banlist.updated'));
+                    $this->audit->log('banlist.update', "ban:{$banId}")->drainTo($this->collector);
+                }
                 break;
 
             case 'activate':
@@ -136,7 +144,10 @@ final class AdminBanlistController extends AbstractController
                 }
                 $r = $this->banlist->setActive($banId, true);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.activated')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.banlist.activated'));
+                    $this->audit->log('banlist.activate', "ban:{$banId}")->drainTo($this->collector);
+                }
                 break;
 
             case 'deactivate':
@@ -147,7 +158,10 @@ final class AdminBanlistController extends AbstractController
                 }
                 $r = $this->banlist->setActive($banId, false);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.deactivated')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.banlist.deactivated'));
+                    $this->audit->log('banlist.deactivate', "ban:{$banId}")->drainTo($this->collector);
+                }
                 break;
 
             case 'delete_ban':
@@ -158,7 +172,10 @@ final class AdminBanlistController extends AbstractController
                 }
                 $r = $this->banlist->delete($banId);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.banlist.deleted')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.banlist.deleted'));
+                    $this->audit->log('banlist.remove', "ban:{$banId}")->drainTo($this->collector);
+                }
                 break;
 
             // ── Routes ────────────────────────────────────────────────────────
@@ -175,7 +192,9 @@ final class AdminBanlistController extends AbstractController
                     break;
                 }
                 $routes[$key] = [];
-                $this->saveRoutes($routes)->drainTo($this->collector);
+                $saveResult = $this->saveRoutes($routes);
+                $saveResult->drainTo($this->collector);
+                if ($saveResult->isOk()) { $this->audit->log('banlist.route_add', "route:{$key}")->drainTo($this->collector); }
                 $this->flash->set('success', $this->t->t('admin.banlist.route_added'));
                 break;
 
@@ -196,7 +215,9 @@ final class AdminBanlistController extends AbstractController
                 }
                 $routes = $this->loadRoutes();
                 unset($routes[$key]);
-                $this->saveRoutes($routes)->drainTo($this->collector);
+                $saveResult = $this->saveRoutes($routes);
+                $saveResult->drainTo($this->collector);
+                if ($saveResult->isOk()) { $this->audit->log('banlist.route_remove', "route:{$key}")->drainTo($this->collector); }
                 $this->flash->set('success', $this->t->t('admin.banlist.route_deleted'));
                 break;
 
@@ -211,7 +232,9 @@ final class AdminBanlistController extends AbstractController
                         'check_time' => max(0, self::mInt($posted, 'check_time', 0)),
                         'enabled'    => self::mBool($posted, 'enabled'),
                     ];
-                    $this->saveRoutes($routes)->drainTo($this->collector);
+                    $saveResult = $this->saveRoutes($routes);
+                    $saveResult->drainTo($this->collector);
+                    if ($saveResult->isOk()) { $this->audit->log('banlist.round_add', "route:{$key}")->drainTo($this->collector); }
                     $this->flash->set('success', $this->t->t('admin.banlist.round_added'));
                     return '?route_edit=' . rawurlencode($key);
                 }
@@ -229,7 +252,9 @@ final class AdminBanlistController extends AbstractController
                         'check_time' => max(0, self::mInt($posted, 'check_time', 0)),
                         'enabled'    => self::mBool($posted, 'enabled'),
                     ];
-                    $this->saveRoutes($routes)->drainTo($this->collector);
+                    $saveResult = $this->saveRoutes($routes);
+                    $saveResult->drainTo($this->collector);
+                    if ($saveResult->isOk()) { $this->audit->log('banlist.round_update', "route:{$key}")->drainTo($this->collector); }
                     $this->flash->set('success', $this->t->t('admin.banlist.round_updated'));
                     return '?route_edit=' . rawurlencode($key);
                 }
@@ -243,7 +268,9 @@ final class AdminBanlistController extends AbstractController
                 if ($key !== '' && isset($routes[$key][$roundIdx])) {
                     unset($routes[$key][$roundIdx]);
                     $routes[$key] = array_values($routes[$key]);
-                    $this->saveRoutes($routes)->drainTo($this->collector);
+                    $saveResult = $this->saveRoutes($routes);
+                    $saveResult->drainTo($this->collector);
+                    if ($saveResult->isOk()) { $this->audit->log('banlist.round_delete', "route:{$key}")->drainTo($this->collector); }
                     $this->flash->set('success', $this->t->t('admin.banlist.round_deleted'));
                     return '?route_edit=' . rawurlencode($key);
                 }

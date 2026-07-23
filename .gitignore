@@ -1,31 +1,13 @@
-# Generated bundles and caches
+# Tooling / generated artifacts — kept locally, never committed
+/phpstan.phar
 /build/
-/resources/template/cache/
-
-# Profiling output
 /xdebug-profiles/
-/cachegrind*
-*.cachegrind
-cachegrind.out.*
+/diff
 
-# Local artifacts
-*.patch
-*.diff
+# Editor & OS cruft
 *.orig
-*.rej
 *.bak
-*.tmp
-astrx_full_repo_*.zip
-astrx_*_changed_files.zip
-
-# Accidental shell redirection artifacts
-/7
-/Array
-/default
-/develop
-/no
-
-# OS/editor
+*.rej
+*~
 .DS_Store
-.idea/
-.vscode/
+Thumbs.db

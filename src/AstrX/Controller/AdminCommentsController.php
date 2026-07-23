@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Auth\Policy\CommentPolicy;
@@ -53,6 +54,7 @@ final class AdminCommentsController extends AbstractController
         private readonly Page                  $page,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -107,7 +109,10 @@ final class AdminCommentsController extends AbstractController
         if (in_array($section, ['general', 'antispam'], true) && $canConfig) {
             $r = $section === 'general' ? $this->saveGeneral($posted) : $this->saveAntispam($posted);
             $r->drainTo($this->collector);
-            if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.config.saved')); }
+            if ($r->isOk()) {
+                $this->flash->set('success', $this->t->t('admin.config.saved'));
+                $this->audit->log('config.save', 'Comment.config.php')->drainTo($this->collector);
+            }
         }
 
         return '';
@@ -130,7 +135,7 @@ final class AdminCommentsController extends AbstractController
         // Fix 2.4: per-comment policy check (delete/hide on admin comments
         // requires admin role, not just mod). Fetch the comment first so
         // the policy can inspect author type.
-        if (in_array($action, ['hide', 'unhide', 'flag', 'unflag', 'delete'], true)) {
+        if (in_array($action, ['hide', 'unhide', 'flag', 'unflag', 'delete', 'update'], true)) {
             $lookup = $this->comments->findById($id);
             $lookup->drainTo($this->collector);
             $row = $lookup->isOk() ? $lookup->unwrap() : null;
@@ -167,33 +172,51 @@ final class AdminCommentsController extends AbstractController
                 }
                 $r = $this->comments->update($id, $content, $name, $email, $replyTo, $hidden, $flagged);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.updated')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.updated'));
+                    $this->audit->log('comment.update', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
             case 'hide':
                 $r = $this->comments->setHidden($id, true);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.hidden')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.hidden'));
+                    $this->audit->log('comment.hide', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
             case 'unhide':
                 $r = $this->comments->setHidden($id, false);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.unhidden')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.unhidden'));
+                    $this->audit->log('comment.unhide', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
             case 'flag':
                 // Fix 2.2: emit flash on flag/unflag.
                 $r = $this->comments->setFlagged($id, true);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.flagged')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.flagged'));
+                    $this->audit->log('comment.flag', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
             case 'unflag':
                 $r = $this->comments->setFlagged($id, false);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.unflagged')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.unflagged'));
+                    $this->audit->log('comment.unflag', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
             case 'delete':
                 $r = $this->comments->delete($id);
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.comments.deleted')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.comments.deleted'));
+                    $this->audit->log('comment.delete', "comment:{$id}")->drainTo($this->collector);
+                }
                 break;
         }
     }

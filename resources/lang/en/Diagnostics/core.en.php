@@ -88,6 +88,24 @@ return [
         return "Uncaught {$d->getThrowableClass()}: {$d->getMessage()}";
     },
 
+    'astrx.error_handler/php_error' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    ): string {
+        assert($d instanceof UncaughtThrowableDiagnostic);
+
+        return "PHP error: {$d->getMessage()}";
+    },
+
+    'astrx.error_handler/fatal_error' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    ): string {
+        assert($d instanceof UncaughtThrowableDiagnostic);
+
+        return "Fatal error: {$d->getMessage()}";
+    },
+
     // Http
     'astrx.http/headers_already_sent' => function (
         DiagnosticInterface $d,
@@ -321,7 +339,7 @@ return [
     // Content — page hidden notice (admin viewing a hidden page)
     'astrx.content/page_hidden' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        '\u{26A0} Admin view: this page is hidden from public visitors.',
+        '⚠ Admin view: this page is hidden from public visitors.',
 
     // Auth — diagnostic visibility DB errors
     'astrx.auth/diag_visibility.db_error' =>

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
@@ -61,6 +62,7 @@ final class AdminUsersController extends AbstractController
         private readonly Translator            $t,
         private readonly UserService           $userService,
         private readonly UserSession           $session,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -123,7 +125,10 @@ final class AdminUsersController extends AbstractController
                 'identicon'   => $this->saveIdenticon($posted),
             };
             $r->drainTo($this->collector);
-            if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.config.saved')); }
+            if ($r->isOk()) {
+                $this->flash->set('success', $this->t->t('admin.config.saved'));
+                $this->audit->log('config.save', $section === 'identicon' ? 'Identicon.config.php' : 'User.config.php')->drainTo($this->collector);
+            }
         }
     }
 
@@ -219,11 +224,19 @@ final class AdminUsersController extends AbstractController
                         $this->flash->set('error', $this->t->t('admin.users.password_failed'));
                         return;
                     }
+                    $this->audit->log('user.password', "user:{$hexId}")->drainTo($this->collector);
                 }
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.updated')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.users.updated'));
+                    $this->audit->log('user.update', "user:{$hexId}")->drainTo($this->collector);
+                }
                 break;
 
             case 'delete':
+                if ($this->gate->cannot(Permission::USER_DELETE_ANY, $target)) {
+                    $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
+                    return;
+                }
                 $modeRaw  = self::mStr($posted, 'deletion_mode', DeletionMode::SOFT_REDACT->value);
                 $delMode  = DeletionMode::tryFrom($modeRaw) ?? DeletionMode::SOFT_REDACT;
                 $r = $this->userService->delete(
@@ -232,7 +245,10 @@ final class AdminUsersController extends AbstractController
                     adminBypass:   true,
                 );
                 $r->drainTo($this->collector);
-                if ($r->isOk()) { $this->flash->set('success', $this->t->t('admin.users.deleted')); }
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.users.deleted'));
+                    $this->audit->log('user.delete', "user:{$hexId}")->drainTo($this->collector);
+                }
                 break;
         }
     }

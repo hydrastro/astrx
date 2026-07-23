@@ -184,7 +184,7 @@ final class BanlistRepository
             $banStmt = $this->pdo->query(
                 'SELECT b.id, bi.network, bi.prefix_len
                    FROM banlist b JOIN banlist_ip bi ON bi.ban_id = b.id
-                  WHERE b.active = 1'
+                  WHERE b.active = 1 AND (b.end IS NULL OR b.end > NOW())'
             );
             assert($banStmt !== false);
             $rows = $banStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -207,7 +207,7 @@ final class BanlistRepository
             $stmt = $this->pdo->prepare(
                 'SELECT b.id FROM banlist b
                    JOIN banlist_email be ON be.ban_id = b.id
-                  WHERE b.active = 1 AND LOWER(be.email) = LOWER(:email) LIMIT 1'
+                  WHERE b.active = 1 AND (b.end IS NULL OR b.end > NOW()) AND LOWER(be.email) = LOWER(:email) LIMIT 1'
             );
             $stmt->execute([':email' => $email]);
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -301,7 +301,7 @@ final class BanlistRepository
             $stmt = $this->pdo->prepare(
                 'SELECT b.id FROM banlist b
                    JOIN banlist_nick bn ON bn.ban_id = b.id
-                  WHERE b.active = 1 AND LOWER(bn.nick) = LOWER(:nick) LIMIT 1'
+                  WHERE b.active = 1 AND (b.end IS NULL OR b.end > NOW()) AND LOWER(bn.nick) = LOWER(:nick) LIMIT 1'
             );
             $stmt->execute([':nick' => $nick]);
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -321,7 +321,7 @@ final class BanlistRepository
             $stmt = $this->pdo->prepare(
                 'SELECT b.id FROM banlist b
                    JOIN banlist_user bu ON bu.ban_id = b.id
-                  WHERE b.active = 1 AND bu.user_id = UNHEX(:uid) LIMIT 1'
+                  WHERE b.active = 1 AND (b.end IS NULL OR b.end > NOW()) AND bu.user_id = UNHEX(:uid) LIMIT 1'
             );
             $stmt->execute([':uid' => $hexUserId]);
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -383,20 +383,27 @@ final class BanlistRepository
         $cidr = trim($cidr);
         if (str_contains($cidr, '/')) {
             [$addr, $prefixStr] = explode('/', $cidr, 2);
+            // Reject empty, negative or non-numeric prefixes BEFORE the IPv4 +96
+            // offset. ctype_digit('') and ctype_digit('-10') are both false, so
+            // "1.2.3.4/" and "1.2.3.4/-10" no longer survive to become masks that
+            // (after +96) match every IPv4-mapped address.
+            if (!ctype_digit($prefixStr)) { return null; }
             $prefix = (int) $prefixStr;
         } else {
             $addr   = $cidr;
             $prefix = str_contains($cidr, ':') ? 128 : 32;
         }
         if (filter_var($addr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if ($prefix > 32) { return null; }   // IPv4 prefix length is 0..32
             $packed = inet_pton('::ffff:' . $addr);
             $prefix += 96;
         } elseif (filter_var($addr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            if ($prefix > 128) { return null; }  // IPv6 prefix length is 0..128
             $packed = inet_pton($addr);
         } else {
             return null;
         }
-        if ($packed === false || $prefix < 0 || $prefix > 128) { return null; }
+        if ($packed === false) { return null; }
         return ['network' => self::applyMask($packed, $prefix), 'prefix' => $prefix];
     }
 

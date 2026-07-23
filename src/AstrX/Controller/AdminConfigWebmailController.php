@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
@@ -45,6 +46,7 @@ final class AdminConfigWebmailController extends AbstractController
         private readonly Page $page,
         private readonly UrlGenerator $urlGen,
         private readonly Translator $t,
+        private readonly AuditLogger $audit,
     ) {
         parent::__construct($collector);
     }
@@ -101,6 +103,7 @@ final class AdminConfigWebmailController extends AbstractController
             $result->drainTo($this->collector);
             if ($result->isOk()) {
                 $this->flash->set('success', $this->t->t('admin.config.saved'));
+                $this->audit->log('config.save', 'Imap.config.php')->drainTo($this->collector);
             }
         }
     }

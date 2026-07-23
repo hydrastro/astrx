@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\DiagnosticLevelOverrideRepository;
 use AstrX\Auth\DiagnosticVisibilityRepository;
 use AstrX\Auth\Gate;
@@ -62,6 +63,7 @@ final class AdminConfigAccessController extends AbstractController
         private readonly DiagnosticRenderer            $renderer,
         private readonly DiagnosticVisibilityRepository $visibilityRepo,
         private readonly DiagnosticLevelOverrideRepository $levelRepo,
+        private readonly AuditLogger $audit,
     ) {
         parent::__construct($collector);
     }
@@ -117,6 +119,7 @@ final class AdminConfigAccessController extends AbstractController
             $result->drainTo($this->collector);
             if ($result->isOk()) {
                 $this->flash->set('success', $this->t->t('admin.config.saved'));
+                $this->audit->log('config.save', 'Auth.config.php')->drainTo($this->collector);
             }
         }
     }

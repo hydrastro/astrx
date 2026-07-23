@@ -42,7 +42,6 @@ services:
         ports:
             - '3306:3306'
         volumes:
-            - './docker/mysql/config/mariadb.cnf:/etc/mysql/conf.d/custom.cnf:ro'
             - './src/setup/init.sql:/docker-entrypoint-initdb.d/init.sql'
             #- './docker/mysql/dbdata:/var/lib/mysql'
         networks:

@@ -87,6 +87,24 @@ return [
         return "Eccezione non gestita {$d->getThrowableClass()}: {$d->getMessage()}";
     },
 
+    'astrx.error_handler/php_error' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    ): string {
+        assert($d instanceof UncaughtThrowableDiagnostic);
+
+        return "Errore PHP: {$d->getMessage()}";
+    },
+
+    'astrx.error_handler/fatal_error' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    ): string {
+        assert($d instanceof UncaughtThrowableDiagnostic);
+
+        return "Errore fatale: {$d->getMessage()}";
+    },
+
     // Http
     'astrx.http/headers_already_sent' => function (
         DiagnosticInterface $d,
@@ -320,7 +338,7 @@ return [
     // Content — page hidden notice (admin viewing a hidden page)
     'astrx.content/page_hidden' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        '\u{26A0} Vista amministratore: questa pagina è nascosta ai visitatori pubblici.',
+        '⚠ Vista amministratore: questa pagina è nascosta ai visitatori pubblici.',
 
     // Auth — diagnostic visibility DB errors
     'astrx.auth/diag_visibility.db_error' =>
