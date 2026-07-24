@@ -1,0 +1,106 @@
+<div id="board">
+    <style>
+    #board{max-width:1100px;margin:0 auto;font-size:14px;}
+    #board a{text-decoration:none;}
+    #board a:hover{text-decoration:underline;}
+    .board-header{border-bottom:1px solid #a9a9a9;margin-bottom:.6em;padding-bottom:.4em;}
+    .board-header h1{margin:.2em 0;font-size:1.5em;}
+    .board-header .tag{font-size:.5em;vertical-align:middle;}
+    .board-sub{margin:.1em 0;color:#555;font-style:italic;}
+    .board-desc{margin:.2em 0;color:#333;}
+    .board-nav{margin:.3em 0;}
+    .board-form{border:1px solid #a9a9a9;background:#f8f8f8;padding:.6em;margin:.6em 0;max-width:640px;}
+    .board-form h3{margin:.1em 0 .4em;}
+    .board-form textarea,.board-form input[type=text],.board-form input[type=password]{width:100%;box-sizing:border-box;}
+    .board-form-row{display:flex;gap:1em;align-items:center;flex-wrap:wrap;margin:.3em 0;}
+    .board-hint{color:#666;}
+    .board-empty{color:#666;font-style:italic;}
+    .tag{background:#333;color:#fff;font-size:.75em;padding:0 .35em;border-radius:2px;margin-right:.3em;}
+    .thread{border-bottom:1px dashed #ccc;padding:.5em 0;margin:0;overflow:hidden;}
+    .post{background:#f0e0d6;border:1px solid #d9bfb7;padding:.4em .6em;margin:.25em 0;border-radius:2px;display:inline-block;max-width:100%;box-sizing:border-box;vertical-align:top;}
+    .post.op{background:transparent;border:none;padding:.2em 0;display:block;}
+    .post.reply{margin-left:1.4em;}
+    .post-head{margin:0 0 .3em;font-size:.9em;color:#555;}
+    .post-head .subject{color:#0f0c5d;font-weight:bold;margin-right:.4em;}
+    .post-head .name{color:#117743;font-weight:bold;margin-right:.4em;}
+    .post-head .time,.post-head .no{margin-right:.4em;}
+    .post-head .reply-link{color:#34457a;}
+    .post-body{white-space:pre-wrap;word-wrap:break-word;line-height:1.35;}
+    .post-body .greentext{color:#789922;}
+    .post-body .quotelink{color:#d00020;}
+    .post-body .postlink{color:#34457a;}
+    .post-body .spoiler{background:#111;color:#111;}
+    .post-body .spoiler:hover{color:#fff;}
+    .post-body .post-code{display:block;white-space:pre-wrap;background:#f4f4f4;border:1px solid #ddd;padding:.4em;font-family:monospace;}
+    .post-files{float:left;margin:0 .8em .3em 0;}
+    .post-file{display:inline-block;cursor:zoom-in;position:relative;line-height:0;}
+    .post-file input.xpand{position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;margin:0;cursor:inherit;z-index:1;}
+    .post-file .thumb{display:block;max-width:250px;max-height:250px;}
+    .post-file .full{display:none;max-width:100%;height:auto;}
+    .post-file input.xpand:checked ~ .thumb{display:none;}
+    .post-file input.xpand:checked ~ .full{display:block;}
+    .post-file.spoiler .thumb{filter:blur(18px) brightness(.35);}
+    .post-file.spoiler:hover .thumb{filter:none;}
+    .omitted{color:#707070;margin:.2em 0 .2em 1.4em;font-size:.9em;}
+    .catalog{display:flex;flex-wrap:wrap;gap:.5em;align-items:flex-start;}
+    .cat-cell{width:160px;text-align:center;background:#f8f8f8;border:1px solid #ddd;padding:.3em;color:#333;overflow:hidden;}
+    .cat-cell img{max-width:150px;max-height:150px;}
+    .cat-stats{display:block;color:#800;font-size:.8em;}
+    .cat-ex{display:block;font-size:.8em;color:#555;max-height:4.5em;overflow:hidden;}
+    .board-list{list-style:none;padding:0;}
+    .board-list li{padding:.3em 0;border-bottom:1px solid #eee;}
+    .thread-return{margin:.4em 0;}
+    </style>
+
+    {{#is_board_list}}
+    <div class="board-header"><h1>{{lbl_boards_heading}}</h1></div>
+    <ul class="board-list">
+        {{#boards}}<li><a href="{{url}}"><strong>/{{slug}}/</strong> — {{title}}</a> <small>{{subtitle}}</small></li>{{/boards}}
+    </ul>
+    {{^has_boards}}<p class="board-empty">{{lbl_no_threads}}</p>{{/has_boards}}
+    {{/is_board_list}}
+
+    {{^is_board_list}}
+    <div class="board-header">
+        <h1>/{{board_slug}}/ — {{board_title}} {{#board_nsfw}}<span class="tag">{{lbl_nsfw}}</span>{{/board_nsfw}}</h1>
+        {{#board_subtitle}}<p class="board-sub">{{board_subtitle}}</p>{{/board_subtitle}}
+        {{#board_desc}}<p class="board-desc">{{board_desc}}</p>{{/board_desc}}
+        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></nav>
+    </div>
+
+    {{#can_post}}
+    <form class="board-form" method="post" action="{{form_action}}" enctype="multipart/form-data">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf" value="{{csrf_token}}">
+        {{#is_reply}}<input type="hidden" name="thread" value="{{thread_id}}">{{/is_reply}}
+        <h3>{{#is_reply}}{{lbl_reply_title}}{{/is_reply}}{{^is_reply}}{{lbl_new_thread}}{{/is_reply}}</h3>
+        <p><label>{{lbl_name}}<br><input type="text" name="name" maxlength="64" autocomplete="off"></label></p>
+        {{^is_reply}}<p><label>{{lbl_subject}}<br><input type="text" name="subject" maxlength="255" autocomplete="off"></label></p>{{/is_reply}}
+        <p><textarea name="comment" rows="4" maxlength="{{max_len}}" placeholder="{{lbl_comment}}"></textarea></p>
+        <p class="board-form-row">
+            <label>{{lbl_image}} <input type="file" name="image" accept="image/*"></label>
+            <label><input type="checkbox" name="sage" value="1"> {{lbl_sage}}</label>
+        </p>
+        <p><label>{{lbl_password}} <input type="password" name="password" maxlength="64" autocomplete="off"></label> <small>{{lbl_password_hint}}</small></p>
+        <p><button type="submit">{{lbl_post}}</button></p>
+        <p class="board-hint"><small>{{&lbl_formatting_hint}}</small></p>
+    </form>
+    {{/can_post}}
+
+    {{#is_index}}
+        {{^has_threads}}<p class="board-empty">{{lbl_no_threads}}</p>{{/has_threads}}
+        {{&threads_html}}
+    {{/is_index}}
+
+    {{#is_catalog}}
+        {{^has_catalog}}<p class="board-empty">{{lbl_no_threads}}</p>{{/has_catalog}}
+        {{&catalog_html}}
+    {{/is_catalog}}
+
+    {{#is_thread}}
+        <p class="thread-return"><a href="{{index_url}}">{{lbl_return}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></p>
+        {{#thread_locked}}<p><span class="tag">{{lbl_locked}}</span></p>{{/thread_locked}}
+        {{&posts_html}}
+    {{/is_thread}}
+    {{/is_board_list}}
+</div>

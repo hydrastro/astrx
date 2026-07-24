@@ -39,6 +39,14 @@ enum Permission: string
     case CHAT_PM           = 'chat.pm';
     case ADMIN_CONFIG_CHAT = 'admin.config.chat';   // Chat service + rooms
 
+    // ---- Imageboard ---------------------------------------------------------
+    case BOARD_VIEW              = 'board.view';
+    case BOARD_POST              = 'board.post';
+    case BOARD_DELETE_OWN        = 'board.delete.own';
+    case BOARD_MODERATE          = 'board.moderate';           // delete/ban/sticky/lock on any board
+    case BOARD_ADMIN             = 'board.admin';              // create/configure/delete boards
+    case ADMIN_CONFIG_IMAGEBOARD = 'admin.config.imageboard';  // global imageboard defaults
+
     // ---- Users --------------------------------------------------------------
     case USER_VIEW_PUBLIC   = 'user.view.public';
     case USER_EDIT_OWN      = 'user.edit.own';

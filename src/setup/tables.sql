@@ -1811,3 +1811,207 @@ CREATE TABLE IF NOT EXISTS `chat_report`
     FOREIGN KEY (`message_id`) REFERENCES `chat_message` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+
+-- ============================================================
+-- IMAGEBOARD MODULE
+-- Boards are data rows (routed via a dispatcher page); threads and
+-- posts hang off boards; images off posts. Per-board settings live
+-- here (config objects are singletons). FKs to `user` use BINARY(16).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `board`
+(
+    `id`            INT              NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `slug`          VARCHAR(32)      NOT NULL UNIQUE,               -- URL segment, e.g. 'b'
+    `title`         VARCHAR(128)     NOT NULL,
+    `subtitle`      VARCHAR(255)     NOT NULL DEFAULT '',
+    `description`   TEXT             NOT NULL,
+    `owner_user_id` BINARY(16)       NULL,                         -- per-board owner (granular mod)
+    `active`        TINYINT          NOT NULL DEFAULT 1,
+    `nsfw`          TINYINT          NOT NULL DEFAULT 0,
+    `forced_anon`   TINYINT          NOT NULL DEFAULT 0,           -- disable names/tripcodes
+    `bbcode`        TINYINT          NOT NULL DEFAULT 1,
+    `flags_mode`    ENUM('off','user','geo') NOT NULL DEFAULT 'off',
+    `poster_ids`    TINYINT          NOT NULL DEFAULT 0,           -- per-thread poster IDs on/off
+    `lifecycle`     ENUM('ephemeral','archive','persistent') NOT NULL DEFAULT 'archive',
+    `bump_limit`    SMALLINT UNSIGNED NOT NULL DEFAULT 300,
+    `image_limit`   SMALLINT UNSIGNED NOT NULL DEFAULT 150,
+    `thread_limit`  SMALLINT UNSIGNED NOT NULL DEFAULT 100,        -- max active threads before prune
+    `max_post_len`  SMALLINT UNSIGNED NOT NULL DEFAULT 2000,
+    `cooldown_secs` SMALLINT UNSIGNED NOT NULL DEFAULT 30,         -- per-poster post cooldown
+    `post_seq`      INT UNSIGNED     NOT NULL DEFAULT 0,           -- per-board post counter (the `no`)
+    `sort_order`    INT              NOT NULL DEFAULT 0,
+    `created_at`    TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_owner_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL,
+    INDEX `idx_board_active` (`active`, `sort_order`)
+);
+
+-- Per-board volunteer moderators (granular tier below global MOD/ADMIN).
+CREATE TABLE IF NOT EXISTS `board_mod`
+(
+    `board_id`   INT        NOT NULL,
+    `user_id`    BINARY(16) NOT NULL,
+    `role`       ENUM('janitor','moderator') NOT NULL DEFAULT 'janitor',
+    `created_at` TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`board_id`, `user_id`),
+    CONSTRAINT `board_mod_board_fk` FOREIGN KEY (`board_id`) REFERENCES `board` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `board_mod_user_fk`  FOREIGN KEY (`user_id`)  REFERENCES `user`  (`id`) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS `board_thread`
+(
+    `id`          INT               NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `board_id`    INT               NOT NULL,
+    `subject`     VARCHAR(255)      NOT NULL DEFAULT '',           -- OP subject, mirrored for catalog
+    `sticky`      TINYINT           NOT NULL DEFAULT 0,
+    `locked`      TINYINT           NOT NULL DEFAULT 0,
+    `cycle`       TINYINT           NOT NULL DEFAULT 0,            -- rolling thread
+    `autosage`    TINYINT           NOT NULL DEFAULT 0,
+    `archived`    TINYINT           NOT NULL DEFAULT 0,
+    `reply_count` INT UNSIGNED      NOT NULL DEFAULT 0,
+    `image_count` INT UNSIGNED      NOT NULL DEFAULT 0,
+    `bump_time`   TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at`  TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_thread_board_fk` FOREIGN KEY (`board_id`) REFERENCES `board` (`id`) ON DELETE CASCADE,
+    INDEX `idx_thread_board_bump` (`board_id`, `archived`, `sticky`, `bump_time`),
+    INDEX `idx_thread_board_created` (`board_id`, `created_at`)
+);
+
+CREATE TABLE IF NOT EXISTS `board_post`
+(
+    `id`             INT           NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `thread_id`      INT           NOT NULL,
+    `board_id`       INT           NOT NULL,
+    `no`             INT UNSIGNED  NOT NULL,                       -- per-board post number
+    `is_op`          TINYINT       NOT NULL DEFAULT 0,
+    `name`           VARCHAR(64)   NOT NULL DEFAULT '',
+    `tripcode`       VARCHAR(64)   NOT NULL DEFAULT '',
+    `capcode`        VARCHAR(32)   NOT NULL DEFAULT '',
+    `poster_id`      VARCHAR(12)   NOT NULL DEFAULT '',
+    `flag_code`      VARCHAR(16)   NOT NULL DEFAULT '',
+    `subject`        VARCHAR(255)  NOT NULL DEFAULT '',
+    `body_raw`       MEDIUMTEXT    NOT NULL,
+    `body_html`      MEDIUMTEXT    NOT NULL,
+    `user_id`        BINARY(16)    NULL,                           -- authenticated poster (nullable = anon)
+    `ip`             VARBINARY(16) NULL,
+    `poster_key`     CHAR(64)      NOT NULL DEFAULT '',            -- hashed key for poster IDs & post-history
+    `delete_pw_hash` VARCHAR(255)  NOT NULL DEFAULT '',            -- poster self-delete password
+    `sage`           TINYINT       NOT NULL DEFAULT 0,
+    `banned`         TINYINT       NOT NULL DEFAULT 0,             -- "USER WAS BANNED FOR THIS POST"
+    `created_at`     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_post_thread_fk` FOREIGN KEY (`thread_id`) REFERENCES `board_thread` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `board_post_board_fk`  FOREIGN KEY (`board_id`)  REFERENCES `board`        (`id`) ON DELETE CASCADE,
+    CONSTRAINT `board_post_user_fk`   FOREIGN KEY (`user_id`)   REFERENCES `user`         (`id`) ON DELETE SET NULL,
+    UNIQUE KEY `uq_board_no` (`board_id`, `no`),
+    INDEX `idx_post_thread` (`thread_id`, `created_at`),
+    INDEX `idx_post_poster` (`board_id`, `poster_key`)
+);
+
+CREATE TABLE IF NOT EXISTS `board_image`
+(
+    `id`         INT               NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `post_id`    INT               NOT NULL,
+    `token`      CHAR(32)          NOT NULL UNIQUE,                -- public serve token
+    `full_name`  VARCHAR(64)       NOT NULL,                       -- on-disk full image
+    `thumb_name` VARCHAR(64)       NOT NULL,                       -- on-disk thumbnail
+    `mime`       VARCHAR(32)       NOT NULL,
+    `byte_size`  INT UNSIGNED      NOT NULL,
+    `width`      SMALLINT UNSIGNED NOT NULL,
+    `height`     SMALLINT UNSIGNED NOT NULL,
+    `thumb_w`    SMALLINT UNSIGNED NOT NULL,
+    `thumb_h`    SMALLINT UNSIGNED NOT NULL,
+    `ahash`      BIGINT UNSIGNED   NOT NULL DEFAULT 0,             -- perceptual average-hash (dedupe)
+    `sha256`     CHAR(64)          NOT NULL DEFAULT '',            -- exact-match blocklist
+    `orig_name`  VARCHAR(255)      NOT NULL DEFAULT '',
+    `spoiler`    TINYINT           NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_image_post_fk` FOREIGN KEY (`post_id`) REFERENCES `board_post` (`id`) ON DELETE CASCADE,
+    INDEX `idx_image_ahash` (`ahash`),
+    INDEX `idx_image_sha`   (`sha256`)
+);
+
+CREATE TABLE IF NOT EXISTS `board_report`
+(
+    `id`             INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `post_id`        INT          NOT NULL,
+    `board_id`       INT          NOT NULL,
+    `reporter_ident` VARCHAR(128) NOT NULL,
+    `reason`         VARCHAR(255) NOT NULL DEFAULT '',
+    `category`       ENUM('spam','illegal','offtopic','other') NOT NULL DEFAULT 'other',
+    `resolved`       TINYINT      NOT NULL DEFAULT 0,
+    `created_at`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_report_post_fk` FOREIGN KEY (`post_id`) REFERENCES `board_post` (`id`) ON DELETE CASCADE,
+    UNIQUE KEY `uq_board_report` (`post_id`, `reporter_ident`),
+    INDEX `idx_report_open` (`board_id`, `resolved`)
+);
+
+-- Moderator image blocklist: reject known images by exact or perceptual hash.
+CREATE TABLE IF NOT EXISTS `board_image_block`
+(
+    `id`         INT             NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `sha256`     CHAR(64)        NOT NULL DEFAULT '',
+    `ahash`      BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `reason`     VARCHAR(255)    NOT NULL DEFAULT '',
+    `created_at` TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_block_sha`   (`sha256`),
+    INDEX `idx_block_ahash` (`ahash`)
+);
+
+-- Thread watching for authenticated users (no-JS "watched threads" page).
+CREATE TABLE IF NOT EXISTS `board_watch`
+(
+    `user_id`    BINARY(16)   NOT NULL,
+    `thread_id`  INT          NOT NULL,
+    `last_seen`  INT UNSIGNED NOT NULL DEFAULT 0,                  -- last reply_count seen
+    `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`user_id`, `thread_id`),
+    CONSTRAINT `board_watch_user_fk`   FOREIGN KEY (`user_id`)   REFERENCES `user`         (`id`) ON DELETE CASCADE,
+    CONSTRAINT `board_watch_thread_fk` FOREIGN KEY (`thread_id`) REFERENCES `board_thread` (`id`) ON DELETE CASCADE
+);
+
+-- Seed one example board.
+INSERT IGNORE INTO `board` (`slug`, `title`, `subtitle`, `description`, `flags_mode`, `poster_ids`, `lifecycle`, `sort_order`)
+VALUES ('b', 'Random', 'anything goes', 'The random board.', 'user', 1, 'archive', 0);
+
+-- ============================================================
+-- IMAGEBOARD PAGES (dispatcher + token file-serve) + public navbar
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_BOARD',      1, 'board',      1, 1, 0, 0),   -- dispatcher: index/catalog/thread + posting
+    ('WORDING_BOARD_FILE', 1, 'board_file', 0, 1, 0, 0);   -- raw image serve by token (no shell)
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE');
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE');
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 1, 1 FROM `page` WHERE url_id = 'WORDING_BOARD';
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_BOARD_FILE';
+
+-- Public navbar entry for the board index (mirrors the chat entry).
+SET @board_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_BOARD' LIMIT 1);
+SET @board_pub_navbar_id := (SELECT id FROM `navbar` WHERE name = 'public' LIMIT 1);
+SET @board_pub_pin_id := (
+    SELECT id FROM `navbar_pin`
+     WHERE navbar_id = @board_pub_navbar_id
+     ORDER BY sort_order ASC, id ASC LIMIT 1
+);
+SET @existing_board_nav := (
+    SELECT ni.id FROM `navbar_internal` ni
+      JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @board_page_id AND e.pin_id = @board_pub_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL
+ WHERE @board_page_id IS NOT NULL AND @board_pub_pin_id IS NOT NULL AND @existing_board_nav IS NULL;
+SET @board_nav_id := COALESCE(@existing_board_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @board_nav_id, @board_pub_pin_id, 1, 'WORDING_BOARD', 1, 1, 0
+ WHERE @board_page_id IS NOT NULL AND @board_pub_pin_id IS NOT NULL AND @board_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @board_nav_id, @board_page_id
+ WHERE @board_page_id IS NOT NULL AND @board_nav_id IS NOT NULL;

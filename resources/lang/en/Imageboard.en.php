@@ -1,0 +1,33 @@
+<?php
+declare(strict_types=1);
+
+return [
+    'board.boards_heading'  => 'Boards',
+    'board.new_thread'      => 'New thread',
+    'board.reply_title'     => 'Reply',
+    'board.name'            => 'Name',
+    'board.subject'         => 'Subject',
+    'board.comment'         => 'Comment',
+    'board.image'           => 'Image',
+    'board.post'            => 'Post',
+    'board.sage'            => 'sage',
+    'board.password'        => 'Password',
+    'board.password_hint'   => 'Password to delete your own post later.',
+    'board.anonymous'       => 'Anonymous',
+    'board.catalog'         => 'Catalog',
+    'board.index'           => 'Index',
+    'board.return'          => 'Return',
+    'board.reply'           => 'Reply',
+    'board.reply_verb'      => 'Reply',
+    'board.replies_omitted' => 'replies omitted',
+    'board.no_threads'      => 'No threads yet — start one.',
+    'board.view_full'       => 'View full image',
+    'board.spoiler'         => 'Spoiler',
+    'board.locked'          => 'Locked',
+    'board.sticky'          => 'Sticky',
+    'board.nsfw'            => 'NSFW',
+    'board.replies'         => 'replies',
+    'board.images'          => 'images',
+    'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 quotes, [spoiler], [code], [b] [i]',
+    'board.no_such_board'   => 'No such board.',
+];

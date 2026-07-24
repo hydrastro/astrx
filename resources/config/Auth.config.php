@@ -16,6 +16,9 @@ return [
                 'chat.view',
                 'chat.post',
                 'chat.pm',
+                // Imageboard
+                'board.view',
+                'board.post',
             ],
             'USER' => [
                 'news.view',
@@ -39,6 +42,10 @@ return [
                 'chat.post',
                 'chat.delete.own',
                 'chat.pm',
+                // Imageboard
+                'board.view',
+                'board.post',
+                'board.delete.own',
             ],
             'MOD' => [
                 'news.view',
@@ -66,6 +73,12 @@ return [
                 'chat.delete.any',
                 'chat.moderate',
                 'admin.config.chat',
+                // Imageboard
+                'board.view',
+                'board.post',
+                'board.delete.own',
+                'board.moderate',
+                'admin.config.imageboard',
             ],
         ],
     ],

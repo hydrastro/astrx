@@ -5,6 +5,9 @@ namespace AstrX\Chat;
 
 use AstrX\Chat\Diagnostic\ChatUploadDiagnostic;
 use AstrX\Http\UploadedFile;
+use AstrX\Image\ImageOutputFormat;
+use AstrX\Image\ImageSanitizeOptions;
+use AstrX\Image\ImageSanitizer;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
@@ -33,6 +36,7 @@ final class ChatAttachmentService
     public function __construct(
         private readonly ChatAttachmentRepository $repo,
         private readonly ChatConfig               $config,
+        private readonly ImageSanitizer           $sanitizer,
     ) {}
 
     public function enabled(): bool { return $this->config->uploadsEnabled(); }
@@ -54,76 +58,46 @@ final class ChatAttachmentService
         if ($file->hasError()) {
             return $this->err('upload_error');
         }
-        if ($file->size() > $this->config->uploadMaxBytes()) {
-            return $this->err('upload_too_big');
-        }
-        $ext = strtolower(pathinfo($file->clientFilename(), PATHINFO_EXTENSION));
-        if (!in_array($ext, $this->config->uploadTypes(), true)) {
-            return $this->err('upload_type');
-        }
-
-        // Confirm it is really an image (getimagesize is part of GD; no exif ext).
-        $info = @getimagesize($file->tempPath());
-        if ($info === false) {
-            return $this->err('upload_invalid');
-        }
-        $type = $info[2]; // getimagesize offset 2 = IMAGETYPE_* (always a set int)
-
         $raw = @file_get_contents($file->tempPath());
         if ($raw === false) {
             return $this->err('upload_invalid');
         }
-        $img = @imagecreatefromstring($raw);
-        if (!$img instanceof \GdImage) {
-            return $this->err('upload_invalid');
+        $ext = strtolower(pathinfo($file->clientFilename(), PATHINFO_EXTENSION));
+
+        // Validate + strip metadata + downscale via the shared image sanitizer.
+        // Its astrx.image/* diagnostics carry the too-big / bad-type / undecodable
+        // reasons; the re-encode is the strip (EXIF/GPS/polyglots discarded).
+        $res = $this->sanitizer->sanitize($raw, $ext, new ImageSanitizeOptions(
+            allowedExtensions: $this->config->uploadTypes(),
+            maxBytes:          $this->config->uploadMaxBytes(),
+            maxDimension:      $this->config->uploadMaxDimension(),
+            outputFormat:      ImageOutputFormat::AUTO,
+            jpegQuality:       85,
+        ));
+        if (!$res->isOk()) {
+            return Result::err($res->error(), $res->diagnostics());
         }
+        $img = $res->unwrap();
 
-        // Downscale to the max dimension (proportional), if configured and needed.
-        $w   = imagesx($img);
-        $h   = imagesy($img);
-        $max = $this->config->uploadMaxDimension();
-        if ($max > 0 && ($w > $max || $h > $max)) {
-            $scale = $max / max($w, $h);
-            $nw    = max(1, (int) round($w * $scale));
-            $nh    = max(1, (int) round($h * $scale));
-            $scaled = imagescale($img, $nw, $nh);
-            if ($scaled instanceof \GdImage) {
-                imagedestroy($img);
-                $img = $scaled;
-                $w   = $nw;
-                $h   = $nh;
-            }
-        }
-
-        // Re-encode: JPEG source → JPEG (photos stay small), everything else → PNG.
-        // This is the strip: only pixels are written, no metadata carries over.
-        $isJpeg     = $type === IMAGETYPE_JPEG;
-        $storedName = bin2hex(random_bytes(16)) . ($isJpeg ? '.jpg' : '.png');
-
-        $dir = $this->config->uploadDir();
+        $storedName = bin2hex(random_bytes(16)) . '.' . $img->ext;
+        $dir        = $this->config->uploadDir();
         if ($dir === '') {
-            imagedestroy($img);
             return $this->err('upload_failed');
         }
         if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
-            imagedestroy($img);
             return $this->err('upload_failed');
         }
-        $dest = $dir . '/' . $storedName;
-        $ok   = $isJpeg ? @imagejpeg($img, $dest, 85) : @imagepng($img, $dest);
-        imagedestroy($img);
-        if ($ok !== true) {
+        if (@file_put_contents($dir . '/' . $storedName, $img->fullBytes) === false) {
             return $this->err('upload_failed');
         }
 
-        $size = (int) @filesize($dest);
         return Result::ok([
             'token'       => bin2hex(random_bytes(16)),
             'stored_name' => $storedName,
-            'mime'        => $isJpeg ? 'image/jpeg' : 'image/png',
-            'size'        => $size,
-            'width'       => $w,
-            'height'      => $h,
+            'mime'        => $img->mime,
+            'size'        => strlen($img->fullBytes),
+            'width'       => $img->width,
+            'height'      => $img->height,
         ]);
     }
 

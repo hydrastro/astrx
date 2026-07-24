@@ -1,0 +1,4 @@
+<?php class Templatecomments_test9289b1656406328bed0a32bb4520041f{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}function render($args=array(),$parent=array()){$buffer="";$i=0;$buffer.='<h2>';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("page_title",$args,$parent,$i));$buffer.='</h2>
+<p>';$buffer.=htmlspecialchars((string)$this->TemplateEngine->resolveValue("page_description",$args,$parent,$i));$buffer.='</p>
+<hr>
+';$p6Name=$this->TemplateEngine->resolveValue("comments",$args,$parent,$i);if(is_string($p6Name)&&$p6Name!==""){$p6=$this->TemplateEngine->loadTemplate($p6Name);if($p6!==null){$buffer.=$p6->render($args,$parent);}}return ($buffer) ? $buffer : "";}}

@@ -1,0 +1,23 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Database connection — TEMPLATE.
+ *
+ * Copy to `PDO.config.php` and fill in your credentials, or let
+ * `public/setup.php` generate it. The real `PDO.config.php` is gitignored:
+ * it holds live database credentials and must never be committed.
+ */
+return [
+    'PDO' => [
+        'db_type'             => 'mysql',
+        'db_host'             => '127.0.0.1',   // under Docker: the mariadb service host
+        'db_name'             => 'content_manager',
+        'db_port'             => 3306,
+        'db_username'         => 'user',
+        'db_password'         => '',            // set locally — never commit
+        'emulate_prepares'    => false,
+        'errmode_exception'   => true,
+        'default_fetch_assoc' => true,
+    ],
+];

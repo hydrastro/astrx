@@ -5,6 +5,9 @@ namespace AstrX\User;
 
 use AstrX\Config\InjectConfig;
 use AstrX\Http\UploadedFile;
+use AstrX\Image\ImageOutputFormat;
+use AstrX\Image\ImageSanitizeOptions;
+use AstrX\Image\ImageSanitizer;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
@@ -45,7 +48,10 @@ final class AvatarService
 
     // -------------------------------------------------------------------------
 
-    public function __construct(private readonly UserRepository $repo) {}
+    public function __construct(
+        private readonly UserRepository $repo,
+        private readonly ImageSanitizer $sanitizer,
+    ) {}
 
     /**
      * Upload and store a new avatar for the given user.
@@ -57,43 +63,33 @@ final class AvatarService
         if ($file->hasError()) {
             return $this->opErr('avatar_upload_error', (string) $file->error());
         }
-
-        if ($file->size() > $this->maxSize) {
-            return $this->opErr('avatar_size', (string) $this->maxSize);
+        $raw = @file_get_contents($file->tempPath());
+        if ($raw === false) {
+            return $this->opErr('avatar_invalid');
         }
-
         $ext = strtolower(pathinfo($file->clientFilename(), PATHINFO_EXTENSION));
-        if (!in_array($ext, ['gif', 'png', 'jpeg', 'jpg', 'webp'], true)) {
-            return $this->opErr('avatar_extension', $ext);
-        }
 
-        // Verify it is actually an image using getimagesize() — part of GD,
-        // no separate PHP extension required (unlike exif_imagetype).
-        if (@getimagesize($file->tempPath()) === false) {
-            return $this->opErr('avatar_invalid');
+        // Validate + strip metadata via the shared image sanitizer, re-encoding
+        // to PNG with no downscale (the historical avatar behaviour). Size / type
+        // / decode rejections surface as astrx.image/* diagnostics.
+        $res = $this->sanitizer->sanitize($raw, $ext, new ImageSanitizeOptions(
+            allowedExtensions: ['gif', 'png', 'jpeg', 'jpg', 'webp'],
+            maxBytes:          $this->maxSize,
+            maxDimension:      0,
+            outputFormat:      ImageOutputFormat::PNG,
+        ));
+        if (!$res->isOk()) {
+            return Result::err(false, $res->diagnostics());
         }
-
-        // Re-encode as PNG to strip any metadata / malicious payloads
-        $srcImage = imagecreatefromstring((string) file_get_contents($file->tempPath()));
-        if ($srcImage === false) {
-            return $this->opErr('avatar_invalid');
-        }
+        $png = $res->unwrap();
 
         $destPath = $this->pathFor($hexId);
-
-        // Ensure the avatar directory exists and is writable.
-        if (!is_dir($this->avatarDir)) {
-            if (!mkdir($this->avatarDir, 0775, true)) {
-                imagedestroy($srcImage);
-                return $this->opErr('avatar_move_failed', $this->avatarDir);
-            }
+        if (!is_dir($this->avatarDir) && !mkdir($this->avatarDir, 0775, true)) {
+            return $this->opErr('avatar_move_failed', $this->avatarDir);
         }
-
-        if (!imagepng($srcImage, $destPath)) {
-            imagedestroy($srcImage);
+        if (@file_put_contents($destPath, $png->fullBytes) === false) {
             return $this->opErr('avatar_move_failed', $destPath);
         }
-        imagedestroy($srcImage);
 
         return $this->repo->setAvatar($hexId, true);
     }
