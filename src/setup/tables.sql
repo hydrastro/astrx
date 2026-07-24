@@ -197,6 +197,7 @@ SELECT e.id,
        ni.page_id,
        ne.url,
        p.url_id,
+       p.file_name   AS page_file_name,
        p.i18n        AS page_i18n
 FROM `navbar_entry` e
          JOIN      `navbar_pin`      np ON np.id    = e.pin_id
@@ -1898,6 +1899,7 @@ CREATE TABLE IF NOT EXISTS `board_post`
     `delete_pw_hash` VARCHAR(255)  NOT NULL DEFAULT '',            -- poster self-delete password
     `sage`           TINYINT       NOT NULL DEFAULT 0,
     `banned`         TINYINT       NOT NULL DEFAULT 0,             -- "USER WAS BANNED FOR THIS POST"
+    `verified`       TINYINT       NOT NULL DEFAULT 0,            -- verified-account poster badge
     `created_at`     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `board_post_thread_fk` FOREIGN KEY (`thread_id`) REFERENCES `board_thread` (`id`) ON DELETE CASCADE,
     CONSTRAINT `board_post_board_fk`  FOREIGN KEY (`board_id`)  REFERENCES `board`        (`id`) ON DELETE CASCADE,
@@ -1957,6 +1959,32 @@ CREATE TABLE IF NOT EXISTS `board_image_block`
     INDEX `idx_block_ahash` (`ahash`)
 );
 
+-- Board-scoped bans. board_id NULL = a global ban (every board). A ban may key
+-- on an account (user_id), an IP / CIDR range (ip + prefix_len), or both. On a
+-- Tor hidden service IP bans are near-useless (one proxy IP for everyone), so
+-- account bans are the durable lever there; both are supported for the mixed
+-- clearnet/onion deployments AstrX targets. reason is shown to the banned
+-- poster; note is staff-private.
+CREATE TABLE IF NOT EXISTS `board_ban`
+(
+    `id`         INT              NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `board_id`   INT              NULL,                        -- NULL = all boards
+    `user_id`    BINARY(16)       NULL,                        -- account ban
+    `ip`         VARBINARY(16)    NULL,                        -- network (packed) for IP/range ban
+    `prefix_len` TINYINT UNSIGNED NOT NULL DEFAULT 128,        -- CIDR bits of `ip` that apply
+    `reason`     VARCHAR(255)     NOT NULL DEFAULT '',         -- public, shown to the poster
+    `note`       VARCHAR(255)     NOT NULL DEFAULT '',         -- staff-private
+    `post_id`    INT              NULL,                        -- the offending post, for reference
+    `created_by` BINARY(16)       NULL,                        -- staff who issued the ban
+    `expires_at` TIMESTAMP        NULL,                        -- NULL = permanent
+    `active`     TINYINT          NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `board_ban_board_fk` FOREIGN KEY (`board_id`) REFERENCES `board` (`id`) ON DELETE CASCADE,
+    INDEX `idx_ban_ip`     (`ip`),
+    INDEX `idx_ban_user`   (`user_id`),
+    INDEX `idx_ban_lookup` (`board_id`, `active`)
+);
+
 -- Thread watching for authenticated users (no-JS "watched threads" page).
 CREATE TABLE IF NOT EXISTS `board_watch`
 (
@@ -1979,18 +2007,24 @@ VALUES ('b', 'Random', 'anything goes', 'The random board.', 'user', 1, 'archive
 INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
 VALUES
     ('WORDING_BOARD',      1, 'board',      1, 1, 0, 0),   -- dispatcher: index/catalog/thread + posting
-    ('WORDING_BOARD_FILE', 1, 'board_file', 0, 1, 0, 0);   -- raw image serve by token (no shell)
+    ('WORDING_BOARD_FILE', 1, 'board_file', 0, 1, 0, 0),   -- raw image serve by token (no shell)
+    ('WORDING_BOARD_MOD',  1, 'board_mod',  1, 1, 1, 0),   -- moderation surface (hidden; link-reached)
+    ('WORDING_BOARD_FEED', 1, 'board_feed', 0, 1, 1, 0);   -- Atom feed (raw XML; hidden; link-reached)
 
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
-SELECT id, id FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE');
+SELECT id, id FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE','WORDING_BOARD_MOD','WORDING_BOARD_FEED');
 
 INSERT IGNORE INTO `page_meta` (page_id, title, description)
-SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE');
+SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE','WORDING_BOARD_MOD','WORDING_BOARD_FEED');
 
 INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
-SELECT id, 1, 1 FROM `page` WHERE url_id = 'WORDING_BOARD';
+SELECT id, 1, 1 FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FEED');
 INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
-SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_BOARD_FILE';
+SELECT id, 0, 0 FROM `page` WHERE url_id IN ('WORDING_BOARD_FILE','WORDING_BOARD_MOD');
+
+-- The board dispatcher is API-enabled: /api/board/<slug>[/thread/<id>|/catalog]
+-- returns the same structured data (SHARED context) as a JSON envelope.
+UPDATE `page` SET `api_enabled` = 1 WHERE `url_id` = 'WORDING_BOARD';
 
 -- Public navbar entry for the board index (mirrors the chat entry).
 SET @board_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_BOARD' LIMIT 1);
@@ -2015,3 +2049,60 @@ SELECT @board_nav_id, @board_pub_pin_id, 1, 'WORDING_BOARD', 1, 1, 0
 INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @board_nav_id, @board_page_id
  WHERE @board_page_id IS NOT NULL AND @board_nav_id IS NOT NULL;
+
+-- ============================================================
+-- IMAGEBOARD ADMIN PAGES (board CRUD + global config) + admin navbar
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_ADMIN_BOARDS',           1, 'admin_boards',            1, 1, 0, 0),
+    ('WORDING_ADMIN_CONFIG_IMAGEBOARD',1, 'admin_config_imageboard', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id IN ('WORDING_ADMIN_BOARDS','WORDING_ADMIN_CONFIG_IMAGEBOARD');
+-- Both are children of the admin root so their templates resolve under admin/.
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT a.id, d.id FROM `page` a, `page` d
+ WHERE a.url_id = 'WORDING_ADMIN' AND d.url_id IN ('WORDING_ADMIN_BOARDS','WORDING_ADMIN_CONFIG_IMAGEBOARD');
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_ADMIN_BOARDS','WORDING_ADMIN_CONFIG_IMAGEBOARD');
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id IN ('WORDING_ADMIN_BOARDS','WORDING_ADMIN_CONFIG_IMAGEBOARD');
+
+-- Admin navbar entries (admin nav, last pin = the alpha-sorted group).
+SET @admin_ib_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+SET @admin_ib_pin_id := (
+    SELECT id FROM `navbar_pin` WHERE navbar_id = @admin_ib_navbar_id
+     ORDER BY sort_order DESC, id DESC LIMIT 1
+);
+-- WORDING_ADMIN_BOARDS
+SET @ib_boards_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_BOARDS' LIMIT 1);
+SET @existing_ib_boards_nav := (
+    SELECT ni.id FROM `navbar_internal` ni JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @ib_boards_page_id AND e.pin_id = @admin_ib_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL WHERE @ib_boards_page_id IS NOT NULL AND @admin_ib_pin_id IS NOT NULL AND @existing_ib_boards_nav IS NULL;
+SET @ib_boards_nav_id := COALESCE(@existing_ib_boards_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @ib_boards_nav_id, @admin_ib_pin_id, 1, 'WORDING_ADMIN_BOARDS', 1, 1, 0
+ WHERE @ib_boards_page_id IS NOT NULL AND @admin_ib_pin_id IS NOT NULL AND @ib_boards_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @ib_boards_nav_id, @ib_boards_page_id
+ WHERE @ib_boards_page_id IS NOT NULL AND @ib_boards_nav_id IS NOT NULL;
+-- WORDING_ADMIN_CONFIG_IMAGEBOARD
+SET @ib_cfg_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_CONFIG_IMAGEBOARD' LIMIT 1);
+SET @existing_ib_cfg_nav := (
+    SELECT ni.id FROM `navbar_internal` ni JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @ib_cfg_page_id AND e.pin_id = @admin_ib_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL WHERE @ib_cfg_page_id IS NOT NULL AND @admin_ib_pin_id IS NOT NULL AND @existing_ib_cfg_nav IS NULL;
+SET @ib_cfg_nav_id := COALESCE(@existing_ib_cfg_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @ib_cfg_nav_id, @admin_ib_pin_id, 1, 'WORDING_ADMIN_CONFIG_IMAGEBOARD', 1, 1, 0
+ WHERE @ib_cfg_page_id IS NOT NULL AND @admin_ib_pin_id IS NOT NULL AND @ib_cfg_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @ib_cfg_nav_id, @ib_cfg_page_id
+ WHERE @ib_cfg_page_id IS NOT NULL AND @ib_cfg_nav_id IS NOT NULL;

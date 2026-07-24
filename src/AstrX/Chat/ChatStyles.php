@@ -161,7 +161,17 @@ ul.chat-messages { list-style: none; margin: 0; padding: 0; line-height: 1.5; }
 /* a11y (#110): a visible keyboard-focus ring in the stream */
 .chat-messages a:focus-visible, .chat-del button:focus-visible, .chat-report button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .chat-del { display: inline; }
-.chat-del button { font-size: 11px; line-height: 1; padding: 0 .3em; margin-left: .3em; cursor: pointer; }
+/* Inline action buttons (delete, report, mod tools): theme-aware, not native —
+   transparent background, inherited text colour, a neutral translucent border,
+   and em sizing (no hard-coded px) so they read on every theme and scale with
+   the reader's font size instead of rendering as small light native buttons. */
+.chat-del button, .chat-report button, .chat-mod-actions button {
+    font: inherit; font-size: .82em; line-height: 1.4; padding: 0 .45em; cursor: pointer;
+    background: transparent; color: inherit;
+    border: 1px solid rgba(128,128,128,.5); border-radius: 2px;
+}
+.chat-del button { margin-left: .3em; }
+.chat-del button:hover, .chat-report button:hover, .chat-mod-actions button:hover { background: rgba(128,128,128,.2); }
 .chat-empty { opacity: .7; padding: .5em .2em; }
 
 /* admin public notes / greeting board pinned above the stream (theme-neutral) */
@@ -189,8 +199,11 @@ ul.chat-users-list { list-style: none; margin: 0; padding: 0; line-height: 1.5; 
 .chat-role { opacity: .6; font-size: .78em; margin-left: .2em; }
 .chat-mod-actions { display: block; margin: .1em 0 .2em; }
 .chat-mod-actions form { display: inline; margin-right: .25em; }
-.chat-mod-actions button { font-size: 10px; line-height: 1; padding: 0 .3em; cursor: pointer; }
-.chat-mod-actions input[type=text], .chat-mod-actions input[type=number] { width: 3.2em; font-size: 11px; padding: 0 .15em; }
+.chat-mod-actions input[type=text], .chat-mod-actions input[type=number] {
+    width: 3.4em; font: inherit; font-size: .82em; padding: 0 .2em;
+    background: transparent; color: inherit;
+    border: 1px solid rgba(128,128,128,.5); border-radius: 2px;
+}
 .chat-personal-actions button { opacity: .85; }
 CSS;
     }
@@ -223,7 +236,7 @@ CSS;
 #chat .chat-send-to label { margin-right: .3em; }
 #chat .chat-send-to .input { margin-right: .4em; }
 #chat .chat-meta { opacity: .75; margin: .1em 0; }
-#chat .chat-hint { opacity: .7; font-size: 12px; margin: .1em 0 .3em; }
+#chat .chat-hint { opacity: .7; font-size: .85em; margin: .1em 0 .3em; }
 #chat form.chat-inline { display: inline; margin-right: .5em; }
 #chat .chat-upload { margin: .35em 0; }
 #chat .chat-upload label { margin-right: .3em; }

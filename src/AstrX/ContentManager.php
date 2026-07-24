@@ -472,15 +472,15 @@ final class ContentManager
         if ($navbarResult->isOk()) {
             /** @var NavbarHandler $navbarHandler */
             $navbarHandler = $navbarResult->unwrap();
-            $ctx->set('navbar', $navbarHandler->getNavbarEntries($navbarId, $page->ancestors));
+            $ctx->set('navbar', $navbarHandler->getNavbarEntries($navbarId, $page->ancestors, $page->fileName));
 
             // User navbar (id=2) and admin navbar (id=3) are also DB-driven.
             // DefaultTemplateContext::finalise() reads these from ctx vars instead of
             // hardcoding the entries, so the admin can manage them via the navbar editor.
             $userNavbarId  = $this->config->getConfigInt('ContentManager', 'user_navbar_id',  2);
             $adminNavbarId = $this->config->getConfigInt('ContentManager', 'admin_navbar_id', 3);
-            $ctx->set('db_user_nav',  $navbarHandler->getNavbarEntries($userNavbarId,  $page->ancestors));
-            $ctx->set('db_admin_nav', $navbarHandler->getNavbarEntries($adminNavbarId, $page->ancestors));
+            $ctx->set('db_user_nav',  $navbarHandler->getNavbarEntries($userNavbarId,  $page->ancestors, $page->fileName));
+            $ctx->set('db_admin_nav', $navbarHandler->getNavbarEntries($adminNavbarId, $page->ancestors, $page->fileName));
         }
 
         if ($page->controller) {

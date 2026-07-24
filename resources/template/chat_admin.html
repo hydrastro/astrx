@@ -5,9 +5,12 @@
 {{^chat_admin_forbidden}}
 <div id="chat-admin">
     <style>
+    /* Tables inherit the site's full-cell border style (the theme's own
+       `tbody,th,tr,td` rule) so they match every other admin table; we only add
+       cell padding + alignment here. */
     #chat-admin h3 { margin: 1em 0 .3em; padding-bottom: .15em; border-bottom: 1px solid rgba(128,128,128,.3); }
-    #chat-admin table { border-collapse: collapse; margin: .3em 0; }
-    #chat-admin th, #chat-admin td { padding: .15em .55em; text-align: left; border-bottom: 1px solid rgba(128,128,128,.2); }
+    #chat-admin table { margin: .3em 0; }
+    #chat-admin th, #chat-admin td { padding: .15em .55em; text-align: left; }
     #chat-admin form.chat-inline { display: inline-block; margin: 0 .5em .35em 0; vertical-align: top; }
     #chat-admin .chat-admin-row { margin: .45em 0; }
     </style>

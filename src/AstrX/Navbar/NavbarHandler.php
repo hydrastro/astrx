@@ -18,9 +18,14 @@ use PDO;
  *   0 = alphabetical by resolved display name
  *   1 = custom, by entry.sort_order
  *
- * Highlight: an entry is highlighted when the entry's internal page_id
- * appears in the current page's ancestor set (which includes the page itself
- * via the self-referencing closure row at depth=0).
+ * Highlight: an entry is highlighted when the entry's internal page_id appears
+ * in the current page's ancestor set (which includes the page itself via the
+ * self-referencing closure row at depth=0), OR when the current page is a
+ * "section subpage" of the entry — its file_name is the entry page's file_name
+ * followed by an underscore (e.g. current `chat_settings` / `board_mod`
+ * highlights the `chat` / `board` entry). This keeps a section's own top-level
+ * navbar entry lit while the visitor is anywhere inside that section, without
+ * having to nest every subpage in the page-closure tree.
  */
 final class NavbarHandler
 {
@@ -33,9 +38,10 @@ final class NavbarHandler
     /**
      * @param int                                         $navbarId
      * @param list<array{id:int,url_id:string,i18n:bool}> $pageAncestors
+     * @param string                                      $currentFileName the current page's file_name (for section-subpage highlighting)
      * @return list<array{name:string,url:string,highlight:bool}>
      */
-    public function getNavbarEntries(int $navbarId, array $pageAncestors): array
+    public function getNavbarEntries(int $navbarId, array $pageAncestors, string $currentFileName = ''): array
     {
         $rows = $this->fetchRows($navbarId);
         if ($rows === []) {
@@ -49,7 +55,7 @@ final class NavbarHandler
         foreach ($pins as $pin) {
             foreach ($pin as $row) {
                 /** @var array<string,mixed> $row */
-                $entries[] = $this->buildEntry($row, $ancestorIds);
+                $entries[] = $this->buildEntry($row, $ancestorIds, $currentFileName);
             }
         }
 
@@ -66,7 +72,7 @@ final class NavbarHandler
         $stmt = $this->pdo->prepare(
             'SELECT `id`, `internal`, `name`, `i18n`, `active`,
                     `entry_sort_order`, `pin_id`, `pin_sort_order`, `pin_sort_mode`,
-                    `page_id`, `url`, `url_id`, `page_i18n`
+                    `page_id`, `url`, `url_id`, `page_file_name`, `page_i18n`
                FROM `resolved_navbar`
               WHERE `navbar_id` = :navbar_id
                 AND `active`    = 1'
@@ -139,9 +145,10 @@ final class NavbarHandler
     /**
      * @param  array<string,mixed> $row
      * @param  list<int>           $ancestorIds
+     * @param  string              $currentFileName
      * @return array{name:string,url:string,highlight:bool}
      */
-    private function buildEntry(array $row, array $ancestorIds): array
+    private function buildEntry(array $row, array $ancestorIds, string $currentFileName): array
     {
         $name = $this->resolveName($row);
 
@@ -152,8 +159,18 @@ final class NavbarHandler
                 : $urlId;
 
             $url       = $this->urlGenerator->toPage($resolved);
-            $pageIdV = $row['page_id'] ?? 0;
+            $pageIdV   = $row['page_id'] ?? 0;
             $highlight = in_array(is_int($pageIdV) ? $pageIdV : 0, $ancestorIds, true);
+
+            // Section-subpage highlight: keep a section's entry lit anywhere
+            // inside it (current `chat_settings` → entry `chat`). The trailing
+            // underscore stops `board` matching an unrelated `boardgame`.
+            if (!$highlight && $currentFileName !== '') {
+                $entryFile = is_scalar($row['page_file_name'] ?? null) ? (string) $row['page_file_name'] : '';
+                if ($entryFile !== '' && str_starts_with($currentFileName, $entryFile . '_')) {
+                    $highlight = true;
+                }
+            }
         } else {
             $url       = (is_scalar($row['url']) ? (string)$row['url'] : '');
             $highlight = false;

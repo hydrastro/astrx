@@ -1,0 +1,241 @@
+<div id="board-mod">
+    <style>
+    /* Theme-aware, matching board.html: no hard-coded light backgrounds or
+       dark-on-dark text — inherits the active theme's colours (transparent
+       backgrounds, neutral translucent borders, opacity for muted text), so it
+       reads correctly on every theme. */
+    #board-mod{max-width:1000px;margin:0 auto;}
+    #board-mod h1{font-size:1.4em;margin:.3em 0;}
+    #board-mod h2{font-size:1.1em;margin:.6em 0 .3em;border-bottom:1px solid rgba(128,128,128,.3);padding-bottom:.15em;}
+    .modnav{margin:.4em 0 .8em;padding:.4em 0;border-bottom:1px solid rgba(128,128,128,.4);}
+    .modnav a{margin-right:.8em;}
+    .mod-row{border:1px solid rgba(128,128,128,.3);background:rgba(128,128,128,.08);padding:.5em;margin:.4em 0;border-radius:2px;}
+    .mod-row .meta{opacity:.7;font-size:.9em;}
+    .mod-inline{display:inline;}
+    .mod-form label{display:block;margin:.35em 0;}
+    .mod-form input[type=text],.mod-form input[type=password],.mod-form textarea,.mod-form select{width:100%;max-width:480px;box-sizing:border-box;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.6);padding:.15em .3em;}
+    .mod-form .row{display:flex;gap:1em;flex-wrap:wrap;align-items:center;}
+    #board-mod button{background:transparent;color:inherit;border:1px solid currentColor;padding:.1em .7em;cursor:pointer;border-radius:2px;}
+    #board-mod button:hover{background:rgba(128,128,128,.2);}
+    #board-mod .mod-danger{color:#e0566a;border-color:#e0566a;}
+    #board-mod .mod-danger:hover{background:rgba(224,86,106,.15);}
+    .pill{background:rgba(128,128,128,.35);color:inherit;font-size:.75em;padding:0 .35em;border-radius:2px;}
+    </style>
+
+    <h1>/{{board_slug}}/ — {{board_title}}</h1>
+    <nav class="modnav">
+        <a href="{{mod_base}}">{{lbl_mod_dashboard}}</a>
+        {{#can_reports}}<a href="{{reports_url}}">{{lbl_mod_reports}}</a>{{/can_reports}}
+        {{#can_ban}}<a href="{{bans_url}}">{{lbl_mod_bans}}</a>{{/can_ban}}
+        {{#can_ban}}<a href="{{blocks_url}}">{{lbl_mod_blocks}}</a>{{/can_ban}}
+        {{#can_manage}}<a href="{{staff_url}}">{{lbl_mod_staff}}</a>{{/can_manage}}
+        {{#can_manage}}<a href="{{settings_url}}">{{lbl_mod_settings}}</a>{{/can_manage}}
+        <a href="{{board_url}}">« {{lbl_mod_back}}</a>
+    </nav>
+
+    {{#is_dashboard}}
+        <h2>{{lbl_mod_dashboard}}</h2>
+        <p>{{lbl_mod_open_reports}}: <strong>{{open_reports}}</strong> — <a href="{{reports_url}}">{{lbl_mod_reports}}</a></p>
+    {{/is_dashboard}}
+
+    {{#is_reports}}
+        <h2>{{lbl_mod_reports}}</h2>
+        {{^has_reports}}<p>{{lbl_mod_no_reports}}</p>{{/has_reports}}
+        {{#reports}}
+        <div class="mod-row">
+            <div class="meta"><span class="pill">{{category}}</span> No.{{post_no}} — {{reason}}</div>
+            <p>{{excerpt}}</p>
+            <a href="{{thread_url}}">{{lbl_mod_report}}</a> ·
+            <a href="{{post_url}}">{{lbl_mod_ban}}/{{lbl_mod_delete}}</a>
+            <form class="mod-inline" method="post" action="{{form_action}}">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf" value="{{csrf_token}}">
+                <input type="hidden" name="mod_action" value="resolve_report">
+                <input type="hidden" name="report_id" value="{{report_id}}">
+                <button type="submit">{{lbl_mod_resolve}}</button>
+            </form>
+        </div>
+        {{/reports}}
+    {{/is_reports}}
+
+    {{#is_bans}}
+        <h2>{{lbl_mod_bans}}</h2>
+        {{^has_bans}}<p>{{lbl_mod_no_reports}}</p>{{/has_bans}}
+        {{#bans}}
+        <div class="mod-row">
+            <div class="meta">#{{ban_id}} {{#global}}<span class="pill">global</span>{{/global}} {{target}} — {{expires}}</div>
+            <p>{{reason}}</p>
+            <form class="mod-inline" method="post" action="{{form_action}}">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf" value="{{csrf_token}}">
+                <input type="hidden" name="mod_action" value="lift_ban">
+                <input type="hidden" name="ban_id" value="{{ban_id}}">
+                <button type="submit">{{lbl_mod_lift}}</button>
+            </form>
+        </div>
+        {{/bans}}
+    {{/is_bans}}
+
+    {{#is_blocks}}
+        <h2>{{lbl_mod_blocks}}</h2>
+        {{^has_blocks}}<p>{{lbl_mod_no_reports}}</p>{{/has_blocks}}
+        {{#blocks}}
+        <div class="mod-row">
+            <div class="meta">#{{block_id}} <code>{{kind}}</code> — {{reason}}</div>
+            <form class="mod-inline" method="post" action="{{form_action}}">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf" value="{{csrf_token}}">
+                <input type="hidden" name="mod_action" value="unblock_image">
+                <input type="hidden" name="block_id" value="{{block_id}}">
+                <button type="submit">{{lbl_mod_unblock}}</button>
+            </form>
+        </div>
+        {{/blocks}}
+    {{/is_blocks}}
+
+    {{#is_staff}}
+        <h2>{{lbl_mod_staff}}</h2>
+        {{#roster}}
+        <div class="mod-row">
+            <strong>{{username}}</strong> — <span class="pill">{{role}}</span>
+            <form class="mod-inline" method="post" action="{{form_action}}">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf" value="{{csrf_token}}">
+                <input type="hidden" name="mod_action" value="revoke_mod">
+                <input type="hidden" name="user_id" value="{{user_id}}">
+                <button type="submit">{{lbl_mod_revoke}}</button>
+            </form>
+        </div>
+        {{/roster}}
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="grant_mod">
+            <label>{{lbl_mod_username}}<br><input type="text" name="username" maxlength="64" autocomplete="off"></label>
+            <label>{{lbl_mod_role}}<br>
+                <select name="role">
+                    <option value="janitor">{{lbl_mod_janitor}}</option>
+                    <option value="moderator">{{lbl_mod_moderator}}</option>
+                </select>
+            </label>
+            <button type="submit">{{lbl_mod_grant}}</button>
+        </form>
+    {{/is_staff}}
+
+    {{#is_settings}}
+        <h2>{{lbl_mod_settings}}</h2>
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="save_settings">
+            <label>{{lbl_mod_settings}}<br><input type="text" name="title" value="{{s_title}}" maxlength="128"></label>
+            <label><input type="text" name="subtitle" value="{{s_subtitle}}" maxlength="255"></label>
+            <label><textarea name="description" rows="3">{{s_description}}</textarea></label>
+            <div class="row">
+                <label class="mod-inline"><input type="checkbox" name="nsfw" value="1"{{#s_nsfw}} checked{{/s_nsfw}}> NSFW</label>
+                <label class="mod-inline"><input type="checkbox" name="forced_anon" value="1"{{#s_forced_anon}} checked{{/s_forced_anon}}> forced-anon</label>
+                <label class="mod-inline"><input type="checkbox" name="bbcode" value="1"{{#s_bbcode}} checked{{/s_bbcode}}> BBCode</label>
+                <label class="mod-inline"><input type="checkbox" name="poster_ids" value="1"{{#s_poster_ids}} checked{{/s_poster_ids}}> poster IDs</label>
+            </div>
+            <div class="row">
+                <label>flags<br><input type="text" name="flags_mode" value="{{s_flags_mode}}" maxlength="8"></label>
+                <label>lifecycle<br><input type="text" name="lifecycle" value="{{s_lifecycle}}" maxlength="12"></label>
+            </div>
+            <div class="row">
+                <label>bump<br><input type="text" name="bump_limit" value="{{s_bump_limit}}"></label>
+                <label>image<br><input type="text" name="image_limit" value="{{s_image_limit}}"></label>
+                <label>threads<br><input type="text" name="thread_limit" value="{{s_thread_limit}}"></label>
+                <label>max len<br><input type="text" name="max_post_len" value="{{s_max_post_len}}"></label>
+                <label>cooldown<br><input type="text" name="cooldown_secs" value="{{s_cooldown}}"></label>
+            </div>
+            <button type="submit">{{lbl_mod_save}}</button>
+        </form>
+    {{/is_settings}}
+
+    {{#is_moderate_post}}
+        <h2>No.{{mp_no}}</h2>
+        <div class="mod-row"><div class="post-body">{{&mp_body}}</div></div>
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="delete_post">
+            <input type="hidden" name="post_id" value="{{mp_post_id}}">
+            <button type="submit" class="mod-danger">{{lbl_mod_delete}}</button>
+        </form>
+        {{#mp_can_ban}}
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="ban_post">
+            <input type="hidden" name="post_id" value="{{mp_post_id}}">
+            <label>{{lbl_mod_reason_hdr}}<br><input type="text" name="reason" maxlength="255"></label>
+            <div class="row">
+                <label>{{lbl_mod_target}}<br>
+                    <select name="scope"><option value="board">{{lbl_mod_scope_board}}</option><option value="global">{{lbl_mod_scope_global}}</option></select>
+                </label>
+                <label>{{lbl_mod_days}}<br><input type="text" name="days" value="0"></label>
+                <label class="mod-inline"><input type="checkbox" name="ban_ip" value="1" checked> IP</label>
+                <label class="mod-inline"><input type="checkbox" name="ban_account" value="1" checked> account</label>
+                <label class="mod-inline"><input type="checkbox" name="also_delete" value="1"> {{lbl_mod_also_delete}}</label>
+            </div>
+            <button type="submit" class="mod-danger">{{lbl_mod_ban}}</button>
+        </form>
+        {{#mp_has_image}}
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="block_image">
+            <input type="hidden" name="post_id" value="{{mp_post_id}}">
+            <label>{{lbl_mod_reason_hdr}}<br><input type="text" name="reason" maxlength="255"></label>
+            <label class="mod-inline"><input type="checkbox" name="also_delete" value="1"> {{lbl_mod_also_delete}}</label>
+            <button type="submit" class="mod-danger">{{lbl_mod_block_image}}</button>
+        </form>
+        {{/mp_has_image}}
+        {{/mp_can_ban}}
+        <p><a href="{{mp_thread_url}}">« {{lbl_mod_back}}</a></p>
+    {{/is_moderate_post}}
+
+    {{#is_moderate_thread}}
+        <h2>{{mt_subject}}</h2>
+        <div class="row">
+        {{#mt_sticky}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="sticky"><input type="hidden" name="value" value="0"><button type="submit">- {{lbl_mod_sticky}}</button></form>{{/mt_sticky}}
+        {{^mt_sticky}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="sticky"><input type="hidden" name="value" value="1"><button type="submit">+ {{lbl_mod_sticky}}</button></form>{{/mt_sticky}}
+        {{#mt_locked}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="locked"><input type="hidden" name="value" value="0"><button type="submit">- {{lbl_mod_locked}}</button></form>{{/mt_locked}}
+        {{^mt_locked}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="locked"><input type="hidden" name="value" value="1"><button type="submit">+ {{lbl_mod_locked}}</button></form>{{/mt_locked}}
+        {{#mt_cycle}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="cycle"><input type="hidden" name="value" value="0"><button type="submit">- {{lbl_mod_cycle}}</button></form>{{/mt_cycle}}
+        {{^mt_cycle}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="cycle"><input type="hidden" name="value" value="1"><button type="submit">+ {{lbl_mod_cycle}}</button></form>{{/mt_cycle}}
+        {{#mt_autosage}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="autosage"><input type="hidden" name="value" value="0"><button type="submit">- {{lbl_mod_autosage}}</button></form>{{/mt_autosage}}
+        {{^mt_autosage}}<form class="mod-inline" method="post" action="{{form_action}}"><input type="hidden" name="prg_id" value="{{prg_id}}"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="mod_action" value="thread_flag"><input type="hidden" name="thread_id" value="{{mt_thread_id}}"><input type="hidden" name="flag" value="autosage"><input type="hidden" name="value" value="1"><button type="submit">+ {{lbl_mod_autosage}}</button></form>{{/mt_autosage}}
+        </div>
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="delete_thread">
+            <input type="hidden" name="thread_id" value="{{mt_thread_id}}">
+            <button type="submit" class="mod-danger">{{lbl_mod_delete_thread}}</button>
+        </form>
+        <p><a href="{{mt_thread_url}}">« {{lbl_mod_back}}</a></p>
+    {{/is_moderate_thread}}
+
+    {{#is_report_form}}
+        <h2>{{lbl_mod_report}} — No.{{rf_no}}</h2>
+        <div class="mod-row">{{rf_excerpt}}</div>
+        <form class="mod-form" method="post" action="{{form_action}}">
+            <input type="hidden" name="prg_id" value="{{prg_id}}">
+            <input type="hidden" name="_csrf" value="{{csrf_token}}">
+            <input type="hidden" name="mod_action" value="file_report">
+            <input type="hidden" name="post_id" value="{{rf_post_id}}">
+            <input type="hidden" name="thread_id" value="{{rf_thread_id}}">
+            <label>{{lbl_mod_category}}<br>
+                <select name="category">
+                    <option value="spam">spam</option>
+                    <option value="illegal">illegal</option>
+                    <option value="offtopic">off-topic</option>
+                    <option value="other">other</option>
+                </select>
+            </label>
+            <label>{{lbl_mod_reason}}<br><input type="text" name="reason" maxlength="255"></label>
+            <button type="submit">{{lbl_mod_submit_report}}</button>
+        </form>
+    {{/is_report_form}}
+</div>

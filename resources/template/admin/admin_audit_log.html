@@ -19,8 +19,8 @@
 <p><small>{{label_total}}: {{audit_total}}</small></p>
 
 {{^audit_rows}}<p><em>{{label_no_entries}}</em></p>{{/audit_rows}}
-{{#audit_rows}}
-<table style="width:100%;border-collapse:collapse;font-size:0.9em">
+{{#has_audit}}
+<table class="table">
   <thead>
   <tr>
     <th style="text-align:left">{{label_time}}</th>
@@ -33,7 +33,7 @@
   </thead>
   <tbody>
   {{#audit_rows}}
-  <tr style="border-bottom:1px solid #eee">
+  <tr>
     <td><small>{{created_at}}</small></td>
     <td>{{username}}</td>
     <td><code>{{action}}</code></td>
@@ -44,7 +44,7 @@
   {{/audit_rows}}
   </tbody>
 </table>
-{{/audit_rows}}
+{{/has_audit}}
 
 <p>
   {{#has_prev}}<a href="{{prev_url}}" class="input">{{label_prev}}</a>{{/has_prev}}

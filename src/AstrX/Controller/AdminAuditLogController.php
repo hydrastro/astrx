@@ -60,6 +60,7 @@ final class AdminAuditLogController extends AbstractController
         $selfUrl = $this->request->uri()->path();
 
         $this->ctx->set('audit_rows',    $rows);
+        $this->ctx->set('has_audit',     $rows !== []);
         $this->ctx->set('audit_total',   $total);
         $this->ctx->set('audit_page',    $page);
         $this->ctx->set('audit_pages',   $pages);

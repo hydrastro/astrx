@@ -1,37 +1,50 @@
 <div id="board">
     <style>
-    #board{max-width:1100px;margin:0 auto;font-size:14px;}
+    /* Theme-aware: no hard-coded light backgrounds or dark-on-dark text — the
+       board inherits the active theme's colours (transparent backgrounds,
+       neutral translucent borders, opacity for muted text), so it reads
+       correctly on every theme, like the chat. Accents are mid-tones legible on
+       both dark and light. */
+    #board{max-width:1100px;margin:0 auto;}
     #board a{text-decoration:none;}
     #board a:hover{text-decoration:underline;}
-    .board-header{border-bottom:1px solid #a9a9a9;margin-bottom:.6em;padding-bottom:.4em;}
+    .board-header{border-bottom:1px solid rgba(128,128,128,.4);margin-bottom:.6em;padding-bottom:.4em;}
     .board-header h1{margin:.2em 0;font-size:1.5em;}
     .board-header .tag{font-size:.5em;vertical-align:middle;}
-    .board-sub{margin:.1em 0;color:#555;font-style:italic;}
-    .board-desc{margin:.2em 0;color:#333;}
+    .board-sub{margin:.1em 0;opacity:.7;font-style:italic;}
+    .board-desc{margin:.2em 0;opacity:.85;}
     .board-nav{margin:.3em 0;}
-    .board-form{border:1px solid #a9a9a9;background:#f8f8f8;padding:.6em;margin:.6em 0;max-width:640px;}
+    .board-form{border:1px solid rgba(128,128,128,.45);background:transparent;padding:.6em;margin:.6em 0;max-width:640px;}
     .board-form h3{margin:.1em 0 .4em;}
-    .board-form textarea,.board-form input[type=text],.board-form input[type=password]{width:100%;box-sizing:border-box;}
+    .board-form input[type=text],.board-form input[type=password],.board-form textarea,.board-form select{width:100%;box-sizing:border-box;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.6);padding:.15em .3em;}
+    .board-form input[type=file]{color:inherit;}
+    .board-form button{background:transparent;color:inherit;border:1px solid currentColor;padding:.15em .8em;cursor:pointer;}
+    .board-form button:hover{background:rgba(128,128,128,.2);}
     .board-form-row{display:flex;gap:1em;align-items:center;flex-wrap:wrap;margin:.3em 0;}
-    .board-hint{color:#666;}
-    .board-empty{color:#666;font-style:italic;}
-    .tag{background:#333;color:#fff;font-size:.75em;padding:0 .35em;border-radius:2px;margin-right:.3em;}
-    .thread{border-bottom:1px dashed #ccc;padding:.5em 0;margin:0;overflow:hidden;}
-    .post{background:#f0e0d6;border:1px solid #d9bfb7;padding:.4em .6em;margin:.25em 0;border-radius:2px;display:inline-block;max-width:100%;box-sizing:border-box;vertical-align:top;}
-    .post.op{background:transparent;border:none;padding:.2em 0;display:block;}
+    .board-hint{opacity:.65;}
+    .board-empty{opacity:.65;font-style:italic;}
+    .tag{background:rgba(128,128,128,.35);font-size:.75em;padding:0 .35em;border-radius:2px;margin-right:.3em;}
+    .thread{border-bottom:1px dashed rgba(128,128,128,.35);padding:.5em 0;margin:0;overflow:hidden;}
+    .post{background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.3);padding:.4em .6em;margin:.25em 0;border-radius:2px;display:inline-block;max-width:100%;box-sizing:border-box;vertical-align:top;}
+    .post.op{background:transparent;border:0;padding:.2em 0;display:block;}
     .post.reply{margin-left:1.4em;}
-    .post-head{margin:0 0 .3em;font-size:.9em;color:#555;}
-    .post-head .subject{color:#0f0c5d;font-weight:bold;margin-right:.4em;}
-    .post-head .name{color:#117743;font-weight:bold;margin-right:.4em;}
-    .post-head .time,.post-head .no{margin-right:.4em;}
-    .post-head .reply-link{color:#34457a;}
+    .post-head{margin:0 0 .3em;font-size:.9em;opacity:.95;}
+    .post-head .subject{color:#6f9cf0;font-weight:bold;margin-right:.4em;}
+    .post-head .name{color:#3ea968;font-weight:bold;}
+    .post-head .tripcode{color:#4fb37c;font-weight:bold;}
+    .post-head .capcode{color:#e0566a;font-weight:bold;}
+    .post-head .verified{color:#4a9fd8;font-weight:bold;}
+    .post-head .flag{vertical-align:baseline;border:1px solid rgba(128,128,128,.4);}
+    .post-head .poster-id{font-family:monospace;font-size:.85em;padding:0 .35em;border-radius:2px;}
+    .post-head .time,.post-head .no{margin-right:.4em;opacity:.85;}
+    .post-head .reply-link{color:#6f9cf0;}
     .post-body{white-space:pre-wrap;word-wrap:break-word;line-height:1.35;}
-    .post-body .greentext{color:#789922;}
-    .post-body .quotelink{color:#d00020;}
-    .post-body .postlink{color:#34457a;}
-    .post-body .spoiler{background:#111;color:#111;}
-    .post-body .spoiler:hover{color:#fff;}
-    .post-body .post-code{display:block;white-space:pre-wrap;background:#f4f4f4;border:1px solid #ddd;padding:.4em;font-family:monospace;}
+    .post-body .greentext{color:#7aa53c;}
+    .post-body .quotelink{color:#e0566a;}
+    .post-body .postlink{color:#6f9cf0;}
+    .post-body .spoiler{background:currentColor;color:currentColor;border-radius:2px;}
+    .post-body .spoiler:hover{color:transparent;}
+    .post-body .post-code{display:block;white-space:pre-wrap;background:rgba(128,128,128,.15);border:1px solid rgba(128,128,128,.3);padding:.4em;font-family:monospace;}
     .post-files{float:left;margin:0 .8em .3em 0;}
     .post-file{display:inline-block;cursor:zoom-in;position:relative;line-height:0;}
     .post-file input.xpand{position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;margin:0;cursor:inherit;z-index:1;}
@@ -41,18 +54,29 @@
     .post-file input.xpand:checked ~ .full{display:block;}
     .post-file.spoiler .thumb{filter:blur(18px) brightness(.35);}
     .post-file.spoiler:hover .thumb{filter:none;}
-    .omitted{color:#707070;margin:.2em 0 .2em 1.4em;font-size:.9em;}
+    .post-body .banned-notice{color:#e0566a;font-weight:bold;margin:.3em 0 0;}
+    .post-actions{margin:.2em 0 0;font-size:.85em;}
+    .post-actions a{opacity:.6;}
+    .omitted{opacity:.6;margin:.2em 0 .2em 1.4em;font-size:.9em;}
     .catalog{display:flex;flex-wrap:wrap;gap:.5em;align-items:flex-start;}
-    .cat-cell{width:160px;text-align:center;background:#f8f8f8;border:1px solid #ddd;padding:.3em;color:#333;overflow:hidden;}
+    .cat-cell{width:160px;text-align:center;background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.3);padding:.3em;overflow:hidden;}
     .cat-cell img{max-width:150px;max-height:150px;}
-    .cat-stats{display:block;color:#800;font-size:.8em;}
-    .cat-ex{display:block;font-size:.8em;color:#555;max-height:4.5em;overflow:hidden;}
+    .cat-stats{display:block;opacity:.8;font-size:.8em;}
+    .cat-ex{display:block;font-size:.8em;opacity:.7;max-height:4.5em;overflow:hidden;}
     .board-list{list-style:none;padding:0;}
-    .board-list li{padding:.3em 0;border-bottom:1px solid #eee;}
+    .board-list li{padding:.3em 0;border-bottom:1px solid rgba(128,128,128,.25);}
     .thread-return{margin:.4em 0;}
     </style>
 
     {{#is_board_list}}
+    {{#has_watched}}
+    <div class="board-header"><h1>{{lbl_watched_heading}}</h1></div>
+    <ul class="board-list">
+        {{#watched}}<li><strong>{{new_badge}}</strong><a href="{{thread_url}}">{{label}}</a>
+            <form class="mod-inline" method="post" action="{{watch_action}}"><input type="hidden" name="prg_id" value="{{watch_prg}}"><input type="hidden" name="_csrf" value="{{watch_csrf}}"><input type="hidden" name="thread" value="{{thread_id}}"><input type="hidden" name="unwatch" value="1"><input type="hidden" name="ret" value="index"><button type="submit">{{lbl_unwatch}}</button></form>
+        </li>{{/watched}}
+    </ul>
+    {{/has_watched}}
     <div class="board-header"><h1>{{lbl_boards_heading}}</h1></div>
     <ul class="board-list">
         {{#boards}}<li><a href="{{url}}"><strong>/{{slug}}/</strong> — {{title}}</a> <small>{{subtitle}}</small></li>{{/boards}}
@@ -65,7 +89,7 @@
         <h1>/{{board_slug}}/ — {{board_title}} {{#board_nsfw}}<span class="tag">{{lbl_nsfw}}</span>{{/board_nsfw}}</h1>
         {{#board_subtitle}}<p class="board-sub">{{board_subtitle}}</p>{{/board_subtitle}}
         {{#board_desc}}<p class="board-desc">{{board_desc}}</p>{{/board_desc}}
-        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></nav>
+        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a> · <a href="{{feed_url}}">{{lbl_feed}}</a></nav>
     </div>
 
     {{#can_post}}
@@ -80,7 +104,12 @@
         <p class="board-form-row">
             <label>{{lbl_image}} <input type="file" name="image" accept="image/*"></label>
             <label><input type="checkbox" name="sage" value="1"> {{lbl_sage}}</label>
+            {{#can_capcode}}<label><input type="checkbox" name="capcode" value="1"> {{lbl_post_with_capcode}}</label>{{/can_capcode}}
+            {{#can_verified}}<label><input type="checkbox" name="verified" value="1"> {{lbl_post_verified}}</label>{{/can_verified}}
         </p>
+        {{#flags_enabled}}
+        <p><label>{{lbl_flag}} <select name="flag"><option value="">{{lbl_no_flag}}</option>{{#flag_options}}<option value="{{code}}">{{name}}</option>{{/flag_options}}</select></label></p>
+        {{/flags_enabled}}
         <p><label>{{lbl_password}} <input type="password" name="password" maxlength="64" autocomplete="off"></label> <small>{{lbl_password_hint}}</small></p>
         <p><button type="submit">{{lbl_post}}</button></p>
         <p class="board-hint"><small>{{&lbl_formatting_hint}}</small></p>
@@ -98,9 +127,26 @@
     {{/is_catalog}}
 
     {{#is_thread}}
-        <p class="thread-return"><a href="{{index_url}}">{{lbl_return}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></p>
+        {{#live_on}}<meta http-equiv="refresh" content="{{live_refresh}}; url={{live_url}}">{{/live_on}}
+        <p class="thread-return"><a href="{{index_url}}">{{lbl_return}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a> · <a href="{{live_toggle_url}}">{{live_toggle_label}}</a>
+        {{#can_watch}} · <form class="mod-inline" method="post" action="{{watch_form_action}}"><input type="hidden" name="prg_id" value="{{watch_prg_id}}"><input type="hidden" name="_csrf" value="{{watch_csrf}}"><input type="hidden" name="thread" value="{{thread_id}}">{{#is_watching}}<input type="hidden" name="unwatch" value="1">{{/is_watching}}<button type="submit">{{watch_label}}</button></form>{{/can_watch}}
+        </p>
         {{#thread_locked}}<p><span class="tag">{{lbl_locked}}</span></p>{{/thread_locked}}
         {{&posts_html}}
+        <a id="bottom"></a>
     {{/is_thread}}
+
+    {{#is_delete}}
+        <div class="board-header"><h1>{{lbl_delete_title}} — No.{{del_no}}</h1></div>
+        <form class="board-form" method="post" action="{{del_form_action}}">
+            <input type="hidden" name="prg_id" value="{{del_prg_id}}">
+            <input type="hidden" name="_csrf" value="{{del_csrf}}">
+            <input type="hidden" name="no" value="{{del_no}}">
+            <p><label>{{lbl_password}} <input type="password" name="password" maxlength="64" autocomplete="off"></label></p>
+            <p class="board-hint"><small>{{lbl_delete_hint}}</small></p>
+            <p><button type="submit">{{lbl_delete_link}}</button></p>
+        </form>
+        <p><a href="{{index_url}}">{{lbl_return}}</a></p>
+    {{/is_delete}}
     {{/is_board_list}}
 </div>
