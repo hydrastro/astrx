@@ -1,13 +1,36 @@
+# ─────────────────────────────────────────────────────────────
 # Tooling / generated artifacts — kept locally, never committed
+# ─────────────────────────────────────────────────────────────
 /phpstan.phar
 /build/
 /xdebug-profiles/
 /diff
 
+# ─────────────────────────────────────────────────────────────
+# Generated template cache — rebuilt on demand by TemplateEngine
+# ─────────────────────────────────────────────────────────────
+/resources/template/cache/
+
+# ─────────────────────────────────────────────────────────────
+# Per-install runtime state & secrets — NEVER commit
+#   PDO.config.php           → database credentials
+#   .server_secret_generated → auto-generated session key (HKDF root)
+#   .setup_complete          → install-lock timestamp
+# Session.config.php stays tracked, but its `server_secret` must be ''.
+# ─────────────────────────────────────────────────────────────
+/resources/config/PDO.config.php
+/resources/config/.server_secret_generated
+/resources/config/.setup_complete
+
+# ─────────────────────────────────────────────────────────────
 # Editor & OS cruft
+# ─────────────────────────────────────────────────────────────
 *.orig
 *.bak
 *.rej
 *~
 .DS_Store
 Thumbs.db
+
+# build artifacts
+*.zip
