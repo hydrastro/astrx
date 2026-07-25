@@ -39,8 +39,11 @@ services:
         restart: always
         container_name: container.mariadb
         image: mariadb
-        ports:
-            - '3306:3306'
+        # DB stays on the internal compose network; do NOT publish it to the host
+        # (needless attack surface on a hidden-service box). Uncomment only for
+        # local debugging, never in production.
+        # ports:
+        #     - '3306:3306'
         volumes:
             - './src/setup/init.sql:/docker-entrypoint-initdb.d/init.sql'
             #- './docker/mysql/dbdata:/var/lib/mysql'

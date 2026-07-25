@@ -44,6 +44,13 @@ final class ImageSanitizer
         }
         $type = $info[2]; // IMAGETYPE_* (a guaranteed set int)
 
+        // Reject decompression bombs from the header, BEFORE imagecreatefromstring
+        // allocates the full pixel buffer. A few-KB image can declare enormous
+        // dimensions; decoding it would exhaust memory / kill the worker.
+        if ($opts->maxPixels > 0 && $info[0] * $info[1] > $opts->maxPixels) {
+            return $this->fail(ImageSanitizeError::TOO_BIG, 'too_big');
+        }
+
         $img = @imagecreatefromstring($raw);
         if (!$img instanceof \GdImage) {
             return $this->fail(ImageSanitizeError::UNDECODABLE, 'undecodable');

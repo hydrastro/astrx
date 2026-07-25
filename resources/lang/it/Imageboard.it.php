@@ -30,4 +30,5 @@ return [
     'board.images'          => 'immagini',
     'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 citazioni, [spoiler], [code], [b] [i]',
     'board.no_such_board'   => 'Board inesistente.',
+    'board.captcha'         => 'Scrivi il testo mostrato',
 ];

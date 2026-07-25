@@ -22,6 +22,7 @@ final class PostService
         private readonly PostRepository   $posts,
         private readonly ImageService     $images,
         private readonly PostRenderer     $renderer,
+        private readonly ImageboardConfig $config,
     ) {}
 
     /**
@@ -81,8 +82,14 @@ final class PostService
         }
 
         if ($meta !== null) {
-            $this->images->persist($pR->unwrap(), $meta);
-            $this->threads->adjustCounts($tid, 0, 1);
+            $persistR = $this->images->persist($pR->unwrap(), $meta);
+            if ($persistR->isOk()) {
+                $this->threads->adjustCounts($tid, 0, 1);
+            } else {
+                // Image row failed to save: drop the orphaned files and leave the
+                // post text-only rather than bumping a phantom image count.
+                $this->images->discard($meta);
+            }
         }
         $this->prune($boardId, $board);
         return Result::ok($tid);
@@ -115,6 +122,25 @@ final class PostService
         $board = $bR->unwrap();
         if ($board === null) {
             return $this->fail('no_board');
+        }
+        // A deactivated board is reachable here only via a stale thread id
+        // (bySlug hides it); byId does not filter active, so enforce it so no
+        // reply lands in a closed board.
+        if (!$this->boolOf($board, 'active')) {
+            return $this->fail('no_board');
+        }
+
+        // Thread-size cap: once a thread reaches its reply limit it auto-locks
+        // and further replies are rejected — this is what bounds the cost of the
+        // thread view. Per-board max_replies overrides the global default;
+        // 0 on both means unlimited.
+        $maxReplies = $this->intOf($board, 'max_replies');
+        if ($maxReplies <= 0) {
+            $maxReplies = $this->config->defaultMaxReplies();
+        }
+        if ($maxReplies > 0 && $this->intOf($thread, 'reply_count') >= $maxReplies) {
+            $this->threads->lock($threadId);
+            return $this->fail('thread_full');
         }
 
         $body     = trim($s->body);
@@ -150,10 +176,16 @@ final class PostService
         }
         $pid = $pR->unwrap();
 
+        $imageStored = false;
         if ($meta !== null) {
-            $this->images->persist($pid, $meta);
+            $persistR = $this->images->persist($pid, $meta);
+            if ($persistR->isOk()) {
+                $imageStored = true;
+            } else {
+                $this->images->discard($meta);
+            }
         }
-        $this->threads->adjustCounts($threadId, 1, $meta !== null ? 1 : 0);
+        $this->threads->adjustCounts($threadId, 1, $imageStored ? 1 : 0);
 
         // Bump unless saged, autosaged, or already at the bump limit.
         $replyCount = $this->intOf($thread, 'reply_count');

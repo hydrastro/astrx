@@ -17,6 +17,9 @@ use AstrX\Imageboard\PostRepository;
 use AstrX\Imageboard\PostService;
 use AstrX\Imageboard\SubmittedPost;
 use AstrX\Imageboard\ThreadRepository;
+use AstrX\Captcha\CaptchaService;
+use AstrX\Imageboard\Diagnostic\ImageboardPostDiagnostic;
+use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
@@ -49,6 +52,7 @@ final class BoardController extends AbstractController
         private readonly PostService            $postService,
         private readonly BoardView              $view,
         private readonly ImageboardConfig       $config,
+        private readonly CaptchaService         $captchaService,
         private readonly Gate                   $gate,
         private readonly \AstrX\Csrf\CsrfHandler $csrf,
         private readonly PrgHandler             $prg,
@@ -293,16 +297,41 @@ final class BoardController extends AbstractController
      */
     private function processSubmission(string $prgToken, array $board): string
     {
-        $slug   = self::mStr($board, 'slug');
-        $posted = $this->prg->pull($prgToken) ?? [];
+        $slug     = self::mStr($board, 'slug');
+        $bid      = self::mInt($board, 'id');
+        $posted   = $this->prg->pull($prgToken) ?? [];
+        $threadId = self::mInt($posted, 'thread', 0);
+        $backUrl  = $threadId > 0 ? $this->threadUrl($slug, $threadId) : $this->indexUrl($slug);
 
         $csrf = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrf->isOk()) {
             $csrf->drainTo($this->collector);
-            return $this->indexUrl($slug);
+            return $backUrl;
         }
         if ($this->gate->cannot(Permission::BOARD_POST)) {
             return $this->indexUrl($slug);
+        }
+
+        // Anti-automation: captcha-gate anonymous posts when configured.
+        if ($this->config->guestCaptcha()) {
+            $captcha = $this->captchaService->verify(
+                self::mStr($posted, 'captcha_id', ''),
+                self::mStr($posted, 'captcha_text', ''),
+            );
+            if (!$captcha->isOk()) {
+                $captcha->drainTo($this->collector);
+                return $backUrl;
+            }
+        }
+
+        $ip        = $this->packedIp();
+        $posterKey = $ip !== null ? hash('sha256', $ip) : '';
+
+        // Flood control: enforce the board's per-poster cooldown.
+        $cooldown = self::mInt($board, 'cooldown_secs');
+        if ($cooldown > 0 && $this->onCooldown($bid, $posterKey, $ip, $cooldown)) {
+            $this->emit(new ImageboardPostDiagnostic('astrx.imageboard/cooldown', DiagnosticLevel::NOTICE));
+            return $backUrl;
         }
 
         $image = null;
@@ -310,7 +339,10 @@ final class BoardController extends AbstractController
         if ($up instanceof UploadedFile && $up->isValid()) {
             $image = $up;
         }
-        $ip = $this->packedIp();
+        // Privacy: on the default (onion) deployment we compute the IP/poster-key
+        // for this request's cooldown but do NOT persist them. Only store at rest
+        // when the operator explicitly opts in (clearnet with a stated purpose).
+        $store = $this->config->storePosterIp();
         $submission = new SubmittedPost(
             name:           self::mStr($posted, 'name'),
             subject:        self::mStr($posted, 'subject'),
@@ -318,19 +350,88 @@ final class BoardController extends AbstractController
             sage:           self::mBool($posted, 'sage'),
             deletePassword: self::mStr($posted, 'password'),
             image:          $image,
-            packedIp:       $ip,
+            packedIp:       $store ? $ip : null,
             hexUserId:      null,
-            posterKey:      $ip !== null ? hash('sha256', $ip) : '',
+            posterKey:      $store ? $posterKey : '',
         );
 
-        $threadId = self::mInt($posted, 'thread', 0);
         if ($threadId > 0) {
-            $this->postService->reply($threadId, $submission)->drainTo($this->collector);
+            $r = $this->postService->reply($threadId, $submission);
+            $r->drainTo($this->collector);
+            if ($r->isOk()) {
+                $this->markPosted();
+            }
             return $this->threadUrl($slug, $threadId);
         }
-        $r = $this->postService->createThread(self::mInt($board, 'id'), $submission);
+        $r = $this->postService->createThread($bid, $submission);
         $r->drainTo($this->collector);
-        return $r->isOk() ? $this->threadUrl($slug, $r->unwrap()) : $this->indexUrl($slug);
+        if ($r->isOk()) {
+            $this->markPosted();
+            return $this->threadUrl($slug, $r->unwrap());
+        }
+        return $this->indexUrl($slug);
+    }
+
+    // ── Anti-automation ───────────────────────────────────────────────────────
+
+    /** Generate + expose a captcha for the post form when guest captcha is on. */
+    private function setCaptcha(): void
+    {
+        $show = $this->config->guestCaptcha();
+        $this->ctx->set('show_captcha',      $show);
+        $this->ctx->set('has_captcha_frame', false);
+        $cid = ''; $cimg = '';
+        if ($show) {
+            $gen = $this->captchaService->generate();
+            $gen->drainTo($this->collector);
+            if ($gen->isOk()) {
+                $u    = $gen->unwrap();
+                $cid  = $u['id'];
+                $cimg = $u['image_b64'];
+            }
+        }
+        $this->ctx->set('captcha_id',    $cid);
+        $this->ctx->set('captcha_image', $cimg);
+        $this->ctx->set('captcha_label', $this->t->t('board.captcha'));
+    }
+
+    /**
+     * True while this poster is still inside the board's post cooldown. A
+     * per-session (per-browser) timer is the meaningful key on a pure onion,
+     * where every poster shares one REMOTE_ADDR; a per-poster-key (per-IP) timer
+     * additionally bites on clearnet and is skipped for loopback so it can never
+     * throttle an entire onion as one.
+     */
+    private function onCooldown(int $boardId, string $posterKey, ?string $ip, int $cooldown): bool
+    {
+        $last   = $_SESSION['board_last_post'] ?? null;
+        $lastTs = is_int($last) ? $last : 0;
+        if ($lastTs > 0 && (time() - $lastTs) < $cooldown) {
+            return true;
+        }
+        if ($ip !== null && $posterKey !== '' && !self::isLoopback($ip)) {
+            $r     = $this->posts->lastPostAtByPosterKey($boardId, $posterKey);
+            $keyTs = $r->isOk() ? $r->unwrap() : 0;
+            if ($keyTs > 0 && (time() - $keyTs) < $cooldown) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function markPosted(): void
+    {
+        $_SESSION['board_last_post'] = time();
+    }
+
+    /** True if a packed (inet_pton) address is loopback (127.0.0.0/8 or ::1). */
+    private static function isLoopback(string $packedIp): bool
+    {
+        if (strlen($packedIp) === 4) {
+            return $packedIp[0] === "\x7f";          // 127.x.x.x
+        }
+        $lo6 = inet_pton('::1');
+        return $lo6 !== false && $packedIp === $lo6; // ::1
     }
 
     // ── Context builders ──────────────────────────────────────────────────────
@@ -357,6 +458,7 @@ final class BoardController extends AbstractController
         $this->ctx->set('prg_id',      $this->prg->createId($actionUrl));
         $this->ctx->set('csrf_token',  $this->csrf->generate(self::FORM));
         $this->ctx->set('max_len',     self::mInt($board, 'max_post_len'));
+        $this->setCaptcha();
     }
 
     /**

@@ -74,6 +74,8 @@ return [
     'WORDING_BOARD.title'       => 'Boards',
     'WORDING_BOARD.description' => 'Anonymous image boards.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD' => 'admin-config-imageboard',
+    'WORDING_ADMIN_BOARDS' => 'admin-boards',
     'WORDING_ADMIN_CHAT_FILTERS' => 'admin-chat-filters',
     'WORDING_ADMIN_CHAT_FILTERS.title'       => 'Chat filters',
     'WORDING_ADMIN_CHAT_FILTERS.description' => 'Manage the chat word and link filters.',
@@ -93,6 +95,10 @@ return [
     'WORDING_CHAT_WAIT.description'         => 'Please wait to enter the chat.',
     'WORDING_ADMIN_CONFIG_CHAT.title'       => 'Config — Chat',
     'WORDING_ADMIN_CONFIG_CHAT.description' => 'Edit chat configuration.',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD.title'       => 'Config — Imageboard',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD.description' => 'Edit imageboard global configuration.',
+    'WORDING_ADMIN_BOARDS.title'       => 'Boards',
+    'WORDING_ADMIN_BOARDS.description' => 'Imageboard board list.',
 
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Main Page',

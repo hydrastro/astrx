@@ -178,6 +178,7 @@ return [
     'webmail.to'                  => 'To',
     'webmail.subject'             => 'Subject',
     'webmail.date'                => 'Date',
+    'webmail.raw_headers_failed'  => '(could not fetch headers)',
     'webmail.actions'             => 'Actions',
     'webmail.no_messages'         => 'No messages in this folder.',
     'webmail.btn_compose'         => 'Compose',

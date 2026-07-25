@@ -174,6 +174,7 @@ return [
     'webmail.to'                  => 'A',
     'webmail.subject'             => 'Oggetto',
     'webmail.date'                => 'Data',
+    'webmail.raw_headers_failed'  => '(impossibile recuperare le intestazioni)',
     'webmail.actions'             => 'Azioni',
     'webmail.no_messages'         => 'Nessun messaggio in questa cartella.',
     'webmail.btn_compose'         => 'Scrivi',

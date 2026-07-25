@@ -30,4 +30,5 @@ return [
     'board.images'          => 'images',
     'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 quotes, [spoiler], [code], [b] [i]',
     'board.no_such_board'   => 'No such board.',
+    'board.captcha'         => 'Type the text shown',
 ];

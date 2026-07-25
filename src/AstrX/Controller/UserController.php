@@ -128,7 +128,11 @@ final class UserController extends AbstractController
             return;
         }
 
-        $showCaptchaResult = $this->userService->shouldShowCaptcha(self::LOGIN_FORM, $username);
+        // Captcha requirement is driven by a per-session failure counter, NOT a
+        // DB lookup on the username — otherwise the captcha appearing only for
+        // real accounts is an account-existence oracle (this path previously used
+        // shouldShowCaptcha('login', $username), which had exactly that leak).
+        $showCaptchaResult = $this->userService->shouldShowLoginCaptcha($this->loginFailCount());
         if ($showCaptchaResult->isOk() && (bool) $showCaptchaResult->unwrap()) {
             $captchaResult = $this->captchaService->verify($captchaId, $captchaText);
             if (!$captchaResult->isOk()) {
@@ -140,8 +144,12 @@ final class UserController extends AbstractController
         $loginResult = $this->userService->login($username, $password, $rememberMe);
         if (!$loginResult->isOk()) {
             $loginResult->drainTo($this->collector);
+            // Count every failed attempt, independent of whether the username exists.
+            $this->bumpLoginFailCount();
             return;
         }
+
+        $this->resetLoginFailCount();
 
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
         $userData = $loginResult->unwrap();
@@ -160,7 +168,7 @@ final class UserController extends AbstractController
         $pageUrl = $this->request->uri()->path();
         $prgId   = $this->prg->createId($pageUrl);
 
-        $captchaResult = $this->userService->shouldShowCaptcha(self::LOGIN_FORM, $usernameValue);
+        $captchaResult = $this->userService->shouldShowLoginCaptcha($this->loginFailCount());
         $showCaptcha   = $captchaResult->isOk() && (bool) $captchaResult->unwrap();
 
         $captchaId = ''; $captchaB64 = '';
@@ -195,6 +203,29 @@ final class UserController extends AbstractController
         $this->ctx->set('login_need_account', $this->t->t('user.login.need_account'));
         $this->ctx->set('login_register',     $this->t->t('user.login.register'));
         $this->ctx->set('captcha_label',      $this->t->t('user.captcha.label'));
+    }
+
+    // ── Login-failure counter (session) ───────────────────────────────────────
+    // Shares the key with LoginController so the login captcha threshold is
+    // driven by attempts from THIS browser session, independent of whether the
+    // submitted username maps to a real account (closes the enumeration oracle).
+
+    private function loginFailCount(): int
+    {
+        $v = $_SESSION['astrx_login_fail'] ?? 0;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
+    }
+
+    private function bumpLoginFailCount(): int
+    {
+        $n = $this->loginFailCount() + 1;
+        $_SESSION['astrx_login_fail'] = $n;
+        return $n;
+    }
+
+    private function resetLoginFailCount(): void
+    {
+        $_SESSION['astrx_login_fail'] = 0;
     }
 
     private function renderHome(): void

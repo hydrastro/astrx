@@ -640,8 +640,11 @@ VALUES
     -- New pages (ids 27, 28, 29, 30)
     (21,27),(22,28),(23,29),(24,30);
 
+-- Example external links are intentionally inert placeholders: any real clearnet
+-- URL on a hidden service is a deanonymization vector the moment it is enabled.
+-- Replace with your own (onion) URLs before activating these entries.
 INSERT INTO `navbar_external` (id, url)
-VALUES (3,'http://www.example.com'),(4,'http://blackhost.xyz');
+VALUES (3,'#'),(4,'#');
 
 
 -- ----------------------------------------------------------
@@ -1840,6 +1843,7 @@ CREATE TABLE IF NOT EXISTS `board`
     `thread_limit`  SMALLINT UNSIGNED NOT NULL DEFAULT 100,        -- max active threads before prune
     `max_post_len`  SMALLINT UNSIGNED NOT NULL DEFAULT 2000,
     `cooldown_secs` SMALLINT UNSIGNED NOT NULL DEFAULT 30,         -- per-poster post cooldown
+    `max_replies`   SMALLINT UNSIGNED NOT NULL DEFAULT 0,          -- thread auto-locks past this (0 = use global default)
     `post_seq`      INT UNSIGNED     NOT NULL DEFAULT 0,           -- per-board post counter (the `no`)
     `sort_order`    INT              NOT NULL DEFAULT 0,
     `created_at`    TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1906,6 +1910,7 @@ CREATE TABLE IF NOT EXISTS `board_post`
     CONSTRAINT `board_post_user_fk`   FOREIGN KEY (`user_id`)   REFERENCES `user`         (`id`) ON DELETE SET NULL,
     UNIQUE KEY `uq_board_no` (`board_id`, `no`),
     INDEX `idx_post_thread` (`thread_id`, `created_at`),
+    INDEX `idx_post_thread_id` (`thread_id`, `id`),
     INDEX `idx_post_poster` (`board_id`, `poster_key`)
 );
 

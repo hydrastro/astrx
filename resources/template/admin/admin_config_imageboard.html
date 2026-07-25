@@ -1,0 +1,67 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{heading}}</h2>
+
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+
+  {{! ── General ────────────────────────────────────────────────────────── }}
+  <h3>{{section_general}}</h3>
+  <table>
+    <tr><th>{{label_enabled}}</th>
+      <td><input type="checkbox" name="enabled" value="1"{{#cfg_enabled}} checked{{/cfg_enabled}} class="input"></td></tr>
+  </table>
+
+  {{! ── Uploads ────────────────────────────────────────────────────────── }}
+  <h3>{{section_uploads}}</h3>
+  <table>
+    <tr><th>{{label_upload_max_kb}}</th>
+      <td><input type="number" name="upload_max_kb" value="{{cfg_upload_max_kb}}" min="1" class="input"> KB</td></tr>
+    <tr><th>{{label_upload_max_pixels}}</th>
+      <td><input type="number" name="upload_max_pixels" value="{{cfg_upload_max_pixels}}" min="1000000" step="1000000" class="input">
+          <br><small>{{hint_upload_max_pixels}}</small></td></tr>
+    <tr><th>{{label_full_max_dimension}}</th>
+      <td><input type="number" name="full_max_dimension" value="{{cfg_full_max_dimension}}" min="64" class="input"> px</td></tr>
+    <tr><th>{{label_thumb_max_dimension}}</th>
+      <td><input type="number" name="thumb_max_dimension" value="{{cfg_thumb_max_dimension}}" min="32" class="input"> px</td></tr>
+    <tr><th>{{label_upload_types}}</th>
+      <td><input type="text" name="upload_types" value="{{cfg_upload_types}}" style="width:22em" class="input"></td></tr>
+    <tr><th>{{label_upload_dir}}</th>
+      <td><input type="text" name="upload_dir" value="{{cfg_upload_dir}}" style="width:30em" class="input"></td></tr>
+  </table>
+
+  {{! ── Posting / anti-abuse ───────────────────────────────────────────── }}
+  <h3>{{section_posting}}</h3>
+  <table>
+    <tr><th>{{label_guest_captcha}}</th>
+      <td><input type="checkbox" name="guest_captcha" value="1"{{#cfg_guest_captcha}} checked{{/cfg_guest_captcha}} class="input"></td></tr>
+    <tr><th>{{label_store_poster_ip}}</th>
+      <td><input type="checkbox" name="store_poster_ip" value="1"{{#cfg_store_poster_ip}} checked{{/cfg_store_poster_ip}} class="input">
+          <br><small>{{hint_store_poster_ip}}</small></td></tr>
+    <tr><th>{{label_default_max_replies}}</th>
+      <td><input type="number" name="default_max_replies" value="{{cfg_default_max_replies}}" min="0" class="input">
+          <br><small>{{hint_default_max_replies}}</small></td></tr>
+    <tr><th>{{label_anon_name}}</th>
+      <td><input type="text" name="anon_name" value="{{cfg_anon_name}}" maxlength="64" style="width:16em" class="input"></td></tr>
+  </table>
+
+  {{! ── Display ────────────────────────────────────────────────────────── }}
+  <h3>{{section_display}}</h3>
+  <table>
+    <tr><th>{{label_threads_per_page}}</th>
+      <td><input type="number" name="threads_per_page" value="{{cfg_threads_per_page}}" min="1" class="input"></td></tr>
+    <tr><th>{{label_preview_replies}}</th>
+      <td><input type="number" name="preview_replies" value="{{cfg_preview_replies}}" min="0" class="input"></td></tr>
+    <tr><th>{{label_flag_base_path}}</th>
+      <td><input type="text" name="flag_base_path" value="{{cfg_flag_base_path}}" style="width:16em" class="input"></td></tr>
+  </table>
+
+  <p><button type="submit" class="input">{{btn_save}}</button></p>
+</form>
+{{/admin_forbidden}}

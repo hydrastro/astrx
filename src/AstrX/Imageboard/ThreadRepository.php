@@ -121,6 +121,22 @@ final class ThreadRepository
     }
 
     /**
+     * Lock a thread so it accepts no further replies.
+     *
+     * @return Result<bool>
+     */
+    public function lock(int $threadId): Result
+    {
+        try {
+            $this->pdo->prepare('UPDATE board_thread SET locked = 1 WHERE id = :id')
+                ->execute([':id' => $threadId]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
      * Adjust the reply/image counters (a reply is +1 reply; each image is +1
      * image; an OP with an image is +0 reply / +1 image). Clamped at zero.
      *

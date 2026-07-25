@@ -580,7 +580,7 @@ final class WebmailController extends AbstractController
         $folders   = $this->getFolders($selfUrl, $folder);
         $rawR      = $this->webmail->fetchRawHeaders($folder, $uid);
         $rawR->drainTo($this->collector);
-        $rawHeaders = $rawR->isOk() ? $rawR->unwrap() : '(could not fetch headers)';
+        $rawHeaders = $rawR->isOk() ? $rawR->unwrap() : $this->t->t('webmail.raw_headers_failed');
         $csrfToken  = $this->csrf->generate(self::FORM);
         $prgId      = $this->prg->createId($selfUrl);
 

@@ -46,6 +46,7 @@ final class ImageService
         $res = $this->sanitizer->sanitize($raw, $ext, new ImageSanitizeOptions(
             allowedExtensions:  $this->config->uploadTypes(),
             maxBytes:           $this->config->uploadMaxBytes(),
+            maxPixels:          $this->config->uploadMaxPixels(),
             maxDimension:       $this->config->fullMaxDimension(),
             outputFormat:       ImageOutputFormat::AUTO,
             jpegQuality:        85,

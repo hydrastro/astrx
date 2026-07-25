@@ -24,9 +24,11 @@ return [
         // explicitly here via the installer (tools/install.php / setup wizard).
         // Generate one with: php -r "echo bin2hex(random_bytes(32));"
         // WARNING: changing this value invalidates ALL existing sessions.
-        // NOTE: the old public value that once shipped here is now hard-ignored
-        // by the handler, so it can never be used even if pasted back in.
-        'server_secret' => 'cb0c657113c60f6472950eece6f99c80968cf21c94832fd26127a1e2d203aec0',
+        // NOTE: this MUST ship empty. A committed constant is public (this is an
+        // open repo), which would defeat the per-install key. Empty → the handler
+        // generates a unique per-install secret on first run. Set it explicitly
+        // only via the installer, never by committing a literal here.
+        'server_secret' => '',
 
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)

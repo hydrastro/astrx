@@ -42,4 +42,6 @@ return [
     'WORDING_WEBMAIL.label'               => 'Webmail',
     'WORDING_CHAT.label'                  => 'Chat',
     'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
+    'WORDING_ADMIN_BOARDS.label'          => 'Boards',
 ];

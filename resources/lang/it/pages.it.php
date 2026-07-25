@@ -74,6 +74,8 @@ return [
     'WORDING_BOARD.title'       => 'Board',
     'WORDING_BOARD.description' => 'Bacheche di immagini anonime.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD' => 'admin-config-imageboard',
+    'WORDING_ADMIN_BOARDS' => 'admin-boards',
     'WORDING_ADMIN_CHAT_FILTERS' => 'admin-chat-filtri',
     'WORDING_ADMIN_CHAT_FILTERS.title'       => 'Filtri chat',
     'WORDING_ADMIN_CHAT_FILTERS.description' => 'Gestione dei filtri di parole e link della chat.',
@@ -93,6 +95,10 @@ return [
     'WORDING_CHAT_WAIT.description'         => 'Attendi per entrare nella chat.',
     'WORDING_ADMIN_CONFIG_CHAT.title'       => 'Configurazione — Chat',
     'WORDING_ADMIN_CONFIG_CHAT.description' => 'Modifica la configurazione della chat.',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD.title'       => 'Configurazione — Imageboard',
+    'WORDING_ADMIN_CONFIG_IMAGEBOARD.description' => 'Modifica la configurazione globale dell\'imageboard.',
+    'WORDING_ADMIN_BOARDS.title'       => 'Board',
+    'WORDING_ADMIN_BOARDS.description' => 'Elenco delle board.',
 
     // Keyword labels
     'WORDING_MAIN_PAGE' => 'Pagina Principale',

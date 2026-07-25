@@ -16,6 +16,11 @@ final class ImageSanitizeOptions
     public function __construct(
         public readonly array             $allowedExtensions  = [],
         public readonly int               $maxBytes           = 0,   // 0 = no limit
+        // Pixel-count ceiling checked from the header BEFORE the bitmap is
+        // decoded, so a small-file / huge-dimension "decompression bomb" is
+        // rejected without ever allocating its (potentially multi-GB) buffer.
+        // Non-zero default so every caller is protected even if it forgets to set one.
+        public readonly int               $maxPixels          = 16_000_000, // 0 = no limit
         public readonly int               $maxDimension       = 0,   // 0 = no downscale of the full image
         public readonly ImageOutputFormat $outputFormat       = ImageOutputFormat::AUTO,
         public readonly int               $jpegQuality        = 85,

@@ -24,6 +24,11 @@ final class PostRepository
          flag_code, subject, body_html, LOWER(HEX(user_id)) AS user_id, sage, banned,
          UNIX_TIMESTAMP(created_at) AS created_ts';
 
+    // Absolute ceiling on posts loaded for one thread view — defence-in-depth so
+    // a thread that somehow grows past its reply cap still renders in bounded
+    // memory instead of loading every row at once.
+    private const MAX_THREAD_POSTS = 5000;
+
     /** @return Result<int> */
     public function create(PostDraft $d): Result
     {
@@ -75,9 +80,11 @@ final class PostRepository
     {
         try {
             $stmt = $this->pdo->prepare(
-                'SELECT ' . self::COLS . ' FROM board_post WHERE thread_id = :t ORDER BY id ASC'
+                'SELECT ' . self::COLS . ' FROM board_post WHERE thread_id = :t ORDER BY id ASC LIMIT :lim'
             );
-            $stmt->execute([':t' => $threadId]);
+            $stmt->bindValue(':t', $threadId, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', self::MAX_THREAD_POSTS, PDO::PARAM_INT);
+            $stmt->execute();
             /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             return Result::ok($rows);
@@ -139,6 +146,30 @@ final class PostRepository
             /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             return Result::ok($rows);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Unix timestamp of this poster_key's most recent post on the board (0 = none).
+     * Backs the per-poster post cooldown; uses idx_post_poster (board_id, poster_key).
+     *
+     * @return Result<int>
+     */
+    public function lastPostAtByPosterKey(int $boardId, string $posterKey): Result
+    {
+        if ($posterKey === '') {
+            return Result::ok(0);
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT UNIX_TIMESTAMP(MAX(created_at)) FROM board_post
+                  WHERE board_id = :b AND poster_key = :k'
+            );
+            $stmt->execute([':b' => $boardId, ':k' => $posterKey]);
+            $v = $stmt->fetchColumn();
+            return Result::ok(is_numeric($v) ? (int) $v : 0);
         } catch (PDOException $e) {
             return $this->err($e);
         }

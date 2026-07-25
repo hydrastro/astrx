@@ -1,0 +1,39 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{heading}}</h2>
+<p>{{intro}}</p>
+<p><a href="{{config_url}}" class="input">{{config_link}}</a></p>
+
+{{#has_boards}}
+<table>
+  <thead>
+  <tr>
+    <th style="text-align:left">{{col_slug}}</th>
+    <th style="text-align:left">{{col_title}}</th>
+    <th>{{col_active}}</th>
+    <th>{{col_cooldown}}</th>
+    <th>{{col_max_replies}}</th>
+    <th>{{col_threads}}</th>
+  </tr>
+  </thead>
+  <tbody>
+  {{#boards}}
+  <tr>
+    <td>/{{slug}}/</td>
+    <td>{{title}}</td>
+    <td style="text-align:center">{{active}}</td>
+    <td style="text-align:center">{{cooldown}}</td>
+    <td style="text-align:center">{{max_replies}}</td>
+    <td style="text-align:center">{{thread_limit}}</td>
+  </tr>
+  {{/boards}}
+  </tbody>
+</table>
+{{/has_boards}}
+{{^has_boards}}<p><em>{{lbl_none}}</em></p>{{/has_boards}}
+{{/admin_forbidden}}

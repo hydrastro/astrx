@@ -22,7 +22,7 @@ final class BoardRepository
     private const COLS =
         'id, slug, title, subtitle, description, LOWER(HEX(owner_user_id)) AS owner_user_id,
          active, nsfw, forced_anon, bbcode, flags_mode, poster_ids, lifecycle,
-         bump_limit, image_limit, thread_limit, max_post_len, cooldown_secs, sort_order';
+         bump_limit, image_limit, thread_limit, max_post_len, cooldown_secs, max_replies, sort_order';
 
     /**
      * Look up an active board by its URL slug.

@@ -36,4 +36,12 @@ return [
     'astrx.imageboard/disabled' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'The imageboard is currently disabled.',
+
+    'astrx.imageboard/cooldown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'You are posting too fast. Please wait a moment and try again.',
+
+    'astrx.imageboard/thread_full' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'This thread has reached its reply limit and is now locked.',
 ];

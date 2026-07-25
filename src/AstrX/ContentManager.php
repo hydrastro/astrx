@@ -579,6 +579,10 @@ final class ContentManager
                     header('Cache-Control: private, no-store');
                     header('Vary: X-AstrX-JS-Browser, Accept', false);
                     header('X-AstrX-JS-Browser: fragment');
+                    // The JS shell owns the full CSP; these two are pure-win
+                    // anonymity headers on the fragment response and never clip it.
+                    header('Referrer-Policy: no-referrer');
+                    header('X-Content-Type-Options: nosniff');
                     $this->emitServerTiming('astrx_fragment', $astrxRequestStarted);
                 }
 
@@ -885,6 +889,12 @@ final class ContentManager
     private function renderError(HttpStatus $status): void
     {
         http_response_code($status->value);
+
+        // Error pages are full HTML documents too: give them the same CSP /
+        // Referrer-Policy / nosniff / frame protections as the main render path.
+        // Covers both the templated error page and the failsafe below (the helper
+        // no-ops if headers were already sent).
+        $this->emitSecurityHeaders();
 
         // Load the Http lang domain so ErrorController has its translations.
         if (langDir() !== '') {
