@@ -11,6 +11,7 @@ return [
     // Public navbar
     'WORDING_HOME.label'             => 'Home',
     'WORDING_USER.label'             => 'User Area',
+    'WORDING_BOARD.label'            => 'Boards',
 
     // User navbar
     'WORDING_USER_HOME.label'        => 'Home',

@@ -141,70 +141,70 @@ final class ChatStyles
     {
         return <<<'CSS'
 /* ── compact the themed page down to just the pane content ───────────────── */
+/* Colours here are SOLID and theme-driven: borders/rules use the theme's own
+   text colour via currentColor (identical to the site's #fff rules on the dark
+   default theme, and correct on light themes too) — never a translucent grey.
+   No opacity, no border-radius, no em/rem sizes: text inherits the theme size so
+   it is not shrunk, and spacing is plain px like the rest of the site. */
 html, body { margin: 0; padding: 0; }
 #wrap { border: 0; margin: 0; }
 #header, #top_nav, #user_top_nav, #admin_top_nav, #footer, #message_bar, #go_top { display: none; }
-#main { border: 0; margin: 0; padding: .35em .55em; overflow: visible; min-width: 0; }
+#main { border: 0; margin: 0; padding: 4px 6px; overflow: visible; min-width: 0; }
 
-/* ── message list (le-chat: dense, colour-coded, newest first) ───────────── */
+/* ── message list (dense, newest first) ──────────────────────────────────── */
 ul.chat-messages { list-style: none; margin: 0; padding: 0; line-height: 1.5; }
-.chat-msg { padding: 1px 0; border-bottom: 1px solid rgba(128,128,128,.22); word-wrap: break-word; overflow-wrap: anywhere; }
-.chat-time { opacity: .55; font-size: .82em; margin-right: .15em; }
+.chat-msg { padding: 2px 0; border-bottom: 1px solid currentColor; word-wrap: break-word; overflow-wrap: anywhere; }
+.chat-time { margin-right: 3px; }
 .chat-user { font-weight: bold; }
 .chat-member { text-decoration: underline; }
-.chat-sep { opacity: .5; }
-.chat-body blockquote.chat-quote { margin: .2em 0 .2em .8em; padding-left: .5em; border-left: 3px solid rgba(128,128,128,.5); opacity: .9; }
-.chat-body code.chat-code { background: rgba(128,128,128,.18); padding: 0 .25em; border-radius: 2px; }
-.chat-body img.chat-img { max-width: 100%; max-height: 260px; height: auto; display: block; margin: .2em 0; border: 1px solid rgba(128,128,128,.3); }
-.chat-attachment { margin: .25em 0; }
-.chat-attachment img { max-width: 100%; max-height: 320px; width: auto; height: auto; display: block; border: 1px solid rgba(128,128,128,.35); border-radius: 3px; }
+.chat-body blockquote.chat-quote { margin: 2px 0 2px 12px; padding-left: 6px; border-left: 2px solid currentColor; }
+.chat-body code.chat-code { border: 1px solid currentColor; padding: 0 3px; }
+.chat-body img.chat-img { max-width: 100%; max-height: 40vh; height: auto; display: block; margin: 3px 0; border: 1px solid currentColor; }
+.chat-attachment { margin: 3px 0; }
+.chat-attachment img { max-width: 100%; max-height: 45vh; width: auto; height: auto; display: block; border: 1px solid currentColor; }
 /* a11y (#110): a visible keyboard-focus ring in the stream */
 .chat-messages a:focus-visible, .chat-del button:focus-visible, .chat-report button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .chat-del { display: inline; }
-/* Inline action buttons (delete, report, mod tools): theme-aware, not native —
-   transparent background, inherited text colour, a neutral translucent border,
-   and em sizing (no hard-coded px) so they read on every theme and scale with
-   the reader's font size instead of rendering as small light native buttons. */
+/* Inline action buttons (delete, report, mod): transparent fill, inherited text
+   colour, a SOLID currentColor border, underline on hover — reads on every theme
+   with no alpha and no colour wash. */
 .chat-del button, .chat-report button, .chat-mod-actions button {
-    font: inherit; font-size: .82em; line-height: 1.4; padding: 0 .45em; cursor: pointer;
-    background: transparent; color: inherit;
-    border: 1px solid rgba(128,128,128,.5); border-radius: 2px;
+    font: inherit; line-height: 1.4; padding: 0 6px; cursor: pointer;
+    background: transparent; color: inherit; border: 1px solid currentColor;
 }
-.chat-del button { margin-left: .3em; }
-.chat-del button:hover, .chat-report button:hover, .chat-mod-actions button:hover { background: rgba(128,128,128,.2); }
-.chat-empty { opacity: .7; padding: .5em .2em; }
+.chat-del button { margin-left: 4px; }
+.chat-del button:hover, .chat-report button:hover, .chat-mod-actions button:hover { text-decoration: underline; }
+.chat-empty { padding: 6px 3px; font-style: italic; }
 
-/* admin public notes / greeting board pinned above the stream (theme-neutral) */
-.chat-greeting { margin: 0 0 .6em; padding: .4em .65em; border: 1px solid rgba(128,128,128,.35); border-left: 3px solid rgba(128,128,128,.6); background: rgba(128,128,128,.07); line-height: 1.5; }
+/* admin public notes / greeting board pinned above the stream */
+.chat-greeting { margin: 0 0 8px; padding: 6px 10px; border: 1px solid currentColor; border-left-width: 3px; line-height: 1.5; }
 .chat-greeting a { word-break: break-all; }
 
-/* /me emotes: "* nick does something" */
-.chat-msg.chat-action { font-style: italic; opacity: .95; }
-.chat-msg.chat-action .chat-sep { font-weight: bold; opacity: .8; font-style: normal; }
-.chat-msg.chat-system { font-style: italic; opacity: .68; }
+/* /me emotes and system lines: italic instead of a faded colour */
+.chat-msg.chat-action { font-style: italic; }
+.chat-msg.chat-action .chat-sep { font-weight: bold; font-style: normal; }
+.chat-msg.chat-system { font-style: italic; }
 .chat-msg.chat-system .chat-sep { font-style: normal; }
 
-/* moderator broadcast — a prominent, un-ignorable announcement */
-.chat-msg.chat-broadcast { background: rgba(200,160,40,.16); border-left: 3px solid rgba(200,160,40,.85); padding-left: .45em; font-weight: bold; }
-.chat-broadcast-tag { text-transform: uppercase; font-size: .76em; letter-spacing: .05em; opacity: .85; margin-right: .35em; }
+/* moderator broadcast — bold + a solid left rule (no coloured wash) */
+.chat-msg.chat-broadcast { border-left: 3px solid currentColor; padding-left: 6px; font-weight: bold; }
+.chat-broadcast-tag { text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
 
 /* private messages shown inline in the stream */
-.chat-msg.chat-pm { background: rgba(128,128,128,.10); font-style: italic; }
-.chat-pm-tag { font-weight: bold; font-style: normal; opacity: .75; margin-right: .2em; }
+.chat-msg.chat-pm { border-left: 2px solid currentColor; padding-left: 4px; font-style: italic; }
+.chat-pm-tag { font-weight: bold; font-style: normal; margin-right: 3px; }
 
 /* ── user roster ─────────────────────────────────────────────────────────── */
-.chat-roster-head { font-weight: bold; opacity: .75; font-size: .8em; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 .35em; }
+.chat-roster-head { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 5px; }
 ul.chat-users-list { list-style: none; margin: 0; padding: 0; line-height: 1.5; }
-.chat-users-list li { padding: 1px 0; border-bottom: 1px solid rgba(128,128,128,.18); }
-.chat-role { opacity: .6; font-size: .78em; margin-left: .2em; }
-.chat-mod-actions { display: block; margin: .1em 0 .2em; }
-.chat-mod-actions form { display: inline; margin-right: .25em; }
+.chat-users-list li { padding: 2px 0; border-bottom: 1px solid currentColor; }
+.chat-role { margin-left: 3px; }
+.chat-mod-actions { display: block; margin: 2px 0 3px; }
+.chat-mod-actions form { display: inline; margin-right: 4px; }
 .chat-mod-actions input[type=text], .chat-mod-actions input[type=number] {
-    width: 3.4em; font: inherit; font-size: .82em; padding: 0 .2em;
-    background: transparent; color: inherit;
-    border: 1px solid rgba(128,128,128,.5); border-radius: 2px;
+    width: 44px; font: inherit; padding: 0 3px;
+    background: transparent; color: inherit; border: 1px solid currentColor;
 }
-.chat-personal-actions button { opacity: .85; }
 CSS;
     }
 
@@ -216,38 +216,41 @@ CSS;
     public static function shellCss(): string
     {
         return <<<'CSS'
-#chat .chat-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .1em .5em; margin: .2em 0 .5em; padding-bottom: .3em; border-bottom: 1px solid rgba(128,128,128,.3); }
+/* Layout only (the shell already lives inside the themed #main). Solid colours
+   (currentColor rules, no alpha), plain px spacing (no em/rem), and the panes
+   size to the viewport (vh height, % width) so they auto-adjust. */
+#chat .chat-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 3px 0 8px; padding-bottom: 5px; border-bottom: 1px solid currentColor; }
 #chat .chat-controls form.chat-inline { display: inline; margin: 0; }
 #chat .chat-controls a.input { display: inline-block; text-decoration: none; }
 #chat .chat-controls .chat-pm-badge { margin-left: auto; }
-#chat .chat-topic { opacity: .8; font-style: italic; margin: .1em 0 .4em; }
-#chat .chat-mod-tools { margin: .1em 0 .5em; }
-#chat .chat-mod-tools form { display: inline; margin-right: .6em; }
-#chat .chat-mod-tools .input { padding: 0 .3em; }
-#chat .chat-pm-badge { opacity: .85; font-weight: bold; }
-#chat .chat-panes { display: flex; gap: .5em; align-items: stretch; margin: .3em 0 .5em; }
-#chat .chat-stream { flex: 1 1 auto; height: 360px; min-width: 0; box-sizing: border-box; border: 1px solid rgba(128,128,128,.5); background: transparent; }
-#chat .chat-users  { flex: 0 0 13em; height: 360px; box-sizing: border-box; border: 1px solid rgba(128,128,128,.5); background: transparent; }
+#chat .chat-topic { font-style: italic; margin: 2px 0 6px; }
+#chat .chat-mod-tools { margin: 2px 0 8px; }
+#chat .chat-mod-tools form { display: inline; margin-right: 10px; }
+#chat .chat-mod-tools .input { padding: 0 5px; }
+#chat .chat-pm-badge { font-weight: bold; }
+#chat .chat-panes { display: flex; gap: 8px; align-items: stretch; margin: 5px 0 8px; }
+#chat .chat-stream { flex: 1 1 auto; height: 55vh; min-width: 0; box-sizing: border-box; border: 1px solid currentColor; background: transparent; }
+#chat .chat-users  { flex: 0 0 25%; height: 55vh; box-sizing: border-box; border: 1px solid currentColor; background: transparent; }
 #chat .chat-post .chat-postbox { width: 100%; box-sizing: border-box; }
-#chat .chat-post, #chat .chat-pm-form { margin: .45em 0; }
-#chat .chat-pm-form label { margin-right: .3em; }
-#chat .chat-pm-form .input { margin-right: .4em; }
-#chat .chat-send-to { margin: .25em 0; }
-#chat .chat-send-to label { margin-right: .3em; }
-#chat .chat-send-to .input { margin-right: .4em; }
-#chat .chat-meta { opacity: .75; margin: .1em 0; }
-#chat .chat-hint { opacity: .7; font-size: .85em; margin: .1em 0 .3em; }
-#chat form.chat-inline { display: inline; margin-right: .5em; }
-#chat .chat-upload { margin: .35em 0; }
-#chat .chat-upload label { margin-right: .3em; }
+#chat .chat-post, #chat .chat-pm-form { margin: 7px 0; }
+#chat .chat-pm-form label { margin-right: 5px; }
+#chat .chat-pm-form .input { margin-right: 6px; }
+#chat .chat-send-to { margin: 4px 0; }
+#chat .chat-send-to label { margin-right: 5px; }
+#chat .chat-send-to .input { margin-right: 6px; }
+#chat .chat-meta { margin: 2px 0; }
+#chat .chat-hint { margin: 2px 0 5px; }
+#chat form.chat-inline { display: inline; margin-right: 8px; }
+#chat .chat-upload { margin: 5px 0; }
+#chat .chat-upload label { margin-right: 5px; }
 /* a11y (#110): keyboard-focus ring on shell controls */
 #chat a:focus-visible, #chat button:focus-visible, #chat input:focus-visible, #chat select:focus-visible, #chat textarea:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 /* Rearrange: swap the messages / online panes left-to-right (per-session toggle). */
 #chat.chat-alt .chat-panes { flex-direction: row-reverse; }
 @media (max-width: 640px) {
     #chat .chat-panes, #chat.chat-alt .chat-panes { flex-direction: column; }
-    #chat .chat-users { flex-basis: auto; height: 140px; }
-    #chat .chat-stream { height: 300px; }
+    #chat .chat-users { flex-basis: auto; height: 25vh; }
+    #chat .chat-stream { height: 45vh; }
 }
 CSS;
     }

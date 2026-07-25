@@ -102,7 +102,7 @@ final class ChatSettingsController extends AbstractController
             self::mInt($posted, 'refresh_secs', $this->config->defaultRefreshSecs()),
             self::mInt($posted, 'messages_shown', $this->config->messagesShown()),
             self::mBool($posted, 'show_timestamps'),
-            self::mInt($posted, 'font_size', 13),
+            self::mInt($posted, 'font_size', 16),
             $this->resolveColor($posted),
             self::mBool($posted, 'link_conversion'),
             $this->resolveBgColor($posted),

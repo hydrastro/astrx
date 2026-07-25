@@ -25,6 +25,7 @@ use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 
 /**
@@ -58,8 +59,19 @@ final class BoardController extends AbstractController
         private readonly PrgHandler             $prg,
         private readonly UrlGenerator           $urlGen,
         private readonly Translator             $t,
+        private readonly UserSession            $session,
     ) {
         parent::__construct($collector);
+    }
+
+    /**
+     * A logged-in poster the operator has allowed to post under their account.
+     * Such posters skip the captcha and, unless they opt into anonymity, post
+     * with their account identity attached.
+     */
+    private function authenticatedPoster(): bool
+    {
+        return $this->config->allowAuthenticatedPosts() && $this->session->isLoggedIn();
     }
 
     /** @return Result<mixed> */
@@ -312,8 +324,10 @@ final class BoardController extends AbstractController
             return $this->indexUrl($slug);
         }
 
-        // Anti-automation: captcha-gate anonymous posts when configured.
-        if ($this->config->guestCaptcha()) {
+        // Anti-automation: captcha-gate anonymous posts when configured. An
+        // authenticated poster (allowed by config + logged in) is a known human
+        // and is exempt — the captcha only guards guest posts.
+        if ($this->config->guestCaptcha() && !$this->authenticatedPoster()) {
             $captcha = $this->captchaService->verify(
                 self::mStr($posted, 'captcha_id', ''),
                 self::mStr($posted, 'captcha_text', ''),
@@ -339,19 +353,37 @@ final class BoardController extends AbstractController
         if ($up instanceof UploadedFile && $up->isValid()) {
             $image = $up;
         }
+        // ── Identity ─────────────────────────────────────────────────────────
+        // A logged-in poster defaults to posting under their account. They can
+        // opt out per-post with the "anonymous" checkbox to appear as an ordinary
+        // visitor (no account link, free-text name). forced_anon boards always
+        // strip identity, so no account is attached there.
+        $forcedAnon = self::mBool($board, 'forced_anon');
+        $postAnon   = self::mBool($posted, 'anon');
+        $name       = self::mStr($posted, 'name');
+        $hexUserId  = null;
+        if ($this->authenticatedPoster() && !$forcedAnon && !$postAnon) {
+            $hexUserId = $this->session->userId();
+            $accountName = $this->session->displayName();
+            if ($accountName === '') {
+                $accountName = $this->session->username();
+            }
+            $name = $accountName;
+        }
+
         // Privacy: on the default (onion) deployment we compute the IP/poster-key
         // for this request's cooldown but do NOT persist them. Only store at rest
         // when the operator explicitly opts in (clearnet with a stated purpose).
         $store = $this->config->storePosterIp();
         $submission = new SubmittedPost(
-            name:           self::mStr($posted, 'name'),
+            name:           $name,
             subject:        self::mStr($posted, 'subject'),
             body:           self::mStr($posted, 'comment'),
             sage:           self::mBool($posted, 'sage'),
             deletePassword: self::mStr($posted, 'password'),
             image:          $image,
             packedIp:       $store ? $ip : null,
-            hexUserId:      null,
+            hexUserId:      $hexUserId,
             posterKey:      $store ? $posterKey : '',
         );
 
@@ -377,7 +409,9 @@ final class BoardController extends AbstractController
     /** Generate + expose a captcha for the post form when guest captcha is on. */
     private function setCaptcha(): void
     {
-        $show = $this->config->guestCaptcha();
+        // Authenticated posters (config-allowed + logged in) are exempt, so the
+        // form shows no captcha for them at all.
+        $show = $this->config->guestCaptcha() && !$this->authenticatedPoster();
         $this->ctx->set('show_captcha',      $show);
         $this->ctx->set('has_captcha_frame', false);
         $cid = ''; $cimg = '';
@@ -471,6 +505,22 @@ final class BoardController extends AbstractController
         $this->ctx->set('prg_id',      $this->prg->createId($actionUrl));
         $this->ctx->set('csrf_token',  $this->csrf->generate(self::FORM));
         $this->ctx->set('max_len',     self::mInt($board, 'max_post_len'));
+
+        // Authenticated posting UI: when a logged-in user is allowed to post
+        // under their account (and the board isn't forced-anon), show the
+        // "posting as <name>" notice plus the opt-out anonymous checkbox. Guests
+        // and forced-anon boards fall back to the plain name field.
+        $forcedAnon = self::mBool($board, 'forced_anon');
+        $postAsUser = $this->authenticatedPoster() && !$forcedAnon;
+        $this->ctx->set('post_as_user', $postAsUser);
+        if ($postAsUser) {
+            $accountName = $this->session->displayName();
+            if ($accountName === '') {
+                $accountName = $this->session->username();
+            }
+            $this->ctx->set('user_display_name', $accountName);
+        }
+
         $this->setCaptcha();
     }
 
@@ -486,6 +536,15 @@ final class BoardController extends AbstractController
         $pid = self::mInt($post, 'id');
         $no  = self::mInt($post, 'no');
         $name = self::mStr($post, 'name');
+
+        // Posts made under an account carry a hex user_id (LOWER(HEX(user_id))
+        // from PostRepository). Link such a post's name to the poster's profile;
+        // anonymous/guest posts have an empty user_id and render a plain name.
+        $uid        = self::mStr($post, 'user_id');
+        $profileUrl = $uid !== ''
+            ? $this->urlGen->toPage($this->t->t('WORDING_PROFILE', fallback: 'WORDING_PROFILE'))
+              . '?uid=' . rawurlencode($uid)
+            : '';
 
         $imgs = [];
         foreach ($imagesByPost[$pid] ?? [] as $im) {
@@ -506,6 +565,8 @@ final class BoardController extends AbstractController
             'post_id'     => 'p' . $no,
             'no'          => $no,
             'name'        => $name !== '' ? $name : $this->t->t('board.anonymous'),
+            'profile_url' => $profileUrl,
+            'is_registered' => $uid !== '',
             'subject'     => self::mStr($post, 'subject'),
             'has_subject' => self::mStr($post, 'subject') !== '',
             'body_html'   => self::mStr($post, 'body_html'),
@@ -523,6 +584,10 @@ final class BoardController extends AbstractController
             'lbl_new_thread'      => 'board.new_thread',
             'lbl_reply_title'     => 'board.reply_title',
             'lbl_name'            => 'board.name',
+            'lbl_posting_as'      => 'board.posting_as',
+            'lbl_post_anon'       => 'board.post_anon',
+            'lbl_anon_name'       => 'board.anon_name',
+            'lbl_anon_name_hint'  => 'board.anon_name_hint',
             'lbl_subject'         => 'board.subject',
             'lbl_comment'         => 'board.comment',
             'lbl_image'           => 'board.image',

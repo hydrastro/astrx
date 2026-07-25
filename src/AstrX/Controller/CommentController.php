@@ -143,7 +143,14 @@ final class CommentController extends AbstractController
         $content  = self::mStr($posted, 'content', '');
         $name     = ($posted['name']  ?? '') !== '' ? (is_scalar($posted['name']) ? (string)$posted['name'] : '')  : null;
         $email    = ($posted['email'] ?? '') !== '' ? (is_scalar($posted['email']) ? (string)$posted['email'] : '') : null;
-        $replyTo  = is_numeric($posted['reply_to'] ?? null) ? (is_int($posted['reply_to']) ? $posted['reply_to'] : 0) : null;
+        // reply_to arrives from the PRG store, which mirrors $_POST — every value
+        // there is a STRING (e.g. "5"), never a PHP int. The previous guard used
+        // is_int() and so always fell through to 0, meaning findById(0) failed with
+        // reply_not_found and NO reply ever linked to its parent. Parse the numeric
+        // string to an int and treat <= 0 (and the empty top-level value) as null.
+        $replyToRaw = $posted['reply_to'] ?? null;
+        $replyToInt = is_numeric($replyToRaw) ? (int) $replyToRaw : 0;
+        $replyTo    = $replyToInt > 0 ? $replyToInt : null;
         $remoteIpRaw = $this->request->server()->get('REMOTE_ADDR') ?? '';
         $remoteIp = is_scalar($remoteIpRaw) ? (string)$remoteIpRaw : '';
 

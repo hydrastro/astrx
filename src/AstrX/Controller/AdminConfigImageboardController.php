@@ -11,6 +11,7 @@ use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
+use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\ImageboardConfig;
 use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
@@ -32,6 +33,10 @@ use AstrX\Template\DefaultTemplateContext;
  * cooldown, limits) live on the `board` DB row. The two most security-relevant
  * knobs here are the pre-decode pixel budget (decompression-bomb guard) and the
  * anonymous-post captcha; the thread-size default bounds thread-view cost.
+ *
+ * The former standalone "Boards" admin page (a read-only board overview) has
+ * been folded into this one, so the module has a single admin surface: global
+ * settings on top, the per-board overview table below.
  */
 final class AdminConfigImageboardController extends AbstractController
 {
@@ -42,6 +47,7 @@ final class AdminConfigImageboardController extends AbstractController
         private readonly DefaultTemplateContext $ctx,
         private readonly Request                $request,
         private readonly ImageboardConfig       $config,
+        private readonly BoardRepository        $boards,
         private readonly ConfigWriter           $writer,
         private readonly Gate                   $gate,
         private readonly CsrfHandler            $csrf,
@@ -123,6 +129,7 @@ final class AdminConfigImageboardController extends AbstractController
             'upload_types'        => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
             'anon_name'           => self::mStr($p, 'anon_name', 'Anonymous'),
             'guest_captcha'       => self::mBool($p, 'guest_captcha'),
+            'allow_authenticated_posts' => self::mBool($p, 'allow_authenticated_posts'),
             'store_poster_ip'     => self::mBool($p, 'store_poster_ip'),
             'default_max_replies' => max(0,       self::mInt($p, 'default_max_replies', 500)),
             'flag_base_path'      => self::mStr($p, 'flag_base_path', '/flags'),
@@ -149,13 +156,41 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('cfg_upload_types',        implode(',', $c->uploadTypes()));
         $this->ctx->set('cfg_anon_name',           $c->anonName());
         $this->ctx->set('cfg_guest_captcha',       $c->guestCaptcha());
+        $this->ctx->set('cfg_allow_auth_posts',    $c->allowAuthenticatedPosts());
         $this->ctx->set('cfg_store_poster_ip',     $c->storePosterIp());
         $this->ctx->set('cfg_default_max_replies', $c->defaultMaxReplies());
         $this->ctx->set('cfg_flag_base_path',      $c->flagBasePath());
         $this->ctx->set('cfg_threads_per_page',    $c->threadsPerPage());
         $this->ctx->set('cfg_preview_replies',     $c->previewReplies());
 
+        $this->setBoardList();
         $this->setI18n();
+    }
+
+    /**
+     * Read-only per-board overview, folded in from the former standalone Boards
+     * admin page. Shows each board's effective flood/size limits at a glance.
+     */
+    private function setBoardList(): void
+    {
+        $listR   = $this->boards->listActive();
+        $rows    = $listR->isOk() ? $listR->unwrap() : [];
+        $default = $this->t->t('admin.boards.default');
+
+        $boards = [];
+        foreach ($rows as $b) {
+            $maxReplies = self::mInt($b, 'max_replies');
+            $boards[]   = [
+                'slug'         => self::mStr($b, 'slug'),
+                'title'        => self::mStr($b, 'title'),
+                'active'       => self::mBool($b, 'active') ? '✓' : '—',
+                'cooldown'     => self::mInt($b, 'cooldown_secs'),
+                'max_replies'  => $maxReplies > 0 ? (string) $maxReplies : $default,
+                'thread_limit' => self::mInt($b, 'thread_limit'),
+            ];
+        }
+        $this->ctx->set('boards',     $boards);
+        $this->ctx->set('has_boards', $boards !== []);
     }
 
     private function setI18n(): void
@@ -176,6 +211,7 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('label_upload_types',        $this->t->t('admin.config.imageboard.field.upload_types'));
         $this->ctx->set('label_anon_name',           $this->t->t('admin.config.imageboard.field.anon_name'));
         $this->ctx->set('label_guest_captcha',       $this->t->t('admin.config.imageboard.field.guest_captcha'));
+        $this->ctx->set('label_allow_auth_posts',    $this->t->t('admin.config.imageboard.field.allow_authenticated_posts'));
         $this->ctx->set('label_store_poster_ip',     $this->t->t('admin.config.imageboard.field.store_poster_ip'));
         $this->ctx->set('label_default_max_replies', $this->t->t('admin.config.imageboard.field.default_max_replies'));
         $this->ctx->set('label_flag_base_path',      $this->t->t('admin.config.imageboard.field.flag_base_path'));
@@ -183,9 +219,21 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('label_preview_replies',     $this->t->t('admin.config.imageboard.field.preview_replies'));
 
         $this->ctx->set('hint_upload_max_pixels',   $this->t->t('admin.config.imageboard.hint.upload_max_pixels'));
+        $this->ctx->set('hint_allow_auth_posts',    $this->t->t('admin.config.imageboard.hint.allow_authenticated_posts'));
         $this->ctx->set('hint_store_poster_ip',     $this->t->t('admin.config.imageboard.hint.store_poster_ip'));
         $this->ctx->set('hint_default_max_replies', $this->t->t('admin.config.imageboard.hint.default_max_replies'));
 
         $this->ctx->set('btn_save', $this->t->t('admin.btn.save'));
+
+        // Board overview table (merged from the former standalone Boards page).
+        $this->ctx->set('boards_heading',  $this->t->t('admin.boards.heading'));
+        $this->ctx->set('boards_intro',    $this->t->t('admin.boards.intro'));
+        $this->ctx->set('col_slug',        $this->t->t('admin.boards.col_slug'));
+        $this->ctx->set('col_title',       $this->t->t('admin.boards.col_title'));
+        $this->ctx->set('col_active',      $this->t->t('admin.boards.col_active'));
+        $this->ctx->set('col_cooldown',    $this->t->t('admin.boards.col_cooldown'));
+        $this->ctx->set('col_max_replies', $this->t->t('admin.boards.col_max_replies'));
+        $this->ctx->set('col_threads',     $this->t->t('admin.boards.col_threads'));
+        $this->ctx->set('boards_none',     $this->t->t('admin.boards.none'));
     }
 }

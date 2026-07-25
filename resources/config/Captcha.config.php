@@ -26,7 +26,7 @@ return [
         'dots_color_random' => false,
         'lines_start_from_border' => true,
         'lines_number' => 30,
-        'dots_number' => 200,
+        'dots_number' => 1000,
         'char_list' => '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ',
         'captcha_length' => 5,
         'captcha_type' => 1,

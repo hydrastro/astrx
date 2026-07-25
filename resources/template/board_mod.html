@@ -1,25 +1,25 @@
 <div id="board-mod">
     <style>
-    /* Theme-aware, matching board.html: no hard-coded light backgrounds or
-       dark-on-dark text — inherits the active theme's colours (transparent
-       backgrounds, neutral translucent borders, opacity for muted text), so it
-       reads correctly on every theme. */
-    #board-mod{max-width:1000px;margin:0 auto;}
-    #board-mod h1{font-size:1.4em;margin:.3em 0;}
-    #board-mod h2{font-size:1.1em;margin:.6em 0 .3em;border-bottom:1px solid rgba(128,128,128,.3);padding-bottom:.15em;}
-    .modnav{margin:.4em 0 .8em;padding:.4em 0;border-bottom:1px solid rgba(128,128,128,.4);}
-    .modnav a{margin-right:.8em;}
-    .mod-row{border:1px solid rgba(128,128,128,.3);background:rgba(128,128,128,.08);padding:.5em;margin:.4em 0;border-radius:2px;}
-    .mod-row .meta{opacity:.7;font-size:.9em;}
+    /* Solid colours only, matching the site and board.html: currentColor rules
+       (the theme's own text colour), transparent fills, no opacity, no
+       border-radius, no em/rem sizes (text inherits the theme size; spacing is
+       px). Full-width like the rest of the site. */
+    #board-mod{width:100%;margin:0;}
+    #board-mod h1{margin:4px 0;}
+    #board-mod h2{margin:8px 0 4px;border-bottom:1px solid currentColor;padding-bottom:2px;}
+    .modnav{margin:5px 0 10px;padding:5px 0;border-bottom:1px solid currentColor;}
+    .modnav a{margin-right:12px;}
+    .mod-row{border:1px solid currentColor;background:transparent;padding:7px;margin:5px 0;}
+    .mod-row .meta{font-style:italic;}
     .mod-inline{display:inline;}
-    .mod-form label{display:block;margin:.35em 0;}
-    .mod-form input[type=text],.mod-form input[type=password],.mod-form textarea,.mod-form select{width:100%;max-width:480px;box-sizing:border-box;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.6);padding:.15em .3em;}
-    .mod-form .row{display:flex;gap:1em;flex-wrap:wrap;align-items:center;}
-    #board-mod button{background:transparent;color:inherit;border:1px solid currentColor;padding:.1em .7em;cursor:pointer;border-radius:2px;}
-    #board-mod button:hover{background:rgba(128,128,128,.2);}
+    .mod-form label{display:block;margin:5px 0;}
+    .mod-form input[type=text],.mod-form input[type=password],.mod-form textarea,.mod-form select{width:100%;box-sizing:border-box;background:transparent;color:inherit;border:1px solid currentColor;padding:2px 4px;}
+    .mod-form .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
+    #board-mod button{background:transparent;color:inherit;border:1px solid currentColor;padding:2px 10px;cursor:pointer;}
+    #board-mod button:hover{text-decoration:underline;}
     #board-mod .mod-danger{color:#e0566a;border-color:#e0566a;}
-    #board-mod .mod-danger:hover{background:rgba(224,86,106,.15);}
-    .pill{background:rgba(128,128,128,.35);color:inherit;font-size:.75em;padding:0 .35em;border-radius:2px;}
+    #board-mod .mod-danger:hover{text-decoration:underline;}
+    .pill{border:1px solid currentColor;color:inherit;font-size:small;padding:0 5px;}
     </style>
 
     <h1>/{{board_slug}}/ — {{board_title}}</h1>

@@ -45,7 +45,7 @@ final class CaptchaRenderer
 
     private int    $linesNumber          = 30;
     private bool   $linesStartFromBorder = true;
-    private int    $dotsNumber           = 100;
+    private int    $dotsNumber           = 1000;
 
     private string $charList      = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
     private int    $captchaLength = 5;

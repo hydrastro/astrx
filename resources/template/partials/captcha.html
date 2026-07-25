@@ -16,7 +16,7 @@
   <br>
   {{/has_captcha_frame}}
   {{^has_captcha_frame}}
-  <img src="data:image/png;base64,{{&captcha_image}}" alt="captcha" class="captcha-image">
+  <img src="data:image/gif;base64,{{&captcha_image}}" alt="captcha" class="captcha-image">
   {{/has_captcha_frame}}
   <label for="captcha_text">{{captcha_label}}</label>
   <input type="text" name="captcha_text" id="captcha_text"

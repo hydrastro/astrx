@@ -131,7 +131,7 @@ final class ChatStreamController extends AbstractController
         $newestFirst = $sortDir === null ? $this->config->newestFirst() : ($sortDir === 1);
         $personalCss = ChatStyles::personalFrameCss(
             is_string($settings['font_family'] ?? null) ? (string) $settings['font_family'] : '',
-            self::mInt($settings, 'font_size', 13),
+            self::mInt($settings, 'font_size', 16),
             is_string($settings['bg_color'] ?? null) ? (string) $settings['bg_color'] : '',
         );
         $tz = is_string($settings['timezone'] ?? null) ? (string) $settings['timezone'] : '';

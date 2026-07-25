@@ -31,9 +31,9 @@
     <tr><th>{{label_thumb_max_dimension}}</th>
       <td><input type="number" name="thumb_max_dimension" value="{{cfg_thumb_max_dimension}}" min="32" class="input"> px</td></tr>
     <tr><th>{{label_upload_types}}</th>
-      <td><input type="text" name="upload_types" value="{{cfg_upload_types}}" style="width:22em" class="input"></td></tr>
+      <td><input type="text" name="upload_types" value="{{cfg_upload_types}}" style="width:100%;max-width:22rem" class="input"></td></tr>
     <tr><th>{{label_upload_dir}}</th>
-      <td><input type="text" name="upload_dir" value="{{cfg_upload_dir}}" style="width:30em" class="input"></td></tr>
+      <td><input type="text" name="upload_dir" value="{{cfg_upload_dir}}" style="width:100%;max-width:30rem" class="input"></td></tr>
   </table>
 
   {{! ── Posting / anti-abuse ───────────────────────────────────────────── }}
@@ -41,6 +41,9 @@
   <table>
     <tr><th>{{label_guest_captcha}}</th>
       <td><input type="checkbox" name="guest_captcha" value="1"{{#cfg_guest_captcha}} checked{{/cfg_guest_captcha}} class="input"></td></tr>
+    <tr><th>{{label_allow_auth_posts}}</th>
+      <td><input type="checkbox" name="allow_authenticated_posts" value="1"{{#cfg_allow_auth_posts}} checked{{/cfg_allow_auth_posts}} class="input">
+          <br><small>{{hint_allow_auth_posts}}</small></td></tr>
     <tr><th>{{label_store_poster_ip}}</th>
       <td><input type="checkbox" name="store_poster_ip" value="1"{{#cfg_store_poster_ip}} checked{{/cfg_store_poster_ip}} class="input">
           <br><small>{{hint_store_poster_ip}}</small></td></tr>
@@ -48,7 +51,7 @@
       <td><input type="number" name="default_max_replies" value="{{cfg_default_max_replies}}" min="0" class="input">
           <br><small>{{hint_default_max_replies}}</small></td></tr>
     <tr><th>{{label_anon_name}}</th>
-      <td><input type="text" name="anon_name" value="{{cfg_anon_name}}" maxlength="64" style="width:16em" class="input"></td></tr>
+      <td><input type="text" name="anon_name" value="{{cfg_anon_name}}" maxlength="64" style="width:100%;max-width:16rem" class="input"></td></tr>
   </table>
 
   {{! ── Display ────────────────────────────────────────────────────────── }}
@@ -59,9 +62,40 @@
     <tr><th>{{label_preview_replies}}</th>
       <td><input type="number" name="preview_replies" value="{{cfg_preview_replies}}" min="0" class="input"></td></tr>
     <tr><th>{{label_flag_base_path}}</th>
-      <td><input type="text" name="flag_base_path" value="{{cfg_flag_base_path}}" style="width:16em" class="input"></td></tr>
+      <td><input type="text" name="flag_base_path" value="{{cfg_flag_base_path}}" style="width:100%;max-width:16rem" class="input"></td></tr>
   </table>
 
   <p><button type="submit" class="input">{{btn_save}}</button></p>
 </form>
+
+{{! ── Board overview (folded in from the former standalone Boards page) ──── }}
+<h3>{{boards_heading}}</h3>
+<p>{{boards_intro}}</p>
+{{#has_boards}}
+<table>
+  <thead>
+  <tr>
+    <th style="text-align:left">{{col_slug}}</th>
+    <th style="text-align:left">{{col_title}}</th>
+    <th>{{col_active}}</th>
+    <th>{{col_cooldown}}</th>
+    <th>{{col_max_replies}}</th>
+    <th>{{col_threads}}</th>
+  </tr>
+  </thead>
+  <tbody>
+  {{#boards}}
+  <tr>
+    <td>/{{slug}}/</td>
+    <td>{{title}}</td>
+    <td style="text-align:center">{{active}}</td>
+    <td style="text-align:center">{{cooldown}}</td>
+    <td style="text-align:center">{{max_replies}}</td>
+    <td style="text-align:center">{{thread_limit}}</td>
+  </tr>
+  {{/boards}}
+  </tbody>
+</table>
+{{/has_boards}}
+{{^has_boards}}<p><em>{{boards_none}}</em></p>{{/has_boards}}
 {{/admin_forbidden}}

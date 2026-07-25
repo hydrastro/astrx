@@ -32,6 +32,7 @@ final class ImageboardConfig
     private string $flagBasePath      = '/flags';
     private int    $threadsPerPage    = 10;
     private int    $previewReplies    = 5;      // replies shown under each thread on the index
+    private bool   $allowAuthPosts    = true;   // logged-in users may post under their account (no captcha)
 
     #[InjectConfig('enabled')]             public function setEnabled(bool $v): void          { $this->enabled = $v; }
     #[InjectConfig('upload_dir')]          public function setUploadDir(string $v): void      { $this->uploadDir = rtrim(trim($v), '/\\'); }
@@ -47,6 +48,7 @@ final class ImageboardConfig
     #[InjectConfig('flag_base_path')]      public function setFlagBasePath(string $v): void   { $this->flagBasePath = rtrim(trim($v), '/'); }
     #[InjectConfig('threads_per_page')]    public function setThreadsPerPage(int $v): void    { $this->threadsPerPage = max(1, $v); }
     #[InjectConfig('preview_replies')]     public function setPreviewReplies(int $v): void    { $this->previewReplies = max(0, $v); }
+    #[InjectConfig('allow_authenticated_posts')] public function setAllowAuthPosts(bool $v): void { $this->allowAuthPosts = $v; }
 
     public function enabled(): bool          { return $this->enabled; }
     public function uploadDir(): string      { return $this->uploadDir; }
@@ -62,6 +64,9 @@ final class ImageboardConfig
     public function flagBasePath(): string   { return $this->flagBasePath; }
     public function threadsPerPage(): int    { return $this->threadsPerPage; }
     public function previewReplies(): int    { return $this->previewReplies; }
+
+    /** Logged-in users may post under their account identity without a captcha. */
+    public function allowAuthenticatedPosts(): bool { return $this->allowAuthPosts; }
 
     /**
      * Normalised, lower-cased list of allowed upload extensions.

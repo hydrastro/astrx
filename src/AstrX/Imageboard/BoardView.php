@@ -96,7 +96,15 @@ final class BoardView
         $h .= '<p class="post-head">';
         $subject = $this->str($post['subject'] ?? null);
         if ($subject !== '') { $h .= '<span class="subject">' . $this->e($subject) . '</span> '; }
-        $h .= '<span class="name">' . $this->e($this->str($post['name'] ?? null)) . '</span> '
+        // A post made under an account carries a profile_url; render its name as a
+        // link to that profile. Anonymous/guest posts have none and stay plain.
+        $name       = $this->str($post['name'] ?? null);
+        $profileUrl = $this->str($post['profile_url'] ?? null);
+        $nameInner  = $this->e($name);
+        if ($profileUrl !== '') {
+            $nameInner = '<a class="name-link" href="' . $this->e($profileUrl) . '">' . $nameInner . '</a>';
+        }
+        $h .= '<span class="name">' . $nameInner . '</span> '
             . '<span class="time">' . $this->e($this->str($post['time'] ?? null)) . '</span> '
             . '<span class="no">No.' . $this->int($post['no'] ?? 0) . '</span>';
         if ($threadUrl !== null && $threadUrl !== '') {

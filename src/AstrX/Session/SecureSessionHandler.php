@@ -53,6 +53,10 @@ final class SecureSessionHandler implements
     /** Holds the freshly generated SID so validateId() can confirm it in-process. */
     private ?string $currentSessionId = null;
 
+    /** Memoised HKDF input key material — resolved once per request (per handler
+     *  instance) so every ikm() call agrees and the fallback file is touched once. */
+    private ?string $ikmCache = null;
+
     public function __construct(private readonly PDO $pdo) {}
 
     #[InjectConfig('sid_bytes')]
@@ -89,31 +93,60 @@ final class SecureSessionHandler implements
      */
     private function ikm(): string
     {
-        // Ignore the old leaked/committed secret: treat it as if unset so we
-        // fall through to the unique per-install generated fallback below.
-        // hash_equals for constant-time comparison (defence-in-depth).
+        // Resolve once per request. Without this, and with no writable fallback
+        // path, each call below would generate a DIFFERENT random key — so a blob
+        // encrypted earlier in the request could not be decrypted later in it.
+        if ($this->ikmCache !== null) {
+            return $this->ikmCache;
+        }
+
+        // 1. Explicit admin-configured secret (recommended). The old leaked/
+        //    committed value is ignored — treated as unset — so no site ever runs
+        //    on a globally-known key. hash_equals for constant-time comparison.
         if ($this->serverSecret !== ''
             && !hash_equals(self::LEAKED_SERVER_SECRET, $this->serverSecret)
         ) {
-            return $this->serverSecret;
+            return $this->ikmCache = $this->serverSecret;
         }
-        // No configured server_secret → use a lazily-generated per-installation
-        // fallback file. Unique to this installation, so a stolen DB row from
-        // one AstrX site cannot be decrypted using another site's fallback.
-        // The admin should still configure server_secret explicitly — this is
-        // a fail-safe, not a recommended mode.
-        $fallbackFile = \AstrX\Support\configDir() . '.server_secret_generated';
-        if (is_file($fallbackFile)) {
-            $contents = @file_get_contents($fallbackFile);
-            if (is_string($contents) && $contents !== '') {
-                return $contents;
+
+        // 2. No configured server_secret → a lazily-generated per-installation
+        //    fallback secret, unique to this install. Candidate paths are ordered
+        //    most-durable first (config dir) down to most-reliably-writable (temp
+        //    dir). This matters: under Docker the bind-mounted config dir is often
+        //    NOT writable by the php-fpm user (www-data), and if the secret cannot
+        //    persist, ikm() differs on every request — every session decrypts to
+        //    empty and every POST (login included) becomes a 400. The temp-dir
+        //    fallback keeps the key stable at least until the container is
+        //    recreated. Setting server_secret explicitly avoids all of this.
+        $configDir  = \AstrX\Support\configDir();
+        $candidates = array_values(array_filter([
+            $configDir !== '' ? $configDir . '.server_secret_generated' : null,
+            sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'astrx_server_secret',
+        ]));
+
+        // Read an already-persisted secret from the first candidate that has one.
+        foreach ($candidates as $file) {
+            if (is_file($file)) {
+                $contents = @file_get_contents($file);
+                if (is_string($contents) && $contents !== '') {
+                    return $this->ikmCache = $contents;
+                }
             }
         }
-        // First run — generate and persist.
+
+        // First run — generate once and persist to the first WRITABLE candidate.
         $generated = random_bytes(32);
-        @file_put_contents($fallbackFile, $generated, LOCK_EX);
-        @chmod($fallbackFile, 0600);
-        return $generated;
+        foreach ($candidates as $file) {
+            if (@file_put_contents($file, $generated, LOCK_EX) !== false) {
+                @chmod($file, 0600);
+                return $this->ikmCache = $generated;
+            }
+        }
+
+        // 3. No writable location at all (very rare). Cache the in-memory value so
+        //    all calls WITHIN this request still agree; cross-request stability then
+        //    requires setting 'server_secret' in Session.config.php.
+        return $this->ikmCache = $generated;
     }
 
     // -------------------------------------------------------------------------
@@ -150,12 +183,20 @@ final class SecureSessionHandler implements
         // Also null out expired handover pointers so the columns don't grow stale.
         // We keep the row alive (it may still hold session data); we just clear the
         // replaced_by pointer once the grace period has elapsed for that row.
-        $graceCutoff = time() - 300; // generous upper bound; ContentManager uses a tighter value
-        $stmt2 = $this->pdo->prepare(
-            'UPDATE `session` SET `replaced_by` = NULL, `replace_at` = NULL
-              WHERE `replace_at` IS NOT NULL AND `replace_at` < :gc'
-        );
-        $stmt2->execute([':gc' => $graceCutoff]);
+        // Wrapped so a `session` table WITHOUT the optional handover columns
+        // (a legacy install that hasn't migrated) doesn't throw an uncaught
+        // PDOException when GC fires — the row DELETE above already ran and is
+        // what matters; the pointer cleanup is a no-op when the columns are absent.
+        try {
+            $graceCutoff = time() - 300; // generous upper bound; ContentManager uses a tighter value
+            $stmt2 = $this->pdo->prepare(
+                'UPDATE `session` SET `replaced_by` = NULL, `replace_at` = NULL
+                  WHERE `replace_at` IS NOT NULL AND `replace_at` < :gc'
+            );
+            $stmt2->execute([':gc' => $graceCutoff]);
+        } catch (\PDOException) {
+            // Legacy schema without handover columns — nothing to clean up.
+        }
 
         return $deleted; // PDO::rowCount() after DELETE is reliable on MySQL/MariaDB
     }
@@ -179,10 +220,16 @@ final class SecureSessionHandler implements
         $replaceAt  = isset($row['replace_at'])  && is_int($row['replace_at'])
             ? $row['replace_at'] : null;
 
-        if ($replacedBy !== null && $replaceAt !== null) {
-            // Row has been marked as replaced — serve the successor instead.
-            // The caller (PHP session machinery) will update the cookie on the
-            // next response via session_regenerate_id() in ContentManager.
+        if ($replacedBy !== null && $replaceAt !== null && !$this->encrypt) {
+            // Grace-period handover: a request still carrying the OLD id is served
+            // the successor row. This is only sound when sessions are NOT
+            // encrypted — the successor's data is encrypted under the NEW raw
+            // session id, and replaced_by holds only its SHA-512 hash, so we
+            // cannot derive the key to decrypt it here (doing so returned an empty
+            // session, silently logging out in-flight requests during regen). In
+            // encrypted mode the OLD row's OWN data is already the current
+            // post-regeneration snapshot (session_regenerate_id copies $_SESSION)
+            // and IS decryptable with the old id, so we fall through to serve it.
             $successor = $this->readRow($replacedBy);
             if ($successor !== false) {
                 $row = $successor;
@@ -266,10 +313,15 @@ final class SecureSessionHandler implements
     /** @return array<string,mixed>|false */
     private function readRow(string $hashedId): array|false
     {
+        // SELECT * — NOT an explicit `data, replaced_by, replace_at` list — so this
+        // read works whether or not the optional grace-period handover columns
+        // exist. Naming them throws "unknown column" on any `session` table that
+        // predates the handover feature; the catch below would then swallow it and
+        // return false for EVERY read, emptying every session and turning every
+        // POST (login included) into a 400. read() already guards replaced_by /
+        // replace_at with isset(), so their absence just disables handover.
         try {
-            $stmt = $this->pdo->prepare(
-                'SELECT `data`, `replaced_by`, `replace_at` FROM `session` WHERE `id` = :id'
-            );
+            $stmt = $this->pdo->prepare('SELECT * FROM `session` WHERE `id` = :id');
             $stmt->execute(['id' => $hashedId]);
         } catch (\PDOException) {
             return false;

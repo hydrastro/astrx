@@ -21,5 +21,6 @@ return [
         'flag_base_path'      => '/flags',
         'threads_per_page'    => 10,
         'preview_replies'     => 5,
+        'allow_authenticated_posts' => true, // logged-in users may post under their account without a captcha
     ],
 ];

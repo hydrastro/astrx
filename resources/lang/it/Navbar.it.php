@@ -5,6 +5,7 @@ return [
     // Navbar pubblica
     'WORDING_HOME.label'             => 'Home',
     'WORDING_USER.label'             => 'Area Utente',
+    'WORDING_BOARD.label'            => 'Board',
 
     // Navbar utente
     'WORDING_USER_HOME.label'        => 'Home',

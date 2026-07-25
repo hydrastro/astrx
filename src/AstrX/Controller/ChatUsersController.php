@@ -186,7 +186,7 @@ final class ChatUsersController extends AbstractController
         $eff         = $this->settings->effective($identity->ident);
         $personalCss = ChatStyles::personalFrameCss(
             is_string($eff['font_family'] ?? null) ? (string) $eff['font_family'] : '',
-            self::mInt($eff, 'font_size', 13),
+            self::mInt($eff, 'font_size', 16),
             is_string($eff['bg_color'] ?? null) ? (string) $eff['bg_color'] : '',
         );
 

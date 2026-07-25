@@ -71,6 +71,8 @@ return [
     'WORDING_CHAT_FILE'         => 'chat-file',
     'WORDING_BOARD'             => 'board',
     'WORDING_BOARD_FILE'        => 'board-file',
+    'WORDING_BOARD_MOD'         => 'board-mod',
+    'WORDING_BOARD_FEED'        => 'board-feed',
     'WORDING_BOARD.title'       => 'Board',
     'WORDING_BOARD.description' => 'Bacheche di immagini anonime.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',

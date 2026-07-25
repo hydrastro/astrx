@@ -206,7 +206,7 @@ final class AdminConfigCaptchaController extends AbstractController
             'dots_color_random'           => self::mBool($p, 'dots_color_random'),
             'lines_start_from_border'     => self::mBool($p, 'lines_start_from_border'),
             'lines_number'                => max(0, self::mInt($p, 'lines_number', 30)),
-            'dots_number'                 => max(0, self::mInt($p, 'dots_number', 100)),
+            'dots_number'                 => max(0, self::mInt($p, 'dots_number', 1000)),
             'char_list'                   => trim(self::mStr($p, 'char_list', '')),
             'captcha_length'              => max(1, self::mInt($p, 'captcha_length', 5)),
             'captcha_type'                => self::mInt($p, 'captcha_type', CaptchaType::MEDIUM->value),
