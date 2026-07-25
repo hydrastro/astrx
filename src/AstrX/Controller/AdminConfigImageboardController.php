@@ -98,11 +98,87 @@ final class AdminConfigImageboardController extends AbstractController
             return;
         }
 
+        // The page hosts several forms sharing one CSRF token: the global config
+        // save and the board create/update/delete actions. Route by 'action'.
+        match (self::mStr($posted, 'action', 'save_config')) {
+            'board_create' => $this->createBoard($posted),
+            'board_update' => $this->updateBoard($posted),
+            'board_delete' => $this->deleteBoard($posted),
+            default        => $this->saveConfig($posted),
+        };
+    }
+
+    /** @param array<string,mixed> $posted */
+    private function saveConfig(array $posted): void
+    {
         $result = $this->writer->write('Imageboard', ['ImageboardConfig' => $this->sectionFrom($posted)]);
         $result->drainTo($this->collector);
         if ($result->isOk()) {
             $this->flash->set('success', $this->t->t('admin.config.saved'));
             $this->audit->log('config.save', 'Imageboard.config.php')->drainTo($this->collector);
+        }
+    }
+
+    /** @param array<string,mixed> $posted */
+    private function createBoard(array $posted): void
+    {
+        $r = $this->boards->create(
+            self::mStr($posted, 'slug'),
+            self::mStr($posted, 'title'),
+            self::mStr($posted, 'subtitle'),
+            self::mStr($posted, 'description'),
+            self::mBool($posted, 'active'),
+            self::mBool($posted, 'nsfw'),
+            self::mBool($posted, 'forced_anon'),
+            self::mBool($posted, 'bbcode'),
+            max(0, self::mInt($posted, 'cooldown_secs', 30)),
+            max(0, self::mInt($posted, 'max_replies', 0)),
+            max(1, self::mInt($posted, 'thread_limit', 100)),
+            max(1, self::mInt($posted, 'max_post_len', 2000)),
+        );
+        $r->drainTo($this->collector);
+        if ($r->isOk()) {
+            $this->flash->set('success', $this->t->t('admin.boards.created'));
+            $this->audit->log('board.create', self::mStr($posted, 'slug'))->drainTo($this->collector);
+        }
+    }
+
+    /** @param array<string,mixed> $posted */
+    private function updateBoard(array $posted): void
+    {
+        $id = self::mInt($posted, 'board_id');
+        if ($id <= 0) { return; }
+        $r = $this->boards->update(
+            $id,
+            self::mStr($posted, 'title'),
+            self::mStr($posted, 'subtitle'),
+            self::mStr($posted, 'description'),
+            self::mBool($posted, 'active'),
+            self::mBool($posted, 'nsfw'),
+            self::mBool($posted, 'forced_anon'),
+            self::mBool($posted, 'bbcode'),
+            max(0, self::mInt($posted, 'cooldown_secs', 30)),
+            max(0, self::mInt($posted, 'max_replies', 0)),
+            max(1, self::mInt($posted, 'thread_limit', 100)),
+            max(1, self::mInt($posted, 'max_post_len', 2000)),
+        );
+        $r->drainTo($this->collector);
+        if ($r->isOk()) {
+            $this->flash->set('success', $this->t->t('admin.boards.updated'));
+            $this->audit->log('board.update', 'board#' . $id)->drainTo($this->collector);
+        }
+    }
+
+    /** @param array<string,mixed> $posted */
+    private function deleteBoard(array $posted): void
+    {
+        $id = self::mInt($posted, 'board_id');
+        if ($id <= 0) { return; }
+        $r = $this->boards->delete($id);
+        $r->drainTo($this->collector);
+        if ($r->isOk()) {
+            $this->flash->set('success', $this->t->t('admin.boards.deleted'));
+            $this->audit->log('board.delete', 'board#' . $id)->drainTo($this->collector);
         }
     }
 
@@ -120,7 +196,6 @@ final class AdminConfigImageboardController extends AbstractController
         // value — e.g. upload_max_pixels can't be driven to 0 to disable the
         // decompression-bomb guard.
         return [
-            'enabled'             => self::mBool($p, 'enabled'),
             'upload_dir'          => self::mStr($p, 'upload_dir', ''),
             'upload_max_kb'       => max(1,       self::mInt($p, 'upload_max_kb', 4096)),
             'upload_max_pixels'   => max(1000000, self::mInt($p, 'upload_max_pixels', 16000000)),
@@ -135,6 +210,7 @@ final class AdminConfigImageboardController extends AbstractController
             'flag_base_path'      => self::mStr($p, 'flag_base_path', '/flags'),
             'threads_per_page'    => max(1,       self::mInt($p, 'threads_per_page', 10)),
             'preview_replies'     => max(0,       self::mInt($p, 'preview_replies', 5)),
+            'role_colors'         => self::mStr($p, 'role_colors', 'ADMIN:red,MOD:purple,USER:white'),
         ];
     }
 
@@ -147,7 +223,6 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('csrf_token', $this->csrf->generate(self::FORM));
         $this->ctx->set('prg_id',     $this->prg->createId($selfUrl));
 
-        $this->ctx->set('cfg_enabled',             $c->enabled());
         $this->ctx->set('cfg_upload_dir',          $c->uploadDir());
         $this->ctx->set('cfg_upload_max_kb',       $c->uploadMaxKb());
         $this->ctx->set('cfg_upload_max_pixels',   $c->uploadMaxPixels());
@@ -162,35 +237,69 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('cfg_flag_base_path',      $c->flagBasePath());
         $this->ctx->set('cfg_threads_per_page',    $c->threadsPerPage());
         $this->ctx->set('cfg_preview_replies',     $c->previewReplies());
+        $this->ctx->set('cfg_role_colors',         $c->roleColorsRaw());
 
-        $this->setBoardList();
+        $editRaw = $this->request->query()->get('edit');
+        $editId  = is_numeric($editRaw) ? (int) $editRaw : 0;
+        $this->setBoardManagement($editId, $selfUrl);
         $this->setI18n();
     }
 
     /**
-     * Read-only per-board overview, folded in from the former standalone Boards
-     * admin page. Shows each board's effective flood/size limits at a glance.
+     * Board management: the full board list (each row with edit + delete
+     * controls) and a single create/edit form. When ?edit=<id> is present and
+     * resolves to a board, the form is pre-filled for an update; otherwise it is
+     * a blank create form. Folded in from the former standalone Boards page.
      */
-    private function setBoardList(): void
+    private function setBoardManagement(int $editId, string $selfUrl): void
     {
-        $listR   = $this->boards->listActive();
+        $listR   = $this->boards->all();
         $rows    = $listR->isOk() ? $listR->unwrap() : [];
         $default = $this->t->t('admin.boards.default');
 
         $boards = [];
         foreach ($rows as $b) {
+            $bid        = self::mInt($b, 'id');
             $maxReplies = self::mInt($b, 'max_replies');
             $boards[]   = [
+                'id'           => $bid,
                 'slug'         => self::mStr($b, 'slug'),
                 'title'        => self::mStr($b, 'title'),
                 'active'       => self::mBool($b, 'active') ? '✓' : '—',
                 'cooldown'     => self::mInt($b, 'cooldown_secs'),
                 'max_replies'  => $maxReplies > 0 ? (string) $maxReplies : $default,
                 'thread_limit' => self::mInt($b, 'thread_limit'),
+                'edit_url'     => $selfUrl . '?edit=' . $bid,
+                'is_editing'   => $bid === $editId,
             ];
         }
         $this->ctx->set('boards',     $boards);
         $this->ctx->set('has_boards', $boards !== []);
+
+        // Edit vs create form. Defaults mirror the board table's column defaults.
+        $edit = null;
+        if ($editId > 0) {
+            $er = $this->boards->byId($editId);
+            $row = $er->isOk() ? $er->unwrap() : null;
+            if (is_array($row)) { $edit = $row; }
+        }
+        $isEdit = $edit !== null;
+        $this->ctx->set('board_edit',       $isEdit);
+        $this->ctx->set('board_action',     $isEdit ? 'board_update' : 'board_create');
+        $this->ctx->set('be_id',            $isEdit ? self::mInt($edit, 'id') : 0);
+        $this->ctx->set('be_slug',          $isEdit ? self::mStr($edit, 'slug') : '');
+        $this->ctx->set('be_title',         $isEdit ? self::mStr($edit, 'title') : '');
+        $this->ctx->set('be_subtitle',      $isEdit ? self::mStr($edit, 'subtitle') : '');
+        $this->ctx->set('be_description',   $isEdit ? self::mStr($edit, 'description') : '');
+        $this->ctx->set('be_active',        $isEdit ? self::mBool($edit, 'active') : true);
+        $this->ctx->set('be_nsfw',          $isEdit ? self::mBool($edit, 'nsfw') : false);
+        $this->ctx->set('be_forced_anon',   $isEdit ? self::mBool($edit, 'forced_anon') : false);
+        $this->ctx->set('be_bbcode',        $isEdit ? self::mBool($edit, 'bbcode') : true);
+        $this->ctx->set('be_cooldown',      $isEdit ? self::mInt($edit, 'cooldown_secs') : 30);
+        $this->ctx->set('be_max_replies',   $isEdit ? self::mInt($edit, 'max_replies') : 0);
+        $this->ctx->set('be_thread_limit',  $isEdit ? self::mInt($edit, 'thread_limit') : 100);
+        $this->ctx->set('be_max_post_len',  $isEdit ? self::mInt($edit, 'max_post_len') : 2000);
+        $this->ctx->set('board_cancel_url', $selfUrl);
     }
 
     private function setI18n(): void
@@ -202,7 +311,6 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('section_posting', $this->t->t('admin.config.imageboard.section_posting'));
         $this->ctx->set('section_display', $this->t->t('admin.config.imageboard.section_display'));
 
-        $this->ctx->set('label_enabled',             $this->t->t('admin.config.imageboard.field.enabled'));
         $this->ctx->set('label_upload_dir',          $this->t->t('admin.config.imageboard.field.upload_dir'));
         $this->ctx->set('label_upload_max_kb',       $this->t->t('admin.config.imageboard.field.upload_max_kb'));
         $this->ctx->set('label_upload_max_pixels',   $this->t->t('admin.config.imageboard.field.upload_max_pixels'));
@@ -217,8 +325,10 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('label_flag_base_path',      $this->t->t('admin.config.imageboard.field.flag_base_path'));
         $this->ctx->set('label_threads_per_page',    $this->t->t('admin.config.imageboard.field.threads_per_page'));
         $this->ctx->set('label_preview_replies',     $this->t->t('admin.config.imageboard.field.preview_replies'));
+        $this->ctx->set('label_role_colors',         $this->t->t('admin.config.imageboard.field.role_colors'));
 
         $this->ctx->set('hint_upload_max_pixels',   $this->t->t('admin.config.imageboard.hint.upload_max_pixels'));
+        $this->ctx->set('hint_role_colors',         $this->t->t('admin.config.imageboard.hint.role_colors'));
         $this->ctx->set('hint_allow_auth_posts',    $this->t->t('admin.config.imageboard.hint.allow_authenticated_posts'));
         $this->ctx->set('hint_store_poster_ip',     $this->t->t('admin.config.imageboard.hint.store_poster_ip'));
         $this->ctx->set('hint_default_max_replies', $this->t->t('admin.config.imageboard.hint.default_max_replies'));
@@ -234,6 +344,31 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('col_cooldown',    $this->t->t('admin.boards.col_cooldown'));
         $this->ctx->set('col_max_replies', $this->t->t('admin.boards.col_max_replies'));
         $this->ctx->set('col_threads',     $this->t->t('admin.boards.col_threads'));
+        $this->ctx->set('col_actions',     $this->t->t('admin.boards.col_actions'));
         $this->ctx->set('boards_none',     $this->t->t('admin.boards.none'));
+
+        // Board create/edit/delete form.
+        $this->ctx->set('board_manage_heading', $this->t->t('admin.boards.manage'));
+        $this->ctx->set('board_edit_heading',   $this->t->t('admin.boards.edit_heading'));
+        $this->ctx->set('board_create_heading', $this->t->t('admin.boards.create_heading'));
+        $this->ctx->set('lbl_b_slug',        $this->t->t('admin.boards.f_slug'));
+        $this->ctx->set('lbl_b_title',       $this->t->t('admin.boards.f_title'));
+        $this->ctx->set('lbl_b_subtitle',    $this->t->t('admin.boards.f_subtitle'));
+        $this->ctx->set('lbl_b_description', $this->t->t('admin.boards.f_description'));
+        $this->ctx->set('lbl_b_active',      $this->t->t('admin.boards.f_active'));
+        $this->ctx->set('lbl_b_nsfw',        $this->t->t('admin.boards.f_nsfw'));
+        $this->ctx->set('lbl_b_forced_anon', $this->t->t('admin.boards.f_forced_anon'));
+        $this->ctx->set('lbl_b_bbcode',      $this->t->t('admin.boards.f_bbcode'));
+        $this->ctx->set('lbl_b_cooldown',    $this->t->t('admin.boards.f_cooldown'));
+        $this->ctx->set('lbl_b_max_replies', $this->t->t('admin.boards.f_max_replies'));
+        $this->ctx->set('lbl_b_thread_limit', $this->t->t('admin.boards.f_thread_limit'));
+        $this->ctx->set('lbl_b_max_post_len', $this->t->t('admin.boards.f_max_post_len'));
+        $this->ctx->set('lbl_b_slug_locked', $this->t->t('admin.boards.slug_locked'));
+        $this->ctx->set('btn_board_create',  $this->t->t('admin.boards.btn_create'));
+        $this->ctx->set('btn_board_update',  $this->t->t('admin.boards.btn_update'));
+        $this->ctx->set('btn_board_delete',  $this->t->t('admin.boards.btn_delete'));
+        $this->ctx->set('btn_board_edit',    $this->t->t('admin.boards.btn_edit'));
+        $this->ctx->set('btn_board_cancel',  $this->t->t('admin.boards.btn_cancel'));
+        $this->ctx->set('confirm_board_delete', $this->t->t('admin.boards.confirm_delete'));
     }
 }

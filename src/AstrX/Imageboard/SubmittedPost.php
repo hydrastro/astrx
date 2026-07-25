@@ -22,5 +22,6 @@ final class SubmittedPost
         public readonly ?string       $packedIp       = null,   // inet_pton() bytes
         public readonly ?string       $hexUserId      = null,   // authenticated poster
         public readonly string        $posterKey      = '',     // hashed key for poster IDs / history
+        public readonly bool          $spoiler        = false,  // mark the attached image as a spoiler
     ) {}
 }

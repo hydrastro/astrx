@@ -94,6 +94,97 @@ final class BoardRepository
         } catch (PDOException $e) { return $this->err($e); }
     }
 
+    /**
+     * Every board — active or not — for the admin management list.
+     *
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function all(): Result
+    {
+        try {
+            $stmt = $this->pdo->query('SELECT ' . self::COLS . ' FROM board ORDER BY sort_order ASC, slug ASC');
+            assert($stmt !== false);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
+    /**
+     * Create a board. The slug is UNIQUE, so a duplicate surfaces as a DB error
+     * captured in the Result rather than a throw.
+     *
+     * @return Result<int> new board id
+     */
+    public function create(
+        string $slug, string $title, string $subtitle, string $description,
+        bool $active, bool $nsfw, bool $forcedAnon, bool $bbcode,
+        int $cooldownSecs, int $maxReplies, int $threadLimit, int $maxPostLen
+    ): Result {
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO board
+                    (slug, title, subtitle, description, active, nsfw, forced_anon, bbcode,
+                     cooldown_secs, max_replies, thread_limit, max_post_len)
+                 VALUES
+                    (:slug, :title, :subtitle, :description, :active, :nsfw, :forced_anon, :bbcode,
+                     :cooldown, :max_replies, :thread_limit, :max_post_len)'
+            );
+            $stmt->execute([
+                ':slug' => $slug, ':title' => $title, ':subtitle' => $subtitle, ':description' => $description,
+                ':active' => $active ? 1 : 0, ':nsfw' => $nsfw ? 1 : 0, ':forced_anon' => $forcedAnon ? 1 : 0,
+                ':bbcode' => $bbcode ? 1 : 0, ':cooldown' => $cooldownSecs, ':max_replies' => $maxReplies,
+                ':thread_limit' => $threadLimit, ':max_post_len' => $maxPostLen,
+            ]);
+            $raw = $this->pdo->lastInsertId();
+            return Result::ok(is_numeric($raw) ? (int) $raw : 0);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
+    /**
+     * Update a board. The slug is immutable here — changing it would break every
+     * existing thread URL and the seeded navbar link — so it is not updatable.
+     *
+     * @return Result<bool>
+     */
+    public function update(
+        int $id, string $title, string $subtitle, string $description,
+        bool $active, bool $nsfw, bool $forcedAnon, bool $bbcode,
+        int $cooldownSecs, int $maxReplies, int $threadLimit, int $maxPostLen
+    ): Result {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE board SET
+                    title = :title, subtitle = :subtitle, description = :description,
+                    active = :active, nsfw = :nsfw, forced_anon = :forced_anon, bbcode = :bbcode,
+                    cooldown_secs = :cooldown, max_replies = :max_replies,
+                    thread_limit = :thread_limit, max_post_len = :max_post_len
+                  WHERE id = :id'
+            );
+            $stmt->execute([
+                ':id' => $id, ':title' => $title, ':subtitle' => $subtitle, ':description' => $description,
+                ':active' => $active ? 1 : 0, ':nsfw' => $nsfw ? 1 : 0, ':forced_anon' => $forcedAnon ? 1 : 0,
+                ':bbcode' => $bbcode ? 1 : 0, ':cooldown' => $cooldownSecs, ':max_replies' => $maxReplies,
+                ':thread_limit' => $threadLimit, ':max_post_len' => $maxPostLen,
+            ]);
+            return Result::ok(true);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
+    /**
+     * Delete a board. Threads, posts and image rows cascade away via their FKs
+     * (the uploaded image FILES are left for a separate sweep).
+     *
+     * @return Result<bool>
+     */
+    public function delete(int $id): Result
+    {
+        try {
+            $this->pdo->prepare('DELETE FROM board WHERE id = :id')->execute([':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
     /** @return Result<never> */
     private function err(PDOException $e): Result
     {

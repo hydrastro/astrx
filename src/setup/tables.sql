@@ -152,9 +152,14 @@ CREATE TABLE `navbar_external`
 
 CREATE TABLE `session`
 (
-    `id`        VARCHAR(128) NOT NULL PRIMARY KEY,
-    `timestamp` INT UNSIGNED NOT NULL,
-    `data`      MEDIUMBLOB   NOT NULL DEFAULT ''
+    `id`          VARCHAR(128) NOT NULL PRIMARY KEY,
+    `timestamp`   INT UNSIGNED NOT NULL,
+    `data`        MEDIUMBLOB   NOT NULL DEFAULT '',
+    -- Grace-period handover for session-ID regeneration. SecureSessionHandler
+    -- reads these but tolerates their absence (SELECT *), so a legacy `session`
+    -- table without them still works — it just skips the handover window.
+    `replaced_by` CHAR(128)    NULL DEFAULT NULL,
+    `replace_at`  INT UNSIGNED NULL DEFAULT NULL
 );
 
 
@@ -765,7 +770,7 @@ CREATE TABLE IF NOT EXISTS `chat_settings`
     `refresh_secs`    INT         NOT NULL DEFAULT 5,
     `messages_shown`  INT         NOT NULL DEFAULT 50,
     `show_timestamps` TINYINT     NOT NULL DEFAULT 1,
-    `font_size`       TINYINT     NOT NULL DEFAULT 13,
+    `font_size`       TINYINT     NOT NULL DEFAULT 16,
     `text_color`      VARCHAR(16) NULL,
     `link_conversion` TINYINT     NOT NULL DEFAULT 1
 ) ENGINE=InnoDB;

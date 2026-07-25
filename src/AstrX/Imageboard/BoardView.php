@@ -32,6 +32,14 @@ final class BoardView
             if ($tags !== '') { $h .= '<p>' . $tags . '</p>'; }
             $h .= $this->post($this->arr($thread['op'] ?? null), $threadUrl);
 
+            // Clear, prominent affordance to open the full thread (fixes "no
+            // obvious way to open a thread"). Shows the reply count so it doubles
+            // as the thread summary.
+            $replyCount = $this->int($thread['reply_count'] ?? 0);
+            $h .= '<p class="thread-open"><a href="' . $this->e($threadUrl) . '">'
+                . $this->e($this->t->t('board.view_thread'))
+                . ' (' . $replyCount . ') &rarr;</a></p>';
+
             $omitted = $this->int($thread['omitted'] ?? 0);
             if ($omitted > 0) {
                 $h .= '<p class="omitted">' . $omitted . ' ' . $this->e($this->t->t('board.replies_omitted')) . '</p>';
@@ -96,17 +104,30 @@ final class BoardView
         $h .= '<p class="post-head">';
         $subject = $this->str($post['subject'] ?? null);
         if ($subject !== '') { $h .= '<span class="subject">' . $this->e($subject) . '</span> '; }
-        // A post made under an account carries a profile_url; render its name as a
-        // link to that profile. Anonymous/guest posts have none and stay plain.
+        // A post made under an account carries a profile_url — render its name as
+        // a link to that profile (a registered poster). name_color is the theme
+        // colour for the poster's role (admin/mod/member, admin-configurable);
+        // when set it overrides the default name colour. Registered names are
+        // additionally underlined (via the .name-link CSS).
         $name       = $this->str($post['name'] ?? null);
         $profileUrl = $this->str($post['profile_url'] ?? null);
+        $nameColor  = $this->str($post['name_color'] ?? null);
+        $colorAttr  = $nameColor !== '' ? ' style="color:' . $this->e($nameColor) . '"' : '';
         $nameInner  = $this->e($name);
         if ($profileUrl !== '') {
             $nameInner = '<a class="name-link" href="' . $this->e($profileUrl) . '">' . $nameInner . '</a>';
         }
-        $h .= '<span class="name">' . $nameInner . '</span> '
+        $no       = $this->int($post['no'] ?? 0);
+        $quoteUrl = $this->str($post['quote_url'] ?? null);
+        // The post number is a link that quotes this post (pre-fills the reply box
+        // with >>no) — the classic imageboard "click the No. to reply" gesture,
+        // working without JavaScript by reloading the reply form with the quote.
+        $noInner  = $quoteUrl !== ''
+            ? 'No.<a class="no-quote" href="' . $this->e($quoteUrl) . '">' . $no . '</a>'
+            : 'No.' . $no;
+        $h .= '<span class="name"' . $colorAttr . '>' . $nameInner . '</span> '
             . '<span class="time">' . $this->e($this->str($post['time'] ?? null)) . '</span> '
-            . '<span class="no">No.' . $this->int($post['no'] ?? 0) . '</span>';
+            . '<span class="no">' . $noInner . '</span>';
         if ($threadUrl !== null && $threadUrl !== '') {
             $h .= ' <a class="reply-link" href="' . $this->e($threadUrl) . '">[' . $this->e($this->t->t('board.reply')) . ']</a>';
         }

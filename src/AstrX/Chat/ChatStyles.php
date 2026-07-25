@@ -164,7 +164,7 @@ ul.chat-messages { list-style: none; margin: 0; padding: 0; line-height: 1.5; }
 .chat-attachment img { max-width: 100%; max-height: 45vh; width: auto; height: auto; display: block; border: 1px solid currentColor; }
 /* a11y (#110): a visible keyboard-focus ring in the stream */
 .chat-messages a:focus-visible, .chat-del button:focus-visible, .chat-report button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
-.chat-del { display: inline; }
+.chat-del, .chat-report { display: inline; }
 /* Inline action buttons (delete, report, mod): transparent fill, inherited text
    colour, a SOLID currentColor border, underline on hover — reads on every theme
    with no alpha and no colour wash. */

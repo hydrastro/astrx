@@ -41,6 +41,12 @@ final class BoardController extends AbstractController
 {
     private const FORM = 'board';
 
+    /** @var array<string,string> hex user_id → configured role colour, for the current render. */
+    private array $roleColorByUid = [];
+
+    /** Thread URL a clicked post No. quotes into (varies per thread on the index). */
+    private string $quoteBase = '';
+
     public function __construct(
         \AstrX\Result\DiagnosticsCollector      $collector,
         private readonly DefaultTemplateContext $ctx,
@@ -72,6 +78,32 @@ final class BoardController extends AbstractController
     private function authenticatedPoster(): bool
     {
         return $this->config->allowAuthenticatedPosts() && $this->session->isLoggedIn();
+    }
+
+    /**
+     * Resolve the role colour for every authenticated poster on the page in one
+     * query, keyed by hex user_id. Roles are matched by NAME against the
+     * admin-configured colour map, so a role added later is coloured just by
+     * adding an entry — unknown roles fall back to the theme's default name colour.
+     *
+     * @param list<string> $userIds hex user_ids gathered from the rendered posts
+     */
+    private function buildRoleColors(array $userIds): void
+    {
+        $this->roleColorByUid = [];
+        $userIds = array_values(array_filter($userIds, static fn (string $u): bool => $u !== ''));
+        if ($userIds === []) {
+            return;
+        }
+        $tR    = $this->posts->typesByUserIds($userIds);
+        $types = $tR->isOk() ? $tR->unwrap() : [];
+        foreach ($types as $hex => $type) {
+            $role  = (\AstrX\User\UserGroup::tryFrom($type) ?? \AstrX\User\UserGroup::USER)->name;
+            $color = $this->config->roleColor($role);
+            if ($color !== '') {
+                $this->roleColorByUid[$hex] = $color;
+            }
+        }
     }
 
     /** @return Result<mixed> */
@@ -149,6 +181,14 @@ final class BoardController extends AbstractController
         }
         $imagesByPost = $this->images->forPosts($allPostIds);
 
+        // Resolve role colours for every authenticated poster shown on the index.
+        $uids = [];
+        foreach ($ops as $op) { $uids[] = self::mStr($op, 'user_id'); }
+        foreach ($previewByThread as $reps) {
+            foreach ($reps as $p) { $uids[] = self::mStr($p, 'user_id'); }
+        }
+        $this->buildRoleColors($uids);
+
         $threads = [];
         foreach ($threadRows as $row) {
             $tid = self::mInt($row, 'id');
@@ -156,6 +196,8 @@ final class BoardController extends AbstractController
             if (!is_array($op)) {
                 continue;
             }
+            // Clicking a post No. in this thread's preview quotes into this thread.
+            $this->quoteBase = $this->threadUrl($slug, $tid);
             $replies = [];
             foreach ($previewByThread[$tid] ?? [] as $p) {
                 $replies[] = $this->postCtx($p, $imagesByPost);
@@ -260,10 +302,15 @@ final class BoardController extends AbstractController
         $pr       = $this->posts->forThread($tid);
         $postRows = $pr->isOk() ? $pr->unwrap() : [];
         $pids     = [];
+        $uids     = [];
         foreach ($postRows as $p) {
             $pids[] = self::mInt($p, 'id');
+            $uids[] = self::mStr($p, 'user_id');
         }
         $imagesByPost = $this->images->forPosts($pids);
+        $this->buildRoleColors($uids);
+        // Clicking a post No. in this thread quotes into this same thread.
+        $this->quoteBase = $this->threadUrl($slug, $tid);
 
         $posts = [];
         foreach ($postRows as $p) {
@@ -385,6 +432,7 @@ final class BoardController extends AbstractController
             packedIp:       $store ? $ip : null,
             hexUserId:      $hexUserId,
             posterKey:      $store ? $posterKey : '',
+            spoiler:        self::mBool($posted, 'spoiler'),
         );
 
         if ($threadId > 0) {
@@ -506,6 +554,13 @@ final class BoardController extends AbstractController
         $this->ctx->set('csrf_token',  $this->csrf->generate(self::FORM));
         $this->ctx->set('max_len',     self::mInt($board, 'max_post_len'));
 
+        // Quote pre-fill: arriving via a post-No. link (?quote=N) seeds the reply
+        // box with ">>N". The template renders it into the textarea (Mustache-
+        // escaped), so the browser submits the literal ">>N".
+        $quoteRaw = $this->request->query()->get('quote');
+        $quoteNo  = is_numeric($quoteRaw) ? (int) $quoteRaw : 0;
+        $this->ctx->set('comment_prefill', $quoteNo > 0 ? '>>' . $quoteNo . "\n" : '');
+
         // Authenticated posting UI: when a logged-in user is allowed to post
         // under their account (and the board isn't forced-anon), show the
         // "posting as <name>" notice plus the opt-out anonymous checkbox. Guests
@@ -567,6 +622,10 @@ final class BoardController extends AbstractController
             'name'        => $name !== '' ? $name : $this->t->t('board.anonymous'),
             'profile_url' => $profileUrl,
             'is_registered' => $uid !== '',
+            // Role colour for this poster (empty for anon/unmapped roles).
+            'name_color'  => $uid !== '' ? ($this->roleColorByUid[$uid] ?? '') : '',
+            // Link that quotes this post into the reply box (>>no).
+            'quote_url'   => $this->quoteBase !== '' ? $this->quoteBase . '?quote=' . $no . '#board-post-form' : '',
             'subject'     => self::mStr($post, 'subject'),
             'has_subject' => self::mStr($post, 'subject') !== '',
             'body_html'   => self::mStr($post, 'body_html'),
@@ -591,6 +650,7 @@ final class BoardController extends AbstractController
             'lbl_subject'         => 'board.subject',
             'lbl_comment'         => 'board.comment',
             'lbl_image'           => 'board.image',
+            'lbl_spoiler_image'   => 'board.spoiler_image',
             'lbl_post'            => 'board.post',
             'lbl_sage'            => 'board.sage',
             'lbl_password'        => 'board.password',

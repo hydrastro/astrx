@@ -48,7 +48,12 @@ final class PostRenderer
             }
             $lines[$i] = $line;
         }
-        $html = implode("<br>\n", $lines);
+        // Join with a bare <br> — NOT "<br>\n". The post body renders under
+        // white-space:pre-wrap, which turns a literal "\n" into its OWN line
+        // break, so "<br>\n" produced TWO breaks per newline (a big gap between
+        // lines). One <br> per line is exactly one break; pre-wrap still keeps
+        // multiple spaces for alignment.
+        $html = implode('<br>', $lines);
 
         // 4. Inline tags when the board enables BBCode; then bare-URL linkify.
         //    Greentext, >>quotes, [code] and links are always on (core idioms).

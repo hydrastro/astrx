@@ -7,7 +7,6 @@ declare(strict_types=1);
  */
 return [
     'ImageboardConfig' => [
-        'enabled'             => true,
         'upload_dir'          => '/app/resources/board_uploads',
         'upload_max_kb'       => 4096,
         'upload_max_pixels'   => 16000000, // header pixel-budget: reject decompression bombs pre-decode
@@ -22,5 +21,9 @@ return [
         'threads_per_page'    => 10,
         'preview_replies'     => 5,
         'allow_authenticated_posts' => true, // logged-in users may post under their account without a captcha
+        // Post-author name colour per role (UserGroup name : CSS colour). Roles
+        // match by name, so a role added later is coloured by adding an entry;
+        // unlisted roles use the theme's default name colour.
+        'role_colors'         => 'ADMIN:red,MOD:purple,USER:white',
     ],
 ];

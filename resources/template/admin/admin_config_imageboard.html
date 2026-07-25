@@ -11,13 +11,6 @@
   <input type="hidden" name="prg_id" value="{{prg_id}}">
   <input type="hidden" name="_csrf"  value="{{csrf_token}}">
 
-  {{! ── General ────────────────────────────────────────────────────────── }}
-  <h3>{{section_general}}</h3>
-  <table>
-    <tr><th>{{label_enabled}}</th>
-      <td><input type="checkbox" name="enabled" value="1"{{#cfg_enabled}} checked{{/cfg_enabled}} class="input"></td></tr>
-  </table>
-
   {{! ── Uploads ────────────────────────────────────────────────────────── }}
   <h3>{{section_uploads}}</h3>
   <table>
@@ -63,13 +56,16 @@
       <td><input type="number" name="preview_replies" value="{{cfg_preview_replies}}" min="0" class="input"></td></tr>
     <tr><th>{{label_flag_base_path}}</th>
       <td><input type="text" name="flag_base_path" value="{{cfg_flag_base_path}}" style="width:100%;max-width:16rem" class="input"></td></tr>
+    <tr><th>{{label_role_colors}}</th>
+      <td><input type="text" name="role_colors" value="{{cfg_role_colors}}" style="width:100%;max-width:30rem" class="input">
+          <br><small>{{hint_role_colors}}</small></td></tr>
   </table>
 
   <p><button type="submit" class="input">{{btn_save}}</button></p>
 </form>
 
-{{! ── Board overview (folded in from the former standalone Boards page) ──── }}
-<h3>{{boards_heading}}</h3>
+{{! ── Board management (list + create / edit / delete) ──── }}
+<h3>{{board_manage_heading}}</h3>
 <p>{{boards_intro}}</p>
 {{#has_boards}}
 <table>
@@ -81,6 +77,7 @@
     <th>{{col_cooldown}}</th>
     <th>{{col_max_replies}}</th>
     <th>{{col_threads}}</th>
+    <th>{{col_actions}}</th>
   </tr>
   </thead>
   <tbody>
@@ -92,10 +89,59 @@
     <td style="text-align:center">{{cooldown}}</td>
     <td style="text-align:center">{{max_replies}}</td>
     <td style="text-align:center">{{thread_limit}}</td>
+    <td style="text-align:center">
+      <a href="{{edit_url}}" class="input">{{btn_board_edit}}</a>
+      <form method="POST" class="mod-inline" onsubmit="return confirm('{{confirm_board_delete}}')">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="board_delete">
+        <input type="hidden" name="board_id" value="{{id}}">
+        <button type="submit" class="input">{{btn_board_delete}}</button>
+      </form>
+    </td>
   </tr>
   {{/boards}}
   </tbody>
 </table>
 {{/has_boards}}
 {{^has_boards}}<p><em>{{boards_none}}</em></p>{{/has_boards}}
+
+{{! ── Create / edit a board ──── }}
+<h3>{{#board_edit}}{{board_edit_heading}}{{/board_edit}}{{^board_edit}}{{board_create_heading}}{{/board_edit}}</h3>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="{{board_action}}">
+  {{#board_edit}}<input type="hidden" name="board_id" value="{{be_id}}">{{/board_edit}}
+  <table>
+    <tr><th>{{lbl_b_slug}}</th>
+      <td>{{#board_edit}}<strong>/{{be_slug}}/</strong> <small>{{lbl_b_slug_locked}}</small>{{/board_edit}}{{^board_edit}}<input type="text" name="slug" value="{{be_slug}}" maxlength="32" required class="input">{{/board_edit}}</td></tr>
+    <tr><th>{{lbl_b_title}}</th>
+      <td><input type="text" name="title" value="{{be_title}}" maxlength="128" required style="width:100%;max-width:24rem" class="input"></td></tr>
+    <tr><th>{{lbl_b_subtitle}}</th>
+      <td><input type="text" name="subtitle" value="{{be_subtitle}}" maxlength="255" style="width:100%;max-width:24rem" class="input"></td></tr>
+    <tr><th>{{lbl_b_description}}</th>
+      <td><textarea name="description" rows="2" style="width:100%;max-width:30rem" class="input">{{be_description}}</textarea></td></tr>
+    <tr><th>{{lbl_b_active}}</th>
+      <td><input type="checkbox" name="active" value="1"{{#be_active}} checked{{/be_active}} class="input"></td></tr>
+    <tr><th>{{lbl_b_nsfw}}</th>
+      <td><input type="checkbox" name="nsfw" value="1"{{#be_nsfw}} checked{{/be_nsfw}} class="input"></td></tr>
+    <tr><th>{{lbl_b_forced_anon}}</th>
+      <td><input type="checkbox" name="forced_anon" value="1"{{#be_forced_anon}} checked{{/be_forced_anon}} class="input"></td></tr>
+    <tr><th>{{lbl_b_bbcode}}</th>
+      <td><input type="checkbox" name="bbcode" value="1"{{#be_bbcode}} checked{{/be_bbcode}} class="input"></td></tr>
+    <tr><th>{{lbl_b_cooldown}}</th>
+      <td><input type="number" name="cooldown_secs" value="{{be_cooldown}}" min="0" class="input"></td></tr>
+    <tr><th>{{lbl_b_max_replies}}</th>
+      <td><input type="number" name="max_replies" value="{{be_max_replies}}" min="0" class="input"></td></tr>
+    <tr><th>{{lbl_b_thread_limit}}</th>
+      <td><input type="number" name="thread_limit" value="{{be_thread_limit}}" min="1" class="input"></td></tr>
+    <tr><th>{{lbl_b_max_post_len}}</th>
+      <td><input type="number" name="max_post_len" value="{{be_max_post_len}}" min="1" class="input"></td></tr>
+  </table>
+  <p>
+    <button type="submit" class="input">{{#board_edit}}{{btn_board_update}}{{/board_edit}}{{^board_edit}}{{btn_board_create}}{{/board_edit}}</button>
+    {{#board_edit}}<a href="{{board_cancel_url}}" class="input">{{btn_board_cancel}}</a>{{/board_edit}}
+  </p>
+</form>
 {{/admin_forbidden}}

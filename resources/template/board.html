@@ -27,13 +27,23 @@
     .board-empty{font-style:italic;}
     .tag{border:1px solid currentColor;padding:0 5px;margin-right:4px;}
     .thread{border-bottom:1px dashed currentColor;padding:7px 0;margin:0;overflow:hidden;}
-    .post{background:transparent;border:1px solid currentColor;padding:5px 8px;margin:4px 0;display:inline-block;max-width:100%;box-sizing:border-box;vertical-align:top;}
-    .post.op{background:transparent;border:0;padding:3px 0;display:block;}
+    /* Prominent "open thread" link under each index thread. */
+    .thread-open{margin:5px 0;}
+    #board .thread-open a{font-weight:bold;text-decoration:underline;}
+    /* Replies: solid dark-grey boxes, stacked VERTICALLY (display:block, one per
+       line — not inline-block). The OP stays on the page background so it stands
+       out as the thread's opening post. */
+    .post{background:#1b1b1b;border:1px solid currentColor;padding:5px 8px;margin:4px 0;display:block;max-width:100%;box-sizing:border-box;}
+    .post.op{background:transparent;border:0;padding:3px 0;}
     .post.reply{margin-left:20px;}
     .post-head{margin:0 0 4px;}
     .post-head .subject{color:#6f9cf0;font-weight:bold;margin-right:6px;}
     .post-head .name{color:#3ea968;font-weight:bold;}
-    .post-head .name-link{color:inherit;}
+    /* Registered (logged-in) posters' names are underlined and take their role
+       colour from the parent .name span. color:inherit is required because the
+       theme's "a{color:#fff}" would otherwise force the link white and hide the
+       role colour; the #board-scoped selector out-specifies it. */
+    #board .post-head .name-link{text-decoration:underline;color:inherit;}
     .post-head .tripcode{color:#4fb37c;font-weight:bold;}
     .post-head .capcode{color:#e0566a;font-weight:bold;}
     .post-head .verified{color:#4a9fd8;font-weight:bold;}
@@ -94,11 +104,11 @@
         <h1>/{{board_slug}}/ — {{board_title}} {{#board_nsfw}}<span class="tag">{{lbl_nsfw}}</span>{{/board_nsfw}}</h1>
         {{#board_subtitle}}<p class="board-sub">{{board_subtitle}}</p>{{/board_subtitle}}
         {{#board_desc}}<p class="board-desc">{{board_desc}}</p>{{/board_desc}}
-        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a> · <a href="{{feed_url}}">{{lbl_feed}}</a></nav>
+        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></nav>
     </div>
 
     {{#can_post}}
-    <form class="board-form" method="post" action="{{form_action}}" enctype="multipart/form-data">
+    <form id="board-post-form" class="board-form" method="post" action="{{form_action}}" enctype="multipart/form-data">
         <input type="hidden" name="prg_id" value="{{prg_id}}">
         <input type="hidden" name="_csrf" value="{{csrf_token}}">
         {{#is_reply}}<input type="hidden" name="thread" value="{{thread_id}}">{{/is_reply}}
@@ -112,9 +122,10 @@
         <p><label>{{lbl_name}}<br><input type="text" name="name" maxlength="64" autocomplete="off"></label></p>
         {{/post_as_user}}
         {{^is_reply}}<p><label>{{lbl_subject}}<br><input type="text" name="subject" maxlength="255" autocomplete="off"></label></p>{{/is_reply}}
-        <p><textarea name="comment" rows="4" maxlength="{{max_len}}" placeholder="{{lbl_comment}}"></textarea></p>
+        <p><textarea name="comment" rows="5" maxlength="{{max_len}}" placeholder="{{lbl_comment}}">{{comment_prefill}}</textarea></p>
         <p class="board-form-row">
             <label>{{lbl_image}} <input type="file" name="image" accept="image/*"></label>
+            <label><input type="checkbox" name="spoiler" value="1"> {{lbl_spoiler_image}}</label>
             <label><input type="checkbox" name="sage" value="1"> {{lbl_sage}}</label>
             {{#can_capcode}}<label><input type="checkbox" name="capcode" value="1"> {{lbl_post_with_capcode}}</label>{{/can_capcode}}
             {{#can_verified}}<label><input type="checkbox" name="verified" value="1"> {{lbl_post_verified}}</label>{{/can_verified}}

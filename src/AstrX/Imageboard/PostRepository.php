@@ -175,6 +175,38 @@ final class PostRepository
         }
     }
 
+    /**
+     * Map each given hex user id to that user's `type` (UserGroup value), for
+     * colouring post-author names by role. Unknown ids are simply absent from the
+     * result. One query for the whole page — no per-post lookups.
+     *
+     * @param list<string> $hexIds
+     * @return Result<array<string,int>>
+     */
+    public function typesByUserIds(array $hexIds): Result
+    {
+        $hexIds = array_values(array_unique(array_filter($hexIds, static fn (string $h): bool => $h !== '')));
+        if ($hexIds === []) {
+            return Result::ok([]);
+        }
+        try {
+            $place = implode(',', array_fill(0, count($hexIds), 'UNHEX(?)'));
+            $stmt  = $this->pdo->prepare("SELECT LOWER(HEX(id)) AS id, type FROM `user` WHERE id IN ($place)");
+            $stmt->execute($hexIds);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $out = [];
+            foreach ($rows as $row) {
+                $hex  = is_scalar($row['id'] ?? null) ? (string) $row['id'] : '';
+                $type = is_numeric($row['type'] ?? null) ? (int) $row['type'] : 0;
+                if ($hex !== '') { $out[$hex] = $type; }
+            }
+            return Result::ok($out);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
     /** @return Result<array<string,mixed>|null> */
     public function byId(int $id): Result
     {

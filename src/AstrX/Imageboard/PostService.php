@@ -54,7 +54,7 @@ final class PostService
 
         $meta = null;
         if ($hasImage && $s->image !== null) {
-            $iR = $this->images->store($s->image, false);
+            $iR = $this->images->store($s->image, $s->spoiler);
             if (!$iR->isOk()) {
                 return Result::err(null, $iR->diagnostics());
             }
@@ -156,7 +156,7 @@ final class PostService
 
         $meta = null;
         if ($hasImage && $s->image !== null) {
-            $iR = $this->images->store($s->image, false);
+            $iR = $this->images->store($s->image, $s->spoiler);
             if (!$iR->isOk()) {
                 return Result::err(null, $iR->diagnostics());
             }

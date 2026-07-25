@@ -18,7 +18,6 @@ use AstrX\Config\InjectConfig;
  */
 final class ImageboardConfig
 {
-    private bool   $enabled           = true;
     private string $uploadDir         = '/app/resources/board_uploads';
     private int    $uploadMaxKb       = 4096;
     private int    $uploadMaxPixels   = 16_000_000; // header pixel-budget: reject decompression bombs pre-decode
@@ -33,8 +32,12 @@ final class ImageboardConfig
     private int    $threadsPerPage    = 10;
     private int    $previewReplies    = 5;      // replies shown under each thread on the index
     private bool   $allowAuthPosts    = true;   // logged-in users may post under their account (no captcha)
+    // Post-author name colour per role, keyed by UserGroup case name. Stored as a
+    // compact "ROLE:colour,ROLE:colour" string so ConfigWriter (scalars only) can
+    // persist it. Roles are matched by NAME, so a role added later just needs an
+    // entry here; unlisted roles fall back to the theme's default name colour.
+    private string $roleColorsRaw     = 'ADMIN:red,MOD:purple,USER:white';
 
-    #[InjectConfig('enabled')]             public function setEnabled(bool $v): void          { $this->enabled = $v; }
     #[InjectConfig('upload_dir')]          public function setUploadDir(string $v): void      { $this->uploadDir = rtrim(trim($v), '/\\'); }
     #[InjectConfig('upload_max_kb')]       public function setUploadMaxKb(int $v): void       { $this->uploadMaxKb = max(1, $v); }
     #[InjectConfig('upload_max_pixels')]   public function setUploadMaxPixels(int $v): void   { $this->uploadMaxPixels = max(1_000_000, $v); }
@@ -49,8 +52,8 @@ final class ImageboardConfig
     #[InjectConfig('threads_per_page')]    public function setThreadsPerPage(int $v): void    { $this->threadsPerPage = max(1, $v); }
     #[InjectConfig('preview_replies')]     public function setPreviewReplies(int $v): void    { $this->previewReplies = max(0, $v); }
     #[InjectConfig('allow_authenticated_posts')] public function setAllowAuthPosts(bool $v): void { $this->allowAuthPosts = $v; }
+    #[InjectConfig('role_colors')]         public function setRoleColorsRaw(string $v): void  { $this->roleColorsRaw = trim($v); }
 
-    public function enabled(): bool          { return $this->enabled; }
     public function uploadDir(): string      { return $this->uploadDir; }
     public function uploadMaxKb(): int       { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int    { return $this->uploadMaxKb * 1024; }
@@ -67,6 +70,37 @@ final class ImageboardConfig
 
     /** Logged-in users may post under their account identity without a captcha. */
     public function allowAuthenticatedPosts(): bool { return $this->allowAuthPosts; }
+
+    /** Raw "ROLE:colour,ROLE:colour" string (for the admin editor). */
+    public function roleColorsRaw(): string { return $this->roleColorsRaw; }
+
+    /**
+     * Parsed role → colour map (role name uppercased; colour is a CSS colour word
+     * or #hex, validated). Malformed entries are skipped.
+     *
+     * @return array<string,string>
+     */
+    public function roleColors(): array
+    {
+        $out = [];
+        foreach (explode(',', $this->roleColorsRaw) as $pair) {
+            $pair = trim($pair);
+            if ($pair === '' || !str_contains($pair, ':')) { continue; }
+            [$role, $color] = explode(':', $pair, 2);
+            $role  = strtoupper(trim($role));
+            $color = trim($color);
+            if ($role !== '' && preg_match('/^#[0-9a-f]{3,6}$|^[a-z]{1,20}$/i', $color) === 1) {
+                $out[$role] = $color;
+            }
+        }
+        return $out;
+    }
+
+    /** The configured colour for a role name, or '' if none (use theme default). */
+    public function roleColor(string $role): string
+    {
+        return $this->roleColors()[strtoupper($role)] ?? '';
+    }
 
     /**
      * Normalised, lower-cased list of allowed upload extensions.
