@@ -55,6 +55,19 @@ final class CaptchaService
     #[\AstrX\Config\InjectConfig('cooldown_secs')]
     public function setCooldownSecs(int $v): void { $this->cooldownSecs = max(0, $v); }
 
+    /**
+     * Whether the iframe reload/refresh control is offered on captcha forms.
+     * Opt-in (default off): the reload button lets a user fetch a fresh image
+     * without reloading the page, but it adds the CaptchaFrame round-trip and
+     * the regen bookkeeping — off keeps a plain single-image captcha.
+     */
+    private bool $reloadEnabled = false;
+
+    #[\AstrX\Config\InjectConfig('reload_enabled')]
+    public function setReloadEnabled(bool $v): void { $this->reloadEnabled = $v; }
+
+    public function reloadEnabled(): bool { return $this->reloadEnabled; }
+
     public function __construct(
         private readonly CaptchaRepository $repository,
         private readonly CaptchaRenderer   $renderer,

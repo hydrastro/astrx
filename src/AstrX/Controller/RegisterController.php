@@ -241,7 +241,8 @@ final class RegisterController extends AbstractController
                 . '?cid=' . $captchaId
             : '';
         $this->ctx->set('captcha_frame_url', $captchaFrameUrl);
-        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '');
+        // Reload button (iframe) is opt-in; off = a plain single-image captcha.
+        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '' && $this->captchaService->reloadEnabled());
         // fix113 set this; lost during fix114's email-integration patch — re-added in fix117.
         // Captcha translation domain holds 'captcha.reload'. Without
         // this loadDomain call, t() emits a Missing-translation diagnostic

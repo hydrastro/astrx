@@ -202,6 +202,8 @@ return [
     'admin.config.field.non_captcha_char_number'  => 'Decoy characters',
     'admin.config.field.use_border_linear_randomness' => 'Linear border randomness',
     'admin.config.field.max_rounds_number'        => 'Max placement attempts',
+    'admin.config.field.avoid_collisions'         => 'Avoid character collisions (slower, no overlaps)',
+    'admin.config.field.reload_enabled'           => 'Show captcha reload button (opt-in)',
     'admin.config.field.token_expiration_time'    => 'Token expiration (seconds)',
     'admin.config.field.allow_register'           => 'Allow registration',
     'admin.config.field.allow_login_non_verified_users' => 'Allow unverified logins',

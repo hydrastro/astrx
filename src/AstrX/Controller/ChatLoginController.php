@@ -370,7 +370,8 @@ final class ChatLoginController extends AbstractController
         $this->ctx->set('captcha_id',           $captchaId);
         $this->ctx->set('captcha_image',        $captchaImage);
         $this->ctx->set('captcha_frame_url',    $frameUrl);
-        $this->ctx->set('has_captcha_frame',    $frameUrl !== '');
+        // Reload button (iframe) is opt-in; off = a plain single-image captcha.
+        $this->ctx->set('has_captcha_frame',    $frameUrl !== '' && $this->captchaService->reloadEnabled());
         $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('captcha_label',        $this->t->t('user.captcha.label', fallback: 'Captcha'));
     }

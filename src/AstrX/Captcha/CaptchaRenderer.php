@@ -43,7 +43,7 @@ final class CaptchaRenderer
     private bool   $linesColorRandom = false;
     private bool   $dotsColorRandom  = false;
 
-    private int    $linesNumber          = 5;
+    private int    $linesNumber          = 30;
     private bool   $linesStartFromBorder = true;
     private int    $dotsNumber           = 100;
 
@@ -66,6 +66,13 @@ final class CaptchaRenderer
 
     private bool   $useBorderLinearRandomness = true;
     private int    $maxRoundsNumber           = 5000;
+
+    // Opt-in: when true the HARD renderer runs the collision-avoidance search
+    // (findFreePosition) so characters never overlap — but it can iterate up to
+    // max_rounds_number times per character. Default false = a single fast
+    // placement per char (chars stay inside the image but may occasionally
+    // overlap), trading rare unreadable captchas for much better performance.
+    private bool   $avoidCollisions           = false;
 
     // -------------------------------------------------------------------------
     // Config setters
@@ -126,6 +133,8 @@ final class CaptchaRenderer
     public function setUseBorderLinearRandomness(bool $v): void { $this->useBorderLinearRandomness = $v; }
     #[InjectConfig('max_rounds_number')]
     public function setMaxRoundsNumber(int $v): void { $this->maxRoundsNumber = max(1, $v); }
+    #[InjectConfig('avoid_collisions')]
+    public function setAvoidCollisions(bool $v): void { $this->avoidCollisions = $v; }
 
     // -------------------------------------------------------------------------
     // Public API
@@ -493,6 +502,14 @@ final class CaptchaRenderer
         int   $yMin,
         int   $yMax,
     ): array {
+        // Performant default: a single random placement, no collision search.
+        // The [xMin..xMax]/[yMin..yMax] bounds keep the char inside the image;
+        // it may overlap a neighbour (rare, and cheap). Opt into avoid_collisions
+        // for the spacing search that can retry up to max_rounds_number times.
+        if (!$this->avoidCollisions) {
+            return [random_int($xMin, $xMax), random_int($yMin, $yMax)];
+        }
+
         for ($round = 0; $round < $this->maxRoundsNumber; $round++) {
             $cx = random_int($xMin, $xMax);
             $cy = random_int($yMin, $yMax);

@@ -20,6 +20,8 @@
   <table>
     <tr><th>{{label_captcha_expiration}}</th>
       <td><input type="number" name="captcha_expiration" value="{{cfg_captcha_expiration}}" min="60" class="input"> s</td></tr>
+    <tr><th>{{label_reload_enabled}}</th>
+      <td><input type="checkbox" name="reload_enabled" value="1"{{#cfg_reload_enabled}} checked{{/cfg_reload_enabled}} class="input"></td></tr>
     <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>
 </form>
@@ -129,6 +131,8 @@
       <td><input type="checkbox" name="use_border_linear_randomness" value="1"{{#cfg_use_border_linear_randomness}} checked{{/cfg_use_border_linear_randomness}} class="input"></td></tr>
     <tr><th>{{label_max_rounds_number}}</th>
       <td><input type="number" name="max_rounds_number" value="{{cfg_max_rounds_number}}" min="100" class="input"></td></tr>
+    <tr><th>{{label_avoid_collisions}}</th>
+      <td><input type="checkbox" name="avoid_collisions" value="1"{{#cfg_avoid_collisions}} checked{{/cfg_avoid_collisions}} class="input"></td></tr>
 
     <tr><td colspan="2">
       <input type="submit" value="{{btn_save}}" class="input">

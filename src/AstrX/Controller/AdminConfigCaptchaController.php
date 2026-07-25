@@ -136,12 +136,14 @@ final class AdminConfigCaptchaController extends AbstractController
      */
     private function saveService(array $p): Result
     {
-        return $this->writer->write('Captcha', array_merge(
-            $this->loadFullCaptchaConfig(),
-            ['CaptchaService' => [
-                'captcha_expiration' => max(60, self::mInt($p, 'captcha_expiration', 600)),
-            ]]
-        ));
+        // Preserve the rest of the CaptchaService section (max_regens,
+        // cooldown_secs) and override only the admin-editable fields.
+        $full    = $this->loadFullCaptchaConfig();
+        $service = self::mArray($full, 'CaptchaService');
+        $service['captcha_expiration'] = max(60, self::mInt($p, 'captcha_expiration', 600));
+        $service['reload_enabled']     = self::mBool($p, 'reload_enabled');
+        $full['CaptchaService'] = $service;
+        return $this->writer->write('Captcha', $full);
     }
 
     /** @param array<string, mixed> $p
@@ -203,7 +205,7 @@ final class AdminConfigCaptchaController extends AbstractController
             'lines_color_random'          => self::mBool($p, 'lines_color_random'),
             'dots_color_random'           => self::mBool($p, 'dots_color_random'),
             'lines_start_from_border'     => self::mBool($p, 'lines_start_from_border'),
-            'lines_number'                => max(0, self::mInt($p, 'lines_number', 10)),
+            'lines_number'                => max(0, self::mInt($p, 'lines_number', 30)),
             'dots_number'                 => max(0, self::mInt($p, 'dots_number', 100)),
             'char_list'                   => trim(self::mStr($p, 'char_list', '')),
             'captcha_length'              => max(1, self::mInt($p, 'captcha_length', 5)),
@@ -220,6 +222,7 @@ final class AdminConfigCaptchaController extends AbstractController
             'non_captcha_char_number'     => max(0, self::mInt($p, 'non_captcha_char_number', 5)),
             'use_border_linear_randomness'=> self::mBool($p, 'use_border_linear_randomness'),
             'max_rounds_number'           => max(100, self::mInt($p, 'max_rounds_number', 5000)),
+            'avoid_collisions'            => self::mBool($p, 'avoid_collisions'),
         ];
     }
 
@@ -301,6 +304,7 @@ final class AdminConfigCaptchaController extends AbstractController
 
         // Service
         $this->ctx->set('cfg_captcha_expiration', $this->config->getConfigInt('CaptchaService', 'captcha_expiration', 600));
+        $this->ctx->set('cfg_reload_enabled',     $this->config->getConfigBool('CaptchaService', 'reload_enabled', false));
 
         // Renderer
         foreach ([
@@ -314,7 +318,7 @@ final class AdminConfigCaptchaController extends AbstractController
                      'font_min_angle', 'font_max_angle',
                      'font_x_border', 'font_y_border',
                      'trace_line_color', 'non_captcha_char_number',
-                     'use_border_linear_randomness', 'max_rounds_number',
+                     'use_border_linear_randomness', 'max_rounds_number', 'avoid_collisions',
                  ] as $key) {
             $this->ctx->set('cfg_' . $key, $this->config->getConfig('CaptchaRenderer', $key, null));
         }
@@ -361,6 +365,8 @@ final class AdminConfigCaptchaController extends AbstractController
         $this->ctx->set('label_non_captcha_char_number',    $this->t->t('admin.config.field.non_captcha_char_number'));
         $this->ctx->set('label_use_border_linear_randomness', $this->t->t('admin.config.field.use_border_linear_randomness'));
         $this->ctx->set('label_max_rounds_number',          $this->t->t('admin.config.field.max_rounds_number'));
+        $this->ctx->set('label_reload_enabled',             $this->t->t('admin.config.field.reload_enabled'));
+        $this->ctx->set('label_avoid_collisions',           $this->t->t('admin.config.field.avoid_collisions'));
         $this->ctx->set('btn_save',                         $this->t->t('admin.btn.save'));
         $this->ctx->set('btn_preview',                      $this->t->t('admin.config.captcha.btn_preview'));
     }

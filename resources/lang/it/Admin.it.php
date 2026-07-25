@@ -412,6 +412,8 @@ return [
     'admin.config.field.non_captcha_char_number'  => 'Caratteri esca',
     'admin.config.field.use_border_linear_randomness' => 'Casualità lineare del bordo',
     'admin.config.field.max_rounds_number'        => 'Max tentativi di posizionamento',
+    'admin.config.field.avoid_collisions'         => 'Evita sovrapposizioni caratteri (più lento)',
+    'admin.config.field.reload_enabled'           => 'Mostra pulsante di ricarica captcha (opzionale)',
     'admin.config.field.token_expiration_time'    => 'Scadenza token (secondi)',
     'admin.config.field.allow_register'           => 'Consenti registrazione',
     'admin.config.field.allow_login_non_verified_users' => 'Consenti accessi non verificati',

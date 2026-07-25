@@ -172,7 +172,8 @@ final class LoginController extends AbstractController
                 . '?cid=' . $captchaId
             : '';
         $this->ctx->set('captcha_frame_url', $captchaFrameUrl);
-        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '');
+        // Reload button (iframe) is opt-in; off = a plain single-image captcha.
+        $this->ctx->set('has_captcha_frame', $captchaFrameUrl !== '' && $this->captchaService->reloadEnabled());
         // Label used by the parent-side reload link (external to the iframe
         // so it can't be clipped by overflow:hidden — fix113).
         // Captcha translation domain holds 'captcha.reload'. Without

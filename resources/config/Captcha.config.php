@@ -11,6 +11,8 @@ return [
         'max_regens'    => 5,
         'cooldown_secs' => 2,
         'captcha_expiration' => 600,
+        // Opt-in: offer the iframe reload/refresh button on captcha forms.
+        'reload_enabled' => false,
     ],
     'CaptchaRenderer' => [
         'image_width' => 1,
@@ -23,7 +25,7 @@ return [
         'lines_color_random' => false,
         'dots_color_random' => false,
         'lines_start_from_border' => true,
-        'lines_number' => 7,
+        'lines_number' => 30,
         'dots_number' => 200,
         'char_list' => '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ',
         'captcha_length' => 5,
@@ -40,5 +42,8 @@ return [
         'non_captcha_char_number' => 5,
         'use_border_linear_randomness' => true,
         'max_rounds_number' => 5000,
+        // Opt-in: run the collision-avoidance placement search (no overlaps but
+        // can be slow). Off = one fast placement per char (may rarely overlap).
+        'avoid_collisions' => false,
     ],
 ];
