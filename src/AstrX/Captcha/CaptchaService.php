@@ -197,8 +197,17 @@ final class CaptchaService
                                                       )));
         }
 
-        // Consume the token — delete by ID, not by text
-        $this->repository->delete($id);
+        // Consume the token ATOMICALLY: only the request whose DELETE removes the
+        // row proceeds. Concurrent verifications of one solved captcha all pass
+        // the checks above, but only one wins the delete — the losers are
+        // rejected here, so a single solved captcha cannot authorise a burst of
+        // posts/logins (closes the find()-then-delete() TOCTOU).
+        $consumed = $this->repository->consume($id);
+        if (!$consumed->isOk() || $consumed->unwrap() !== true) {
+            return Result::err(null, Diagnostics::of(new CaptchaWrongDiagnostic(
+                                                          'astrx.captcha/wrong_text', DiagnosticLevel::NOTICE,
+                                                      )));
+        }
 
         return Result::ok(true);
     }

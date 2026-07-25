@@ -109,21 +109,25 @@ final class AdminConfigImageboardController extends AbstractController
      */
     private function sectionFrom(array $p): array
     {
+        // Numeric values are clamped on the WRITE path (not only in the load
+        // setters) so the persisted config file can never hold an out-of-range
+        // value — e.g. upload_max_pixels can't be driven to 0 to disable the
+        // decompression-bomb guard.
         return [
             'enabled'             => self::mBool($p, 'enabled'),
             'upload_dir'          => self::mStr($p, 'upload_dir', ''),
-            'upload_max_kb'       => self::mInt($p, 'upload_max_kb', 4096),
-            'upload_max_pixels'   => self::mInt($p, 'upload_max_pixels', 16000000),
-            'full_max_dimension'  => self::mInt($p, 'full_max_dimension', 1600),
-            'thumb_max_dimension' => self::mInt($p, 'thumb_max_dimension', 250),
+            'upload_max_kb'       => max(1,       self::mInt($p, 'upload_max_kb', 4096)),
+            'upload_max_pixels'   => max(1000000, self::mInt($p, 'upload_max_pixels', 16000000)),
+            'full_max_dimension'  => max(64,      self::mInt($p, 'full_max_dimension', 1600)),
+            'thumb_max_dimension' => max(32,      self::mInt($p, 'thumb_max_dimension', 250)),
             'upload_types'        => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
             'anon_name'           => self::mStr($p, 'anon_name', 'Anonymous'),
             'guest_captcha'       => self::mBool($p, 'guest_captcha'),
             'store_poster_ip'     => self::mBool($p, 'store_poster_ip'),
-            'default_max_replies' => self::mInt($p, 'default_max_replies', 500),
+            'default_max_replies' => max(0,       self::mInt($p, 'default_max_replies', 500)),
             'flag_base_path'      => self::mStr($p, 'flag_base_path', '/flags'),
-            'threads_per_page'    => self::mInt($p, 'threads_per_page', 10),
-            'preview_replies'     => self::mInt($p, 'preview_replies', 5),
+            'threads_per_page'    => max(1,       self::mInt($p, 'threads_per_page', 10)),
+            'preview_replies'     => max(0,       self::mInt($p, 'preview_replies', 5)),
         ];
     }
 

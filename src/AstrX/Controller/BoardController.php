@@ -396,11 +396,17 @@ final class BoardController extends AbstractController
     }
 
     /**
-     * True while this poster is still inside the board's post cooldown. A
-     * per-session (per-browser) timer is the meaningful key on a pure onion,
-     * where every poster shares one REMOTE_ADDR; a per-poster-key (per-IP) timer
-     * additionally bites on clearnet and is skipped for loopback so it can never
-     * throttle an entire onion as one.
+     * True while this poster is still inside the board's post cooldown.
+     *
+     * The per-session (per-browser) timer is the primary key on a pure onion,
+     * where every poster shares one REMOTE_ADDR. It is best-effort — a client can
+     * drop its cookie — so the single-use captcha is the real anti-automation
+     * gate; this cooldown just damps casual/accidental repeat posts.
+     *
+     * The per-poster-key (per-IP) timer compares against STORED poster_keys, so
+     * it only functions when store_poster_ip is on (a clearnet deployment). On
+     * the onion default nothing is stored and the key would be a shared constant
+     * anyway, so it is skipped.
      */
     private function onCooldown(int $boardId, string $posterKey, ?string $ip, int $cooldown): bool
     {
@@ -409,7 +415,7 @@ final class BoardController extends AbstractController
         if ($lastTs > 0 && (time() - $lastTs) < $cooldown) {
             return true;
         }
-        if ($ip !== null && $posterKey !== '' && !self::isLoopback($ip)) {
+        if ($this->config->storePosterIp() && $ip !== null && $posterKey !== '' && !self::isLoopback($ip)) {
             $r     = $this->posts->lastPostAtByPosterKey($boardId, $posterKey);
             $keyTs = $r->isOk() ? $r->unwrap() : 0;
             if ($keyTs > 0 && (time() - $keyTs) < $cooldown) {
@@ -424,14 +430,21 @@ final class BoardController extends AbstractController
         $_SESSION['board_last_post'] = time();
     }
 
-    /** True if a packed (inet_pton) address is loopback (127.0.0.0/8 or ::1). */
+    /** True if a packed (inet_pton) address is loopback (127.0.0.0/8, ::1, or ::ffff:127/8). */
     private static function isLoopback(string $packedIp): bool
     {
         if (strlen($packedIp) === 4) {
-            return $packedIp[0] === "\x7f";          // 127.x.x.x
+            return $packedIp[0] === "\x7f";          // 127.0.0.0/8
         }
-        $lo6 = inet_pton('::1');
-        return $lo6 !== false && $packedIp === $lo6; // ::1
+        if (strlen($packedIp) === 16) {
+            if ($packedIp === inet_pton('::1')) {
+                return true;                         // ::1
+            }
+            // IPv4-mapped IPv6 loopback (::ffff:127.0.0.0/8)
+            return str_starts_with($packedIp, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff")
+                && $packedIp[12] === "\x7f";
+        }
+        return false;
     }
 
     // ── Context builders ──────────────────────────────────────────────────────

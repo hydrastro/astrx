@@ -105,6 +105,27 @@ final class CaptchaRepository
     }
 
     /**
+     * Atomically CONSUME (single-use) a captcha by id. Returns true only for the
+     * caller whose DELETE actually removed the row. Concurrent verifications of
+     * the same solved captcha all reach here, but only one deletes it (rowCount
+     * 1) and the rest see rowCount 0 — closing the find()-then-delete() TOCTOU
+     * that would otherwise let one solved captcha authorise a burst of requests.
+     *
+     * @return Result<bool>
+     */
+    public function consume(string $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare('DELETE FROM `captcha` WHERE `id` = :id');
+            $stmt->execute([':id' => $id]);
+
+            return Result::ok($stmt->rowCount() === 1);
+        } catch (PDOException $e) {
+            return Result::err(null, $this->diagnostic($e));
+        }
+    }
+
+    /**
      * Delete all expired captcha tokens.
      * Called opportunistically on generate() to keep the table clean.
      *
