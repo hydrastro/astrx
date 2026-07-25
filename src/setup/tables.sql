@@ -1835,6 +1835,8 @@ CREATE TABLE IF NOT EXISTS `board`
     `title`         VARCHAR(128)     NOT NULL,
     `subtitle`      VARCHAR(255)     NOT NULL DEFAULT '',
     `description`   TEXT             NOT NULL,
+    `banner`        VARCHAR(255)     NOT NULL DEFAULT '',           -- site-relative banner image path ('' = none)
+    `rules`         VARCHAR(2000)    NOT NULL DEFAULT '',           -- per-board rules / info blurb ('' = none)
     `owner_user_id` BINARY(16)       NULL,                         -- per-board owner (granular mod)
     `active`        TINYINT          NOT NULL DEFAULT 1,
     `nsfw`          TINYINT          NOT NULL DEFAULT 0,
@@ -2018,8 +2020,8 @@ INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden
 VALUES
     ('WORDING_BOARD',      1, 'board',      1, 1, 0, 0),   -- dispatcher: index/catalog/thread + posting
     ('WORDING_BOARD_FILE', 1, 'board_file', 0, 1, 0, 0),   -- raw image serve by token (no shell)
-    ('WORDING_BOARD_MOD',  1, 'board_mod',  1, 1, 1, 0),   -- moderation surface (hidden; link-reached)
-    ('WORDING_BOARD_FEED', 1, 'board_feed', 0, 1, 1, 0);   -- Atom feed (raw XML; hidden; link-reached)
+    ('WORDING_BOARD_MOD',  1, 'board_mod',  1, 1, 0, 0),   -- moderation surface (unlisted; link-reached, access gated by BOARD_MODERATE)
+    ('WORDING_BOARD_FEED', 1, 'board_feed', 0, 1, 0, 0);   -- Atom feed (raw XML; unlisted; link-reached)
 
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
 SELECT id, id FROM `page` WHERE url_id IN ('WORDING_BOARD','WORDING_BOARD_FILE','WORDING_BOARD_MOD','WORDING_BOARD_FEED');
@@ -2059,6 +2061,23 @@ SELECT @board_nav_id, @board_pub_pin_id, 1, 'WORDING_BOARD', 1, 1, 0
 INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @board_nav_id, @board_page_id
  WHERE @board_page_id IS NOT NULL AND @board_nav_id IS NOT NULL;
+
+-- ============================================================
+-- IMAGEBOARD DISCOVERY PAGES (overboard + search; hidden, link-reached)
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_BOARD_OVERBOARD', 1, 'board_overboard', 1, 1, 0, 0),   -- overboard: newest threads across all boards (unlisted; link-reached)
+    ('WORDING_BOARD_SEARCH',    1, 'board_search',    1, 1, 0, 0);   -- post/thread search (no-JS GET form; unlisted; link-reached)
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id IN ('WORDING_BOARD_OVERBOARD','WORDING_BOARD_SEARCH');
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id IN ('WORDING_BOARD_OVERBOARD','WORDING_BOARD_SEARCH');
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 1, 1 FROM `page` WHERE url_id IN ('WORDING_BOARD_OVERBOARD','WORDING_BOARD_SEARCH');
 
 -- ============================================================
 -- IMAGEBOARD ADMIN PAGE (global config + board overview) + admin navbar

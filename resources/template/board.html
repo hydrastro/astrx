@@ -1,63 +1,77 @@
-<div id="board">
+<div id="board"{{#board_style}} class="bt-{{board_style}}"{{/board_style}}>
     <style>
-    /* Solid colours only, matching the site: rules and borders use the theme's
-       own text colour via currentColor — the same #fff the rest of the site draws
-       on the dark default theme, and correct on light themes too — never a
-       translucent grey. No opacity, no border-radius, no em/rem sizes: text
-       inherits the theme size (so it is not shrunk) and spacing is plain px.
-       Full-width like the rest of the site — no max-width cap. The functional
-       imageboard signal colours (greentext, quote/post links) are solid. */
-    #board a{text-decoration:none;}
+    /* Colours flow through CSS custom properties, so a board "style" (Yotsuba,
+       Tomorrow, …) is just a variable override on #board that the reader picks in
+       the Style selector. The DEFAULT inherits the active SITE theme exactly as
+       the rest of the site: transparent backgrounds (so posts sit on the site
+       background — no grey box), currentColor borders, the site's own text/link
+       colours. No opacity, no border-radius, no em/rem sizes (spacing is px,
+       borders solid); sizes/spacing are shared by every style. */
+    #board{
+      --bd-bg:transparent; --bd-fg:inherit; --bd-post-bg:transparent;
+      --bd-border:currentColor; --bd-link:currentColor;
+      --bd-name:#3ea968; --bd-subject:#6f9cf0; --bd-greentext:#7aa53c;
+      --bd-quote:#e0566a; --bd-postlink:#6f9cf0;
+      background:var(--bd-bg); color:var(--bd-fg);
+    }
+    #board a{text-decoration:none;color:var(--bd-link);}
     #board a:hover{text-decoration:underline;}
-    .board-header{border-bottom:1px solid currentColor;margin-bottom:8px;padding-bottom:5px;}
+    .board-header{border-bottom:1px solid var(--bd-border);margin-bottom:8px;padding-bottom:5px;}
     .board-header h1{margin:3px 0;}
     .board-header .tag{font-size:small;vertical-align:middle;}
+    .board-banner{display:block;max-width:100%;height:auto;margin:0 0 5px;border:1px solid var(--bd-border);}
+    .board-rules{margin:4px 0;border:1px solid var(--bd-border);padding:3px 6px;}
+    .board-rules summary{cursor:pointer;font-weight:bold;}
+    .board-rules-body{margin:5px 0 2px;}
     .board-sub{margin:2px 0;font-style:italic;}
     .board-desc{margin:3px 0;}
     .board-nav{margin:4px 0;}
-    .board-form{border:1px solid currentColor;background:transparent;padding:8px;margin:8px 0;}
+    .board-styles{margin:6px 0;font-size:small;}
+    .board-styles a{margin-right:6px;}
+    #board .board-styles a.cur{font-weight:bold;text-decoration:underline;}
+    .board-form{border:1px solid var(--bd-border);background:transparent;padding:8px;margin:8px 0;}
     .board-form h3{margin:2px 0 5px;}
-    .board-form input[type=text],.board-form input[type=password],.board-form textarea,.board-form select{width:100%;box-sizing:border-box;background:transparent;color:inherit;border:1px solid currentColor;padding:2px 4px;}
+    .board-form input[type=text],.board-form input[type=password],.board-form textarea,.board-form select{width:100%;box-sizing:border-box;background:transparent;color:inherit;border:1px solid var(--bd-border);padding:2px 4px;}
+    /* The comment box is user-resizable (vertical). */
+    .board-form textarea{resize:vertical;min-height:4em;}
     .board-form input[type=file]{color:inherit;}
-    .board-form button{background:transparent;color:inherit;border:1px solid currentColor;padding:2px 12px;cursor:pointer;}
+    .board-form button{background:transparent;color:inherit;border:1px solid var(--bd-border);padding:2px 12px;cursor:pointer;}
     .board-form button:hover{text-decoration:underline;}
     .board-form-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:4px 0;}
     .board-hint{font-style:italic;}
     .board-identity{margin:3px 0;}
     .board-empty{font-style:italic;}
-    .tag{border:1px solid currentColor;padding:0 5px;margin-right:4px;}
-    .thread{border-bottom:1px dashed currentColor;padding:7px 0;margin:0;overflow:hidden;}
+    .tag{border:1px solid var(--bd-border);padding:0 5px;margin-right:4px;}
+    .thread{border-bottom:1px dashed var(--bd-border);padding:7px 0;margin:0;overflow:hidden;}
     /* Prominent "open thread" link under each index thread. */
     .thread-open{margin:5px 0;}
     #board .thread-open a{font-weight:bold;text-decoration:underline;}
-    /* Replies: solid dark-grey boxes, stacked VERTICALLY (display:block, one per
-       line — not inline-block). The OP stays on the page background so it stands
-       out as the thread's opening post. */
-    .post{background:#1b1b1b;border:1px solid currentColor;padding:5px 8px;margin:4px 0;display:block;max-width:100%;box-sizing:border-box;}
+    /* Replies stack VERTICALLY (display:block). Post background follows the board
+       style — default transparent (the site background); themed styles give it a
+       colour. The OP stays on the board background so it stands out. */
+    .post{background:var(--bd-post-bg);border:1px solid var(--bd-border);padding:5px 8px;margin:4px 0;display:block;max-width:100%;box-sizing:border-box;}
     .post.op{background:transparent;border:0;padding:3px 0;}
     .post.reply{margin-left:20px;}
     .post-head{margin:0 0 4px;}
-    .post-head .subject{color:#6f9cf0;font-weight:bold;margin-right:6px;}
-    .post-head .name{color:#3ea968;font-weight:bold;}
-    /* Registered (logged-in) posters' names are underlined and take their role
-       colour from the parent .name span. color:inherit is required because the
-       theme's "a{color:#fff}" would otherwise force the link white and hide the
-       role colour; the #board-scoped selector out-specifies it. */
+    .post-head .subject{color:var(--bd-subject);font-weight:bold;margin-right:6px;}
+    .post-head .name{color:var(--bd-name);font-weight:bold;}
+    /* Registered posters' names are underlined and take their role colour from
+       the parent .name span (color:inherit out-specifies the theme's a{color}). */
     #board .post-head .name-link{text-decoration:underline;color:inherit;}
-    .post-head .tripcode{color:#4fb37c;font-weight:bold;}
-    .post-head .capcode{color:#e0566a;font-weight:bold;}
-    .post-head .verified{color:#4a9fd8;font-weight:bold;}
-    .post-head .flag{vertical-align:baseline;border:1px solid currentColor;}
+    .post-head .tripcode{color:var(--bd-name);font-weight:bold;}
+    .post-head .capcode{color:var(--bd-quote);font-weight:bold;}
+    .post-head .verified{color:var(--bd-postlink);font-weight:bold;}
+    .post-head .flag{vertical-align:baseline;border:1px solid var(--bd-border);}
     .post-head .poster-id{font-family:monospace;padding:0 5px;}
     .post-head .time,.post-head .no{margin-right:6px;}
-    .post-head .reply-link{color:#6f9cf0;}
+    .post-head .reply-link{color:var(--bd-postlink);}
     .post-body{white-space:pre-wrap;word-wrap:break-word;line-height:1.35;}
-    .post-body .greentext{color:#7aa53c;}
-    .post-body .quotelink{color:#e0566a;}
-    .post-body .postlink{color:#6f9cf0;}
+    .post-body .greentext{color:var(--bd-greentext);}
+    .post-body .quotelink{color:var(--bd-quote);}
+    .post-body .postlink{color:var(--bd-postlink);}
     .post-body .spoiler{background:currentColor;color:currentColor;}
     .post-body .spoiler:hover{color:transparent;}
-    .post-body .post-code{display:block;white-space:pre-wrap;border:1px solid currentColor;padding:6px;font-family:monospace;}
+    .post-body .post-code{display:block;white-space:pre-wrap;border:1px solid var(--bd-border);padding:6px;font-family:monospace;}
     .post-files{float:left;margin:0 12px 4px 0;}
     .post-file{display:inline-block;cursor:zoom-in;position:relative;line-height:0;}
     .post-file input.xpand{position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;margin:0;cursor:inherit;z-index:1;}
@@ -67,21 +81,42 @@
     .post-file input.xpand:checked ~ .full{display:block;}
     .post-file.spoiler .thumb{filter:blur(18px) brightness(.35);}
     .post-file.spoiler:hover .thumb{filter:none;}
-    .post-body .banned-notice{color:#e0566a;font-weight:bold;margin:4px 0 0;}
+    /* Multiple attachments sit side by side; each may carry reverse-search links. */
+    .post-file-wrap{display:inline-block;vertical-align:top;margin:0 8px 4px 0;}
+    .post-file.video{display:inline-block;line-height:0;}
+    .post-file.video video{max-width:220px;max-height:220px;}
+    .post-file.video.spoiler video{filter:blur(18px) brightness(.35);}
+    .post-file.video.spoiler:hover video{filter:none;}
+    .rev-links{line-height:1.2;font-size:small;}
+    .rev-links a{text-decoration:underline;margin-right:6px;}
+    /* "replies: >>x >>y" backlinks under a post. */
+    .backlinks{font-size:small;margin:2px 0 0;clear:both;}
+    #board .backlinks .backlink{color:var(--bd-quote);margin-left:2px;text-decoration:underline;}
+    .post-body .banned-notice{color:var(--bd-quote);font-weight:bold;margin:4px 0 0;}
     .post-actions{margin:3px 0 0;}
     .post-actions a{text-decoration:underline;}
     .omitted{margin:3px 0 3px 20px;}
     /* Catalog auto-fits as many columns as the viewport allows — reflows from one
        column on a phone up to many on a wide screen. */
     .catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;align-items:start;}
-    .cat-cell{text-align:center;background:transparent;border:1px solid currentColor;padding:5px;overflow:hidden;}
+    .cat-cell{text-align:center;background:var(--bd-post-bg);border:1px solid var(--bd-border);padding:5px;overflow:hidden;}
     .cat-cell img{max-width:100%;height:auto;}
     .cat-stats{display:block;}
     .cat-ex{display:block;max-height:80px;overflow:hidden;}
     .board-list{list-style:none;padding:0;}
-    .board-list li{padding:4px 0;border-bottom:1px solid currentColor;}
+    .board-list li{padding:4px 0;border-bottom:1px solid var(--bd-border);}
     .thread-return{margin:5px 0;}
+
+    /* ── Imageboard-only styles (classic themes) ──────────────────────────── */
+    #board.bt-yotsuba{--bd-bg:#ffffee;--bd-fg:#800000;--bd-post-bg:#f0e0d6;--bd-border:#d9bfb7;--bd-link:#0000ee;--bd-name:#117743;--bd-subject:#cc1105;--bd-greentext:#789922;--bd-quote:#dd0000;--bd-postlink:#0000ee;}
+    #board.bt-yotsuba-b{--bd-bg:#eef2ff;--bd-fg:#000000;--bd-post-bg:#d6daf0;--bd-border:#b7c5d9;--bd-link:#34345c;--bd-name:#117743;--bd-subject:#0f0c5d;--bd-greentext:#789922;--bd-quote:#dd0000;--bd-postlink:#34345c;}
+    #board.bt-futaba{--bd-bg:#ffffee;--bd-fg:#800000;--bd-post-bg:transparent;--bd-border:#eeaa88;--bd-link:#0000ee;--bd-name:#117743;--bd-subject:#cc1105;--bd-greentext:#789922;--bd-quote:#dd0000;--bd-postlink:#0000ee;}
+    #board.bt-burichan{--bd-bg:#ffffee;--bd-fg:#000000;--bd-post-bg:transparent;--bd-border:#88aacc;--bd-link:#34345c;--bd-name:#117743;--bd-subject:#0f0c5d;--bd-greentext:#789922;--bd-quote:#dd0000;--bd-postlink:#34345c;}
+    #board.bt-tomorrow{--bd-bg:#1d1f21;--bd-fg:#c5c8c6;--bd-post-bg:#282a2e;--bd-border:#373b41;--bd-link:#81a2be;--bd-name:#b294bb;--bd-subject:#b5bd68;--bd-greentext:#b5bd68;--bd-quote:#cc6666;--bd-postlink:#81a2be;}
+    #board.bt-photon{--bd-bg:#eeeeee;--bd-fg:#333333;--bd-post-bg:#dddddd;--bd-border:#cccccc;--bd-link:#ff6600;--bd-name:#117743;--bd-subject:#cc1105;--bd-greentext:#789922;--bd-quote:#dd0000;--bd-postlink:#ff6600;}
     </style>
+
+    {{#has_styles}}<div class="board-styles">{{lbl_style}}: {{#board_styles}}<a href="{{url}}"{{#cur}} class="cur"{{/cur}}>{{label}}</a> {{/board_styles}}</div>{{/has_styles}}
 
     {{#is_board_list}}
     {{#has_watched}}
@@ -101,10 +136,12 @@
 
     {{^is_board_list}}
     <div class="board-header">
+        {{#has_banner}}<img class="board-banner" src="{{board_banner}}" alt="" referrerpolicy="no-referrer">{{/has_banner}}
         <h1>/{{board_slug}}/ — {{board_title}} {{#board_nsfw}}<span class="tag">{{lbl_nsfw}}</span>{{/board_nsfw}}</h1>
         {{#board_subtitle}}<p class="board-sub">{{board_subtitle}}</p>{{/board_subtitle}}
         {{#board_desc}}<p class="board-desc">{{board_desc}}</p>{{/board_desc}}
-        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a></nav>
+        {{#has_rules}}<details class="board-rules"><summary>{{lbl_rules}}</summary><div class="board-rules-body">{{&board_rules_html}}</div></details>{{/has_rules}}
+        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a> · <a href="{{overboard_url}}">{{lbl_overboard}}</a> · <a href="{{search_url}}">{{lbl_search}}</a> · <a href="{{feed_url}}">{{lbl_feed}}</a>{{#can_moderate}} · <a href="{{mod_url}}">{{lbl_manage}}</a>{{/can_moderate}}</nav>
     </div>
 
     {{#can_post}}
@@ -124,7 +161,8 @@
         {{^is_reply}}<p><label>{{lbl_subject}}<br><input type="text" name="subject" maxlength="255" autocomplete="off"></label></p>{{/is_reply}}
         <p><textarea name="comment" rows="5" maxlength="{{max_len}}" placeholder="{{lbl_comment}}">{{comment_prefill}}</textarea></p>
         <p class="board-form-row">
-            <label>{{lbl_image}} <input type="file" name="image" accept="image/*"></label>
+            <label>{{lbl_image}} <input type="file" name="image" accept="{{file_accept}}"></label>
+            {{#extra_files}}<label><input type="file" name="{{name}}"></label>{{/extra_files}}
             <label><input type="checkbox" name="spoiler" value="1"> {{lbl_spoiler_image}}</label>
             <label><input type="checkbox" name="sage" value="1"> {{lbl_sage}}</label>
             {{#can_capcode}}<label><input type="checkbox" name="capcode" value="1"> {{lbl_post_with_capcode}}</label>{{/can_capcode}}

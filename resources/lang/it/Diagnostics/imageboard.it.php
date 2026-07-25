@@ -44,4 +44,8 @@ return [
     'astrx.imageboard/thread_full' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Questo thread ha raggiunto il limite di risposte ed è stato bloccato.',
+
+    'astrx.imageboard/censored' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Il tuo messaggio è stato bloccato dal filtro parole.',
 ];

@@ -28,6 +28,7 @@ final class ChatConfig
     // ── Access ────────────────────────────────────────────────────────────
     private bool   $guestPosting       = true;
     private bool   $guestCaptcha       = true;
+    private bool   $stripExif          = true;   // re-encode attachments to strip EXIF/metadata (opt-out)
     private bool   $requireLoginToRead = false;
     private string $entryPassword      = '';
     private bool   $chatEnabled        = true;
@@ -109,6 +110,7 @@ final class ChatConfig
 
     #[InjectConfig('guest_posting')]         public function setGuestPosting(bool $v): void        { $this->guestPosting = $v; }
     #[InjectConfig('guest_captcha')]         public function setGuestCaptcha(bool $v): void        { $this->guestCaptcha = $v; }
+    #[InjectConfig('strip_exif')]            public function setStripExif(bool $v): void           { $this->stripExif = $v; }
     #[InjectConfig('require_login_to_read')] public function setRequireLoginToRead(bool $v): void  { $this->requireLoginToRead = $v; }
     #[InjectConfig('entry_password')]        public function setEntryPassword(string $v): void    { $this->entryPassword = trim($v); }
     #[InjectConfig('chat_enabled')]          public function setChatEnabled(bool $v): void         { $this->chatEnabled = $v; }
@@ -178,6 +180,7 @@ final class ChatConfig
 
     public function guestPosting(): bool        { return $this->guestPosting; }
     public function guestCaptcha(): bool        { return $this->guestCaptcha; }
+    public function stripExif(): bool           { return $this->stripExif; }
     public function requireLoginToRead(): bool  { return $this->requireLoginToRead; }
     public function entryPassword(): string     { return $this->entryPassword; }
     public function chatEnabled(): bool         { return $this->chatEnabled; }

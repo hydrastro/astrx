@@ -20,7 +20,8 @@ final class BoardRepository
     public function __construct(private readonly PDO $pdo) {}
 
     private const COLS =
-        'id, slug, title, subtitle, description, LOWER(HEX(owner_user_id)) AS owner_user_id,
+        'id, slug, title, subtitle, description, banner, rules,
+         LOWER(HEX(owner_user_id)) AS owner_user_id,
          active, nsfw, forced_anon, bbcode, flags_mode, poster_ids, lifecycle,
          bump_limit, image_limit, thread_limit, max_post_len, cooldown_secs, max_replies, sort_order';
 
@@ -142,6 +143,24 @@ final class BoardRepository
     }
 
     /**
+     * Save a board's presentation: a site-relative banner image path and a
+     * rules/info blurb. Separate from update()/saveModSettings() so it can be
+     * set from the admin board form without disturbing the other fields.
+     *
+     * @return Result<bool>
+     */
+    public function updatePresentation(int $id, string $banner, string $rules): Result
+    {
+        try {
+            $this->pdo->prepare('UPDATE board SET banner = :banner, rules = :rules WHERE id = :id')
+                ->execute([':banner' => $banner, ':rules' => $rules, ':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
      * Update a board. The slug is immutable here — changing it would break every
      * existing thread URL and the seeded navbar link — so it is not updatable.
      *
@@ -166,6 +185,55 @@ final class BoardRepository
                 ':active' => $active ? 1 : 0, ':nsfw' => $nsfw ? 1 : 0, ':forced_anon' => $forcedAnon ? 1 : 0,
                 ':bbcode' => $bbcode ? 1 : 0, ':cooldown' => $cooldownSecs, ':max_replies' => $maxReplies,
                 ':thread_limit' => $threadLimit, ':max_post_len' => $maxPostLen,
+            ]);
+            return Result::ok(true);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
+    /**
+     * Save the settings the per-board moderation UI exposes. This is a superset
+     * of update() in the fields it covers (poster_ids, flags_mode, lifecycle,
+     * bump_limit, image_limit) but deliberately leaves `active`, `max_replies`
+     * and the immutable `slug` untouched — the mod surface does not manage them.
+     * `flags_mode` and `lifecycle` are ENUMs the caller validates against their
+     * allowlist before calling.
+     *
+     * @return Result<bool>
+     */
+    public function saveModSettings(
+        int    $id,
+        string $title,
+        string $subtitle,
+        string $description,
+        bool   $nsfw,
+        bool   $forcedAnon,
+        bool   $bbcode,
+        bool   $posterIds,
+        string $flagsMode,
+        string $lifecycle,
+        int    $bumpLimit,
+        int    $imageLimit,
+        int    $threadLimit,
+        int    $maxPostLen,
+        int    $cooldownSecs,
+    ): Result {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE board SET
+                    title = :title, subtitle = :subtitle, description = :description,
+                    nsfw = :nsfw, forced_anon = :forced_anon, bbcode = :bbcode,
+                    poster_ids = :poster_ids, flags_mode = :flags_mode, lifecycle = :lifecycle,
+                    bump_limit = :bump_limit, image_limit = :image_limit,
+                    thread_limit = :thread_limit, max_post_len = :max_post_len,
+                    cooldown_secs = :cooldown
+                  WHERE id = :id'
+            );
+            $stmt->execute([
+                ':id' => $id, ':title' => $title, ':subtitle' => $subtitle, ':description' => $description,
+                ':nsfw' => $nsfw ? 1 : 0, ':forced_anon' => $forcedAnon ? 1 : 0, ':bbcode' => $bbcode ? 1 : 0,
+                ':poster_ids' => $posterIds ? 1 : 0, ':flags_mode' => $flagsMode, ':lifecycle' => $lifecycle,
+                ':bump_limit' => $bumpLimit, ':image_limit' => $imageLimit, ':thread_limit' => $threadLimit,
+                ':max_post_len' => $maxPostLen, ':cooldown' => $cooldownSecs,
             ]);
             return Result::ok(true);
         } catch (PDOException $e) { return $this->err($e); }

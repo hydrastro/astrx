@@ -138,6 +138,14 @@ final class AdminConfigImageboardController extends AbstractController
         );
         $r->drainTo($this->collector);
         if ($r->isOk()) {
+            $newId = $r->unwrap();
+            if (is_int($newId) && $newId > 0) {
+                $this->boards->updatePresentation(
+                    $newId,
+                    mb_substr(self::mStr($posted, 'banner'), 0, 255),
+                    mb_substr(self::mStr($posted, 'rules'), 0, 2000),
+                )->drainTo($this->collector);
+            }
             $this->flash->set('success', $this->t->t('admin.boards.created'));
             $this->audit->log('board.create', self::mStr($posted, 'slug'))->drainTo($this->collector);
         }
@@ -164,6 +172,11 @@ final class AdminConfigImageboardController extends AbstractController
         );
         $r->drainTo($this->collector);
         if ($r->isOk()) {
+            $this->boards->updatePresentation(
+                $id,
+                mb_substr(self::mStr($posted, 'banner'), 0, 255),
+                mb_substr(self::mStr($posted, 'rules'), 0, 2000),
+            )->drainTo($this->collector);
             $this->flash->set('success', $this->t->t('admin.boards.updated'));
             $this->audit->log('board.update', 'board#' . $id)->drainTo($this->collector);
         }
@@ -204,6 +217,7 @@ final class AdminConfigImageboardController extends AbstractController
             'upload_types'        => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
             'anon_name'           => self::mStr($p, 'anon_name', 'Anonymous'),
             'guest_captcha'       => self::mBool($p, 'guest_captcha'),
+            'strip_exif'          => self::mBool($p, 'strip_exif'),
             'allow_authenticated_posts' => self::mBool($p, 'allow_authenticated_posts'),
             'store_poster_ip'     => self::mBool($p, 'store_poster_ip'),
             'default_max_replies' => max(0,       self::mInt($p, 'default_max_replies', 500)),
@@ -231,6 +245,7 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('cfg_upload_types',        implode(',', $c->uploadTypes()));
         $this->ctx->set('cfg_anon_name',           $c->anonName());
         $this->ctx->set('cfg_guest_captcha',       $c->guestCaptcha());
+        $this->ctx->set('cfg_strip_exif',          $c->stripExif());
         $this->ctx->set('cfg_allow_auth_posts',    $c->allowAuthenticatedPosts());
         $this->ctx->set('cfg_store_poster_ip',     $c->storePosterIp());
         $this->ctx->set('cfg_default_max_replies', $c->defaultMaxReplies());
@@ -291,6 +306,8 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('be_title',         $isEdit ? self::mStr($edit, 'title') : '');
         $this->ctx->set('be_subtitle',      $isEdit ? self::mStr($edit, 'subtitle') : '');
         $this->ctx->set('be_description',   $isEdit ? self::mStr($edit, 'description') : '');
+        $this->ctx->set('be_banner',        $isEdit ? self::mStr($edit, 'banner') : '');
+        $this->ctx->set('be_rules',         $isEdit ? self::mStr($edit, 'rules') : '');
         $this->ctx->set('be_active',        $isEdit ? self::mBool($edit, 'active') : true);
         $this->ctx->set('be_nsfw',          $isEdit ? self::mBool($edit, 'nsfw') : false);
         $this->ctx->set('be_forced_anon',   $isEdit ? self::mBool($edit, 'forced_anon') : false);
@@ -319,6 +336,7 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('label_upload_types',        $this->t->t('admin.config.imageboard.field.upload_types'));
         $this->ctx->set('label_anon_name',           $this->t->t('admin.config.imageboard.field.anon_name'));
         $this->ctx->set('label_guest_captcha',       $this->t->t('admin.config.imageboard.field.guest_captcha'));
+        $this->ctx->set('label_strip_exif',          $this->t->t('admin.config.imageboard.field.strip_exif'));
         $this->ctx->set('label_allow_auth_posts',    $this->t->t('admin.config.imageboard.field.allow_authenticated_posts'));
         $this->ctx->set('label_store_poster_ip',     $this->t->t('admin.config.imageboard.field.store_poster_ip'));
         $this->ctx->set('label_default_max_replies', $this->t->t('admin.config.imageboard.field.default_max_replies'));
@@ -330,6 +348,7 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('hint_upload_max_pixels',   $this->t->t('admin.config.imageboard.hint.upload_max_pixels'));
         $this->ctx->set('hint_role_colors',         $this->t->t('admin.config.imageboard.hint.role_colors'));
         $this->ctx->set('hint_allow_auth_posts',    $this->t->t('admin.config.imageboard.hint.allow_authenticated_posts'));
+        $this->ctx->set('hint_strip_exif',          $this->t->t('admin.config.imageboard.hint.strip_exif'));
         $this->ctx->set('hint_store_poster_ip',     $this->t->t('admin.config.imageboard.hint.store_poster_ip'));
         $this->ctx->set('hint_default_max_replies', $this->t->t('admin.config.imageboard.hint.default_max_replies'));
 
@@ -355,6 +374,8 @@ final class AdminConfigImageboardController extends AbstractController
         $this->ctx->set('lbl_b_title',       $this->t->t('admin.boards.f_title'));
         $this->ctx->set('lbl_b_subtitle',    $this->t->t('admin.boards.f_subtitle'));
         $this->ctx->set('lbl_b_description', $this->t->t('admin.boards.f_description'));
+        $this->ctx->set('lbl_b_banner',      $this->t->t('admin.boards.f_banner'));
+        $this->ctx->set('lbl_b_rules',       $this->t->t('admin.boards.f_rules'));
         $this->ctx->set('lbl_b_active',      $this->t->t('admin.boards.f_active'));
         $this->ctx->set('lbl_b_nsfw',        $this->t->t('admin.boards.f_nsfw'));
         $this->ctx->set('lbl_b_forced_anon', $this->t->t('admin.boards.f_forced_anon'));

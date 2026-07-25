@@ -34,6 +34,9 @@
   <table>
     <tr><th>{{label_guest_captcha}}</th>
       <td><input type="checkbox" name="guest_captcha" value="1"{{#cfg_guest_captcha}} checked{{/cfg_guest_captcha}} class="input"></td></tr>
+    <tr><th>{{label_strip_exif}}</th>
+      <td><input type="checkbox" name="strip_exif" value="1"{{#cfg_strip_exif}} checked{{/cfg_strip_exif}} class="input">
+          <br><small>{{hint_strip_exif}}</small></td></tr>
     <tr><th>{{label_allow_auth_posts}}</th>
       <td><input type="checkbox" name="allow_authenticated_posts" value="1"{{#cfg_allow_auth_posts}} checked{{/cfg_allow_auth_posts}} class="input">
           <br><small>{{hint_allow_auth_posts}}</small></td></tr>
@@ -122,6 +125,10 @@
       <td><input type="text" name="subtitle" value="{{be_subtitle}}" maxlength="255" style="width:100%;max-width:24rem" class="input"></td></tr>
     <tr><th>{{lbl_b_description}}</th>
       <td><textarea name="description" rows="2" style="width:100%;max-width:30rem" class="input">{{be_description}}</textarea></td></tr>
+    <tr><th>{{lbl_b_banner}}</th>
+      <td><input type="text" name="banner" value="{{be_banner}}" maxlength="255" placeholder="/banners/b.png" style="width:100%;max-width:24rem" class="input"></td></tr>
+    <tr><th>{{lbl_b_rules}}</th>
+      <td><textarea name="rules" rows="3" maxlength="2000" style="width:100%;max-width:30rem" class="input">{{be_rules}}</textarea></td></tr>
     <tr><th>{{lbl_b_active}}</th>
       <td><input type="checkbox" name="active" value="1"{{#be_active}} checked{{/be_active}} class="input"></td></tr>
     <tr><th>{{lbl_b_nsfw}}</th>

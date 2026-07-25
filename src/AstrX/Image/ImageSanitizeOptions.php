@@ -28,5 +28,12 @@ final class ImageSanitizeOptions
         public readonly int               $thumbMaxDimension  = 250,
         public readonly bool              $computeAverageHash = false,
         public readonly bool              $computeSha256      = false,
+        // The re-encode IS the metadata strip. On (default): decode → re-encode,
+        // discarding EXIF/GPS and neutralising polyglots (and applying the
+        // downscale). Off: keep the ORIGINAL bytes as the full image (metadata and
+        // the original format/animation preserved) — the image is still decoded
+        // for validation and a re-encoded thumbnail is still produced, but polyglot
+        // payloads are NOT neutralised, so this is an explicit opt-out.
+        public readonly bool              $stripMetadata      = true,
     ) {}
 }

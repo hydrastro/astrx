@@ -93,10 +93,31 @@ final class BoardView
             foreach ($images as $im) {
                 $spoiler = !empty($im['spoiler']) ? ' spoiler' : '';
                 $orig    = $this->e($this->str($im['orig'] ?? null));
-                $h .= '<label class="post-file' . $spoiler . '">'
-                    . '<input type="checkbox" class="xpand" aria-label="' . $this->e($this->t->t('board.view_full')) . '">'
-                    . '<img class="thumb" src="' . $this->e($this->str($im['thumb_url'] ?? null)) . '" width="' . $this->int($im['tw'] ?? 0) . '" height="' . $this->int($im['th'] ?? 0) . '" alt="' . $orig . '" loading="lazy" referrerpolicy="no-referrer">'
-                    . '<img class="full" src="' . $this->e($this->str($im['full_url'] ?? null)) . '" alt="' . $orig . '" loading="lazy" referrerpolicy="no-referrer"></label>';
+                $full    = $this->e($this->str($im['full_url'] ?? null));
+                $h .= '<div class="post-file-wrap">';
+                if (!empty($im['is_video'])) {
+                    // HTML5 <video>: no server-side thumbnail (keeps AstrX
+                    // zero-dependency), preload="none" so nothing is fetched
+                    // until the reader plays it.
+                    $h .= '<div class="post-file video' . $spoiler . '">'
+                        . '<video class="full" controls preload="none" src="' . $full . '"></video>'
+                        . '</div>';
+                } else {
+                    $h .= '<label class="post-file' . $spoiler . '">'
+                        . '<input type="checkbox" class="xpand" aria-label="' . $this->e($this->t->t('board.view_full')) . '">'
+                        . '<img class="thumb" src="' . $this->e($this->str($im['thumb_url'] ?? null)) . '" width="' . $this->int($im['tw'] ?? 0) . '" height="' . $this->int($im['th'] ?? 0) . '" alt="' . $orig . '" loading="lazy" referrerpolicy="no-referrer">'
+                        . '<img class="full" src="' . $full . '" alt="' . $orig . '" loading="lazy" referrerpolicy="no-referrer"></label>';
+                }
+                $rev = $this->list($im['rev'] ?? null);
+                if ($rev !== []) {
+                    $h .= '<div class="rev-links">';
+                    foreach ($rev as $r) {
+                        $h .= '<a rel="noopener noreferrer nofollow" href="' . $this->e($this->str($r['url'] ?? null)) . '">'
+                            . $this->e($this->str($r['label'] ?? null)) . '</a> ';
+                    }
+                    $h .= '</div>';
+                }
+                $h .= '</div>';
             }
             $h .= '</div>';
         }
@@ -117,6 +138,20 @@ final class BoardView
         if ($profileUrl !== '') {
             $nameInner = '<a class="name-link" href="' . $this->e($profileUrl) . '">' . $nameInner . '</a>';
         }
+        // Tripcode (!token) sits directly after the name; the staff capcode
+        // (## Admin / ## Mod), the self-selected flag, and the per-thread poster
+        // ID follow. Each is empty unless the board/poster set it.
+        $trip     = $this->str($post['tripcode'] ?? null);
+        $tripHtml = $trip !== '' ? '<span class="tripcode">!' . $this->e($trip) . '</span>' : '';
+        $cap      = $this->str($post['capcode'] ?? null);
+        $capHtml  = $cap !== '' ? ' <span class="capcode">## ' . $this->e($cap) . '</span>' : '';
+        $flag     = $this->str($post['flag_label'] ?? null);
+        $flagHtml = $flag !== '' ? ' <span class="flag" title="' . $this->e($flag) . '">' . $this->e($flag) . '</span>' : '';
+        $pid      = $this->str($post['poster_id'] ?? null);
+        $pidHtml  = $pid !== ''
+            ? ' <span class="poster-id">' . $this->e($this->t->t('board.poster_id')) . ' ' . $this->e($pid) . '</span>'
+            : '';
+
         $no       = $this->int($post['no'] ?? 0);
         $quoteUrl = $this->str($post['quote_url'] ?? null);
         // The post number is a link that quotes this post (pre-fills the reply box
@@ -125,8 +160,8 @@ final class BoardView
         $noInner  = $quoteUrl !== ''
             ? 'No.<a class="no-quote" href="' . $this->e($quoteUrl) . '">' . $no . '</a>'
             : 'No.' . $no;
-        $h .= '<span class="name"' . $colorAttr . '>' . $nameInner . '</span> '
-            . '<span class="time">' . $this->e($this->str($post['time'] ?? null)) . '</span> '
+        $h .= '<span class="name"' . $colorAttr . '>' . $nameInner . '</span>' . $tripHtml . $capHtml . $flagHtml . ' '
+            . '<span class="time">' . $this->e($this->str($post['time'] ?? null)) . '</span>' . $pidHtml . ' '
             . '<span class="no">' . $noInner . '</span>';
         if ($threadUrl !== null && $threadUrl !== '') {
             $h .= ' <a class="reply-link" href="' . $this->e($threadUrl) . '">[' . $this->e($this->t->t('board.reply')) . ']</a>';
@@ -135,6 +170,18 @@ final class BoardView
 
         // body_html is already sanitized by PostRenderer — emitted raw.
         $h .= '<div class="post-body">' . $this->str($post['body_html'] ?? null) . '</div>';
+
+        // Reply backlinks: "replies: >>x >>y" computed server-side from the >>
+        // graph (thread view only). Each links to the replying post.
+        $backlinks = $this->list($post['backlinks'] ?? null);
+        if ($backlinks !== []) {
+            $h .= '<div class="backlinks">' . $this->e($this->t->t('board.replies_to'));
+            foreach ($backlinks as $b) {
+                $h .= ' <a class="backlink" href="' . $this->e($this->str($b['url'] ?? null)) . '">&gt;&gt;'
+                    . $this->int($b['no'] ?? 0) . '</a>';
+            }
+            $h .= '</div>';
+        }
         return $h . '</div>';
     }
 

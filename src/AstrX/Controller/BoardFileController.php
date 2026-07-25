@@ -55,11 +55,23 @@ final class BoardFileController extends AbstractController
         }
 
         $wantThumb = self::queryStr($this->request, 'thumb') !== '';
-        $stored    = self::mStr($row, $wantThumb ? 'thumb_name' : 'full_name');
         $mime      = self::mStr($row, 'mime');
+        $isVideo   = str_starts_with($mime, 'video/');
 
-        if (preg_match('/^[a-f0-9]{32}\.(?:jpg|png)$/', $stored) !== 1
-            || !in_array($mime, ['image/jpeg', 'image/png'], true)) {
+        // Videos carry no server-side thumbnail (zero-dependency: no ffmpeg), so
+        // a thumb request for one is not serviceable.
+        if ($wantThumb && $isVideo) {
+            http_response_code(404);
+            exit;
+        }
+
+        $stored = self::mStr($row, $wantThumb ? 'thumb_name' : 'full_name');
+
+        // Whitelist the on-disk name and mime to exactly what ImageService writes:
+        // images are re-encoded to jpg/png; videos are stored verbatim as webm/mp4.
+        $namePattern  = $isVideo ? '/^[a-f0-9]{32}\.(?:webm|mp4)$/' : '/^[a-f0-9]{32}\.(?:jpg|png)$/';
+        $allowedMimes = $isVideo ? ['video/webm', 'video/mp4'] : ['image/jpeg', 'image/png'];
+        if (preg_match($namePattern, $stored) !== 1 || !in_array($mime, $allowedMimes, true)) {
             http_response_code(404);
             exit;
         }

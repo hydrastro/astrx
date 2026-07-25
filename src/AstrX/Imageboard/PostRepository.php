@@ -235,6 +235,99 @@ final class PostRepository
     }
 
     /**
+     * The packed (inet_pton) IP stored for a post, or null when none is on
+     * record (the onion default stores no IP). Returned as the raw VARBINARY
+     * bytes, ready to feed straight into a ban's `ip` column.
+     *
+     * @return Result<string|null>
+     */
+    public function packedIpById(int $id): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare('SELECT ip FROM board_post WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            $v = $stmt->fetchColumn();
+            return Result::ok(is_string($v) && $v !== '' ? $v : null);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * The newest posts on a board, newest first — the source rows for the Atom
+     * feed. `no`, subject, body_html, thread_id and created_ts (all in COLS) are
+     * enough to render a feed entry and link it back to its thread.
+     *
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function newestForBoard(int $boardId, int $limit): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT ' . self::COLS . ' FROM board_post
+                  WHERE board_id = :b
+                  ORDER BY id DESC LIMIT :lim'
+            );
+            $stmt->bindValue(':b', $boardId, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', max(1, $limit), PDO::PARAM_INT);
+            $stmt->execute();
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * Substring search over a post's raw body and subject, newest first, joined
+     * to the (active) board for its slug so each hit can link to its thread.
+     *
+     * The user term is matched as a LIKE substring: LIKE metacharacters (%, _
+     * and the escape char itself) are escaped so they match literally, and the
+     * wrapped `%term%` is ALWAYS bound — never interpolated — so there is no SQL
+     * injection surface. An optional board id narrows the search to one board.
+     * Two distinct placeholders carry the same value because native prepares do
+     * not allow reusing one named placeholder twice.
+     *
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function search(string $query, ?int $boardId, int $limit): Result
+    {
+        try {
+            // Escape the backslash first, then the LIKE wildcards, so a user
+            // searching for "50%" or "a_b" matches those literally under ESCAPE '\'.
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query);
+            $like    = '%' . $escaped . '%';
+
+            $sql = "SELECT p.id, p.thread_id, p.board_id, p.`no`, p.is_op, p.subject,
+                           p.body_html, UNIX_TIMESTAMP(p.created_at) AS created_ts,
+                           b.slug AS board_slug
+                      FROM board_post p
+                      JOIN board b ON b.id = p.board_id AND b.active = 1
+                     WHERE (p.body_raw LIKE :q ESCAPE '\\\\' OR p.subject LIKE :q2 ESCAPE '\\\\')";
+            if ($boardId !== null) {
+                $sql .= ' AND p.board_id = :bid';
+            }
+            $sql .= ' ORDER BY p.id DESC LIMIT :lim';
+
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':q',  $like);
+            $stmt->bindValue(':q2', $like);
+            if ($boardId !== null) {
+                $stmt->bindValue(':bid', $boardId, PDO::PARAM_INT);
+            }
+            $stmt->bindValue(':lim', max(1, $limit), PDO::PARAM_INT);
+            $stmt->execute();
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
      * @param array<string,int> $params
      * @return Result<array<string,mixed>|null>
      */

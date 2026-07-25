@@ -73,6 +73,7 @@ final class ChatAttachmentService
             maxDimension:      $this->config->uploadMaxDimension(),
             outputFormat:      ImageOutputFormat::AUTO,
             jpegQuality:       85,
+            stripMetadata:     $this->config->stripExif(),
         ));
         if (!$res->isOk()) {
             return Result::err($res->error(), $res->diagnostics());

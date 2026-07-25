@@ -37,6 +37,18 @@ final class ImageboardConfig
     // persist it. Roles are matched by NAME, so a role added later just needs an
     // entry here; unlisted roles fall back to the theme's default name colour.
     private string $roleColorsRaw     = 'ADMIN:red,MOD:purple,USER:white';
+    private bool   $stripExif         = true;   // re-encode uploads to strip EXIF/metadata (opt-out)
+    private int    $maxFilesPerPost   = 4;      // max attachments per post (multi-file)
+    private string $tripcodeSalt      = 'astrx'; // per-site salt so tripcodes are unique to this deployment
+    private string $posterIdSalt      = 'astrx-pid'; // per-site salt for per-thread poster IDs
+    private string $boardFlagsRaw     = '';     // "code:Label,code:Label" self-select flag set ('' = none)
+    private string $censorWordsRaw    = '';     // comma list of literal terms to censor in post bodies
+    private string $censorMode        = 'replace'; // 'replace' | 'block'
+    private string $censorReplacement = '***';
+    private bool   $reverseImageSearch = false; // per-image iqdb/SauceNAO links (off: third-party leak on Tor)
+    private bool   $videoEnabled      = false;  // allow webm/mp4 attachments (HTML5 <video>, no thumbnails)
+    private string $videoTypesRaw     = 'webm,mp4'; // accepted video extensions
+    private int    $videoMaxKb        = 8192;   // hard per-video size cap (KB)
 
     #[InjectConfig('upload_dir')]          public function setUploadDir(string $v): void      { $this->uploadDir = rtrim(trim($v), '/\\'); }
     #[InjectConfig('upload_max_kb')]       public function setUploadMaxKb(int $v): void       { $this->uploadMaxKb = max(1, $v); }
@@ -53,6 +65,18 @@ final class ImageboardConfig
     #[InjectConfig('preview_replies')]     public function setPreviewReplies(int $v): void    { $this->previewReplies = max(0, $v); }
     #[InjectConfig('allow_authenticated_posts')] public function setAllowAuthPosts(bool $v): void { $this->allowAuthPosts = $v; }
     #[InjectConfig('role_colors')]         public function setRoleColorsRaw(string $v): void  { $this->roleColorsRaw = trim($v); }
+    #[InjectConfig('strip_exif')]          public function setStripExif(bool $v): void        { $this->stripExif = $v; }
+    #[InjectConfig('max_files_per_post')]  public function setMaxFilesPerPost(int $v): void    { $this->maxFilesPerPost = max(1, min(10, $v)); }
+    #[InjectConfig('tripcode_salt')]       public function setTripcodeSalt(string $v): void    { $this->tripcodeSalt = $v; }
+    #[InjectConfig('poster_id_salt')]      public function setPosterIdSalt(string $v): void    { $this->posterIdSalt = $v; }
+    #[InjectConfig('board_flags')]         public function setBoardFlagsRaw(string $v): void   { $this->boardFlagsRaw = trim($v); }
+    #[InjectConfig('censor_words')]        public function setCensorWordsRaw(string $v): void  { $this->censorWordsRaw = trim($v); }
+    #[InjectConfig('censor_mode')]         public function setCensorMode(string $v): void      { $this->censorMode = $v === 'block' ? 'block' : 'replace'; }
+    #[InjectConfig('censor_replacement')]  public function setCensorReplacement(string $v): void { $this->censorReplacement = $v; }
+    #[InjectConfig('reverse_image_search')] public function setReverseImageSearch(bool $v): void { $this->reverseImageSearch = $v; }
+    #[InjectConfig('video_enabled')]       public function setVideoEnabled(bool $v): void      { $this->videoEnabled = $v; }
+    #[InjectConfig('video_types')]         public function setVideoTypesRaw(string $v): void   { $this->videoTypesRaw = trim($v); }
+    #[InjectConfig('video_max_kb')]        public function setVideoMaxKb(int $v): void         { $this->videoMaxKb = max(1, $v); }
 
     public function uploadDir(): string      { return $this->uploadDir; }
     public function uploadMaxKb(): int       { return $this->uploadMaxKb; }
@@ -70,6 +94,70 @@ final class ImageboardConfig
 
     /** Logged-in users may post under their account identity without a captcha. */
     public function allowAuthenticatedPosts(): bool { return $this->allowAuthPosts; }
+
+    /** Re-encode uploads to strip EXIF/metadata (default on; opt-out per config). */
+    public function stripExif(): bool { return $this->stripExif; }
+
+    public function maxFilesPerPost(): int      { return $this->maxFilesPerPost; }
+    public function tripcodeSalt(): string      { return $this->tripcodeSalt; }
+    public function posterIdSalt(): string      { return $this->posterIdSalt; }
+    public function censorMode(): string        { return $this->censorMode; }
+    public function censorReplacement(): string { return $this->censorReplacement; }
+    public function reverseImageSearch(): bool  { return $this->reverseImageSearch; }
+    public function videoEnabled(): bool        { return $this->videoEnabled; }
+    public function videoMaxBytes(): int        { return $this->videoMaxKb * 1024; }
+
+    /**
+     * Literal terms to censor in post bodies (blank entries dropped).
+     *
+     * @return list<string>
+     */
+    public function censorWords(): array
+    {
+        $out = [];
+        foreach (explode(',', $this->censorWordsRaw) as $w) {
+            $w = trim($w);
+            if ($w !== '') { $out[] = $w; }
+        }
+        return $out;
+    }
+
+    /**
+     * Self-select flag set as code → label (e.g. 'eu' => 'European Union').
+     * Codes are lower-cased, kept to [a-z0-9_-], so a code is a safe CSS/URL token.
+     *
+     * @return array<string,string>
+     */
+    public function boardFlags(): array
+    {
+        $out = [];
+        foreach (explode(',', $this->boardFlagsRaw) as $pair) {
+            $pair = trim($pair);
+            if ($pair === '' || !str_contains($pair, ':')) { continue; }
+            [$code, $label] = explode(':', $pair, 2);
+            $code  = strtolower(trim($code));
+            $label = trim($label);
+            if ($label !== '' && preg_match('/^[a-z0-9_-]{1,16}$/', $code) === 1) {
+                $out[$code] = $label;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Normalised, lower-cased list of allowed video extensions.
+     *
+     * @return list<string>
+     */
+    public function videoTypes(): array
+    {
+        $out = [];
+        foreach (explode(',', strtolower($this->videoTypesRaw)) as $t) {
+            $t = trim($t);
+            if ($t !== '') { $out[] = $t; }
+        }
+        return $out;
+    }
 
     /** Raw "ROLE:colour,ROLE:colour" string (for the admin editor). */
     public function roleColorsRaw(): string { return $this->roleColorsRaw; }

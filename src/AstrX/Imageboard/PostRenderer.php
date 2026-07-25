@@ -21,6 +21,10 @@ final class PostRenderer
     public function render(string $raw, bool $bbcode = true): string
     {
         $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+        // Drop trailing whitespace/newlines so a post that ends in a newline (or a
+        // quote-only reply seeded with ">>no\n") does not render a stray trailing
+        // <br>. Internal blank lines are preserved.
+        $raw = rtrim($raw);
 
         // 1. Extract [code] blocks so their contents are shown verbatim and are
         //    never greentexted/linkified. Re-inserted at the end.

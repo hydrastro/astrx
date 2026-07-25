@@ -47,6 +47,14 @@ final class BoardController extends AbstractController
     /** Thread URL a clicked post No. quotes into (varies per thread on the index). */
     private string $quoteBase = '';
 
+    /**
+     * Reply backlinks for the current render: post No. → the list of Nos that
+     * quoted it. Computed server-side from the >> graph (thread view only).
+     *
+     * @var array<int,list<int>>
+     */
+    private array $backlinksByNo = [];
+
     public function __construct(
         \AstrX\Result\DiagnosticsCollector      $collector,
         private readonly DefaultTemplateContext $ctx,
@@ -106,6 +114,56 @@ final class BoardController extends AbstractController
         }
     }
 
+    /** The imageboard-only "styles" (classic themes), applied on top of the site theme. */
+    private const STYLES = ['yotsuba', 'yotsuba-b', 'futaba', 'burichan', 'tomorrow', 'photon'];
+
+    /**
+     * Per-reader imageboard style (persisted in the session, no JS). A ?style=<name>
+     * query — from the Style selector — updates it; 'default' clears it. Sets the
+     * `board_style` class token and the selector list for the template.
+     */
+    private function setupStyle(): void
+    {
+        $q = $this->request->query()->get('style');
+        if (is_string($q)) {
+            if ($q === 'default') {
+                unset($_SESSION['board_style']);
+            } elseif (in_array($q, self::STYLES, true)) {
+                $_SESSION['board_style'] = $q;
+            }
+        }
+        $curRaw = $_SESSION['board_style'] ?? '';
+        $cur    = is_string($curRaw) ? $curRaw : '';
+        $this->ctx->set('board_style', $cur);
+
+        // Reload the CURRENT board view when switching (path without query),
+        // falling back to the board base if the server did not expose the URI.
+        $uriRaw = $this->request->server()->get('REQUEST_URI');
+        $uri    = is_scalar($uriRaw) ? (string) $uriRaw : '';
+        $path   = strtok($uri, '?');
+        if ($path === false) {
+            $path = $this->boardBase();
+        }
+
+        $styles = [[
+            'name'  => 'default',
+            'label' => $this->t->t('board.style_default'),
+            'url'   => $path . '?style=default',
+            'cur'   => $cur === '',
+        ]];
+        foreach (self::STYLES as $s) {
+            $styles[] = [
+                'name'  => $s,
+                'label' => $this->t->t('board.style_' . str_replace('-', '_', $s)),
+                'url'   => $path . '?style=' . $s,
+                'cur'   => $cur === $s,
+            ];
+        }
+        $this->ctx->set('board_styles', $styles);
+        $this->ctx->set('has_styles',   true);
+        $this->ctx->set('lbl_style',    $this->t->t('board.style'));
+    }
+
     /** @return Result<mixed> */
     public function handle(): Result
     {
@@ -115,6 +173,8 @@ final class BoardController extends AbstractController
             http_response_code(404);
             exit;
         }
+
+        $this->setupStyle();
 
         $slug  = self::str($this->currentUrl->tailSegment(0));
         $bR    = $this->boards->bySlug($slug);
@@ -258,8 +318,13 @@ final class BoardController extends AbstractController
             $excerpt = '';
             if (is_array($op)) {
                 $imgs = $imagesByPost[self::mInt($op, 'id')] ?? [];
-                if ($imgs !== []) {
-                    $thumb = $this->fileUrl(self::mStr($imgs[0], 'token'), true);
+                // Use the first non-video attachment as the catalog thumbnail
+                // (videos have no server-side thumbnail).
+                foreach ($imgs as $im) {
+                    if (!str_starts_with(self::mStr($im, 'mime'), 'video/')) {
+                        $thumb = $this->fileUrl(self::mStr($im, 'token'), true);
+                        break;
+                    }
                 }
                 $excerpt = mb_strimwidth(strip_tags(self::mStr($op, 'body_html')), 0, 140, '…');
             }
@@ -309,6 +374,7 @@ final class BoardController extends AbstractController
         }
         $imagesByPost = $this->images->forPosts($pids);
         $this->buildRoleColors($uids);
+        $this->buildBacklinks($postRows);
         // Clicking a post No. in this thread quotes into this same thread.
         $this->quoteBase = $this->threadUrl($slug, $tid);
 
@@ -395,11 +461,9 @@ final class BoardController extends AbstractController
             return $backUrl;
         }
 
-        $image = null;
-        $up    = $this->request->files()->get('image');
-        if ($up instanceof UploadedFile && $up->isValid()) {
-            $image = $up;
-        }
+        // Collect every file input (image, image2, …) up to the per-post limit.
+        $images = $this->collectFiles();
+
         // ── Identity ─────────────────────────────────────────────────────────
         // A logged-in poster defaults to posting under their account. They can
         // opt out per-post with the "anonymous" checkbox to appear as an ordinary
@@ -418,6 +482,15 @@ final class BoardController extends AbstractController
             $name = $accountName;
         }
 
+        // Capcode: a logged-in staff member may tick "post with capcode" to show
+        // their role badge (## Admin / ## Mod). Only honoured for real staff and
+        // never on a forced-anon board. The token is validated in PostService.
+        $capcode = '';
+        if (self::mBool($posted, 'capcode') && !$forcedAnon && $this->session->isLoggedIn()) {
+            if ($this->session->isAdmin())   { $capcode = 'admin'; }
+            elseif ($this->session->isMod()) { $capcode = 'mod'; }
+        }
+
         // Privacy: on the default (onion) deployment we compute the IP/poster-key
         // for this request's cooldown but do NOT persist them. Only store at rest
         // when the operator explicitly opts in (clearnet with a stated purpose).
@@ -428,11 +501,14 @@ final class BoardController extends AbstractController
             body:           self::mStr($posted, 'comment'),
             sage:           self::mBool($posted, 'sage'),
             deletePassword: self::mStr($posted, 'password'),
-            image:          $image,
+            images:         $images,
             packedIp:       $store ? $ip : null,
             hexUserId:      $hexUserId,
             posterKey:      $store ? $posterKey : '',
             spoiler:        self::mBool($posted, 'spoiler'),
+            flagCode:       self::mStr($posted, 'flag'),
+            capcode:        $capcode,
+            identityToken:  $this->identityToken(),
         );
 
         if ($threadId > 0) {
@@ -542,6 +618,35 @@ final class BoardController extends AbstractController
         $this->ctx->set('board_nsfw',     self::mBool($board, 'nsfw'));
         $this->ctx->set('index_url',      $this->indexUrl($slug));
         $this->ctx->set('catalog_url',    $this->catalogUrl($slug));
+
+        // Moderation link — surfaced to staff who can moderate this board so the
+        // BoardModController surface is reachable from the board itself.
+        $canMod = $this->gate->can(Permission::BOARD_MODERATE);
+        $this->ctx->set('can_moderate', $canMod);
+        $this->ctx->set('mod_url', $canMod
+            ? $this->urlGen->toPage($this->t->t('WORDING_BOARD_MOD')) . '?board=' . rawurlencode($slug)
+            : '');
+
+        // Per-board banner (a site-relative image path only, for Tor-safety) and
+        // a rules/info blurb shown in a native <details> disclosure (no JS).
+        $banner   = self::mStr($board, 'banner');
+        $hasBanner = str_starts_with($banner, '/');
+        $this->ctx->set('board_banner', $hasBanner ? $banner : '');
+        $this->ctx->set('has_banner',   $hasBanner);
+        $rules = self::mStr($board, 'rules');
+        $this->ctx->set('board_rules_html',
+            $rules !== '' ? nl2br(htmlspecialchars($rules, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5), false) : '');
+        $this->ctx->set('has_rules', $rules !== '');
+        $this->ctx->set('lbl_rules', $this->t->t('board.rules'));
+
+        // Discovery links (Atom feed for this board, cross-board overboard,
+        // search). Built from the seeded page wordings; all no-JS.
+        $this->ctx->set('feed_url',      $this->urlGen->toPage($this->t->t('WORDING_BOARD_FEED')) . '?board=' . rawurlencode($slug));
+        $this->ctx->set('overboard_url', $this->urlGen->toPage($this->t->t('WORDING_BOARD_OVERBOARD')));
+        $this->ctx->set('search_url',    $this->urlGen->toPage($this->t->t('WORDING_BOARD_SEARCH')) . '?board=' . rawurlencode($slug));
+        $this->ctx->set('lbl_feed',      $this->t->t('board.feed'));
+        $this->ctx->set('lbl_overboard', $this->t->t('board.overboard_heading'));
+        $this->ctx->set('lbl_search',    $this->t->t('board.search_heading'));
     }
 
     /** @param array<string,mixed> $board */
@@ -576,6 +681,39 @@ final class BoardController extends AbstractController
             $this->ctx->set('user_display_name', $accountName);
         }
 
+        // Multiple attachments: expose the extra file slots (image2, image3, …).
+        $max        = max(1, $this->config->maxFilesPerPost());
+        $extraFiles = [];
+        for ($i = 2; $i <= $max; $i++) {
+            $extraFiles[] = ['name' => 'image' . $i];
+        }
+        $this->ctx->set('extra_files',     $extraFiles);
+        $this->ctx->set('has_extra_files', $extraFiles !== []);
+
+        // accept="" hint listing image (and, when enabled, video) extensions.
+        $accept = [];
+        foreach ($this->config->uploadTypes() as $t) { $accept[] = '.' . $t; }
+        if ($this->config->videoEnabled()) {
+            foreach ($this->config->videoTypes() as $t) { $accept[] = '.' . $t; }
+        }
+        $this->ctx->set('file_accept', implode(',', $accept));
+
+        // Self-selectable flags: only when the board runs flags in 'user' mode
+        // and the operator configured a flag set. No geo-IP — the poster picks.
+        $flags = [];
+        if (self::mStr($board, 'flags_mode') === 'user') {
+            foreach ($this->config->boardFlags() as $code => $label) {
+                $flags[] = ['code' => $code, 'name' => $label];
+            }
+        }
+        $this->ctx->set('flag_options',  $flags);
+        $this->ctx->set('flags_enabled', $flags !== []);
+
+        // Capcode: a logged-in staff member may post with their role badge.
+        $canCapcode = !$forcedAnon && $this->session->isLoggedIn()
+            && ($this->session->isAdmin() || $this->session->isMod());
+        $this->ctx->set('can_capcode', $canCapcode);
+
         $this->setCaptcha();
     }
 
@@ -601,11 +739,15 @@ final class BoardController extends AbstractController
               . '?uid=' . rawurlencode($uid)
             : '';
 
+        $revEnabled = $this->config->reverseImageSearch();
         $imgs = [];
         foreach ($imagesByPost[$pid] ?? [] as $im) {
-            $token  = self::mStr($im, 'token');
+            $token   = self::mStr($im, 'token');
+            $mime    = self::mStr($im, 'mime');
+            $isVideo = str_starts_with($mime, 'video/');
+            $full    = $this->fileUrl($token, false);
             $imgs[] = [
-                'full_url'  => $this->fileUrl($token, false),
+                'full_url'  => $full,
                 'thumb_url' => $this->fileUrl($token, true),
                 'w'         => self::mInt($im, 'width'),
                 'h'         => self::mInt($im, 'height'),
@@ -613,7 +755,23 @@ final class BoardController extends AbstractController
                 'th'        => self::mInt($im, 'thumb_h'),
                 'spoiler'   => self::mBool($im, 'spoiler'),
                 'orig'      => self::mStr($im, 'orig_name'),
+                'mime'      => $mime,
+                'is_video'  => $isVideo,
+                'rev'       => ($revEnabled && !$isVideo) ? $this->reverseLinks($full) : [],
+                'has_rev'   => $revEnabled && !$isVideo,
             ];
+        }
+
+        // Identity badges (empty unless the board/poster set them).
+        $capToken  = self::mStr($post, 'capcode');
+        $capLabel  = $capToken !== '' ? $this->capcodeLabel($capToken) : '';
+        $flagCode  = self::mStr($post, 'flag_code');
+        $flagLabel = $flagCode !== '' ? ($this->config->boardFlags()[$flagCode] ?? '') : '';
+
+        // Reply backlinks for this post (computed on the thread view only).
+        $backlinks = [];
+        foreach ($this->backlinksByNo[$no] ?? [] as $bn) {
+            $backlinks[] = ['no' => $bn, 'url' => '#p' . $bn];
         }
 
         return [
@@ -633,7 +791,64 @@ final class BoardController extends AbstractController
             'is_op'       => self::mBool($post, 'is_op'),
             'images'      => $imgs,
             'has_images'  => $imgs !== [],
+            // Identity: tripcode (!token), staff capcode (## label), per-thread
+            // poster ID, and self-selected flag — each empty unless present.
+            'tripcode'     => self::mStr($post, 'tripcode'),
+            'has_tripcode' => self::mStr($post, 'tripcode') !== '',
+            'capcode'      => $capLabel,
+            'has_capcode'  => $capLabel !== '',
+            'poster_id'    => self::mStr($post, 'poster_id'),
+            'has_poster_id' => self::mStr($post, 'poster_id') !== '',
+            'flag_label'   => $flagLabel,
+            'has_flag'     => $flagLabel !== '',
+            // "replies: >>x >>y" backlinks.
+            'backlinks'     => $backlinks,
+            'has_backlinks' => $backlinks !== [],
         ];
+    }
+
+    /** Human label for a staff capcode token (## Admin / ## Mod). */
+    private function capcodeLabel(string $token): string
+    {
+        return match ($token) {
+            'admin' => $this->t->t('board.capcode_admin'),
+            'mod'   => $this->t->t('board.capcode_mod'),
+            default => '',
+        };
+    }
+
+    /**
+     * Reverse-image-search links for a full-image URL. Config-gated (OFF by
+     * default): they hand the image URL to a third party, and an onion URL is
+     * unreachable to them anyway — only meaningful on a clearnet deployment.
+     *
+     * @return list<array{label:string,url:string}>
+     */
+    private function reverseLinks(string $fileUrl): array
+    {
+        $abs = $this->absoluteUrl($fileUrl);
+        if ($abs === '') {
+            return [];
+        }
+        $enc = rawurlencode($abs);
+        return [
+            ['label' => 'iqdb',     'url' => 'https://iqdb.org/?url=' . $enc],
+            ['label' => 'SauceNAO', 'url' => 'https://saucenao.com/search.php?url=' . $enc],
+        ];
+    }
+
+    /** Best-effort absolute URL from a site-relative path using the request host. */
+    private function absoluteUrl(string $path): string
+    {
+        $hostRaw = $this->request->server()->get('HTTP_HOST');
+        $host    = is_scalar($hostRaw) ? (string) $hostRaw : '';
+        if ($host === '' || !str_starts_with($path, '/')) {
+            return '';
+        }
+        $httpsRaw = $this->request->server()->get('HTTPS');
+        $https    = is_scalar($httpsRaw) ? (string) $httpsRaw : '';
+        $scheme   = ($https !== '' && $https !== 'off') ? 'https' : 'http';
+        return $scheme . '://' . $host . $path;
     }
 
     private function setLabels(): void
@@ -669,6 +884,13 @@ final class BoardController extends AbstractController
             'lbl_replies'         => 'board.replies',
             'lbl_images'          => 'board.images',
             'lbl_formatting_hint' => 'board.formatting_hint',
+            'lbl_flag'              => 'board.flag',
+            'lbl_no_flag'           => 'board.no_flag',
+            'lbl_post_with_capcode' => 'board.post_with_capcode',
+            'lbl_add_file'          => 'board.add_file',
+            'lbl_manage'            => 'board.manage',
+            'lbl_replies_to'        => 'board.replies_to',
+            'lbl_poster_id'         => 'board.poster_id',
         ] as $ctxKey => $tKey) {
             $this->ctx->set($ctxKey, $this->t->t($tKey));
         }
@@ -700,6 +922,69 @@ final class BoardController extends AbstractController
     {
         $base = $this->urlGen->toPage($this->t->t('WORDING_BOARD_FILE'));
         return $base . '?t=' . rawurlencode($token) . ($thumb ? '&thumb=1' : '');
+    }
+
+    /**
+     * Collect the post's file inputs (image, image2, …) in order, keeping only
+     * valid uploads, up to the configured per-post limit.
+     *
+     * @return list<UploadedFile>
+     */
+    private function collectFiles(): array
+    {
+        $files = [];
+        $max   = max(1, $this->config->maxFilesPerPost());
+        for ($i = 1; $i <= $max; $i++) {
+            $key = $i === 1 ? 'image' : 'image' . $i;
+            $up  = $this->request->files()->get($key);
+            if ($up instanceof UploadedFile && $up->isValid()) {
+                $files[] = $up;
+            }
+        }
+        return $files;
+    }
+
+    /**
+     * A per-browser identity token for per-thread poster IDs. Derived from the
+     * PHP session id (stable per browser, rotates on logout) — never an IP, so
+     * it works and stays private on a pure onion where every poster shares one
+     * REMOTE_ADDR.
+     */
+    private function identityToken(): string
+    {
+        $sid = session_id();
+        return is_string($sid) && $sid !== '' ? hash('sha256', $sid) : '';
+    }
+
+    /**
+     * Build the reply-backlink graph for a set of rendered posts: for each post,
+     * the list of later posts that quoted it (>>no). Read from the already-
+     * rendered body_html, where PostRenderer tags each quote link with
+     * data-no="<target>". Populates $this->backlinksByNo for postCtx().
+     *
+     * @param list<array<string,mixed>> $postRows
+     */
+    private function buildBacklinks(array $postRows): void
+    {
+        $this->backlinksByNo = [];
+        foreach ($postRows as $row) {
+            $fromNo = self::mInt($row, 'no');
+            if ($fromNo <= 0) {
+                continue;
+            }
+            if (preg_match_all('~data-no="(\d+)"~', self::mStr($row, 'body_html'), $m) === false) {
+                continue;
+            }
+            $seen = [];
+            foreach ($m[1] as $target) {
+                $toNo = (int) $target;
+                if ($toNo <= 0 || $toNo === $fromNo || isset($seen[$toNo])) {
+                    continue;
+                }
+                $seen[$toNo] = true;
+                $this->backlinksByNo[$toNo][] = $fromNo;
+            }
+        }
     }
 
     /** The poster's packed IP (inet_pton), or null when unavailable. */

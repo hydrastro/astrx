@@ -36,6 +36,13 @@
     {{#is_dashboard}}
         <h2>{{lbl_mod_dashboard}}</h2>
         <p>{{lbl_mod_open_reports}}: <strong>{{open_reports}}</strong> — <a href="{{reports_url}}">{{lbl_mod_reports}}</a></p>
+        <h2>{{lbl_mod_modlog}}</h2>
+        {{^has_modlog}}<p>{{lbl_mod_no_modlog}}</p>{{/has_modlog}}
+        {{#has_modlog}}
+        {{#modlog}}
+        <div class="mod-row"><span class="meta">{{time}}</span> {{username}} <code>{{action}}</code> {{detail}}</div>
+        {{/modlog}}
+        {{/has_modlog}}
     {{/is_dashboard}}
 
     {{#is_reports}}

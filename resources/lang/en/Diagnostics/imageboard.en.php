@@ -44,4 +44,8 @@ return [
     'astrx.imageboard/thread_full' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'This thread has reached its reply limit and is now locked.',
+
+    'astrx.imageboard/censored' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Your post was blocked by the word filter.',
 ];

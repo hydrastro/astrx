@@ -201,6 +201,70 @@ final class ThreadRepository
         }
     }
 
+    /**
+     * Set one of a thread's boolean moderation flags. The column is resolved
+     * through a fixed allowlist (never interpolated from raw input): an unknown
+     * flag name is rejected with Result::ok(false) and touches nothing.
+     *
+     * @param 'sticky'|'locked'|'cycle'|'autosage'|string $flag
+     * @return Result<bool>
+     */
+    public function setFlag(int $threadId, string $flag, bool $value): Result
+    {
+        $column = match ($flag) {
+            'sticky'   => 'sticky',
+            'locked'   => 'locked',
+            'cycle'    => 'cycle',
+            'autosage' => 'autosage',
+            default    => null,
+        };
+        if ($column === null) {
+            return Result::ok(false);
+        }
+        try {
+            // $column is a literal from the match above — safe to embed.
+            $this->pdo->prepare("UPDATE board_thread SET `{$column}` = :v WHERE id = :id")
+                ->execute([':v' => $value ? 1 : 0, ':id' => $threadId]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * The newest active (non-archived) threads across every active board,
+     * most-recently-bumped first, each joined to its board slug — the source
+     * rows for the overboard. Columns mirror COLS but are table-qualified and
+     * carry an extra board_slug so the OP can be fetched and each cell linked
+     * to the owning board's thread.
+     *
+     * @return Result<list<array<string,mixed>>>
+     */
+    public function newestAcrossBoards(int $limit): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT t.id, t.board_id, t.subject, t.sticky, t.locked, t.cycle,
+                        t.autosage, t.archived, t.reply_count, t.image_count,
+                        UNIX_TIMESTAMP(t.bump_time) AS bump_ts,
+                        UNIX_TIMESTAMP(t.created_at) AS created_ts,
+                        b.slug AS board_slug
+                   FROM board_thread t
+                   JOIN board b ON b.id = t.board_id
+                  WHERE t.archived = 0 AND b.active = 1
+                  ORDER BY t.bump_time DESC, t.id DESC
+                  LIMIT :lim'
+            );
+            $stmt->bindValue(':lim', max(1, $limit), PDO::PARAM_INT);
+            $stmt->execute();
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return Result::ok($rows);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
     /** @return Result<never> */
     private function err(PDOException $e): Result
     {

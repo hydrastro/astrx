@@ -1,0 +1,48 @@
+<div id="board">
+    <style>
+    /* Self-contained, mirroring board.html: transparent fills, currentColor
+       borders, px spacing, no rem/em, no border-radius, no opacity. */
+    #board{--bd-border:currentColor;background:transparent;color:inherit;}
+    #board a{text-decoration:none;color:inherit;}
+    #board a:hover{text-decoration:underline;}
+    .board-header{border-bottom:1px solid var(--bd-border);margin-bottom:8px;padding-bottom:5px;}
+    .board-header h1{margin:3px 0;}
+    .board-empty{font-style:italic;}
+    .search-form{border:1px solid var(--bd-border);background:transparent;padding:8px;margin:8px 0;}
+    .search-form p{margin:4px 0;}
+    .search-form input[type=text],.search-form select{background:transparent;color:inherit;border:1px solid var(--bd-border);padding:2px 4px;}
+    .search-form input[type=text]{min-width:16em;}
+    .search-form button{background:transparent;color:inherit;border:1px solid var(--bd-border);padding:2px 12px;cursor:pointer;}
+    .search-form button:hover{text-decoration:underline;}
+    .search-results{list-style:none;padding:0;margin:8px 0;}
+    .search-results li{padding:5px 0;border-bottom:1px dashed var(--bd-border);}
+    .search-tag{font-weight:bold;margin-right:6px;}
+    .search-subject{font-weight:bold;}
+    .search-excerpt{display:block;margin-top:2px;white-space:pre-wrap;word-wrap:break-word;}
+    </style>
+
+    <div class="board-header"><h1>{{lbl_search_heading}}</h1></div>
+
+    <form class="search-form" method="get" action="{{form_action}}">
+        <p><label>{{lbl_search_query}} <input type="text" name="q" value="{{q}}" autocomplete="off"></label></p>
+        {{#has_boards}}
+        <p><label>{{lbl_search_board}}
+            <select name="board">
+                <option value="">{{lbl_search_all_boards}}</option>
+                {{#boards}}<option value="{{slug}}"{{#sel}} selected{{/sel}}>/{{slug}}/ — {{title}}</option>{{/boards}}
+            </select>
+        </label></p>
+        {{/has_boards}}
+        <p><button type="submit">{{lbl_search_submit}}</button></p>
+    </form>
+
+    {{#searched}}
+        {{^has_results}}<p class="board-empty">{{lbl_search_no_results}}</p>{{/has_results}}
+        <ul class="search-results">
+            {{#results}}<li>
+                <a href="{{thread_url}}"><span class="search-tag">/{{board_slug}}/</span>No.{{no}}{{#subject}} <span class="search-subject">{{subject}}</span>{{/subject}}</a>
+                <span class="search-excerpt">{{excerpt}}</span>
+            </li>{{/results}}
+        </ul>
+    {{/searched}}
+</div>

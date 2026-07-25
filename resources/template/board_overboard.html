@@ -1,0 +1,27 @@
+<div id="board">
+    <style>
+    /* Self-contained, mirroring board.html: transparent fills, currentColor
+       borders, px spacing, no rem/em, no border-radius, no opacity. Reuses the
+       same #board / .catalog class names so the look matches the board catalog. */
+    #board{--bd-border:currentColor;--bd-post-bg:transparent;background:transparent;color:inherit;}
+    #board a{text-decoration:none;color:inherit;}
+    #board a:hover{text-decoration:underline;}
+    .board-header{border-bottom:1px solid var(--bd-border);margin-bottom:8px;padding-bottom:5px;}
+    .board-header h1{margin:3px 0;}
+    .board-sub{margin:2px 0;font-style:italic;}
+    .board-empty{font-style:italic;}
+    .catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;align-items:start;}
+    .cat-cell{text-align:center;background:var(--bd-post-bg);border:1px solid var(--bd-border);padding:5px;overflow:hidden;}
+    .cat-cell img{max-width:100%;height:auto;}
+    .cat-stats{display:block;}
+    .cat-ex{display:block;max-height:80px;overflow:hidden;}
+    </style>
+
+    <div class="board-header">
+        <h1>{{lbl_overboard_heading}}</h1>
+        <p class="board-sub">{{lbl_overboard_sub}}</p>
+    </div>
+
+    {{^has_overboard}}<p class="board-empty">{{lbl_overboard_empty}}</p>{{/has_overboard}}
+    {{&overboard_html}}
+</div>

@@ -28,7 +28,7 @@ return [
         // open repo), which would defeat the per-install key. Empty → the handler
         // generates a unique per-install secret on first run. Set it explicitly
         // only via the installer, never by committing a literal here.
-        'server_secret' => '3151b66c6d5bc6bd8de2d5be8df135d73fb9c868ba8544b9b227addf0276bce4',
+        'server_secret' => '7489f34ec35faaad870cba367044bcd45fbd380e4206f64c1c33906708519303',
 
         // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
         // (changing these would silently corrupt existing encrypted sessions)

@@ -99,6 +99,7 @@ return [
         'upload_max_kb'           => 2048,  // hard per-file size cap (KB)
         'upload_max_dimension'    => 1600,  // downscale over this many px on the longest side (0 = off)
         'upload_types'            => 'jpg,jpeg,png,gif,webp', // accepted extensions (comma list)
+        'strip_exif'              => true,  // re-encode attachments to strip EXIF/metadata (opt-out)
         'upload_dir'              => '/app/resources/chat_uploads', // absolute storage directory
     ],
 ];

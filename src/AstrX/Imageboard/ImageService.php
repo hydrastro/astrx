@@ -43,6 +43,14 @@ final class ImageService
         }
         $ext = strtolower(pathinfo($file->clientFilename(), PATHINFO_EXTENSION));
 
+        // Video attachments take a separate, zero-dependency path: no GD decode,
+        // no re-encode, no thumbnail — validated by magic number + size, stored
+        // as-is, and rendered as an HTML5 <video>. Only when the operator enables
+        // it (video metadata is NOT stripped without ffmpeg — an accepted trade).
+        if ($this->config->videoEnabled() && in_array($ext, $this->config->videoTypes(), true)) {
+            return $this->storeVideo($file, $raw, $ext, $spoiler);
+        }
+
         $res = $this->sanitizer->sanitize($raw, $ext, new ImageSanitizeOptions(
             allowedExtensions:  $this->config->uploadTypes(),
             maxBytes:           $this->config->uploadMaxBytes(),
@@ -54,6 +62,7 @@ final class ImageService
             thumbMaxDimension:  $this->config->thumbMaxDimension(),
             computeAverageHash: true,
             computeSha256:      true,
+            stripMetadata:      $this->config->stripExif(),
         ));
         if (!$res->isOk()) {
             return Result::err($res->error(), $res->diagnostics());
@@ -90,6 +99,58 @@ final class ImageService
             'orig_name'  => $file->clientFilename(),
             'spoiler'    => $spoiler,
         ]);
+    }
+
+    /**
+     * Store a validated video attachment as-is (no re-encode, no thumbnail).
+     *
+     * @return Result<array{token:string,full_name:string,thumb_name:string,mime:string,size:int,width:int,height:int,thumb_w:int,thumb_h:int,ahash:int,sha256:string,orig_name:string,spoiler:bool}>
+     */
+    private function storeVideo(UploadedFile $file, string $raw, string $ext, bool $spoiler): Result
+    {
+        if (strlen($raw) > $this->config->videoMaxBytes()) {
+            return $this->fail();
+        }
+        $mime = $this->videoMime($raw, $ext);
+        if ($mime === '') {
+            return $this->fail();   // magic-number check failed → not a real webm/mp4
+        }
+        $dir = $this->config->uploadDir();
+        if ($dir === '' || (!is_dir($dir) && !@mkdir($dir, 0775, true))) {
+            return $this->fail();
+        }
+        $fullName = bin2hex(random_bytes(16)) . '.' . $ext;
+        if (@file_put_contents($dir . '/' . $fullName, $raw) === false) {
+            return $this->fail();
+        }
+
+        return Result::ok([
+            'token'      => bin2hex(random_bytes(16)),
+            'full_name'  => $fullName,
+            'thumb_name' => '',
+            'mime'       => $mime,
+            'size'       => strlen($raw),
+            'width'      => 0,
+            'height'     => 0,
+            'thumb_w'    => 0,
+            'thumb_h'    => 0,
+            'ahash'      => 0,
+            'sha256'     => hash('sha256', $raw),
+            'orig_name'  => $file->clientFilename(),
+            'spoiler'    => $spoiler,
+        ]);
+    }
+
+    /** Validate a video by magic number; returns the MIME, or '' if it doesn't match. */
+    private function videoMime(string $raw, string $ext): string
+    {
+        if ($ext === 'webm' && str_starts_with($raw, "\x1A\x45\xDF\xA3")) {
+            return 'video/webm';   // EBML/Matroska header
+        }
+        if ($ext === 'mp4' && strlen($raw) >= 12 && substr($raw, 4, 4) === 'ftyp') {
+            return 'video/mp4';    // ISO base media 'ftyp' box
+        }
+        return '';
     }
 
     /**

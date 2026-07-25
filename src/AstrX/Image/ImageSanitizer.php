@@ -58,15 +58,6 @@ final class ImageSanitizer
 
         $w = imagesx($img);
         $h = imagesy($img);
-        if ($opts->maxDimension > 0 && ($w > $opts->maxDimension || $h > $opts->maxDimension)) {
-            $scaled = $this->scaleWithin($img, $opts->maxDimension);
-            if ($scaled instanceof \GdImage) {
-                imagedestroy($img);
-                $img = $scaled;
-                $w   = imagesx($img);
-                $h   = imagesy($img);
-            }
-        }
 
         $asJpeg = match ($opts->outputFormat) {
             ImageOutputFormat::JPEG => true,
@@ -74,10 +65,31 @@ final class ImageSanitizer
             ImageOutputFormat::AUTO => $type === IMAGETYPE_JPEG,
         };
 
-        $full = $this->encode($img, $asJpeg, $opts->jpegQuality);
-        if ($full === null) {
-            imagedestroy($img);
-            return $this->fail(ImageSanitizeError::ENCODE_FAILED, 'encode_failed');
+        if ($opts->stripMetadata) {
+            // Re-encode: strips ALL metadata and neutralises polyglots; the
+            // downscale is applied here too (it needs a re-encode anyway).
+            if ($opts->maxDimension > 0 && ($w > $opts->maxDimension || $h > $opts->maxDimension)) {
+                $scaled = $this->scaleWithin($img, $opts->maxDimension);
+                if ($scaled instanceof \GdImage) {
+                    imagedestroy($img);
+                    $img = $scaled;
+                    $w   = imagesx($img);
+                    $h   = imagesy($img);
+                }
+            }
+            $full = $this->encode($img, $asJpeg, $opts->jpegQuality);
+            if ($full === null) {
+                imagedestroy($img);
+                return $this->fail(ImageSanitizeError::ENCODE_FAILED, 'encode_failed');
+            }
+            $mime = $asJpeg ? 'image/jpeg' : 'image/png';
+            $ext  = $asJpeg ? 'jpg' : 'png';
+        } else {
+            // Opt-out: keep the original upload verbatim (EXIF + original format /
+            // animation preserved). $w/$h stay at the original dimensions and no
+            // downscale is applied to the full image; a thumbnail is still made.
+            $full         = $raw;
+            [$mime, $ext] = $this->mimeExtForType($type);
         }
 
         $thumbBytes = null;
@@ -103,8 +115,8 @@ final class ImageSanitizer
 
         return Result::ok(new SanitizedImage(
             fullBytes:   $full,
-            mime:        $asJpeg ? 'image/jpeg' : 'image/png',
-            ext:         $asJpeg ? 'jpg' : 'png',
+            mime:        $mime,
+            ext:         $ext,
             width:       $w,
             height:      $h,
             thumbBytes:  $thumbBytes,
@@ -169,6 +181,24 @@ final class ImageSanitizer
             $bits = ($bits << 1) | ($v >= $mean ? 1 : 0);
         }
         return $bits;
+    }
+
+    /**
+     * MIME + file extension for a getimagesize IMAGETYPE_* constant — used when
+     * the original bytes are kept (metadata strip off) so the stored file is
+     * labelled with its real format.
+     *
+     * @return array{0:string,1:string} [mime, ext]
+     */
+    private function mimeExtForType(int $type): array
+    {
+        return match ($type) {
+            IMAGETYPE_JPEG => ['image/jpeg', 'jpg'],
+            IMAGETYPE_PNG  => ['image/png',  'png'],
+            IMAGETYPE_GIF  => ['image/gif',  'gif'],
+            IMAGETYPE_WEBP => ['image/webp', 'webp'],
+            default        => ['application/octet-stream', 'bin'],
+        };
     }
 
     /** @return Result<never> */
