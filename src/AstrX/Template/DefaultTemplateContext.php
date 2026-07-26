@@ -295,6 +295,14 @@ final class DefaultTemplateContext
             'messages'          => [],
             'got_results'       => false,
             'results'           => [],
+
+            // Core contextual-navbar slot for the Language admin page. Default to
+            // empty so {{> lang_nav}} in default.html resolves to a defined value
+            // and renders nothing on every other page; AdminLanguageController
+            // overrides both with the partial path + a true flag. Mirrors how the
+            // module nav slots (board_nav / chat_nav) are always defined.
+            'lang_nav'      => '',
+            'lang_nav_show' => false,
         ];
 
         // ── Module contributions ──────────────────────────────────────────────
