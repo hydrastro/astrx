@@ -76,7 +76,17 @@ jobs:
           php -S 127.0.0.1:8080 -t public public/index.php >/tmp/srv.log 2>&1 &
           sleep 2
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/en/)
-          test "$code" = "200" || { echo "home = $code (all on)"; cat /tmp/srv.log; exit 1; }
+          test "$code" = "200" || {
+            echo "home = $code (all on)";
+            echo "===== RESPONSE BODY (the actual error — testing mode prints it here) =====";
+            curl -s http://127.0.0.1:8080/en/;
+            echo;
+            echo "===== SERVER LOG =====";
+            cat /tmp/srv.log;
+            echo "===== PHP VERSION =====";
+            php -v;
+            exit 1;
+          }
 
       - name: Matrix — each module OFF then ON; home must stay up (200)
         run: |
