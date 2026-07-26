@@ -11,24 +11,12 @@ final class PageHandler
 
     public function getPage(int $id): ?Page
     {
+        // SELECT * (not an explicit column list) so a resolved_page that predates
+        // the module-ownership migration still works: the `module` column is read
+        // defensively below and defaults to '' (ungated) when absent. This lets
+        // the code be deployed before the migration is applied without 500ing.
         $stmt = $this->pdo->prepare(
-            "SELECT
-                `id`,
-                `url_id`,
-                `i18n`,
-                `file_name`,
-                `template`,
-                `controller`,
-                `hidden`,
-                `comments`,
-                `api_enabled`,
-                `index`,
-                `follow`,
-                `title`,
-                `description`,
-                `template_file_name`
-             FROM `resolved_page`
-             WHERE `id` = :id"
+            'SELECT * FROM `resolved_page` WHERE `id` = :id'
         );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -58,6 +46,7 @@ final class PageHandler
             description: (is_scalar($row['description']) ? (string)$row['description'] : ''),
             keywords: $kw,
             templateFileName: (is_scalar($row['template_file_name']) ? (string)$row['template_file_name'] : ''),
+            module: (is_scalar($row['module'] ?? null) ? (string)$row['module'] : ''),
         );
     }
 

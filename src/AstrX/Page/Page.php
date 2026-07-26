@@ -24,5 +24,7 @@ final class Page
         /** @var list<array{keyword:string,i18n:int|bool}> */
         public readonly array $keywords = [],
         public readonly string $templateFileName = '',
+        /** Optional module that owns this page ('' = core / always-on). */
+        public readonly string $module = '',
     ) {}
 }

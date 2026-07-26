@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Portable gates: no database, run on every push/PR ──────────────────────
+  lint:
+    name: PHPStan + parity + module integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, gd, gettext, exif
+          coverage: none
+
+      - name: Download PHPStan (pinned)
+        run: curl -fsSL -o phpstan.phar https://github.com/phpstan/phpstan/releases/download/2.1.55/phpstan.phar
+
+      - name: PHPStan (level 10)
+        run: php phpstan.phar analyse -l 10 --no-progress
+
+      - name: Language parity (en/it)
+        run: php tools/check_lang_parity.php
+
+      - name: Module integrity (manifests, contributors, guards, teardown)
+        run: php tools/check_modules.php
+
+  # ── Install matrix: prove every optional module is independently toggleable ─
+  module-matrix:
+    name: Install + toggle every module
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: content_manager
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, gd, gettext, exif
+          coverage: none
+
+      - name: Install schema + migrations (core + all modules)
+        run: |
+          php tools/install.php --no-input \
+            --db-host=127.0.0.1 --db-port=3306 --db-name=content_manager \
+            --db-user=root --db-pass=root \
+            --admin-user=admin --admin-pass=ci-admin-pass-123 --admin-mailbox=admin \
+            --environment=testing
+
+      - name: Module integrity (with the DB present)
+        run: php tools/check_modules.php
+
+      - name: Smoke — home renders with every module ON
+        run: |
+          php -S 127.0.0.1:8080 -t public public/index.php >/tmp/srv.log 2>&1 &
+          sleep 2
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/en/)
+          test "$code" = "200" || { echo "home = $code (all on)"; cat /tmp/srv.log; exit 1; }
+
+      - name: Matrix — each module OFF then ON; home must stay up (200)
+        run: |
+          set -euo pipefail
+          MODULES=$(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"])&&is_string($m["key"]))echo $m["key"]," ";}')
+          echo "modules: $MODULES"
+          for m in $MODULES; do
+            php tools/module.php disable "$m"
+            php -S 127.0.0.1:8081 -t public public/index.php >/tmp/srv.log 2>&1 &
+            SRV=$!; sleep 2
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/en/ || true)
+            kill "$SRV" 2>/dev/null || true
+            test "$code" = "200" || { echo "home = $code with '$m' disabled"; cat /tmp/srv.log; exit 1; }
+            php tools/module.php enable "$m"
+            echo "ok: $m toggled off/on, home stayed 200"
+          done
+
+      - name: Matrix — core-only (every module OFF) still boots
+        run: |
+          set -euo pipefail
+          for m in $(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"]))echo $m["key"]," ";}'); do
+            php tools/module.php disable "$m"
+          done
+          php -S 127.0.0.1:8082 -t public public/index.php >/tmp/srv.log 2>&1 &
+          sleep 2
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/en/)
+          test "$code" = "200" || { echo "core-only home = $code"; cat /tmp/srv.log; exit 1; }
+          echo "core-only boot OK"

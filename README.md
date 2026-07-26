@@ -46,6 +46,26 @@ web-server level:
   (`public/compile/index.php`). Config and uploaded state stay external and
   mutable. See `docs/COMPILED_BUILD.md`.
 
+## Optional modules
+
+Several features — the imageboard, the chat, the bot-trap honeypot, site-wide
+search, and the webmail client — are **optional modules** that a deployment can
+turn off without touching core: the module's navigation disappears, its pages
+return the themed 404, and its schema can be dropped. Each module self-declares
+in a `src/AstrX/<Module>/module.php` manifest that `AstrX\Module\ModuleRegistry`
+discovers, so adding one is a manifest plus a page tag — core names no module.
+
+```
+php tools/module.php status              # each module: enabled/disabled + page count
+php tools/module.php disable chat        # nav drops, pages 404 — reversible
+php tools/module.php purge   chat        # also drop its tables (destructive)
+php tools/make_module.php forum --nav    # scaffold a new module
+php tools/check_modules.php              # CI gate: validate every manifest
+```
+
+Toggle them in `resources/config/Modules.config.php`. See `docs/MODULES.md` for
+the manifest contract and a walkthrough of writing your own.
+
 ## Architecture
 
 A single front controller resolves the request through the router into a page

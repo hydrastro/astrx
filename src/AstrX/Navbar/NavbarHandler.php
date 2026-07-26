@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Navbar;
 
 use AstrX\I18n\Translator;
+use AstrX\Module\ModuleRegistry;
 use AstrX\Routing\UrlGenerator;
 use PDO;
 
@@ -30,9 +31,10 @@ use PDO;
 final class NavbarHandler
 {
     public function __construct(
-        private readonly PDO          $pdo,
-        private readonly Translator   $translator,
-        private readonly UrlGenerator $urlGenerator,
+        private readonly PDO            $pdo,
+        private readonly Translator     $translator,
+        private readonly UrlGenerator   $urlGenerator,
+        private readonly ModuleRegistry $registry,
     ) {}
 
     /**
@@ -51,15 +53,66 @@ final class NavbarHandler
         $ancestorIds = array_column($pageAncestors, 'id');
         $pins        = $this->groupAndSortByPin($rows);
 
+        // Drop links pointing at a disabled module's pages, so turning a module
+        // off leaves no navbar entry that would 404 (the page gate hides the
+        // target itself). Keyed on page.module, so core names no module here.
+        $disabledPageIds = $this->disabledPageIds();
+
         $entries = [];
         foreach ($pins as $pin) {
             foreach ($pin as $row) {
                 /** @var array<string,mixed> $row */
+                if ($this->pointsAtDisabledModule($row, $disabledPageIds)) {
+                    continue;
+                }
                 $entries[] = $this->buildEntry($row, $ancestorIds, $currentFileName);
             }
         }
 
         return $entries;
+    }
+
+    /**
+     * Page ids owned by a currently-disabled module. Empty (no query) when every
+     * module is on — the common case.
+     *
+     * @return array<int,true>
+     */
+    private function disabledPageIds(): array
+    {
+        $disabled = $this->registry->disabledModules();
+        if ($disabled === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($disabled), '?'));
+        $ids = [];
+        try {
+            $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `module` IN ({$placeholders})");
+            $stmt->execute(array_values($disabled));
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+                if (is_int($id)) {
+                    $ids[$id] = true;
+                }
+            }
+        } catch (\PDOException) {
+            // page.module predates the ownership migration — no filtering yet.
+            return [];
+        }
+        return $ids;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param array<int,true>     $disabledPageIds
+     */
+    private function pointsAtDisabledModule(array $row, array $disabledPageIds): bool
+    {
+        if ($disabledPageIds === [] || !(bool) $row['internal']) {
+            return false;
+        }
+        $pageId = is_int($row['page_id'] ?? null) ? $row['page_id'] : 0;
+        return isset($disabledPageIds[$pageId]);
     }
 
     // -------------------------------------------------------------------------

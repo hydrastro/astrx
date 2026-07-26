@@ -12,16 +12,18 @@ declare(strict_types=1);
  * behaves exactly as before until you flip something off. Unlisted modules also
  * default ON (ModuleRegistry::enabled() falls back to true).
  *
- * NOTE (Phase 1): flipping a module off here removes its UI surface (nav /
- * partials / footer link / page guards). Its pages still exist in the database
- * until per-module install/uninstall migrations land (Phase 2); to remove a
- * module's pages entirely today, also skip/roll back its schema seed. More
- * modules (search, webmail, …) join this list as they are wired to the registry.
+ * Flipping a module off removes its whole surface: its nav entries drop, its
+ * pages 404 (themed error page), and its footer/section hooks disappear. Data is
+ * untouched — `tools/module.php enable` restores it; `tools/module.php purge`
+ * drops its schema. The module list is discovered from each module's module.php
+ * manifest, so this file only holds the on/off flags (unlisted modules default ON).
  */
 return [
     'Modules' => [
         'imageboard' => true,
         'chat'       => true,
         'bottrap'    => true,
+        'search'     => true,
+        'webmail'    => true,
     ],
 ];
