@@ -14,6 +14,7 @@ use AstrX\I18n\Locale;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
+use AstrX\Module\ModuleRegistry;
 use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
 use AstrX\Page\Diagnostic\PageHiddenNoticeDiagnostic;
@@ -396,21 +397,29 @@ final class ContentManager
             $this->injector->setClass($page);
         }
 
-        // ── Bot-trap gate ─────────────────────────────────────────────────────────
-        // The honeypot page (WORDING_TRAP) is hidden=0 so it can serve its maze to
-        // non-admin bots WHEN ENABLED. While DISABLED it must be indistinguishable
-        // from a missing page, so — exactly like a hidden page — swap in the normal
-        // error page instead of running the trap controller (which would emit a bare
-        // 404). Config-gated via the generic reader, no hard class coupling.
-        if ($page->urlId === 'WORDING_TRAP') {
-            $this->config->loadModuleConfig('BotTrap');
-            if (!$this->config->getConfigBool('BotTrapConfig', 'enabled', false)) {
-                http_response_code(HttpStatus::NOT_FOUND->value);
-                $errorUrlId = $this->config->getConfig('ContentManager','error_page_url_id','WORDING_ERROR');
-                $errorUrlId = is_string($errorUrlId) ? $errorUrlId : 'WORDING_ERROR';
-                $eid  = $pageHandler->getPageIdFromUrlId($errorUrlId);
-                $page = ($eid !== null ? $pageHandler->getPage($eid) : null) ?? $page;
-                $this->injector->setClass($page);
+        // ── Module page guards ────────────────────────────────────────────────
+        // Enabled modules may veto a page — swap it for the themed error page
+        // instead of running its controller. The honeypot (WORDING_TRAP, hidden=0
+        // so it can serve its maze to bots when enabled) uses this to look exactly
+        // like a missing page while disabled. Core names no module or page id
+        // here: it runs whatever guards the ENABLED modules contribute (see
+        // ModuleRegistry). Same swap the hidden-page branch above performs.
+        $registryResult = $this->injector->getClass(ModuleRegistry::class);
+        if ($registryResult->isOk()) {
+            $registry = $registryResult->unwrap();
+            if ($registry instanceof ModuleRegistry) {
+                foreach ($registry->pageGuards() as $guard) {
+                    if (!$guard->shouldSwapToError($page)) {
+                        continue;
+                    }
+                    http_response_code(HttpStatus::NOT_FOUND->value);
+                    $errorUrlId = $this->config->getConfig('ContentManager', 'error_page_url_id', 'WORDING_ERROR');
+                    $errorUrlId = is_string($errorUrlId) ? $errorUrlId : 'WORDING_ERROR';
+                    $eid  = $pageHandler->getPageIdFromUrlId($errorUrlId);
+                    $page = ($eid !== null ? $pageHandler->getPage($eid) : null) ?? $page;
+                    $this->injector->setClass($page);
+                    break;
+                }
             }
         }
 

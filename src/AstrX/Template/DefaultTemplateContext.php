@@ -22,8 +22,7 @@ use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
-use AstrX\BotTrap\BotTrapConfig;
-use function AstrX\Support\langDir;
+use AstrX\Module\ModuleRegistry;
 use function AstrX\Support\templateDir;
 
 /**
@@ -96,7 +95,7 @@ final class DefaultTemplateContext
         private readonly FlashBag    $flashBag,
         private readonly Gate        $gate,
         private readonly ThemeService $themeService,
-        private readonly BotTrapConfig $botTrap,
+        private readonly ModuleRegistry $registry,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -280,8 +279,6 @@ final class DefaultTemplateContext
             'follow'       => $page->follow,
             'include'      => $this->buildIncludePath($page),
             'captcha'      => 'partials/captcha',  // partial name — {{> captcha}} resolves to captcha.html
-            'chat_nav'     => 'partials/chat_nav', // {{> chat_nav}} — chat toolbar (only rendered by chat pages)
-            'board_nav'    => 'partials/board_nav', // {{> board_nav}} — board navbars (only rendered by imageboard pages)
 
             'website_name' => $this->config->getConfigString('ContentManager', 'website_name', 'AstrX'),
             'title_url'    => $this->config->getConfigString('ContentManager', 'title_url', '/'),
@@ -300,20 +297,16 @@ final class DefaultTemplateContext
             'results'           => [],
         ];
 
-        // ── Bot-trap honeypot footer link ─────────────────────────────────────
-        // Rendered site-wide, but ONLY when the trap is enabled (default OFF).
-        // The hidden <a> in the footer points here; real users never see it,
-        // greedy HTML-parsing bots follow it into the maze. Config + i18n are
-        // touched only when enabled, so the disabled path stays free.
-        $trapEnabled = $this->botTrap->enabled();
-        $this->vars['trap_enabled'] = $trapEnabled;
-        if ($trapEnabled) {
-            $this->t->loadDomain(langDir(), 'BotTrap');
-            $this->vars['trap_url']       = $this->urlGenerator->toPage($this->t->t('WORDING_TRAP'));
-            $this->vars['trap_link_text'] = $this->t->t('bottrap.link_text');
-        } else {
-            $this->vars['trap_url']       = '';
-            $this->vars['trap_link_text'] = '';
+        // ── Module contributions ──────────────────────────────────────────────
+        // Enabled modules contribute their nav partial slots and header/footer
+        // vars: the imageboard/chat nav slots ({{> board_nav}}/{{> chat_nav}})
+        // and the bot-trap honeypot footer link (trap_enabled/trap_url/…). Core
+        // names no module here — the registry merges whatever the ENABLED modules
+        // provide; a disabled module falls back to inert defaults so its
+        // {{> slot}} / {{# flag}} render nothing. See ModuleRegistry + the module
+        // switchboard in resources/config/Modules.config.php.
+        foreach ($this->registry->navVars() as $navKey => $navVal) {
+            $this->vars[$navKey] = $navVal;
         }
 
         // Collect url_ids of this page + all its ancestors for highlight computation
