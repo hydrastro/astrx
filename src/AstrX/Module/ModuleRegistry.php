@@ -132,8 +132,15 @@ final class ModuleRegistry
         }
 
         $out = [];
-        // src/AstrX/<Module>/module.php (dirname(__DIR__) is src/AstrX).
-        $pattern = dirname(__DIR__) . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . 'module.php';
+        // Locate src/AstrX/<Module>/module.php via the CLASS_DIR constant, NOT
+        // dirname(__DIR__): in COMPILED mode this class's code is loaded from the
+        // bundle, so __DIR__ is build/ and dirname(__DIR__) would glob the repo
+        // ROOT's */module.php — matching e.g. tools/module.php and running its CLI
+        // guard. CLASS_DIR resolves to src/AstrX/ in every real entry point.
+        $base = defined('CLASS_DIR')
+            ? rtrim((string) constant('CLASS_DIR'), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            : dirname(__DIR__) . DIRECTORY_SEPARATOR;
+        $pattern = $base . '*' . DIRECTORY_SEPARATOR . 'module.php';
         foreach (glob($pattern) ?: [] as $file) {
             /** @var mixed $raw */
             $raw = require $file;

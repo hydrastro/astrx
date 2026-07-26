@@ -184,7 +184,9 @@ final class CommentService
         }
 
         // ── Flood check ───────────────────────────────────────────────
-        if ($this->minimumFloodSecs > 0) {
+        // Comment moderators / admins are exempt from the post cooldown.
+        $isStaff = $this->gate->can(Permission::ADMIN_COMMENTS);
+        if (!$isStaff && $this->minimumFloodSecs > 0) {
             $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $lastTs = $lastResult->unwrap();
@@ -383,6 +385,24 @@ final class CommentService
             'comment_not_found' => new CommentNotFoundDiagnostic('astrx.comment/not_found', DiagnosticLevel::WARNING),
             default             => new CommentNotFoundDiagnostic('astrx.comment/unknown', DiagnosticLevel::WARNING),
         };
-        return Result::err(null, Diagnostics::of($diagnostic));
+
+        // The error value is a translation key the controller flashes to the
+        // poster after the PRG redirect (the diagnostic alone is drained to the
+        // collector and lost on redirect). For antispam it is the rule's own
+        // configured message key; for everything else a comment.error.* key.
+        $displayKey = match ($operation) {
+            'not_allowed'       => 'comment.error.not_allowed',
+            'empty_content'     => 'comment.error.empty',
+            'invalid_email'     => 'comment.error.invalid_email',
+            'reply_not_found'   => 'comment.error.reply_not_found',
+            'reply_wrong_page'  => 'comment.error.reply_wrong_page',
+            'antispam'          => $detail !== '' ? $detail : 'comment.error.antispam',
+            'muted'             => 'comment.error.muted',
+            'flood'             => 'comment.error.flood',
+            'gate_denied'       => 'comment.error.gate_denied',
+            'comment_not_found' => 'comment.error.not_found',
+            default             => 'comment.error.generic',
+        };
+        return Result::err($displayKey, Diagnostics::of($diagnostic));
     }
 }

@@ -1,0 +1,76 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{lbl_heading}}</h2>
+<p>{{lbl_intro}}</p>
+<p><small>{{lbl_installed}} {{locales_list}}</small></p>
+
+{{! ── Editor (one column per locale) ─────────────────────────────────────── }}
+{{#is_editor}}
+<p><a href="{{index_url}}" class="input">{{lbl_back}}</a></p>
+<h3>{{lbl_editing}} <code>{{domain}}</code></h3>
+{{#readonly}}<p><em>{{lbl_readonly}}</em></p>{{/readonly}}
+
+<form method="POST" action="{{form_action}}">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="save">
+  <input type="hidden" name="domain" value="{{domain}}">
+  <table class="table">
+    <thead><tr>
+      <th style="text-align:left">{{lbl_key}}</th>
+      {{#editor_locales}}<th style="text-align:left">{{code}}</th>{{/editor_locales}}
+    </tr></thead>
+    <tbody>
+    {{#rows}}
+    <tr>
+      <td style="vertical-align:top"><code>{{key}}</code></td>
+      {{#cells}}
+      <td><textarea name="{{field_name}}" rows="2" class="input" style="width:100%;box-sizing:border-box"{{#readonly}} readonly{{/readonly}}>{{value}}</textarea></td>
+      {{/cells}}
+    </tr>
+    {{/rows}}
+    {{^has_rows}}
+    <tr><td colspan="{{locale_span}}"><em>—</em></td></tr>
+    {{/has_rows}}
+    </tbody>
+  </table>
+  {{^readonly}}<p><button type="submit" class="input">{{lbl_save}}</button></p>{{/readonly}}
+</form>
+{{/is_editor}}
+
+{{! ── Index: domains grouped + add-language form ─────────────────────────── }}
+{{^is_editor}}
+{{#has_module_domains}}
+<h3>{{lbl_modules}}</h3>
+<ul>
+  {{#module_domains}}<li><a href="{{url}}">{{name}}</a>{{#disabled}} <small>({{lbl_disabled}})</small>{{/disabled}}</li>{{/module_domains}}
+</ul>
+{{/has_module_domains}}
+
+<h3>{{lbl_core}}</h3>
+<ul>
+  {{#core_domains}}<li><a href="{{url}}">{{name}}</a></li>{{/core_domains}}
+</ul>
+
+<hr>
+<h3>{{lbl_add_heading}}</h3>
+<p>{{lbl_add_intro}}</p>
+<form method="POST" action="{{form_action}}">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="add_language">
+  <p><label>{{lbl_new_locale}} <input type="text" name="new_locale" class="input" style="width:8em"></label>
+     <small>{{lbl_new_locale_hint}}</small></p>
+  <p><label>{{lbl_source_locale}}
+     <select name="source_locale" class="input">
+       {{#source_locales}}<option value="{{code}}"{{#is_primary}} selected{{/is_primary}}>{{code}}</option>{{/source_locales}}
+     </select></label></p>
+  <p><button type="submit" class="input">{{lbl_add_btn}}</button></p>
+</form>
+{{/is_editor}}
+{{/admin_forbidden}}

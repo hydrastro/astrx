@@ -25,5 +25,6 @@ return [
         'bottrap'    => true,
         'search'     => true,
         'webmail'    => true,
+        'content'    => true,
     ],
 ];

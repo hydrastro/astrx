@@ -1,0 +1,65 @@
+<div id="content">
+    <style>
+    /* Self-contained + theme-aware (currentColor borders, transparent fills,
+       px spacing, no rem/em, no border-radius), mirroring site_search.html. */
+    #content{--ct-border:currentColor;background:transparent;color:inherit;}
+    #content a{color:inherit;}
+    .content-header{border-bottom:1px solid var(--ct-border);margin-bottom:8px;padding-bottom:5px;}
+    .content-header h1{margin:3px 0;}
+    .content-nav{font-style:italic;margin:6px 0;}
+    .content-empty{font-style:italic;}
+    .content-list{list-style:square;margin:8px 0;padding-left:24px;}
+    .content-list li{padding:3px 0;}
+    .content-body{max-width:44em;line-height:1.5;}
+    .content-body h1,.content-body h2,.content-body h3{margin:0.6em 0 0.3em;}
+    .content-body pre{border:1px solid var(--ct-border);padding:6px;overflow:auto;white-space:pre-wrap;}
+    .content-body blockquote{border-left:3px solid var(--ct-border);margin:6px 0;padding:2px 10px;}
+    .content-body a.wikilink{text-decoration:underline;}
+    .content-body a.wikilink.broken{text-decoration:line-through;opacity:0.7;}
+    .content-meta{font-style:italic;margin-top:10px;}
+    .content-unlisted{border:1px solid var(--ct-border);padding:2px 8px;display:inline-block;}
+    .backlinks{border-top:1px dashed var(--ct-border);margin-top:12px;padding-top:6px;}
+    .backlinks h2{font-size:1em;margin:4px 0;}
+    .backlinks ul{list-style:circle;margin:4px 0;padding-left:24px;}
+    .content-graph-wrap{border:1px solid var(--ct-border);margin:8px 0;padding:8px;overflow:auto;}
+    </style>
+
+    {{#is_index}}
+    <div class="content-header"><h1>{{lbl_index_heading}}</h1></div>
+    <p class="content-nav"><a href="{{graph_url}}">{{lbl_graph_link}} →</a></p>
+    {{^has_pages}}<p class="content-empty">{{lbl_empty}}</p>{{/has_pages}}
+    {{#has_pages}}
+    <ul class="content-list">
+        {{#pages}}<li><a href="{{url}}">{{title}}</a></li>{{/pages}}
+    </ul>
+    {{/has_pages}}
+    {{/is_index}}
+
+    {{#is_graph}}
+    <div class="content-header"><h1>{{lbl_graph_heading}}</h1></div>
+    <p class="content-nav"><a href="{{index_url}}">« {{lbl_index_link}}</a></p>
+    {{#graph_empty}}<p class="content-empty">{{lbl_graph_empty}}</p>{{/graph_empty}}
+    {{^graph_empty}}<div class="content-graph-wrap">{{&graph_svg}}</div>{{/graph_empty}}
+    {{/is_graph}}
+
+    {{#is_view}}
+    {{#page_hidden}}<p class="content-unlisted"><em>{{lbl_unlisted}}</em></p>{{/page_hidden}}
+    <article class="content-body">
+        {{&page_html}}
+    </article>
+    <p class="content-meta"><small>{{lbl_updated}} {{updated_at}}</small></p>
+    {{#has_backlinks}}
+    <div class="backlinks">
+        <h2>{{lbl_backlinks}}</h2>
+        <ul>{{#backlinks}}<li><a href="{{url}}">{{title}}</a></li>{{/backlinks}}</ul>
+    </div>
+    {{/has_backlinks}}
+    <p class="content-nav"><a href="{{index_url}}">« {{lbl_index_link}}</a></p>
+    {{/is_view}}
+
+    {{#is_missing}}
+    <div class="content-header"><h1>{{lbl_not_found}}</h1></div>
+    <p>{{lbl_not_found_msg}}</p>
+    <p class="content-nav"><a href="{{index_url}}">« {{lbl_index_link}}</a></p>
+    {{/is_missing}}
+</div>

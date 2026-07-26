@@ -91,6 +91,15 @@ return [
     'WORDING_SEARCH'                      => 'search',
     'WORDING_SEARCH.title'                => 'Cerca',
     'WORDING_SEARCH.description'          => 'Cerca tra notizie, pagine, commenti e board.',
+    'WORDING_CONTENT'                     => 'pages',
+    'WORDING_CONTENT.title'               => 'Pagine',
+    'WORDING_CONTENT.description'         => 'Pagine di contenuto.',
+    'WORDING_ADMIN_CONTENT'               => 'admin-content',
+    'WORDING_ADMIN_CONTENT.title'         => 'Contenuti',
+    'WORDING_ADMIN_CONTENT.description'   => 'Gestisci le pagine di contenuto.',
+    'WORDING_ADMIN_LANGUAGE'              => 'admin-lingua',
+    'WORDING_ADMIN_LANGUAGE.title'        => 'Admin — Lingue',
+    'WORDING_ADMIN_LANGUAGE.description'  => 'Modifica le traduzioni e aggiungi lingue.',
     // Honeypot per bot. WORDING_TRAP è una pagina con controller raw (template=0):
     // titolo/descrizione non vengono mai mostrati — il controller genera il suo
     // labirinto e fa exit(), raggiunta solo dal link nascosto e dai bot scorretti.

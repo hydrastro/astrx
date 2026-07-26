@@ -12,12 +12,12 @@ return [
             1 => [
                 'regex' => '/(.+\\n){10,}/',
                 'enabled' => true,
-                'message' => 'Coasdmment contains too many line breaks.',
+                'message' => 'comment.antispam.too_many_lines',
             ],
             2 => [
                 'regex' => '/(?s).{3000,}/',
                 'enabled' => true,
-                'message' => 'Comment is too long (max 3000 characters).',
+                'message' => 'comment.antispam.too_long',
             ],
         ],
     ],

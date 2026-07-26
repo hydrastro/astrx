@@ -158,7 +158,7 @@
             <td><input type="number" name="regex_key[]"     value="{{key}}" min="1" style="width:4em" class="input"></td>
             <td><input type="text"   name="regex_pattern[]" value="{{regex}}" style="width:24em" class="input"></td>
             <td style="text-align:center"><input type="checkbox" name="regex_enabled[]" value="1"{{#enabled}} checked{{/enabled}}></td>
-            <td><input type="text"   name="regex_message[]" value="{{message}}" style="width:18em" class="input"></td>
+            <td><input type="text" list="lang_keys" name="regex_message[]" value="{{message}}" style="width:18em" class="input"></td>
         </tr>
         {{/antispam_list}}
         {{^has_antispam}}
@@ -166,6 +166,10 @@
         {{/has_antispam}}
         </tbody>
     </table>
+    <datalist id="lang_keys">
+        {{#lang_keys}}<option value="{{.}}"></option>{{/lang_keys}}
+    </datalist>
+    <p><small>{{label_regex_message_hint}}</small></p>
     <p>
         <input type="submit" value="{{btn_save}}" class="input">
     </p>

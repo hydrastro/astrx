@@ -10,7 +10,6 @@ use AstrX\Controller\Controller;
 use AstrX\Http\HttpStatus;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
-use AstrX\I18n\Locale;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
@@ -83,10 +82,13 @@ final class ContentManager
         $defaultLocaleStr = $this->config->getConfig('Prelude', 'default_language', 'en');
         assert(is_string($defaultLocaleStr));
 
-        $defaultLocale = Locale::fromStringOrDefault($defaultLocaleStr, Locale::EN);
-        if (!$defaultLocale->isAllowed($availableLocales)) {
-            $defaultLocale = Locale::EN;
-        }
+        // A locale is a plain string validated against available_languages
+        // (config), NOT a fixed enum — so an admin can add a language from the
+        // Language admin page without a code change. Fall back to the first
+        // available locale, then 'en'.
+        $defaultLocale = in_array($defaultLocaleStr, $availableLocales, true)
+            ? $defaultLocaleStr
+            : ($availableLocales[0] ?? 'en');
 
         $sessionUseCookies = $this->config->getConfig('Session', 'use_cookies', true);
         assert(is_bool($sessionUseCookies));
@@ -173,8 +175,8 @@ final class ContentManager
             }
         }
 
-        $this->translator->setLocale($locale->value);
-        $this->moduleLoader->setLocale($locale->value);
+        $this->translator->setLocale($locale);
+        $this->moduleLoader->setLocale($locale);
 
         $pagesDomain = $this->config->getConfig('ContentManager', 'pages_lang_domain', 'pages');
         assert(is_string($pagesDomain));
@@ -644,7 +646,7 @@ final class ContentManager
                             'message'     => 'API endpoint not enabled',
                         ],
                         'meta' => [
-                            'locale'      => $locale->value,
+                            'locale'      => $locale,
                             'page'        => $page->urlId,
                             'diagnostics' => ['total' => 1, 'visible' => 1, 'hidden' => 0],
                         ],
@@ -682,7 +684,7 @@ final class ContentManager
                 }
                 $jsonRenderer->emit(
                     ctx:          $ctx,
-                    locale:       $locale->value,
+                    locale:       $locale,
                     pageUrlId:    $page->urlId,
                     renderedHtml: $html,
                     isAdmin:      $isAdmin,
@@ -727,7 +729,7 @@ final class ContentManager
 
     /**
      * @param list<string> $availableLocales
-     * @return array{Locale, ?string, string}
+     * @return array{string, ?string, string}
      */
     private function parseRoutingHead(
         bool $urlRewrite,
@@ -735,7 +737,7 @@ final class ContentManager
         string $basePath,
         /** @param list<string> $availableLocales */
         array $availableLocales,
-        Locale $defaultLocale,
+        string $defaultLocale,
         bool $sessionUseCookies,
         string $sessionIdRegex,
         string $localeKey,
@@ -755,16 +757,14 @@ final class ContentManager
             $b = $stack->pop();
 
             $localeFromUrl = ($a !== null && in_array($a, $availableLocales, true));
-            $locale        = $localeFromUrl
-                ? Locale::fromStringOrDefault($a, $defaultLocale)
-                : $defaultLocale;
+            $locale        = ($localeFromUrl && $a !== null) ? $a : $defaultLocale;
 
             if (!$localeFromUrl) {
                 $b = $a;
             }
 
-            $current->set($localeKey, $locale->value);
-            $request->query()->set($localeKey, $locale->value);
+            $current->set($localeKey, $locale);
+            $request->query()->set($localeKey, $locale);
 
             // API detection (rewrite mode): the segment after the locale is
             // literally "api". /en/api/user-profile/... becomes an API call
@@ -801,16 +801,12 @@ final class ContentManager
         }
 
         $rawLocale = $request->query()->get($localeKey);
-        $locale    = Locale::fromStringOrDefault(
-            is_string($rawLocale) ? $rawLocale : null,
-            $defaultLocale,
-        );
-        if (!$locale->isAllowed($availableLocales)) {
-            $locale = $defaultLocale;
-        }
+        $locale    = (is_string($rawLocale) && in_array($rawLocale, $availableLocales, true))
+            ? $rawLocale
+            : $defaultLocale;
 
-        $current->set($localeKey, $locale->value);
-        $request->query()->set($localeKey, $locale->value);
+        $current->set($localeKey, $locale);
+        $request->query()->set($localeKey, $locale);
 
         if (!$sessionUseCookies) {
             $rawSid = $request->query()->get($sessionKey);

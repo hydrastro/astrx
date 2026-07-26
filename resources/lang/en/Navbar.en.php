@@ -47,5 +47,8 @@ return [
     'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
     'WORDING_ADMIN_BOARDS.label'          => 'Boards',
+    'WORDING_CONTENT.label'               => 'Pages',
+    'WORDING_ADMIN_CONTENT.label'         => 'Content',
+    'WORDING_ADMIN_LANGUAGE.label'        => 'Languages',
     'WORDING_ADMIN_TRAP.label'            => 'Bot trap',
 ];

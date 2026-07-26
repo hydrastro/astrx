@@ -11,6 +11,7 @@ use AstrX\Comment\CommentService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
+use AstrX\I18n\LangCatalog;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
@@ -18,6 +19,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Config\Config;
 use AstrX\Session\CommentPrgHandler;
+use AstrX\Session\FlashBag;
 use AstrX\Template\CommentState;
 use AstrX\Api\ContextScope;
 use AstrX\Template\DefaultTemplateContext;
@@ -76,7 +78,9 @@ final class CommentController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly AvatarService         $avatarService,
-        private readonly CaptchaService        $captchaService
+        private readonly CaptchaService        $captchaService,
+        private readonly FlashBag              $flash,
+        private readonly LangCatalog           $catalog,
     ) {
         parent::__construct($collector);
     }
@@ -108,6 +112,7 @@ final class CommentController extends AbstractController
         $csrfResult = $this->csrf->verify(self::FORM, self::mStr($posted, '_csrf', ''));
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
+            $this->flash->set('error', $this->t->t('comment.error.csrf'));
             return;
         }
 
@@ -136,6 +141,7 @@ final class CommentController extends AbstractController
             );
             if (!$captchaResult->isOk()) {
                 $captchaResult->drainTo($this->collector);
+                $this->flash->set('error', $this->t->t('comment.error.captcha'));
                 return;
             }
         }
@@ -154,9 +160,30 @@ final class CommentController extends AbstractController
         $remoteIpRaw = $this->request->server()->get('REMOTE_ADDR') ?? '';
         $remoteIp = is_scalar($remoteIpRaw) ? (string)$remoteIpRaw : '';
 
-        $this->commentService->post(
+        $postResult = $this->commentService->post(
             $this->page->id, $content, $name, $email, $replyTo, $remoteIp
         )->drainTo($this->collector);
+
+        // PRG swallows collector diagnostics on redirect, so surface the outcome
+        // as a flash message the poster actually sees.
+        if ($postResult->isOk()) {
+            $this->flash->set('success', $this->t->t('comment.posted'));
+            return;
+        }
+
+        $errRaw = $postResult->error();
+        $key    = is_string($errRaw) && $errRaw !== '' ? $errRaw : 'comment.error.generic';
+        // Resolve the key; if it belongs to a domain not loaded on this page
+        // (e.g. a custom antispam message key picked from another catalog), load
+        // every top-level domain and retry so it still resolves.
+        $msg = $this->t->t($key, fallback: '');
+        if ($msg === '') {
+            foreach ($this->catalog->domains() as $domain) {
+                $this->t->loadDomain(\AstrX\Support\langDir(), $domain);
+            }
+            $msg = $this->t->t($key, fallback: $key);
+        }
+        $this->flash->set('error', $msg);
     }
 
     // =========================================================================

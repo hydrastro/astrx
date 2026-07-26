@@ -1,0 +1,66 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{lbl_heading}}</h2>
+<p>{{lbl_intro}}</p>
+
+{{! ── Editor (PRG POST, no JavaScript) ───────────────────────────────────── }}
+<h3>{{#is_edit}}{{lbl_edit}}{{/is_edit}}{{^is_edit}}{{lbl_new}}{{/is_edit}}</h3>
+<form method="POST" action="{{form_action}}">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="save">
+  <input type="hidden" name="id"     value="{{f_id}}">
+  <p><label>{{lbl_slug}} <input type="text" name="slug" value="{{f_slug}}" class="input"></label>
+     <small>{{lbl_slug_hint}}</small></p>
+  <p><label>{{lbl_title}} <input type="text" name="title" value="{{f_title}}" class="input"></label></p>
+  <p><label><input type="checkbox" name="visible" value="1"{{#f_visible}} checked{{/f_visible}}> {{lbl_visible}}</label></p>
+  <p><label>{{lbl_body}}<br>
+     <textarea name="body" rows="18" class="input" style="width:100%;box-sizing:border-box">{{f_body}}</textarea></label><br>
+     <small>{{lbl_body_hint}}</small></p>
+  <p>
+    <button type="submit" class="input">{{lbl_save}}</button>
+    {{#is_edit}}<a href="{{new_url}}" class="input">{{lbl_new}}</a> · <a href="{{f_view_url}}">{{lbl_view}}</a>{{/is_edit}}
+  </p>
+</form>
+
+{{! ── Broken-link checker ────────────────────────────────────────────────── }}
+<h3>{{lbl_broken}}</h3>
+{{^has_broken}}<p><em>{{lbl_broken_none}}</em></p>{{/has_broken}}
+{{#has_broken}}
+<ul>
+  {{#broken}}<li><a href="{{from_url}}">{{from_title}}</a> {{lbl_broken_links_to}} <code>[[{{to_slug}}]]</code></li>{{/broken}}
+</ul>
+{{/has_broken}}
+
+{{! ── Page list ──────────────────────────────────────────────────────────── }}
+<h3>{{lbl_pages}}</h3>
+{{^has_pages}}<p><em>{{lbl_none}}</em></p>{{/has_pages}}
+{{#has_pages}}
+<table class="table">
+  <thead><tr><th style="text-align:left">{{lbl_title}}</th><th style="text-align:left">{{lbl_slug}}</th><th></th></tr></thead>
+  <tbody>
+  {{#pages}}
+  <tr>
+    <td><a href="{{view_url}}">{{title}}</a>{{^visible}} <small>({{lbl_unlisted}})</small>{{/visible}}</td>
+    <td><code>{{slug}}</code></td>
+    <td>
+      <a href="{{edit_url}}">{{lbl_edit}}</a>
+      <form method="POST" action="{{form_action}}" style="display:inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="id"     value="{{id}}">
+        <button type="submit" class="input">{{lbl_delete}}</button>
+      </form>
+    </td>
+  </tr>
+  {{/pages}}
+  </tbody>
+</table>
+{{/has_pages}}
+{{/admin_forbidden}}

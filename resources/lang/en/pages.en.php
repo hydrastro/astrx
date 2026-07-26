@@ -91,6 +91,15 @@ return [
     'WORDING_SEARCH'                      => 'search',
     'WORDING_SEARCH.title'                => 'Search',
     'WORDING_SEARCH.description'          => 'Search across news, pages, comments and boards.',
+    'WORDING_CONTENT'                     => 'pages',
+    'WORDING_CONTENT.title'               => 'Pages',
+    'WORDING_CONTENT.description'         => 'Content pages.',
+    'WORDING_ADMIN_CONTENT'               => 'admin-content',
+    'WORDING_ADMIN_CONTENT.title'         => 'Content',
+    'WORDING_ADMIN_CONTENT.description'   => 'Manage content pages.',
+    'WORDING_ADMIN_LANGUAGE'              => 'admin-language',
+    'WORDING_ADMIN_LANGUAGE.title'        => 'Admin — Languages',
+    'WORDING_ADMIN_LANGUAGE.description'  => 'Edit translations and add languages.',
     // Bot-trap honeypot. WORDING_TRAP is a template=0 raw-controller page (its
     // title/description are never rendered — the controller emits its own maze
     // and exit()s), reached only by the hidden footer link + misbehaving bots.

@@ -13,6 +13,7 @@ use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
+use AstrX\I18n\LangCatalog;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
 use AstrX\Result\DiagnosticsCollector;
@@ -55,6 +56,7 @@ final class AdminCommentsController extends AbstractController
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly AuditLogger           $audit,
+        private readonly LangCatalog           $catalog,
     ) {
         parent::__construct($collector);
     }
@@ -332,6 +334,18 @@ final class AdminCommentsController extends AbstractController
             $this->ctx->set('cfg_antispam_time_secs',  self::mInt($current, 'antispam_time_secs', 30));
             $this->ctx->set('antispam_list',           $antispamList);
             $this->ctx->set('has_antispam',            $antispamList !== []);
+
+            // Full translation-key list for the antispam message picker
+            // (a no-JS <datalist> the message field autocompletes against).
+            $flatKeys = [];
+            foreach ($this->catalog->allKeys() as $keys) {
+                foreach ($keys as $k) {
+                    $flatKeys[$k] = true;
+                }
+            }
+            $keyList = array_keys($flatKeys);
+            sort($keyList);
+            $this->ctx->set('lang_keys', $keyList);
         }
 
         $this->setI18n($canModerate, $canConfig);
@@ -408,6 +422,7 @@ final class AdminCommentsController extends AbstractController
             $this->ctx->set('label_regex_pattern',          $this->t->t('admin.config.field.regex_pattern'));
             $this->ctx->set('label_regex_enabled',          $this->t->t('admin.config.field.regex_enabled'));
             $this->ctx->set('label_regex_message',          $this->t->t('admin.config.field.regex_message'));
+            $this->ctx->set('label_regex_message_hint',     $this->t->t('admin.config.field.regex_message_hint'));
             $this->ctx->set('btn_save',                     $this->t->t('admin.btn.save'));
             $this->ctx->set('btn_add_regex',                $this->t->t('admin.config.comments.add_regex'));
         }
