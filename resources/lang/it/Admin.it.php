@@ -797,5 +797,17 @@ return [
     'admin.lang.add_failed'              => 'Impossibile aggiungere la lingua — potrebbe già esistere o il codice non è valido.',
     'admin.lang.lang_added'              => 'Lingua "{code}" aggiunta e attivata.',
     'admin.lang.lang_added_unregistered' => 'I file della lingua "{code}" sono stati creati, ma la registrazione nella configurazione è fallita — aggiungila in Configurazione → Sistema.',
+    'admin.lang.back_langs'              => '← Lingue per questo dominio',
+    'admin.lang.choose_lang'             => 'Scegli una lingua da modificare per',
+    'admin.lang.choose_lang_intro'       => 'Scegli una lingua. La lingua predefinita si modifica da sola; qualsiasi altra viene mostrata accanto alla predefinita come riferimento.',
+    'admin.lang.default_badge'           => 'predefinita',
+    'admin.lang.reference'               => 'riferimento',
+    'admin.lang.manage_langs'            => 'Gestisci le lingue',
+    'admin.lang.domains'                 => 'Domini di traduzione',
+    'admin.lang.delete'                  => 'Elimina',
+    'admin.lang.protected'               => '(predefinita — non eliminabile)',
+    'admin.lang.cannot_delete'           => 'Questa lingua non può essere eliminata (è la lingua predefinita o quella di riferimento).',
+    'admin.lang.delete_failed'           => 'Impossibile eliminare la lingua — controlla il pannello diagnostica.',
+    'admin.lang.deleted'                 => 'Lingua "{code}" eliminata.',
 
 ];

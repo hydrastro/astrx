@@ -1,0 +1,15 @@
+{{! Language admin sub-navbars — join the nav stack only on the Language admin
+    page (self-hides via lang_nav_show). Same secondary-nav style as the board /
+    chat navbars. <li> items are kept whitespace-free so the theme's nav underline
+    doesn't render on the gaps. }}
+{{#lang_nav_show}}
+<div id="lang_top_nav" class="board_top_nav">
+    <style>.board_nav{list-style:none;margin:0;padding:0}.board_nav li{display:inline-block;vertical-align:top}</style>
+    <ul class="board_nav"><li><a href="{{manage_url}}"{{#manage_active}} class="active"{{/manage_active}}>{{lbl_manage_langs}}</a></li>{{#domain_nav}}<li><a href="{{url}}"{{#d_active}} class="active"{{/d_active}}>{{label}}</a></li>{{/domain_nav}}</ul>
+</div>
+{{#is_editor}}
+<div id="lang_lang_top_nav" class="board_top_nav">
+    <ul class="board_nav">{{#lang_tabs}}<li><a href="{{url}}"{{#l_active}} class="active"{{/l_active}}>{{code}}</a></li>{{/lang_tabs}}</ul>
+</div>
+{{/is_editor}}
+{{/lang_nav_show}}

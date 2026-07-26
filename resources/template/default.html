@@ -58,6 +58,8 @@
     {{> chat_nav}}
     {{! Board navbars — join the nav stack only on imageboard pages (self-hides via board_nav_show). }}
     {{> board_nav}}
+    {{! Language admin sub-navbars — join the nav stack only on the Language page (self-hides via lang_nav_show). }}
+    {{> lang_nav}}
     {{#has_messages}}
     <div id="message_bar">
         {{#messages}}<p class="{{css_class}}">{{#level_label}}[{{level_label}}] {{/level_label}}{{message}}</p>{{/messages}}

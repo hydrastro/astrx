@@ -224,7 +224,57 @@ final class LangCatalog
         return $this->cloneTree($this->localeDir($source), $this->localeDir($code), $source, $code);
     }
 
+    /**
+     * Remove an installed language: delete its whole resources/lang/<code>/ tree.
+     * The primary locale can never be deleted (it is the translation reference
+     * and the ultimate fallback). The caller unregisters <code> from
+     * available_languages afterwards.
+     *
+     * @return Result<bool>
+     */
+    public function deleteLanguage(string $code): Result
+    {
+        if (preg_match(self::LOCALE_RE, $code) !== 1) {
+            return $this->fail('astrx.i18n/lang_code_invalid', "Invalid language code '{$code}'.");
+        }
+        if ($code === self::PRIMARY) {
+            return $this->fail('astrx.i18n/lang_primary_protected', "The primary language '{$code}' cannot be deleted.");
+        }
+        if (!$this->localeExists($code)) {
+            return $this->fail('astrx.i18n/lang_source_missing', "Language '{$code}' does not exist.");
+        }
+
+        return $this->rmTree($this->localeDir($code));
+    }
+
     // -------------------------------------------------------------------------
+
+    /**
+     * Recursively delete a directory tree.
+     *
+     * @return Result<bool>
+     */
+    private function rmTree(string $dir): Result
+    {
+        foreach (scandir($dir) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $path = $dir . $entry;
+            if (is_dir($path)) {
+                $r = $this->rmTree($path . DIRECTORY_SEPARATOR);
+                if (!$r->isOk()) {
+                    return $r;
+                }
+            } elseif (!unlink($path)) {
+                return $this->fail('astrx.i18n/lang_delete_failed', "Could not delete {$path}.");
+            }
+        }
+        if (!rmdir(rtrim($dir, '/\\'))) {
+            return $this->fail('astrx.i18n/lang_delete_failed', "Could not remove {$dir}.");
+        }
+        return Result::ok(true);
+    }
 
     /** @return Result<bool> */
     private function cloneTree(string $srcDir, string $dstDir, string $source, string $code): Result

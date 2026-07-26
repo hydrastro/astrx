@@ -5,14 +5,13 @@
 {{/admin_forbidden}}
 
 {{^admin_forbidden}}
+{{! The domain + language sub-navbars render in the header nav stack via the
+    lang_nav partial (default.html), so they sit with the site's own navbars
+    instead of detached in the page body. }}
 <h2>{{lbl_heading}}</h2>
-<p>{{lbl_intro}}</p>
-<p><small>{{lbl_installed}} {{locales_list}}</small></p>
 
-{{! ── Editor (one column per locale) ─────────────────────────────────────── }}
 {{#is_editor}}
-<p><a href="{{index_url}}" class="input">{{lbl_back}}</a></p>
-<h3>{{lbl_editing}} <code>{{domain}}</code></h3>
+<h3>{{lbl_editing}} <code>{{domain_label}}</code></h3>
 {{#readonly}}<p><em>{{lbl_readonly}}</em></p>{{/readonly}}
 
 <form method="POST" action="{{form_action}}">
@@ -20,45 +19,52 @@
   <input type="hidden" name="_csrf"  value="{{csrf_token}}">
   <input type="hidden" name="action" value="save">
   <input type="hidden" name="domain" value="{{domain}}">
+  <input type="hidden" name="lang"   value="{{edit_lang}}">
   <table class="table">
     <thead><tr>
       <th style="text-align:left">{{lbl_key}}</th>
-      {{#editor_locales}}<th style="text-align:left">{{code}}</th>{{/editor_locales}}
+      {{^is_default_page}}<th style="text-align:left">{{primary_code}} <small>({{lbl_reference}})</small></th>{{/is_default_page}}
+      <th style="text-align:left">{{edit_lang}}</th>
     </tr></thead>
     <tbody>
     {{#rows}}
     <tr>
       <td style="vertical-align:top"><code>{{key}}</code></td>
-      {{#cells}}
-      <td><textarea name="{{field_name}}" rows="2" class="input" style="width:100%;box-sizing:border-box"{{#readonly}} readonly{{/readonly}}>{{value}}</textarea></td>
-      {{/cells}}
+      {{^hide_ref}}<td style="vertical-align:top">{{reference_value}}</td>{{/hide_ref}}
+      <td><textarea name="{{field_name}}" rows="2" class="input" style="width:100%;box-sizing:border-box"{{#ro}} readonly{{/ro}}>{{value}}</textarea></td>
     </tr>
     {{/rows}}
-    {{^has_rows}}
-    <tr><td colspan="{{locale_span}}"><em>—</em></td></tr>
-    {{/has_rows}}
+    {{^has_rows}}<tr><td colspan="{{col_span}}"><em>—</em></td></tr>{{/has_rows}}
     </tbody>
   </table>
   {{^readonly}}<p><button type="submit" class="input">{{lbl_save}}</button></p>{{/readonly}}
 </form>
 {{/is_editor}}
 
-{{! ── Index: domains grouped + add-language form ─────────────────────────── }}
 {{^is_editor}}
-{{#has_module_domains}}
-<h3>{{lbl_modules}}</h3>
+<h3>{{lbl_manage_langs}}</h3>
+<p>{{lbl_intro}}</p>
+<p><small>{{lbl_installed}} {{locales_list}}</small></p>
 <ul>
-  {{#module_domains}}<li><a href="{{url}}">{{name}}</a>{{#disabled}} <small>({{lbl_disabled}})</small>{{/disabled}}</li>{{/module_domains}}
-</ul>
-{{/has_module_domains}}
-
-<h3>{{lbl_core}}</h3>
-<ul>
-  {{#core_domains}}<li><a href="{{url}}">{{name}}</a></li>{{/core_domains}}
+  {{#languages}}
+  <li>
+    <code>{{code}}</code>{{#is_default}} <small>({{lbl_default_badge}})</small>{{/is_default}}
+    {{^not_deletable}}
+    <form method="POST" action="{{form_action}}" style="display:inline">
+      <input type="hidden" name="prg_id" value="{{prg_id}}">
+      <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+      <input type="hidden" name="action" value="delete_language">
+      <input type="hidden" name="locale" value="{{code}}">
+      <button type="submit" class="input">{{lbl_delete}}</button>
+    </form>
+    {{/not_deletable}}
+    {{^deletable}} <small>{{lbl_protected}}</small>{{/deletable}}
+  </li>
+  {{/languages}}
 </ul>
 
 <hr>
-<h3>{{lbl_add_heading}}</h3>
+<h4>{{lbl_add_heading}}</h4>
 <p>{{lbl_add_intro}}</p>
 <form method="POST" action="{{form_action}}">
   <input type="hidden" name="prg_id" value="{{prg_id}}">

@@ -801,5 +801,17 @@ return [
     'admin.lang.add_failed'              => 'Could not add the language — it may already exist or the code is invalid.',
     'admin.lang.lang_added'              => 'Language "{code}" added and enabled.',
     'admin.lang.lang_added_unregistered' => 'Language "{code}" files were created, but registering it in the config failed — add it under Config → System.',
+    'admin.lang.back_langs'              => '← Languages for this domain',
+    'admin.lang.choose_lang'             => 'Choose a language to edit for',
+    'admin.lang.choose_lang_intro'       => 'Pick a language. The default language is edited on its own; any other is shown beside the default for reference.',
+    'admin.lang.default_badge'           => 'default',
+    'admin.lang.reference'               => 'reference',
+    'admin.lang.manage_langs'            => 'Manage languages',
+    'admin.lang.domains'                 => 'Translation domains',
+    'admin.lang.delete'                  => 'Delete',
+    'admin.lang.protected'               => '(default — cannot be deleted)',
+    'admin.lang.cannot_delete'           => 'That language cannot be deleted (it is the default or the reference language).',
+    'admin.lang.delete_failed'           => 'Could not delete the language — check the diagnostics panel.',
+    'admin.lang.deleted'                 => 'Language "{code}" deleted.',
 
 ];
