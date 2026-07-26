@@ -12,6 +12,7 @@ use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Imageboard\BanRepository;
 use AstrX\Imageboard\BoardModRepository;
+use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\ImageBlockRepository;
 use AstrX\Imageboard\ImageRepository;
@@ -81,6 +82,7 @@ final class BoardModController extends AbstractController
         private readonly UserRepository         $users,
         private readonly AuditLogger            $audit,
         private readonly PDO                    $pdo,
+        private readonly BoardNav               $nav,
     ) {
         parent::__construct($collector);
     }
@@ -98,6 +100,8 @@ final class BoardModController extends AbstractController
             exit;
         }
 
+        $this->ctx->set('board_nav_show', true);
+        $this->ctx->set('board_top_nav', $this->nav->topNav(self::mStr($board, 'slug')));
         $this->setCommon($board);
 
         // PRG replay of a posted mod form.
@@ -942,10 +946,50 @@ final class BoardModController extends AbstractController
         $this->ctx->set('settings_url', $base . '&view=settings');
         $this->ctx->set('board_url',    $this->boardUrl($slug));
 
-        $canMod = $this->gate->can(Permission::BOARD_MODERATE);
+        $canMod    = $this->gate->can(Permission::BOARD_MODERATE);
+        $canManage = $this->gate->can(Permission::BOARD_ADMIN);
         $this->ctx->set('can_reports', $canMod);
         $this->ctx->set('can_ban',     $canMod);
-        $this->ctx->set('can_manage',  $this->gate->can(Permission::BOARD_ADMIN));
+        $this->ctx->set('can_manage',  $canManage);
+
+        // Mod section nav — rendered in the site header nav stack
+        // (partials/board_nav.html) so it sits with the other navbars instead of
+        // as a detached bar inside the page. The active section is highlighted.
+        $view   = self::queryStr($this->request, 'view');
+        $modNav = [[
+            'url'       => $base,
+            'name'      => $this->t->t('board.mod.dashboard'),
+            'highlight' => $view === '' || $view === 'dashboard',
+        ]];
+        if ($canMod) {
+            $modNav[] = ['url' => $base . '&view=reports', 'name' => $this->t->t('board.mod.reports'), 'highlight' => $view === 'reports'];
+            $modNav[] = ['url' => $base . '&view=bans',    'name' => $this->t->t('board.mod.bans'),    'highlight' => $view === 'bans'];
+            $modNav[] = ['url' => $base . '&view=blocks',  'name' => $this->t->t('board.mod.blocks'),  'highlight' => $view === 'blocks'];
+        }
+        if ($canManage) {
+            $modNav[] = ['url' => $base . '&view=staff',    'name' => $this->t->t('board.mod.staff'),    'highlight' => $view === 'staff'];
+            $modNav[] = ['url' => $base . '&view=settings', 'name' => $this->t->t('board.mod.settings'), 'highlight' => $view === 'settings'];
+        }
+        // No "« Back" item here — the board's own default menu (Index / Catalog /
+        // Search / Feed / Manage, built just below) already sits in the same nav
+        // stack and returns to the board, so a Back entry is redundant.
+        $this->ctx->set('board_mod_nav',     $modNav);
+        $this->ctx->set('has_board_mod_nav', true);
+
+        // Board default menu (Index / Catalog / Search / Feed / Manage) — also
+        // shown on the mod page so the mod sections read as an ADDITIONAL bar,
+        // not a replacement of the board's own nav. "Manage" is the active item.
+        $boardIndex = $this->boardUrl($slug);
+        $searchUrl  = $this->urlGen->toPage($this->t->t('WORDING_BOARD_SEARCH')) . '?board=' . rawurlencode($slug);
+        $feedUrl    = $this->urlGen->toPage($this->t->t('WORDING_BOARD_FEED')) . '?board=' . rawurlencode($slug);
+        $this->ctx->set('board_local_nav', [
+            ['url' => $boardIndex,              'name' => $this->t->t('board.index'),          'highlight' => false],
+            ['url' => $boardIndex . '/catalog', 'name' => $this->t->t('board.catalog'),        'highlight' => false],
+            ['url' => $searchUrl,               'name' => $this->t->t('board.search_heading'), 'highlight' => false],
+            ['url' => $feedUrl,                 'name' => $this->t->t('board.feed'),           'highlight' => false],
+            ['url' => $base,                    'name' => $this->t->t('board.manage'),         'highlight' => true],
+        ]);
+        $this->ctx->set('has_board_local_nav', true);
 
         $this->setLabels();
     }

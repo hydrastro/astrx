@@ -1,0 +1,66 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{heading}}</h2>
+<p>{{intro}}</p>
+
+{{! ── Settings (PRG POST, no JavaScript) ─────────────────────────────────── }}
+<h3>{{settings_heading}}</h3>
+<p><small>{{settings_hint}}</small></p>
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <table class="table">
+    <tr><th>{{lbl_enabled}}</th>
+      <td><input type="checkbox" name="enabled" value="1"{{#f_enabled}} checked{{/f_enabled}} class="input"></td></tr>
+    <tr><th>{{lbl_tarpit}}</th>
+      <td><input type="number" name="tarpit_seconds" value="{{f_tarpit}}" min="0" max="10" class="input"></td></tr>
+    <tr><th>{{lbl_links}}</th>
+      <td><input type="number" name="links_per_page" value="{{f_links}}" min="1" max="20" class="input"></td></tr>
+    <tr><th>{{lbl_logging}}</th>
+      <td><input type="checkbox" name="log_hits" value="1"{{#f_logging}} checked{{/f_logging}} class="input"></td></tr>
+  </table>
+  <p><button type="submit" class="input">{{btn_save}}</button></p>
+</form>
+
+{{! ── Current config status ──────────────────────────────────────────────── }}
+<table class="table">
+  <tr><th>{{lbl_enabled}}</th><td>{{#cfg_enabled}}{{lbl_yes}}{{/cfg_enabled}}{{^cfg_enabled}}{{lbl_no}}{{/cfg_enabled}}</td></tr>
+  <tr><th>{{lbl_tarpit}}</th><td>{{cfg_tarpit}}</td></tr>
+  <tr><th>{{lbl_links}}</th><td>{{cfg_links}}</td></tr>
+  <tr><th>{{lbl_logging}}</th><td>{{#cfg_logging}}{{lbl_yes}}{{/cfg_logging}}{{^cfg_logging}}{{lbl_no}}{{/cfg_logging}}</td></tr>
+</table>
+
+<p><small>{{lbl_count}}: {{row_count}}</small></p>
+
+{{! ── Recent hits (newest first) ─────────────────────────────────────────── }}
+{{^has_rows}}<p><em>{{lbl_none}}</em></p>{{/has_rows}}
+{{#has_rows}}
+<table class="table">
+  <thead>
+  <tr>
+    <th style="text-align:left">{{lbl_time}}</th>
+    <th style="text-align:left">{{lbl_ident}}</th>
+    <th style="text-align:left">{{lbl_path}}</th>
+    <th style="text-align:left">{{lbl_ua}}</th>
+    <th style="text-align:left">{{lbl_referer}}</th>
+  </tr>
+  </thead>
+  <tbody>
+  {{#trap_rows}}
+  <tr>
+    <td><small>{{created_at}}</small></td>
+    <td><code>{{ident}}</code></td>
+    <td><small>{{path}}</small></td>
+    <td><small>{{user_agent}}</small></td>
+    <td><small>{{referer}}</small></td>
+  </tr>
+  {{/trap_rows}}
+  </tbody>
+</table>
+{{/has_rows}}
+{{/admin_forbidden}}

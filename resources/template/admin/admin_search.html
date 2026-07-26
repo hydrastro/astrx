@@ -1,0 +1,70 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+{{! While a crawl is running, refresh the page (no-JS) so status updates. }}
+{{#is_running}}<meta http-equiv="refresh" content="5">{{/is_running}}
+
+<h2>{{heading}}</h2>
+<p>{{intro}}</p>
+
+{{! ── Status panel ───────────────────────────────────────────────────────── }}
+<table class="table">
+  <tr><th>{{lbl_status}}</th><td><code>{{job_status}}</code></td></tr>
+  <tr><th>{{lbl_doc_count}}</th><td>{{doc_count}}</td></tr>
+  <tr><th>{{lbl_index_time}}</th><td><small>{{index_time}}</small></td></tr>
+  <tr><th>{{lbl_last_run}}</th><td><small>{{last_run}}</small></td></tr>
+  <tr><th>{{lbl_freshness}}</th>
+    <td>{{#is_stale}}<strong>{{txt_stale}}</strong>{{/is_stale}}{{^is_stale}}{{txt_fresh}}{{/is_stale}}</td></tr>
+  {{#has_message}}<tr><th>{{lbl_last_message}}</th><td><small>{{last_message}}</small></td></tr>{{/has_message}}
+</table>
+
+{{! ── Actions (PRG POST, no JavaScript) ──────────────────────────────────── }}
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="rebuild_now">
+  <p>
+    <button type="submit" class="input">{{btn_rebuild}}</button>
+    <br><small>{{hint_rebuild}}</small>
+    {{^exec_available}}<br><small>{{hint_exec}}</small>{{/exec_available}}
+  </p>
+</form>
+
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="request_rebuild">
+  <p>
+    <button type="submit" class="input">{{btn_request}}</button>
+    <br><small>{{hint_request}}</small>
+  </p>
+</form>
+
+{{! ── Reset a stuck job (only while running; the buttons above self-suppress) ─ }}
+{{#is_running}}
+<form method="POST">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  <input type="hidden" name="action" value="reset_job">
+  <p>
+    {{#is_stale_running}}<strong>{{txt_stale_running}}</strong><br>{{/is_stale_running}}
+    <button type="submit" class="input">{{btn_reset}}</button>
+  </p>
+</form>
+{{/is_running}}
+
+{{! ── Manual command line ────────────────────────────────────────────────── }}
+<h3>{{cli_heading}}</h3>
+<p>{{cli_intro}}</p>
+<pre><code>{{cli_command}}</code></pre>
+<p><small>{{cli_note}}</small></p>
+
+{{! ── Scheduled (cron) ───────────────────────────────────────────────────── }}
+<h3>{{cron_heading}}</h3>
+<p>{{cron_intro}}</p>
+<pre><code>{{cron_command}}</code></pre>
+{{/admin_forbidden}}

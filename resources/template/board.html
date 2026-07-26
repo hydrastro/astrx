@@ -25,7 +25,8 @@
     .board-rules-body{margin:5px 0 2px;}
     .board-sub{margin:2px 0;font-style:italic;}
     .board-desc{margin:3px 0;}
-    .board-nav{margin:4px 0;}
+    /* The board navbars render in the site header nav stack (partials/board_nav.html),
+       contiguous with the site navbars — not inside #board. */
     .board-styles{margin:6px 0;font-size:small;}
     .board-styles a{margin-right:6px;}
     #board .board-styles a.cur{font-weight:bold;text-decoration:underline;}
@@ -141,7 +142,6 @@
         {{#board_subtitle}}<p class="board-sub">{{board_subtitle}}</p>{{/board_subtitle}}
         {{#board_desc}}<p class="board-desc">{{board_desc}}</p>{{/board_desc}}
         {{#has_rules}}<details class="board-rules"><summary>{{lbl_rules}}</summary><div class="board-rules-body">{{&board_rules_html}}</div></details>{{/has_rules}}
-        <nav class="board-nav"><a href="{{index_url}}">{{lbl_index}}</a> · <a href="{{catalog_url}}">{{lbl_catalog}}</a> · <a href="{{overboard_url}}">{{lbl_overboard}}</a> · <a href="{{search_url}}">{{lbl_search}}</a> · <a href="{{feed_url}}">{{lbl_feed}}</a>{{#can_moderate}} · <a href="{{mod_url}}">{{lbl_manage}}</a>{{/can_moderate}}</nav>
     </div>
 
     {{#can_post}}

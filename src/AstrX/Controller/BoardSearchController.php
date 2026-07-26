@@ -7,6 +7,7 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
+use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\PostRepository;
 use AstrX\Result\DiagnosticsCollector;
@@ -40,6 +41,7 @@ final class BoardSearchController extends AbstractController
         private readonly UrlGenerator           $urlGen,
         private readonly PostRepository         $posts,
         private readonly BoardRepository        $boards,
+        private readonly BoardNav               $nav,
     ) {
         parent::__construct($collector);
     }
@@ -48,6 +50,8 @@ final class BoardSearchController extends AbstractController
     public function handle(): Result
     {
         $this->t->loadDomain(langDir(), 'Imageboard');
+        $this->ctx->set('board_nav_show', true);
+        $this->ctx->set('board_top_nav', $this->nav->topNav('search'));
 
         if ($this->gate->cannot(Permission::BOARD_VIEW)) {
             http_response_code(404);
@@ -94,7 +98,11 @@ final class BoardSearchController extends AbstractController
         $this->ctx->set('form_action', $this->urlGen->toPage($this->t->t('WORDING_BOARD_SEARCH')));
         $this->ctx->set('q',           $q);
         $this->ctx->set('searched',    $searched);
-        $this->ctx->set('results',     $results);
+        // 'search_results', NOT 'results' — DefaultTemplateContext reserves
+        // 'results' as a legacy alias for the diagnostic message list and
+        // overwrites it in finalise() (after this controller), which would blank
+        // the rows while the count still rendered.
+        $this->ctx->set('search_results', $results);
         $this->ctx->set('has_results', $results !== []);
         $this->setLabels();
         return $this->ok();

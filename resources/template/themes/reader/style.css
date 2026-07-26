@@ -20,16 +20,16 @@ a:visited { color: #5b3b5c; }
     border: 1px solid #d6cab7;
     box-shadow: 0 .35rem 1.25rem rgba(42, 34, 22, .08);
 }
-#header, #top_nav, #user_top_nav, #admin_top_nav, #message_bar, #main, #footer, .chat_top_nav{
+#header, #top_nav, #user_top_nav, #admin_top_nav, #message_bar, #main, #footer, .chat_top_nav, .board_top_nav{
     padding-left: clamp(1rem, 3vw, 2rem);
     padding-right: clamp(1rem, 3vw, 2rem);
 }
 #header { padding-top: 1.4rem; padding-bottom: 1rem; border-bottom: 1px solid #d6cab7; }
 #title { margin: 0; text-align: left; font-size: clamp(1.7rem, 5vw, 2.5rem); line-height: 1.1; }
 #title a { color: #25211a; text-decoration: none; }
-#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{ border-bottom: 1px solid #e3d9ca; padding-top: .45rem; padding-bottom: .45rem; }
-#nav, #user_nav, #admin_nav, .chat_nav{ margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .65rem; }
-#nav li a, #user_nav li a, #admin_nav li a, #user_nav li input, #admin_nav li input, .chat_nav li a, .chat_nav li input{
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav, .board_top_nav{ border-bottom: 1px solid #e3d9ca; padding-top: .45rem; padding-bottom: .45rem; }
+#nav, #user_nav, #admin_nav, .chat_nav, .board_nav{ margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .65rem; }
+#nav li a, #user_nav li a, #admin_nav li a, #user_nav li input, #admin_nav li input, .chat_nav li a, .board_nav li a, .chat_nav li input, .board_nav li input{
     display: inline-block;
     padding: .18rem .45rem;
     color: #4a382a;
@@ -38,7 +38,7 @@ a:visited { color: #5b3b5c; }
     font: inherit;
 }
 #nav li a.active, #user_nav li a.active, #admin_nav li a.active,
-#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover, .chat_nav li a.active, .chat_nav li a:hover{
+#nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover, .chat_nav li a.active, .board_nav li a.active, .chat_nav li a:hover, .board_nav li a:hover{
     border-color: #c8b79f;
     background: #f3eadc;
     color: #25211a;
@@ -79,8 +79,8 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f0e6; borde
 @media (max-width: 640px) {
     body { padding: 0; }
     #wrap { border-width: 0; min-height: 100vh; }
-    #nav, #user_nav, #admin_nav, .chat_nav{ display: block; }
-    #nav li a, #user_nav li a, #admin_nav li a, .chat_nav li a{ display: block; padding: .35rem 0; }
+    #nav, #user_nav, #admin_nav, .chat_nav, .board_nav{ display: block; }
+    #nav li a, #user_nav li a, #admin_nav li a, .chat_nav li a, .board_nav li a{ display: block; padding: .35rem 0; }
     .left, .right { float: none; display: block; }
 }
 

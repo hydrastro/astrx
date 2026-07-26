@@ -1,0 +1,45 @@
+<div id="site_search">
+    <style>
+    /* Self-contained, mirroring board_search.html: transparent fills,
+       currentColor borders, px spacing, no rem/em, no border-radius. */
+    #site_search{--ss-border:currentColor;background:transparent;color:inherit;}
+    #site_search a{text-decoration:none;color:inherit;}
+    #site_search a:hover{text-decoration:underline;}
+    .search-header{border-bottom:1px solid var(--ss-border);margin-bottom:8px;padding-bottom:5px;}
+    .search-header h1{margin:3px 0;}
+    .search-form{border:1px solid var(--ss-border);background:transparent;padding:8px;margin:8px 0;}
+    .search-form p{margin:4px 0;}
+    .search-form input[type=text],.search-form select{background:transparent;color:inherit;border:1px solid var(--ss-border);padding:2px 4px;}
+    .search-form input[type=text]{min-width:16em;}
+    .search-form button{background:transparent;color:inherit;border:1px solid var(--ss-border);padding:2px 12px;cursor:pointer;}
+    .search-form button:hover{text-decoration:underline;}
+    .search-count{font-style:italic;margin:8px 0;}
+    .search-empty{font-style:italic;}
+    .search-result{padding:6px 0;border-bottom:1px dashed var(--ss-border);}
+    .search-result .pill{border:1px solid var(--ss-border);padding:0 6px;margin-right:6px;font-size:12px;text-transform:uppercase;}
+    .search-result .search-excerpt{display:block;margin:2px 0 0;white-space:pre-wrap;word-wrap:break-word;}
+    </style>
+
+    <div class="search-header"><h1>{{lbl_heading}}</h1></div>
+
+    <form class="search-form" method="get" action="{{form_action}}">
+        <p><label>{{lbl_query}} <input type="text" name="q" value="{{query}}" autocomplete="off"></label></p>
+        <p><label>{{lbl_type}}
+            <select name="type">
+                {{#types}}<option value="{{value}}"{{#sel}} selected{{/sel}}>{{label}}</option>{{/types}}
+            </select>
+        </label></p>
+        <p><button type="submit">{{lbl_submit}}</button></p>
+    </form>
+
+    {{#searched}}
+        {{#has_results}}<p class="search-count">{{result_count}}</p>{{/has_results}}
+        {{^has_results}}<p class="search-empty">{{lbl_no_results}}</p>{{/has_results}}
+        {{#search_results}}
+        <div class="search-result">
+            <span class="pill">{{type_label}}</span> <a href="{{url}}">{{title}}</a>
+            <p class="search-excerpt">{{excerpt}}</p>
+        </div>
+        {{/search_results}}
+    {{/searched}}
+</div>

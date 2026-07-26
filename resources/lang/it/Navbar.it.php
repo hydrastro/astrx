@@ -4,8 +4,9 @@ declare(strict_types=1);
 return [
     // Navbar pubblica
     'WORDING_HOME.label'             => 'Home',
-    'WORDING_USER.label'             => 'Area Utente',
+    'WORDING_SEARCH.label'           => 'Cerca',
     'WORDING_BOARD.label'            => 'Board',
+    'WORDING_USER.label'             => 'Area Utente',
 
     // Navbar utente
     'WORDING_USER_HOME.label'        => 'Home',
@@ -23,6 +24,7 @@ return [
     'WORDING_ADMIN_NAVBAR.label'     => 'Navigazione',
     'WORDING_ADMIN_PAGES.label'      => 'Pagine',
     'WORDING_ADMIN_NOTES.label'      => 'Note',
+    'WORDING_ADMIN_SEARCH.label'     => 'Indice di ricerca',
 
     // Navbar admin — configurazione
     'WORDING_ADMIN_CONFIG_SYSTEM.label'   => 'Sistema',
@@ -39,4 +41,5 @@ return [
     'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
     'WORDING_ADMIN_BOARDS.label'          => 'Board',
+    'WORDING_ADMIN_TRAP.label'            => 'Trappola per bot',
 ];

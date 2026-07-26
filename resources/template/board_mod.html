@@ -23,15 +23,8 @@
     </style>
 
     <h1>/{{board_slug}}/ — {{board_title}}</h1>
-    <nav class="modnav">
-        <a href="{{mod_base}}">{{lbl_mod_dashboard}}</a>
-        {{#can_reports}}<a href="{{reports_url}}">{{lbl_mod_reports}}</a>{{/can_reports}}
-        {{#can_ban}}<a href="{{bans_url}}">{{lbl_mod_bans}}</a>{{/can_ban}}
-        {{#can_ban}}<a href="{{blocks_url}}">{{lbl_mod_blocks}}</a>{{/can_ban}}
-        {{#can_manage}}<a href="{{staff_url}}">{{lbl_mod_staff}}</a>{{/can_manage}}
-        {{#can_manage}}<a href="{{settings_url}}">{{lbl_mod_settings}}</a>{{/can_manage}}
-        <a href="{{board_url}}">« {{lbl_mod_back}}</a>
-    </nav>
+    {{! The Dashboard/Reports/Bans/… menu now renders in the site header nav
+        stack (partials/board_nav.html), alongside the imageboard-wide bar. }}
 
     {{#is_dashboard}}
         <h2>{{lbl_mod_dashboard}}</h2>

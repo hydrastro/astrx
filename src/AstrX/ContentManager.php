@@ -396,6 +396,24 @@ final class ContentManager
             $this->injector->setClass($page);
         }
 
+        // ── Bot-trap gate ─────────────────────────────────────────────────────────
+        // The honeypot page (WORDING_TRAP) is hidden=0 so it can serve its maze to
+        // non-admin bots WHEN ENABLED. While DISABLED it must be indistinguishable
+        // from a missing page, so — exactly like a hidden page — swap in the normal
+        // error page instead of running the trap controller (which would emit a bare
+        // 404). Config-gated via the generic reader, no hard class coupling.
+        if ($page->urlId === 'WORDING_TRAP') {
+            $this->config->loadModuleConfig('BotTrap');
+            if (!$this->config->getConfigBool('BotTrapConfig', 'enabled', false)) {
+                http_response_code(HttpStatus::NOT_FOUND->value);
+                $errorUrlId = $this->config->getConfig('ContentManager','error_page_url_id','WORDING_ERROR');
+                $errorUrlId = is_string($errorUrlId) ? $errorUrlId : 'WORDING_ERROR';
+                $eid  = $pageHandler->getPageIdFromUrlId($errorUrlId);
+                $page = ($eid !== null ? $pageHandler->getPage($eid) : null) ?? $page;
+                $this->injector->setClass($page);
+            }
+        }
+
         // ── Admin page guard ──────────────────────────────────────────────────────
         // All pages that are descendants of the admin root require ADMIN_ACCESS.
         // We check file_name (never translated, never editable via the Pages UI)
@@ -504,10 +522,7 @@ final class ContentManager
                     }
                 }
             } else {
-                // A DB page row points at a controller class that doesn't exist
-                // (stale/removed row). Degrade to 404 rather than a 500.
-                $this->renderError(HttpStatus::NOT_FOUND);
-                return;
+                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
             }
         }
 
@@ -958,22 +973,6 @@ final class ContentManager
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
         $ctx->buildBase($page);
-
-        // Populate the navbar so the error page shows the full site chrome
-        // (Home / Chat / Boards / User), not just the guest login link.
-        // Non-fatal on failure — mirrors the main render flow.
-        $navbarResult = $this->injector->createClass(NavbarHandler::class)
-            ->drainTo($this->collector);
-        if ($navbarResult->isOk()) {
-            /** @var NavbarHandler $navbarHandler */
-            $navbarHandler = $navbarResult->unwrap();
-            $navbarId      = $this->config->getConfigInt('ContentManager', 'public_navbar_id', 1);
-            $userNavbarId  = $this->config->getConfigInt('ContentManager', 'user_navbar_id',  2);
-            $adminNavbarId = $this->config->getConfigInt('ContentManager', 'admin_navbar_id', 3);
-            $ctx->set('navbar',       $navbarHandler->getNavbarEntries($navbarId,      $page->ancestors, $page->fileName));
-            $ctx->set('db_user_nav',  $navbarHandler->getNavbarEntries($userNavbarId,  $page->ancestors, $page->fileName));
-            $ctx->set('db_admin_nav', $navbarHandler->getNavbarEntries($adminNavbarId, $page->ancestors, $page->fileName));
-        }
 
         if ($page->controller) {
             $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';

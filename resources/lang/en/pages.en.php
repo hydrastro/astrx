@@ -34,6 +34,9 @@ return [
     'WORDING_ADMIN_PAGES'    => 'admin-pages',
     'WORDING_ADMIN_NOTES'    => 'admin-notes',
     'WORDING_ADMIN_THEMES'   => 'admin-themes',
+    'WORDING_ADMIN_SEARCH'   => 'admin-search',
+    'WORDING_ADMIN_SEARCH.title'       => 'Admin — Search index',
+    'WORDING_ADMIN_SEARCH.description' => 'Rebuild the site-wide search index.',
 
     // Admin — configuration
     'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-system',
@@ -81,6 +84,22 @@ return [
     'WORDING_BOARD_OVERBOARD.description' => 'Newest threads across all boards.',
     'WORDING_BOARD_SEARCH.title'          => 'Search',
     'WORDING_BOARD_SEARCH.description'    => 'Search posts across the boards.',
+    'WORDING_BOARD_MOD.title'             => 'Moderation',
+    'WORDING_BOARD_MOD.description'       => 'Board moderation surface.',
+    'WORDING_BOARD_FEED.title'            => 'Feed',
+    'WORDING_BOARD_FEED.description'      => 'Atom feed of a board.',
+    'WORDING_SEARCH'                      => 'search',
+    'WORDING_SEARCH.title'                => 'Search',
+    'WORDING_SEARCH.description'          => 'Search across news, pages, comments and boards.',
+    // Bot-trap honeypot. WORDING_TRAP is a template=0 raw-controller page (its
+    // title/description are never rendered — the controller emits its own maze
+    // and exit()s), reached only by the hidden footer link + misbehaving bots.
+    'WORDING_TRAP'                        => 'trap',
+    'WORDING_TRAP.title'                  => 'Archive',
+    'WORDING_TRAP.description'            => 'Site archive.',
+    'WORDING_ADMIN_TRAP'                  => 'admin-trap',
+    'WORDING_ADMIN_TRAP.title'            => 'Admin — Bot trap',
+    'WORDING_ADMIN_TRAP.description'      => 'Review requests caught by the honeypot.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD' => 'admin-config-imageboard',
     'WORDING_ADMIN_BOARDS' => 'admin-boards',

@@ -11,6 +11,13 @@ namespace AstrX\Support;
  * redundant at that point. The phpstan-ignore suppresses the warning without
  * removing the safety net for environments where phpstan-bootstrap is absent.
  */
+function indexDir(): string
+{
+    if (!defined('INDEX_DIR')) { return ''; }
+    $v = \constant('INDEX_DIR');
+    return is_string($v) ? $v : '';
+}
+
 function configDir(): string
 {
     if (!defined('CONFIG_DIR')) { return ''; }

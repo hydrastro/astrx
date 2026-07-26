@@ -1,0 +1,51 @@
+# AstrX robots policy
+#
+# Served at /robots.txt. URLs are locale-prefixed (e.g. /en/…, /it/…), so the
+# rules below use the `*` wildcard (supported by all major crawlers) to match
+# every locale.
+#
+# TOR ONION NOTE: if this instance is a Tor hidden service, search engines can
+# neither reach nor should index it — replace everything below with a blanket
+# block:
+#     User-agent: *
+#     Disallow: /
+#
+# The policy below suits a CLEARNET deployment: public content (news, boards,
+# pages) is crawlable; admin/mod surfaces, account/auth flows, raw file and
+# feed endpoints, the chat, and every query-string URL (infinite query space —
+# the classic crawler trap) are kept out.
+
+User-agent: *
+
+# Admin panel + per-board moderation surfaces
+Disallow: /*/admin
+Disallow: /*/board-mod
+
+# Account / authentication / personal areas
+Disallow: /*/login
+Disallow: /*/logout
+Disallow: /*/register
+Disallow: /*/recover
+Disallow: /*/settings
+Disallow: /*/profile
+Disallow: /*/user-home
+Disallow: /*/webmail
+
+# Chat (ephemeral / semi-private), captcha, and raw token file/feed endpoints
+Disallow: /*/chat
+Disallow: /*/captcha-
+Disallow: /*/board-file
+Disallow: /*/chat-file
+Disallow: /*/board-feed
+
+# Search + any query-string URL — unbounded query space / crawler traps
+Disallow: /*/search
+Disallow: /*/board-search
+Disallow: /*?
+
+# Bot trap (honeypot labyrinth) — well-behaved crawlers stop here; bots that
+# ignore this Disallow and follow the hidden link get lured into an endless maze.
+Disallow: /*/trap
+
+# Politeness
+Crawl-delay: 10

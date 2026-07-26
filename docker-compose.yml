@@ -32,6 +32,11 @@ services:
         - ./src:/app/src
         - ./resources:/app/resources
         - ./build:/app/build
+        # tools/ holds the CLI entry points (e.g. the search crawler). Without
+        # this mount /app/tools does not exist in the container, so both
+        # `php /app/tools/search_index.php` AND the admin "Rebuild now" button
+        # (which exec()s that same path) fail — the job then wedges in 'running'.
+        - ./tools:/app/tools
       networks:
         - php-network
     mariadb:

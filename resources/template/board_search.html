@@ -39,10 +39,10 @@
     {{#searched}}
         {{^has_results}}<p class="board-empty">{{lbl_search_no_results}}</p>{{/has_results}}
         <ul class="search-results">
-            {{#results}}<li>
+            {{#search_results}}<li>
                 <a href="{{thread_url}}"><span class="search-tag">/{{board_slug}}/</span>No.{{no}}{{#subject}} <span class="search-subject">{{subject}}</span>{{/subject}}</a>
                 <span class="search-excerpt">{{excerpt}}</span>
-            </li>{{/results}}
+            </li>{{/search_results}}
         </ul>
     {{/searched}}
 </div>

@@ -56,6 +56,8 @@
     {{/is_admin}}
     {{! Chat toolbar — joins the nav stack only on chat pages (self-hides via chat_nav_show). }}
     {{> chat_nav}}
+    {{! Board navbars — join the nav stack only on imageboard pages (self-hides via board_nav_show). }}
+    {{> board_nav}}
     {{#has_messages}}
     <div id="message_bar">
         {{#messages}}<p class="{{css_class}}">{{#level_label}}[{{level_label}}] {{/level_label}}{{message}}</p>{{/messages}}
@@ -71,6 +73,9 @@
         <p class="left"><a href="">{{ip}}</a></p>
         <p class="right">Copyright &copy; {{year}} - <a
                 href="{{cur}}">{{website_name}}</a></p>
+        {{! Bot-trap honeypot: hidden from humans (display:none + aria-hidden), }}
+        {{! nofollow so honest crawlers skip it; only greedy bots follow it. }}
+        {{#trap_enabled}}<a href="{{trap_url}}" rel="nofollow" aria-hidden="true" tabindex="-1" style="display:none">{{trap_link_text}}</a>{{/trap_enabled}}
         <div class="clear"></div>
     </div>
 </div>

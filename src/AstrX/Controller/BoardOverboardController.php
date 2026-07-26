@@ -6,6 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
+use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardView;
 use AstrX\Imageboard\ImageService;
 use AstrX\Imageboard\PostRepository;
@@ -41,6 +42,7 @@ final class BoardOverboardController extends AbstractController
         private readonly PostRepository         $posts,
         private readonly ImageService           $images,
         private readonly BoardView              $view,
+        private readonly BoardNav               $nav,
     ) {
         parent::__construct($collector);
     }
@@ -49,6 +51,8 @@ final class BoardOverboardController extends AbstractController
     public function handle(): Result
     {
         $this->t->loadDomain(langDir(), 'Imageboard');
+        $this->ctx->set('board_nav_show', true);
+        $this->ctx->set('board_top_nav', $this->nav->topNav('overboard'));
 
         if ($this->gate->cannot(Permission::BOARD_VIEW)) {
             http_response_code(404);

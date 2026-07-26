@@ -16,9 +16,9 @@ a:visited { color: #b79cff; }
 #title { margin: 0; text-transform: uppercase; letter-spacing: .08em; font-size: 1.55rem; }
 #title a { color: #eaffff; border: 0; text-shadow: 0 0 .25rem #6ee7ff; }
 #title a::before { content: "// "; color: #ff7af5; }
-#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{ border-bottom: 1px solid #244457; background: #091017; }
-#nav, #user_nav, #admin_nav, .chat_nav{ margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; }
-#nav li a, #user_nav li a, #admin_nav li a, #user_nav li input, #admin_nav li input, .chat_nav li a, .chat_nav li input{
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav, .board_top_nav{ border-bottom: 1px solid #244457; background: #091017; }
+#nav, #user_nav, #admin_nav, .chat_nav, .board_nav{ margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; }
+#nav li a, #user_nav li a, #admin_nav li a, #user_nav li input, #admin_nav li input, .chat_nav li a, .board_nav li a, .chat_nav li input, .board_nav li input{
     display: block;
     padding: .45rem .7rem;
     border: 0;
@@ -27,7 +27,7 @@ a:visited { color: #b79cff; }
     font: inherit;
 }
 #nav li a:hover, #user_nav li a:hover, #admin_nav li a:hover,
-#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a:hover, .chat_nav li a.active{
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a:hover, .board_nav li a:hover, .chat_nav li a.active, .board_nav li a.active{
     background: #123041;
     color: #ffffff;
     text-shadow: 0 0 .2rem #6ee7ff;
@@ -69,8 +69,8 @@ img { max-width: 100%; height: auto; }
 @media (max-width: 640px) {
     body { padding: 0; }
     #wrap { border-left: 0; border-right: 0; }
-    #nav, #user_nav, #admin_nav, .chat_nav{ display: block; }
-    #nav li a, #user_nav li a, #admin_nav li a, .chat_nav li a{ border-top: 1px solid #182635; }
+    #nav, #user_nav, #admin_nav, .chat_nav, .board_nav{ display: block; }
+    #nav li a, #user_nav li a, #admin_nav li a, .chat_nav li a, .board_nav li a{ border-top: 1px solid #182635; }
     .left, .right { float: none; display: block; }
 }
 

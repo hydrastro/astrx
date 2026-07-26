@@ -1,0 +1,25 @@
+<div id="bot_trap">
+    <style>
+    /* Self-contained + theme-aware, mirroring site_search.html: transparent
+       fills, currentColor borders, px spacing, no rem/em, no border-radius. The
+       page inherits the site shell (header, nav stack, footer, active theme) so
+       the maze reads as an ordinary section of the site — better honeypot
+       camouflage than a bare document. */
+    #bot_trap{--bt-border:currentColor;background:transparent;color:inherit;}
+    #bot_trap a{text-decoration:none;color:inherit;}
+    #bot_trap a:hover{text-decoration:underline;}
+    .bot-trap-header{border-bottom:1px solid var(--bt-border);margin-bottom:8px;padding-bottom:5px;}
+    .bot-trap-header h1{margin:3px 0;}
+    .bot-trap-intro{font-style:italic;margin:8px 0;}
+    .bot-trap-links{list-style:square;margin:8px 0;padding-left:24px;}
+    .bot-trap-links li{padding:3px 0;}
+    </style>
+
+    <div class="bot-trap-header"><h1>{{heading}}</h1></div>
+
+    {{#has_intro}}<p class="bot-trap-intro">{{intro}}</p>{{/has_intro}}
+
+    <ul class="bot-trap-links">
+        {{#maze_links}}<li><a href="{{url}}" rel="nofollow">{{label}}</a></li>{{/maze_links}}
+    </ul>
+</div>

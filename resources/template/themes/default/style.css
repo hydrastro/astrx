@@ -28,7 +28,7 @@ h1 a{
     text-decoration: none;
 }
 
-#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav{
+#top_nav, #user_top_nav, #admin_top_nav, .chat_top_nav, .board_top_nav{
     color: #fff;
     border: 4px solid #fff;
     border-bottom-width: 0;
@@ -36,27 +36,27 @@ h1 a{
 }
 
 
-#nav, #user_nav, #admin_nav, .chat_nav{
+#nav, #user_nav, #admin_nav, .chat_nav, .board_nav{
     text-align:center;
     list-style-type:none;
     margin:0;
     padding:0;
     overflow:hidden;
 }
-#user_nav, #admin_nav li input, .chat_nav{
+#user_nav, #admin_nav li input, .chat_nav, .board_nav{
     border:none;
     outline:none;
     background:none;
     text-decoration: underline;
     cursor:pointer;
 }
-#nav li a, #user_nav li input, #user_nav li a, #admin_nav li input, #admin_nav li a, .chat_nav li input, .chat_nav li a{
+#nav li a, #user_nav li input, #user_nav li a, #admin_nav li input, #admin_nav li a, .chat_nav li input, .board_nav li input, .chat_nav li a, .board_nav li a{
     /*display:inline-block;*/
     color:#fff;
     padding: 2.5px 6px;
     display: block;
 }
-#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a.active{
+#nav li a.active, #user_nav li a.active, #admin_nav li a.active, .chat_nav li a.active, .board_nav li a.active{
     text-decoration: none;
     color: black;
 
@@ -66,12 +66,12 @@ h1 a{
 }
 
 
-#nav li a:hover, #user_nav li input:hover, #user_nav li a:hover, #admin_nav li input:hover, #admin_nav li a:hover, .chat_nav li input:hover, .chat_nav li a:hover{
+#nav li a:hover, #user_nav li input:hover, #user_nav li a:hover, #admin_nav li input:hover, #admin_nav li a:hover, .chat_nav li input:hover, .board_nav li input:hover, .chat_nav li a:hover, .board_nav li a:hover{
     background-color:#fff;
     color:#000;
 }
 @media screen and (min-width:640px) {
-    #nav li, #user_nav li, #admin_nav li, .chat_nav li{
+    #nav li, #user_nav li, #admin_nav li, .chat_nav li, .board_nav li{
         display:inline-block;
     }
     #nav_icon {
@@ -90,31 +90,31 @@ h1 a{
         padding: 0 10px;
     }
 
-    #nav li:not(:first-child), #user_nav li:not(:first-child), #admin_nav li:not(:first-child), .chat_nav li:not(:first-child){
+    #nav li:not(:first-child), #user_nav li:not(:first-child), #admin_nav li:not(:first-child), .chat_nav li:not(:first-child), .board_nav li:not(:first-child){
         /*display: none;*/
     }
 
-    #nav li:first-child a, #user_nav li:first-child input, #user_nav li:first-child a, #admin_nav li:first-child input, #admin_nav li:first-child a, .chat_nav li:first-child input, .chat_nav li:first-child a{
+    #nav li:first-child a, #user_nav li:first-child input, #user_nav li:first-child a, #admin_nav li:first-child input, #admin_nav li:first-child a, .chat_nav li:first-child input, .board_nav li:first-child input, .chat_nav li:first-child a, .board_nav li:first-child a{
         width: 100%;
     }
 
-    #nav.responsive, #user_nav.responsive, #admin_nav.responsive, .chat_nav.responsive{
+    #nav.responsive, #user_nav.responsive, #admin_nav.responsive, .chat_nav.responsive, .board_nav.responsive{
         position: relative;
     }
 
-    #nav.responsive li, #user_nav.responsive li, #admin_nav.responsive li, .chat_nav.responsive li{
+    #nav.responsive li, #user_nav.responsive li, #admin_nav.responsive li, .chat_nav.responsive li, .board_nav.responsive li{
         float: none;
         background-color: #000;
         display: inline;
     }
 
-    #nav.responsive li a, #nav.responsive li a input, #user_nav.responsive li a, #admin_nav.responsive li a, .chat_nav.responsive li a{
+    #nav.responsive li a, #nav.responsive li a input, #user_nav.responsive li a, #admin_nav.responsive li a, .chat_nav.responsive li a, .board_nav.responsive li a{
         background-color: #000;
         display: block;
         width: 100%;
     }
 
-    #nav.responsive li a:hover, #nav.responsive li a input:hover, #user_nav.responsive li a:hover, #admin_nav.responsive li a:hover, .chat_nav.responsive li a:hover{
+    #nav.responsive li a:hover, #nav.responsive li a input:hover, #user_nav.responsive li a:hover, #admin_nav.responsive li a:hover, .chat_nav.responsive li a:hover, .board_nav.responsive li a:hover{
         background-color: #fff;
         color: #000;
     }

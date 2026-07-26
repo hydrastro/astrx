@@ -2080,6 +2080,48 @@ INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
 SELECT id, 1, 1 FROM `page` WHERE url_id IN ('WORDING_BOARD_OVERBOARD','WORDING_BOARD_SEARCH');
 
 -- ============================================================
+-- SITE-WIDE SEARCH PAGE (news + pages + comments + board posts) + public navbar
+-- Slug WORDING_SEARCH ('search'); file_name 'site_search' resolves to
+-- SiteSearchController via the reflection router. Public (gated by NEWS_VIEW).
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_SEARCH', 1, 'site_search', 1, 1, 0, 0);   -- global search (no-JS GET form)
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_SEARCH';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_SEARCH';
+
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 1, 1 FROM `page` WHERE url_id = 'WORDING_SEARCH';
+
+-- Public navbar entry for the search page (mirrors the board/chat entries).
+SET @search_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_SEARCH' LIMIT 1);
+SET @search_pub_navbar_id := (SELECT id FROM `navbar` WHERE name = 'public' LIMIT 1);
+SET @search_pub_pin_id := (
+    SELECT id FROM `navbar_pin`
+     WHERE navbar_id = @search_pub_navbar_id
+     ORDER BY sort_order ASC, id ASC LIMIT 1
+);
+SET @existing_search_nav := (
+    SELECT ni.id FROM `navbar_internal` ni
+      JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @search_page_id AND e.pin_id = @search_pub_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL
+ WHERE @search_page_id IS NOT NULL AND @search_pub_pin_id IS NOT NULL AND @existing_search_nav IS NULL;
+SET @search_nav_id := COALESCE(@existing_search_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @search_nav_id, @search_pub_pin_id, 1, 'WORDING_SEARCH', 1, 1, 0
+ WHERE @search_page_id IS NOT NULL AND @search_pub_pin_id IS NOT NULL AND @search_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @search_nav_id, @search_page_id
+ WHERE @search_page_id IS NOT NULL AND @search_nav_id IS NOT NULL;
+
+-- ============================================================
 -- IMAGEBOARD ADMIN PAGE (global config + board overview) + admin navbar
 -- The board overview is folded into the config page — one admin surface.
 -- ============================================================
@@ -2120,3 +2162,177 @@ SELECT @ib_cfg_nav_id, @admin_ib_pin_id, 1, 'WORDING_ADMIN_CONFIG_IMAGEBOARD', 1
 INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @ib_cfg_nav_id, @ib_cfg_page_id
  WHERE @ib_cfg_page_id IS NOT NULL AND @ib_cfg_nav_id IS NOT NULL;
+
+-- ============================================================
+-- SEARCH INDEX (on-demand FULLTEXT crawl of news/pages/comments/board posts)
+-- Populated by tools/search_index.php / the admin "Search index" page — never
+-- on write. SiteSearchService queries this table (MATCH ... AGAINST BOOLEAN)
+-- and merges a live LIKE fallback for content newer than the last crawl.
+-- MariaDB supports FULLTEXT on InnoDB, so the engine stays InnoDB throughout.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `search_index` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `doc_type`   VARCHAR(16)  NOT NULL,                       -- news|pages|comments|board
+    `ref_id`     INT          NOT NULL,                       -- source row primary key
+    `title`      VARCHAR(255) NOT NULL DEFAULT '',
+    `body`       MEDIUMTEXT   NOT NULL,
+    `url`        VARCHAR(512) NOT NULL DEFAULT '',
+    `doc_time`   INT UNSIGNED NOT NULL DEFAULT 0,             -- source unix time (0 = pages)
+    `indexed_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_doc` (`doc_type`, `ref_id`),
+    FULLTEXT KEY `ft_body` (`title`, `body`),
+    KEY `idx_indexed_at` (`indexed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Single-row job/status table (id is always 1). Tracks the crawl lifecycle so
+-- the admin button, the CLI and the cron path all share one view of state.
+CREATE TABLE IF NOT EXISTS `search_index_job` (
+    `id`           TINYINT UNSIGNED NOT NULL,
+    `status`       ENUM('idle','requested','running') NOT NULL DEFAULT 'idle',
+    `doc_count`    INT NOT NULL DEFAULT 0,
+    `requested_at` TIMESTAMP NULL DEFAULT NULL,
+    `started_at`   TIMESTAMP NULL DEFAULT NULL,
+    `finished_at`  TIMESTAMP NULL DEFAULT NULL,
+    `message`      VARCHAR(255) NOT NULL DEFAULT '',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `search_index_job` (`id`, `status`, `doc_count`, `message`)
+VALUES (1, 'idle', 0, '');
+
+-- ============================================================
+-- SEARCH INDEX ADMIN PAGE (rebuild controls) + admin navbar
+-- file_name 'admin_search' resolves to AdminSearchController; child of the
+-- admin root so its template lives under admin/admin_search.html.
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_ADMIN_SEARCH', 1, 'admin_search', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_ADMIN_SEARCH';
+-- Child of the admin root so its template resolves under admin/.
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT a.id, d.id FROM `page` a, `page` d
+ WHERE a.url_id = 'WORDING_ADMIN' AND d.url_id = 'WORDING_ADMIN_SEARCH';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_ADMIN_SEARCH';
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_ADMIN_SEARCH';
+
+-- Admin navbar entry (admin nav, last pin = the alpha-sorted group).
+SET @admin_search_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+SET @admin_search_pin_id := (
+    SELECT id FROM `navbar_pin` WHERE navbar_id = @admin_search_navbar_id
+     ORDER BY sort_order DESC, id DESC LIMIT 1
+);
+SET @admin_search_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_SEARCH' LIMIT 1);
+SET @existing_admin_search_nav := (
+    SELECT ni.id FROM `navbar_internal` ni JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @admin_search_page_id AND e.pin_id = @admin_search_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL WHERE @admin_search_page_id IS NOT NULL AND @admin_search_pin_id IS NOT NULL AND @existing_admin_search_nav IS NULL;
+SET @admin_search_nav_id := COALESCE(@existing_admin_search_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @admin_search_nav_id, @admin_search_pin_id, 1, 'WORDING_ADMIN_SEARCH', 1, 1, 0
+ WHERE @admin_search_page_id IS NOT NULL AND @admin_search_pin_id IS NOT NULL AND @admin_search_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @admin_search_nav_id, @admin_search_page_id
+ WHERE @admin_search_page_id IS NOT NULL AND @admin_search_nav_id IS NOT NULL;
+
+-- ============================================================
+-- BOT-TRAP (honeypot labyrinth) PAGE + hit log
+-- Slug WORDING_TRAP ('trap'); file_name 'bot_trap' resolves to BotTrapController
+-- via the reflection router (str_replace('_','',ucwords('bot_trap','_')).'Controller').
+-- template=0 (the controller emits a raw HTML maze and exit()s), controller=1.
+--
+-- hidden=0 (NOT 1) IS DELIBERATE. A hidden page is swapped to the 404 error page
+-- for non-admins BEFORE its controller runs (see the WORDING_CAPTCHA_* note near
+-- the top of this file: `if (!$adminViewingHidden && $page->hidden) { 404 }`), so
+-- hidden=1 would stop the trap from EVER executing for a bot — the whole point.
+-- It is kept out of navigation by adding NO navbar_entry (the navbar is built
+-- from the `navbar` table, not by listing non-hidden pages) and out of honest
+-- crawlers by robots.txt (Disallow: /*/trap). Reached only by the hidden footer
+-- honeypot link + bots that ignore robots.txt. The controller is self-gated
+-- (config `enabled`, default OFF → bare 404) and enforces its own behaviour.
+-- Safe to re-run.
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_TRAP', 1, 'bot_trap', 1, 1, 0, 0);   -- honeypot maze (site-styled: template=1 → default shell + bot_trap.html)
+
+-- Existing installs seeded before the restyle had template=0 (raw HTML). Flip
+-- them so the trap renders through the normal site shell (theme + navbars) via
+-- the bot_trap.html content template. Idempotent — safe to re-run.
+UPDATE `page` SET `template` = 1 WHERE `url_id` = 'WORDING_TRAP' AND `template` = 0;
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_TRAP';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_TRAP';
+
+-- noindex, nofollow — belt-and-braces with the controller's X-Robots-Tag header.
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_TRAP';
+
+-- Bot-trap hit log. TOR-SAFE: `ident` is a sha256 hex digest of the session id
+-- (or REMOTE_ADDR fallback) — a RAW IP IS NEVER STORED. Free-form strings are
+-- truncated to their column widths by BotTrapLogRepository before insert.
+CREATE TABLE IF NOT EXISTS `bot_trap_log` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `path`       VARCHAR(255) NOT NULL DEFAULT '',
+    `user_agent` VARCHAR(255) NOT NULL DEFAULT '',
+    `referer`    VARCHAR(255) NOT NULL DEFAULT '',
+    `ident`      CHAR(64)     NOT NULL DEFAULT '',       -- sha256(session id | REMOTE_ADDR)
+    `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- BOT-TRAP ADMIN PAGE (log viewer + config status) + admin navbar
+-- file_name 'admin_trap' resolves to AdminTrapController; child of the admin
+-- root so its template lives under admin/admin_trap.html. Mirrors the
+-- WORDING_ADMIN_SEARCH seed above.
+-- ============================================================
+INSERT IGNORE INTO `page` (url_id, i18n, file_name, template, controller, hidden, comments)
+VALUES
+    ('WORDING_ADMIN_TRAP', 1, 'admin_trap', 1, 1, 0, 0);
+
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT id, id FROM `page` WHERE url_id = 'WORDING_ADMIN_TRAP';
+-- Child of the admin root so its template resolves under admin/ and it inherits
+-- the ADMIN_ACCESS guard.
+INSERT IGNORE INTO `page_closure` (ancestor, descendant)
+SELECT a.id, d.id FROM `page` a, `page` d
+ WHERE a.url_id = 'WORDING_ADMIN' AND d.url_id = 'WORDING_ADMIN_TRAP';
+
+INSERT IGNORE INTO `page_meta` (page_id, title, description)
+SELECT id, '', '' FROM `page` WHERE url_id = 'WORDING_ADMIN_TRAP';
+INSERT IGNORE INTO `page_robots` (page_id, `index`, follow)
+SELECT id, 0, 0 FROM `page` WHERE url_id = 'WORDING_ADMIN_TRAP';
+
+-- Admin navbar entry (admin nav, last pin = the alpha-sorted group).
+SET @admin_trap_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+SET @admin_trap_pin_id := (
+    SELECT id FROM `navbar_pin` WHERE navbar_id = @admin_trap_navbar_id
+     ORDER BY sort_order DESC, id DESC LIMIT 1
+);
+SET @admin_trap_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_TRAP' LIMIT 1);
+SET @existing_admin_trap_nav := (
+    SELECT ni.id FROM `navbar_internal` ni JOIN `navbar_entry` e ON e.id = ni.id
+     WHERE ni.page_id = @admin_trap_page_id AND e.pin_id = @admin_trap_pin_id LIMIT 1
+);
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL WHERE @admin_trap_page_id IS NOT NULL AND @admin_trap_pin_id IS NOT NULL AND @existing_admin_trap_nav IS NULL;
+SET @admin_trap_nav_id := COALESCE(@existing_admin_trap_nav, LAST_INSERT_ID());
+INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
+SELECT @admin_trap_nav_id, @admin_trap_pin_id, 1, 'WORDING_ADMIN_TRAP', 1, 1, 0
+ WHERE @admin_trap_page_id IS NOT NULL AND @admin_trap_pin_id IS NOT NULL AND @admin_trap_nav_id IS NOT NULL;
+INSERT IGNORE INTO `navbar_internal` (id, page_id)
+SELECT @admin_trap_nav_id, @admin_trap_page_id
+ WHERE @admin_trap_page_id IS NOT NULL AND @admin_trap_nav_id IS NOT NULL;

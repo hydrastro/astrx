@@ -1,0 +1,19 @@
+{{#board_nav_show}}
+<div id="board_top_nav" class="board_top_nav">
+    {{! Layout safety-net (horizontal, no list markers) even if a theme stylesheet lacks the .board_nav clone. }}
+    <style>.board_nav { list-style: none; margin: 0; padding: 0; } .board_nav li { display: inline-block; vertical-align: top; }</style>
+    {{! The <li> items are kept WHITESPACE-FREE (no newlines between them), exactly like the site's own
+        navbars and the chat nav — otherwise the theme's nav underline renders on the gaps like dashes. }}
+    <ul id="board_nav" class="board_nav">{{#board_top_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/board_top_nav}}</ul>
+</div>
+{{#has_board_local_nav}}
+<div id="board_local_top_nav" class="board_top_nav">
+    <ul class="board_nav">{{#board_local_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/board_local_nav}}</ul>
+</div>
+{{/has_board_local_nav}}
+{{#has_board_mod_nav}}
+<div id="board_mod_top_nav" class="board_top_nav">
+    <ul class="board_nav">{{#board_mod_nav}}<li><a href="{{url}}"{{#highlight}} class="active"{{/highlight}}>{{name}}</a></li>{{/board_mod_nav}}</ul>
+</div>
+{{/has_board_mod_nav}}
+{{/board_nav_show}}

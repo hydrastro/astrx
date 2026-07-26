@@ -9,6 +9,7 @@ use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\Http\UploadedFile;
 use AstrX\I18n\Translator;
+use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\BoardView;
 use AstrX\Imageboard\ImageboardConfig;
@@ -74,6 +75,7 @@ final class BoardController extends AbstractController
         private readonly UrlGenerator           $urlGen,
         private readonly Translator             $t,
         private readonly UserSession            $session,
+        private readonly BoardNav               $nav,
     ) {
         parent::__construct($collector);
     }
@@ -179,9 +181,15 @@ final class BoardController extends AbstractController
         $slug  = self::str($this->currentUrl->tailSegment(0));
         $bR    = $this->boards->bySlug($slug);
         $board = $bR->isOk() ? $bR->unwrap() : null;
+        // Board navbars join the site header nav stack (partials/board_nav.html);
+        // this flag switches them on for imageboard pages only.
+        $this->ctx->set('board_nav_show', true);
         if (!is_array($board)) {
+            // Imageboard-wide navbar (Boards home + Overboard + every board).
+            $this->ctx->set('board_top_nav', $this->nav->topNav('home'));
             return $this->renderBoardList();
         }
+        $this->ctx->set('board_top_nav', $this->nav->topNav(self::mStr($board, 'slug')));
 
         // PRG replay of a posted form.
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
@@ -211,7 +219,7 @@ final class BoardController extends AbstractController
     {
         $bid  = self::mInt($board, 'id');
         $slug = self::mStr($board, 'slug');
-        $this->setHeader($board);
+        $this->setHeader($board, 'index');
         $this->setPostForm($board, $this->indexUrl($slug), false);
         $this->ctx->set('is_index', true);
 
@@ -293,7 +301,7 @@ final class BoardController extends AbstractController
     {
         $bid  = self::mInt($board, 'id');
         $slug = self::mStr($board, 'slug');
-        $this->setHeader($board);
+        $this->setHeader($board, 'catalog');
         $this->ctx->set('is_catalog', true);
 
         $cr   = $this->threads->catalog($bid);
@@ -357,7 +365,7 @@ final class BoardController extends AbstractController
         if (!is_array($thread) || self::mInt($thread, 'board_id') !== $bid) {
             return $this->renderIndex($board);
         }
-        $this->setHeader($board);
+        $this->setHeader($board, 'thread');
         $this->setPostForm($board, $this->threadUrl($slug, $tid), true);
         $this->ctx->set('is_thread', true);
         $this->ctx->set('thread_id', $tid);
@@ -608,7 +616,7 @@ final class BoardController extends AbstractController
     // ── Context builders ──────────────────────────────────────────────────────
 
     /** @param array<string,mixed> $board */
-    private function setHeader(array $board): void
+    private function setHeader(array $board, string $activeView = ''): void
     {
         $slug = self::mStr($board, 'slug');
         $this->ctx->set('board_slug',     $slug);
@@ -622,10 +630,11 @@ final class BoardController extends AbstractController
         // Moderation link — surfaced to staff who can moderate this board so the
         // BoardModController surface is reachable from the board itself.
         $canMod = $this->gate->can(Permission::BOARD_MODERATE);
-        $this->ctx->set('can_moderate', $canMod);
-        $this->ctx->set('mod_url', $canMod
+        $modUrl = $canMod
             ? $this->urlGen->toPage($this->t->t('WORDING_BOARD_MOD')) . '?board=' . rawurlencode($slug)
-            : '');
+            : '';
+        $this->ctx->set('can_moderate', $canMod);
+        $this->ctx->set('mod_url', $modUrl);
 
         // Per-board banner (a site-relative image path only, for Tor-safety) and
         // a rules/info blurb shown in a native <details> disclosure (no JS).
@@ -641,12 +650,28 @@ final class BoardController extends AbstractController
 
         // Discovery links (Atom feed for this board, cross-board overboard,
         // search). Built from the seeded page wordings; all no-JS.
-        $this->ctx->set('feed_url',      $this->urlGen->toPage($this->t->t('WORDING_BOARD_FEED')) . '?board=' . rawurlencode($slug));
+        $feedUrl   = $this->urlGen->toPage($this->t->t('WORDING_BOARD_FEED')) . '?board=' . rawurlencode($slug);
+        $searchUrl = $this->urlGen->toPage($this->t->t('WORDING_BOARD_SEARCH')) . '?board=' . rawurlencode($slug);
+        $this->ctx->set('feed_url',      $feedUrl);
         $this->ctx->set('overboard_url', $this->urlGen->toPage($this->t->t('WORDING_BOARD_OVERBOARD')));
-        $this->ctx->set('search_url',    $this->urlGen->toPage($this->t->t('WORDING_BOARD_SEARCH')) . '?board=' . rawurlencode($slug));
+        $this->ctx->set('search_url',    $searchUrl);
         $this->ctx->set('lbl_feed',      $this->t->t('board.feed'));
         $this->ctx->set('lbl_overboard', $this->t->t('board.overboard_heading'));
         $this->ctx->set('lbl_search',    $this->t->t('board.search_heading'));
+
+        // Per-board action nav (Index / Catalog / Search / Feed / Manage),
+        // rendered in the site navbar style. The active view is highlighted.
+        $localNav = [
+            ['url' => $this->indexUrl($slug),   'name' => $this->t->t('board.index'),   'highlight' => $activeView === 'index'],
+            ['url' => $this->catalogUrl($slug), 'name' => $this->t->t('board.catalog'), 'highlight' => $activeView === 'catalog'],
+            ['url' => $searchUrl,               'name' => $this->t->t('board.search_heading'), 'highlight' => false],
+            ['url' => $feedUrl,                 'name' => $this->t->t('board.feed'),    'highlight' => false],
+        ];
+        if ($canMod) {
+            $localNav[] = ['url' => $modUrl, 'name' => $this->t->t('board.manage'), 'highlight' => false];
+        }
+        $this->ctx->set('board_local_nav',     $localNav);
+        $this->ctx->set('has_board_local_nav', true);
     }
 
     /** @param array<string,mixed> $board */
