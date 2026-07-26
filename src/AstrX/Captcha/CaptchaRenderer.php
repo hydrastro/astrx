@@ -54,6 +54,9 @@ final class CaptchaRenderer
     private int         $fontSize     = 15;
     private string      $fontFile     = 'fonts/FSEX300.ttf';
 
+    /** Memoized, portably-resolved absolute font path (see fontPath()). */
+    private ?string $resolvedFont = null;
+
     private int $fontMinDistance = 0;
     private int $fontMaxDistance = 10;
     private int $fontMinAngle    = -45;
@@ -111,8 +114,18 @@ final class CaptchaRenderer
     #[InjectConfig('font_size')]
     public function setFontSize(int $v): void { if ($v > 0) $this->fontSize = $v; }
     #[InjectConfig('font_file')]
-    public function setFontFile(string $v): void { if (is_file($v))
-        $this->fontFile = $v; }
+    public function setFontFile(string $v): void
+    {
+        // Store the configured value verbatim (do NOT reject non-existent paths
+        // here): a config may carry a deploy-specific absolute path — e.g. a
+        // Docker "/app/resources/fonts/…" — that is absent on a bare CI runner.
+        // fontPath() does the real resolution and falls back to the bundled
+        // font by basename, so a wrong absolute path no longer breaks rendering.
+        if ($v !== '') {
+            $this->fontFile = $v;
+        }
+        $this->resolvedFont = null; // invalidate memo
+    }
     #[InjectConfig('font_min_distance')]
     public function setFontMinDistance(int $v): void { $this->fontMinDistance = $v; }
     #[InjectConfig('font_max_distance')]
@@ -203,7 +216,7 @@ final class CaptchaRenderer
             $this->fontXBorder,
             $this->fontYBorder + $strH,
             $color,
-            $this->fontFile,
+            $this->fontPath(),
             $text,
         );
 
@@ -267,11 +280,11 @@ final class CaptchaRenderer
                 $h - $this->fontYBorder - $diagonal,
             );
 
-            imagettftext($image, $this->fontSize, $angleL, $xl, $yL, $fontColor, $this->fontFile, $text[$i]);
+            imagettftext($image, $this->fontSize, $angleL, $xl, $yL, $fontColor, $this->fontPath(), $text[$i]);
 
             $mirrorIdx = $charCount - $i - 1;
             if ($mirrorIdx !== $i) {
-                imagettftext($image, $this->fontSize, $angleR, $xr, $yR, $fontColor, $this->fontFile, $text[$mirrorIdx]);
+                imagettftext($image, $this->fontSize, $angleR, $xr, $yR, $fontColor, $this->fontPath(), $text[$mirrorIdx]);
             }
         }
 
@@ -327,7 +340,7 @@ final class CaptchaRenderer
             assert($cy !== null);
 
             $angle = random_int($this->fontMinAngle, $this->fontMaxAngle);
-            imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontFile, $text[$i]);
+            imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontPath(), $text[$i]);
 
             if ($i === 0) {
                 imagearc($image, $cx, $cy, $diagonal * 2, $diagonal * 2, 0, 360, $traceColor);
@@ -355,7 +368,7 @@ final class CaptchaRenderer
 
             $angle     = random_int($this->fontMinAngle, $this->fontMaxAngle);
             $decoyChar = $this->charList[random_int(0, max(0, $charLen))];
-            imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontFile, $decoyChar);
+            imagettftext($image, $this->fontSize, $angle, $cx, $cy, $fontColor, $this->fontPath(), $decoyChar);
 
             $placed[] = [$cx, $cy];
         }
@@ -473,15 +486,79 @@ final class CaptchaRenderer
     }
 
     /**
+     * Resolve the TrueType font path portably, trying (in order):
+     *
+     *   1. the configured value as-is (absolute or CWD-relative), if it exists;
+     *   2. the bundled font under the resolved RESOURCES_DIR, by basename;
+     *   3. a path derived from this file's location (<repo-root>/resources/fonts).
+     *
+     * The configured value may be a deploy-specific absolute path (e.g. a
+     * Docker "/app/resources/fonts/FSEX300.ttf") that does not exist on a bare
+     * CI runner or a differently-rooted install. In that case we still find the
+     * git-tracked bundled font by basename, so the captcha renders everywhere.
+     * The result is memoized; setFontFile() invalidates it.
+     *
+     * @return string absolute/loadable font path (or the configured value as a
+     *                last resort, so callers still receive a string)
+     */
+    private function fontPath(): string
+    {
+        if ($this->resolvedFont !== null) {
+            return $this->resolvedFont;
+        }
+
+        $base       = basename($this->fontFile !== '' ? $this->fontFile : 'FSEX300.ttf');
+        $candidates = [];
+
+        // 1. The configured value, exactly as given.
+        if ($this->fontFile !== '') {
+            $candidates[] = $this->fontFile;
+        }
+
+        // 2. The bundled font under the resolved resources dir.
+        if (defined('RESOURCES_DIR')) {
+            $res = \constant('RESOURCES_DIR');
+            if (is_string($res) && $res !== '') {
+                $candidates[] = rtrim($res, '/\\') . DIRECTORY_SEPARATOR
+                    . 'fonts' . DIRECTORY_SEPARATOR . $base;
+            }
+        }
+
+        // 3. Derived from this file's location: <repo-root>/resources/fonts/<base>.
+        //    __DIR__ = src/AstrX/Captcha → three levels up is the repo root.
+        $candidates[] = dirname(__DIR__, 3)
+            . DIRECTORY_SEPARATOR . 'resources'
+            . DIRECTORY_SEPARATOR . 'fonts'
+            . DIRECTORY_SEPARATOR . $base;
+
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                return $this->resolvedFont = $path;
+            }
+        }
+
+        // Last resort: hand back the configured value so GD receives a string.
+        // If it is unloadable, imagettftext emits a warning and bbox() below
+        // degrades to a zero box rather than throwing.
+        return $this->resolvedFont = $this->fontFile;
+    }
+
+    /**
      * Get imagettfbbox for a string at the configured font/size.
+     *
+     * Degrades to a zero-filled box when the font cannot be loaded, so a
+     * missing/unreadable font never turns the sizing math into a TypeError
+     * (imagettfbbox returns false) — the captcha still renders, just plainer.
      *
      * @return array<int, int>
      */
     private function bbox(string $text): array
     {
-        $box = imagettfbbox($this->fontSize, 0, $this->fontFile, $text);
-        assert($box !== false);
-        /** @var array<int,int> $box */
+        $box = imagettfbbox($this->fontSize, 0, $this->fontPath(), $text);
+        if ($box === false) {
+            return [0, 0, 0, 0, 0, 0, 0, 0];
+        }
+        /** @var array<int, int> $box */
         return $box;
     }
 
