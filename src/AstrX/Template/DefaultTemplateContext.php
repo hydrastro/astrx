@@ -447,7 +447,7 @@ final class DefaultTemplateContext
             'status_bar_min_level',
             DiagnosticLevel::NOTICE->value,
         );
-        $minLevel = DiagnosticLevel::from($minLevelVal);
+        $minLevel = DiagnosticLevel::tryFrom($minLevelVal) ?? DiagnosticLevel::NOTICE;
 
         // Level → CSS class map.
         $levelClasses = $this->config->getConfig(

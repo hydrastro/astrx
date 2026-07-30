@@ -110,7 +110,7 @@ final class CaptchaRenderer
     #[InjectConfig('captcha_length')]
     public function setCaptchaLength(int $v): void { if ($v > 0) $this->captchaLength = $v; }
     #[InjectConfig('captcha_type')]
-    public function setCaptchaType(int $v): void { $this->captchaType = CaptchaType::from($v); }
+    public function setCaptchaType(int $v): void { $this->captchaType = CaptchaType::tryFrom($v) ?? CaptchaType::MEDIUM; }
     #[InjectConfig('font_size')]
     public function setFontSize(int $v): void { if ($v > 0) $this->fontSize = $v; }
     #[InjectConfig('font_file')]

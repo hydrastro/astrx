@@ -1028,7 +1028,9 @@ final class ContentManager
         $passwd  = $this->config->getConfig('PDO', 'db_password', 'password');
         assert(is_string($passwd));
 
-        $dsn = $driver . ':host=' . $host . ';dbname=' . $dbname . ';charset=utf8mb4';
+        $port     = $this->config->getConfigInt('PDO', 'db_port', 0);
+        $portPart = $port > 0 ? ';port=' . $port : '';
+        $dsn = $driver . ':host=' . $host . $portPart . ';dbname=' . $dbname . ';charset=utf8mb4';
         $pdo = new PDO($dsn, $username, $passwd);
 
         $emulate    = $this->config->getConfig('PDO', 'emulate_prepares', false);

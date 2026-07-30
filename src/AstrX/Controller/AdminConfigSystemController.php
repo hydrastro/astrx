@@ -129,7 +129,14 @@ final class AdminConfigSystemController extends AbstractController
     private function savePrelude(array $p)
     : Result {
         $envRaw = $p['environment'] ?? null;
-        $env = is_int($envRaw) ? $envRaw : (is_numeric($envRaw) ? (int)$envRaw : EnvironmentType::DEVELOPMENT->value);
+        // Missing/non-numeric environment must fail SAFE to PRODUCTION — dev/testing
+        // mode prints stack traces + filesystem paths into the response body, an
+        // info leak on a hidden service. Reject out-of-range ints too, otherwise
+        // EnvironmentType::from() throws uncaught on every subsequent request.
+        $env = is_int($envRaw) ? $envRaw : (is_numeric($envRaw) ? (int)$envRaw : EnvironmentType::PRODUCTION->value);
+        if (EnvironmentType::tryFrom($env) === null) {
+            $env = EnvironmentType::PRODUCTION->value;
+        }
         $available = array_values(
             array_filter(
                 array_map(

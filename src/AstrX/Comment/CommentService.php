@@ -193,7 +193,7 @@ final class CommentService
                 $elapsed = time() - $lastTs;
                 if ($elapsed < $this->minimumFloodSecs) {
                     if ($this->antispamTimeSecs > 0) {
-                        $this->repo->addMute($hexUserId, $ip, null, $this->antispamTimeSecs);
+                        $this->repo->addMute($hexUserId, $ip, $pageId, $this->antispamTimeSecs);
                     }
                     return $this->opErr('flood');
                 }

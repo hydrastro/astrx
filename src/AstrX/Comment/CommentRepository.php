@@ -303,7 +303,7 @@ final class CommentRepository
             $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($fetched === false) { return Result::ok(null); }
             /** @var array<string,mixed> $fetched */
-            return Result::ok(is_int($fetched['ts']) ? $fetched['ts'] : 0);
+            return Result::ok(is_numeric($fetched['ts']) ? (int) $fetched['ts'] : 0);
         } catch (PDOException $e) { return $this->err($e); }
     }
 

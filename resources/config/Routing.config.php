@@ -6,7 +6,7 @@ return [
         'url_rewrite' => true,
         'base_path' => '/',
         'entry_point' => 'index.php',
-        'locale_key' => 'langg',
+        'locale_key' => 'lang',
         'session_key' => 'sid',
         'page_key' => 'page',
         'default_page' => 'WORDING_MAIN',
