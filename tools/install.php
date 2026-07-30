@@ -430,7 +430,7 @@ function printUsage(): void
       --db-host=HOST         Database host (default: localhost)
       --db-name=NAME         Database name (default: content_manager)
       --db-port=PORT         Database port (default: 3306)
-      --db-user=USER         Database username (default: root)
+      --db-user=USER         Database username (default: user — the least-privilege account from init.sql)
       --db-pass=PASS         Database password (prompted hidden if omitted)
 
     Admin account:
@@ -489,7 +489,7 @@ out("AstrX CLI installer\n===================\n\n");
 $dbHost = resolve($args, 'db-host', 'Database host', 'localhost',        $noInput);
 $dbName = resolve($args, 'db-name', 'Database name', 'content_manager',  $noInput);
 $dbPort = (int) resolve($args, 'db-port', 'Database port', '3306',       $noInput);
-$dbUser = resolve($args, 'db-user', 'Database username', 'root',         $noInput);
+$dbUser = resolve($args, 'db-user', 'Database username', 'user',         $noInput);
 $dbPass = resolve($args, 'db-pass', 'Database password', null,           $noInput, required: false, hidden: true);
 
 if (hasFlag($args, 'create-db')) {

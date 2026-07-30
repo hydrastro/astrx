@@ -132,6 +132,27 @@ final class UserRepository
     }
 
     /**
+     * The user's stored recovery email (or null if none), for resending a
+     * verification link from settings.
+     *
+     * @return Result<string|null>
+     */
+    public function emailFor(string $hexId): Result
+    {
+        $r = $this->fetchOne(
+            'SELECT `email` FROM `user` WHERE `id` = UNHEX(:id) AND `deleted` = 0',
+            [':id' => $hexId],
+        );
+        if (!$r->isOk()) {
+            return Result::err(null, $r->diagnostics());
+        }
+        /** @var array<string,mixed>|null $row */
+        $row   = $r->unwrap();
+        $email = ($row !== null && is_scalar($row['email'] ?? null)) ? (string) $row['email'] : '';
+        return Result::ok($email === '' ? null : $email);
+    }
+
+    /**
      * Find any user (including deleted) by ID.
      *
      * @return Result<array<string,mixed>|null>
@@ -442,23 +463,6 @@ final class UserRepository
         }
     }
 
-    /** @return Result<mixed> */
-        public function softDelete(string $hexId): Result
-    {
-        return $this->exec(
-            'UPDATE `user`
-                SET `deleted` = 1,
-                    `username` = NULL, `password` = NULL, `mailbox` = NULL,
-                    `email` = NULL, `display_name` = NULL, `birth` = NULL,
-                    `token_hash` = NULL, `token_type` = NULL,
-                    `token_used` = 0, `token_expires_at` = NULL,
-                    `last_access` = NULL, `login_attempts` = 0,
-                    `verified` = 0, `avatar` = 0
-              WHERE `id` = UNHEX(:id)',
-            [':id' => $hexId],
-        );
-    }
-
     /**
      * Fetch just the password hash for auth purposes.
      * Kept separate so we never accidentally expose the hash in broader queries.
@@ -513,9 +517,12 @@ final class UserRepository
      */
     public function hardRedact(string $hexId): Result
     {
-        // The tombstone username must be unique but not re-registerable.
-        // Prefixed with \x00 (null byte) which is illegal in normal usernames.
-        $tombstone = 'deleted_' . $hexId;
+        // The tombstone username must be unique but NOT re-registerable. The
+        // \x00 (null byte) prefix is illegal in any username, so the placeholder
+        // itself can never be registered/impersonated, while the user's ORIGINAL
+        // username (overwritten here) is freed for re-use. (Previously the raw
+        // "deleted_<id>" string was a fully valid, registerable username.)
+        $tombstone = "\x00deleted_" . $hexId;
         return $this->exec(
             'UPDATE `user`
                 SET `deletion_mode` = :mode,

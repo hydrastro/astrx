@@ -46,7 +46,11 @@ final class ImageboardConfig
     private string $censorMode        = 'replace'; // 'replace' | 'block'
     private string $censorReplacement = '***';
     private bool   $reverseImageSearch = false; // per-image iqdb/SauceNAO links (off: third-party leak on Tor)
-    private bool   $videoEnabled      = false;  // allow webm/mp4 attachments (HTML5 <video>, no thumbnails)
+    private bool   $videoEnabled      = false;  // webm/mp4 attachments (HTML5 <video>, no thumbnails).
+    // SECURITY (F-20): enabled videos are stored VERBATIM — a zero-dependency app has no
+    // ffmpeg, so container metadata (GPS, creation time, device model) is NOT stripped the
+    // way EXIF is stripped from images. Keep this OFF on anonymity-sensitive boards, or strip
+    // video metadata out-of-band before serving.
     private string $videoTypesRaw     = 'webm,mp4'; // accepted video extensions
     private int    $videoMaxKb        = 8192;   // hard per-video size cap (KB)
 
@@ -78,7 +82,7 @@ final class ImageboardConfig
     #[InjectConfig('video_types')]         public function setVideoTypesRaw(string $v): void   { $this->videoTypesRaw = trim($v); }
     #[InjectConfig('video_max_kb')]        public function setVideoMaxKb(int $v): void         { $this->videoMaxKb = max(1, $v); }
 
-    public function uploadDir(): string      { return $this->uploadDir; }
+    public function uploadDir(): string      { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'board_uploads'); }
     public function uploadMaxKb(): int       { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int    { return $this->uploadMaxKb * 1024; }
     public function uploadMaxPixels(): int   { return $this->uploadMaxPixels; }

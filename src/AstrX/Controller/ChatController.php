@@ -152,7 +152,7 @@ final class ChatController extends AbstractController
             if (trim($to) === '') {
                 $to = self::mStr($posted, 'to', '');
             }
-            $this->pm->send($identity, $to, self::mStr($posted, 'content', ''))
+            $this->pm->send($identity, $to, self::mStr($posted, 'content', ''), $this->packedIp())
                 ->drainTo($this->collector);
             return $this->selfUrl();
         }
@@ -164,7 +164,7 @@ final class ChatController extends AbstractController
         $to      = $toName !== '' ? $toName : trim(self::mStr($posted, 'to', ''));
         $content = self::mStr($posted, 'content', '');
         if ($to !== '' && $this->config->allowPm()) {
-            $this->pm->send($identity, $to, $content)->drainTo($this->collector);
+            $this->pm->send($identity, $to, $content, $this->packedIp())->drainTo($this->collector);
             return $this->selfUrl();
         }
         $attachment = null;

@@ -7,6 +7,7 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatCensoredDiagnostic;
 use AstrX\Chat\Diagnostic\ChatEmptyDiagnostic;
+use AstrX\Chat\Diagnostic\ChatMutedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatPmTargetDiagnostic;
 use AstrX\Chat\Diagnostic\ChatTooLongDiagnostic;
@@ -28,10 +29,11 @@ final class ChatPmService
         private readonly BbcodeRenderer      $bbcode,
         private readonly WordCensor          $censor,
         private readonly ChatConfig          $config,
+        private readonly ChatRepository      $chatRepo,
     ) {}
 
     /** @return Result<int> */
-    public function send(ChatIdentity $from, string $toNick, string $content): Result
+    public function send(ChatIdentity $from, string $toNick, string $content, ?string $packedIp = null): Result
     {
         if (!$this->config->allowPm() || $this->gate->cannot(Permission::CHAT_PM)) {
             return $this->err('gate_denied');
@@ -47,6 +49,16 @@ final class ChatPmService
         }
         if (mb_strlen($content) > $this->config->maxLength()) {
             return $this->err('too_long');
+        }
+
+        // Anti-abuse: PMs must respect the same mute as public messages, else a
+        // muted user can still spam via PM (F-06). NOTE: public-message flood
+        // tracking is keyed on the main message table, which PMs don't write, so
+        // full PM-flood parity would need a dedicated PM-send timestamp.
+        $hexUserId  = $from->isMember ? $from->userId : null;
+        $muteResult = $this->chatRepo->isMuted($hexUserId, $packedIp);
+        if ($muteResult->isOk() && $muteResult->unwrap() === true) {
+            return $this->err('muted');
         }
 
         $toNick       = trim($toNick);
@@ -126,6 +138,7 @@ final class ChatPmService
             'empty'       => new ChatEmptyDiagnostic('astrx.chat/empty', DiagnosticLevel::NOTICE),
             'too_long'    => new ChatTooLongDiagnostic('astrx.chat/too_long', DiagnosticLevel::NOTICE),
             'censored'    => new ChatCensoredDiagnostic('astrx.chat/censored', DiagnosticLevel::NOTICE),
+            'muted'       => new ChatMutedDiagnostic('astrx.chat/muted', DiagnosticLevel::NOTICE),
             default       => new ChatPmTargetDiagnostic('astrx.chat/pm_target', DiagnosticLevel::NOTICE),
         };
         return Result::err(null, Diagnostics::of($d));

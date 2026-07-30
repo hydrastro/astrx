@@ -83,9 +83,10 @@ final class AvatarService
         }
         $png = $res->unwrap();
 
-        $destPath = $this->pathFor($hexId);
-        if (!is_dir($this->avatarDir) && !mkdir($this->avatarDir, 0775, true)) {
-            return $this->opErr('avatar_move_failed', $this->avatarDir);
+        $dir      = $this->avatarDir();
+        $destPath = $dir . '/' . $hexId . '.png';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return $this->opErr('avatar_move_failed', $dir);
         }
         if (@file_put_contents($destPath, $png->fullBytes) === false) {
             return $this->opErr('avatar_move_failed', $destPath);
@@ -109,11 +110,21 @@ final class AvatarService
     }
 
     /**
+     * Resolve the avatar storage directory portably: prefer the configured path
+     * (e.g. Docker "/app/resources/avatar"), else fall back to RESOURCES_DIR/avatar
+     * so a non-Docker deploy doesn't fail every avatar write.
+     */
+    private function avatarDir(): string
+    {
+        return \AstrX\Support\resourceStorageDir($this->avatarDir, 'avatar');
+    }
+
+    /**
      * Full filesystem path for a user's avatar PNG.
      */
     public function pathFor(string $hexId): string
     {
-        return $this->avatarDir . '/' . $hexId . '.png';
+        return $this->avatarDir() . '/' . $hexId . '.png';
     }
 
     /**

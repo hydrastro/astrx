@@ -180,8 +180,14 @@ final class CsrfHandler
 
     private function hasEntry(string $formId)
     : bool {
-        return isset($_SESSION[self::SESSION_PREFIX . $formId]) &&
-               is_array($_SESSION[self::SESSION_PREFIX . $formId]);
+        $e = $_SESSION[self::SESSION_PREFIX . $formId] ?? null;
+        // Require the full valid shape: a malformed entry (missing/mistyped token
+        // or expires_at) is treated as absent, so verify() returns a clean
+        // "token missing" result instead of a notice/TypeError → 500.
+        return is_array($e)
+            && isset($e['token'], $e['expires_at'])
+            && is_string($e['token'])
+            && is_int($e['expires_at']);
     }
 
     /** @return array{token: string, expires_at: int} */

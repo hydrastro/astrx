@@ -24,7 +24,7 @@ final class BotTrapConfig
     /** Hard ceiling on the number of maze links emitted per page. */
     public const int MAX_LINKS_PER_PAGE = 20;
 
-    private bool $enabled       = false;
+    private bool $enabled       = true;   // matches the shipped BotTrap.config.php + docblock (default ON)
     private int  $tarpitSeconds = 1;
     private int  $linksPerPage  = 5;
     private bool $logHits       = true;

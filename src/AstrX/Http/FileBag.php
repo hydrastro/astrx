@@ -29,9 +29,6 @@ final class FileBag
     /** @param array<string, UploadedFile|array<string,mixed>> $files */
     public function replace(array $files): void
     {
-        foreach ($files as $key => $file) {
-        }
-
         $this->files = $files;
     }
 }

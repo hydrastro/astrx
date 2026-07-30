@@ -327,8 +327,8 @@ final class WebmailService
             return $bad;
         }
 
-        // Send via SMTP (Mailer only accepts a single To: for now)
-        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName, $priority, $readReceipt);
+        // Send via SMTP, now including Cc/Bcc in the envelope + Cc header (F-07).
+        $r = $this->mailer->send($toAddress, '', $subject, $bodyText, $bodyHtml, $resolvedFrom, $fromName, $priority, $readReceipt, [], $cc, $bcc);
         if (!$r->isOk()) { return $r; }
 
         // Build raw message for IMAP APPEND

@@ -225,8 +225,15 @@ final class ContentManager
         // so that local HTTP development still works. In production behind a TLS
         // terminator, $_SERVER['HTTPS'] is set to 'on' by the web server or by the
         // X-Forwarded-Proto header (if your proxy sets it).
+        // X-Forwarded-Proto is client-settable, so only honour it when the operator
+        // has declared a trusted TLS-terminating proxy. Default off → the Secure
+        // flag follows the real connection only. This matters on a plain-HTTP
+        // hidden service, where a spoofed header would otherwise set Secure and
+        // stop the session cookie being sent at all.
+        $trustFwdProto = $this->config->getConfig('ContentManager', 'trust_forwarded_proto', false) === true;
         $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
+                || ($trustFwdProto
+                    && isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
                     && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
         $existingParams = session_get_cookie_params();
         session_set_cookie_params([
@@ -853,6 +860,13 @@ final class ContentManager
 
     private function emitServerTiming(string $name, float $started): void
     {
+        // Off by default: Server-Timing / X-AstrX-Elapsed-Ms expose high-resolution
+        // compute time (a timing side channel) and fingerprint the stack — both
+        // undesirable on a privacy/Tor-first deployment. Enable for debugging via
+        // ContentManager.expose_server_timing.
+        if ($this->config->getConfig('ContentManager', 'expose_server_timing', false) !== true) {
+            return;
+        }
         $safe = preg_replace('/[^A-Za-z0-9_\-]/', '_', $name) ?: 'astrx';
         $dur = max(0.0, (microtime(true) - $started) * 1000.0);
         header('Server-Timing: ' . $safe . ';dur=' . number_format($dur, 2, '.', ''), false);

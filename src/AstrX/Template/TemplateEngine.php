@@ -188,6 +188,21 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     }
 
     /**
+     * Coerce a resolved template value to a string WITHOUT fatally erroring on a
+     * non-scalar. A stray array/object reaching {{var}} (or {{&var}}) would raise
+     * "Array to string conversion" — a forced 500 in dev/test, and a hard error
+     * for an object lacking __toString even in production. Degrades to '' so a
+     * single bad binding never takes down the page. Scalars keep their exact
+     * prior stringification (bool true→"1", false→"") (F-11).
+     */
+    public function stringify(mixed $value): string
+    {
+        if (is_scalar($value))              { return (string) $value; }
+        if ($value instanceof \Stringable)  { return (string) $value; }
+        return ''; // null, array, resource, or non-stringable object
+    }
+
+    /**
      * Resolve a template variable in the current rendering context.
      *
      * @param array<string, mixed> $args
@@ -739,12 +754,16 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
             switch ($type) {
                 case self::TOKEN_TYPE_VAR:
-                    $code .= '$buffer.=htmlspecialchars((string)' . $valueExpr
-                             . ', ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, \'UTF-8\');';
+                    // stringify() instead of a raw (string) cast: a non-scalar
+                    // binding (array/object) reaching {{var}} would otherwise raise
+                    // "Array to string conversion" — a forced 500 in dev/test — so
+                    // one bad binding must not take down the whole page (F-11).
+                    $code .= '$buffer.=htmlspecialchars($this->TemplateEngine->stringify(' . $valueExpr
+                             . '), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, \'UTF-8\');';
                     break;
 
                 case self::TOKEN_TYPE_UNESCAPED_VAR:
-                    $code .= '$buffer.=' . $valueExpr . ';';
+                    $code .= '$buffer.=$this->TemplateEngine->stringify(' . $valueExpr . ');';
                     break;
 
                 case self::TOKEN_TYPE_LOOP_START:

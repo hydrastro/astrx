@@ -579,6 +579,50 @@ final class UserService
         return Result::ok($tokenType);
     }
 
+    /**
+     * Build a UserSession::login()-ready row for a user whose identity was just
+     * proven out-of-band (e.g. a verified single-use recovery token). Mirrors the
+     * shape returned by login() and carries NO password. Used to authenticate a
+     * logged-out user who clicked a valid recovery link so they can set a new
+     * password (see UserController's token branch).
+     *
+     * @return Result<array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string}>
+     */
+    public function sessionRowFor(string $hexId): Result
+    {
+        $find = $this->repo->findById($hexId);
+        if (!$find->isOk()) {
+            return Result::err(null, $find->diagnostics());
+        }
+        /** @var array<string,mixed>|null $row */
+        $row = $find->unwrap();
+        if ($row === null || (bool) ($row['deleted'] ?? false)) {
+            return $this->opErr('user_not_found');
+        }
+        return Result::ok([
+            'id'           => is_scalar($row['id'] ?? null) ? (string) $row['id'] : $hexId,
+            'username'     => is_scalar($row['username'] ?? null) ? (string) $row['username'] : '',
+            'display_name' => is_scalar($row['display_name'] ?? null) ? (string) $row['display_name'] : '',
+            // 0 = GUEST is a defensive fallback; findById always returns `type`.
+            'type'         => is_int($row['type'] ?? null) ? $row['type'] : (is_numeric($row['type'] ?? null) ? (int) $row['type'] : 0),
+            'verified'     => (bool) ($row['verified'] ?? false),
+            'avatar'       => (bool) ($row['avatar'] ?? false),
+            'mailbox'      => is_scalar($row['mailbox'] ?? null) ? (string) $row['mailbox'] : '',
+            'theme'        => is_scalar($row['theme'] ?? null) ? (string) $row['theme'] : '',
+        ]);
+    }
+
+    /**
+     * The user's stored recovery email (null if none / unknown), for resending a
+     * verification link from settings.
+     *
+     * @return Result<string|null>
+     */
+    public function recoveryEmailFor(string $hexId): Result
+    {
+        return $this->repo->emailFor($hexId);
+    }
+
     // -------------------------------------------------------------------------
     // Settings changes
     // -------------------------------------------------------------------------

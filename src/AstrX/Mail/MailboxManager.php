@@ -13,8 +13,15 @@ use AstrX\Result\Result;
 
 /**
  * Creates and removes mailboxes on the Dovecot server.
- * When a user registers on the web app, UserService calls createMailbox()
- * to provision a mailbox on Dovecot and a virtual alias in Postfix.
+ *
+ * OPTIONAL, separate-Dovecot deployment mode only. IMPORTANT: the core
+ * registration / account-delete / password-change flows do NOT call these
+ * methods automatically — a deployment that wants mailbox provisioning must wire
+ * createMailbox()/deleteMailbox()/changePassword() into RegisterController, the
+ * account-delete path, and settings respectively. They are intentionally
+ * decoupled so the default single-app deployment carries no mail-server
+ * dependency. (Previously this docblock claimed the wiring existed; it did not.)
+ *
  * This class communicates with a small management API running inside the
  * mail containers (see docker/mailapi/). The API is only reachable within
  * the Docker network — never exposed to the internet.
@@ -53,8 +60,9 @@ final class MailboxManager
     // =========================================================================
 
     /**
-     * Create a mailbox for a new user.
-     * Called by UserController after successful registration.
+     * Create a mailbox for a new user. Intended to be invoked after a successful
+     * registration WHEN mailbox provisioning is enabled — not auto-wired by
+     * default (see the class note).
      * @return Result<array{address: string}>
      */
     /** @phpstan-return Result<array{address: string}> */
@@ -98,8 +106,9 @@ final class MailboxManager
     }
 
     /**
-     * Change the IMAP/SMTP password for a mailbox.
-     * Called when the user changes their password in settings.
+     * Change the IMAP/SMTP password for a mailbox. Intended to be invoked when the
+     * user changes their password WHEN provisioning is enabled — not auto-wired by
+     * default (see the class note).
      * @return Result<bool>
      */
     public function changePassword(string $username, string $newPassword)

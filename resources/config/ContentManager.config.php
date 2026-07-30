@@ -25,6 +25,17 @@ return [
             "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
             . "frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 
+        // Only honour X-Forwarded-Proto (for the Secure session-cookie flag) when
+        // behind a trusted TLS-terminating proxy that sets it. Leave false for a
+        // plain-HTTP (e.g. Tor hidden-service) deployment so a spoofed header can
+        // never toggle the Secure flag.
+        'trust_forwarded_proto' => false,
+
+        // Emit Server-Timing / X-AstrX-Elapsed-Ms response headers. Off by default:
+        // they leak high-resolution compute timing (a side channel) and fingerprint
+        // the stack. Turn on only for local debugging.
+        'expose_server_timing' => false,
+
         // Lang domains loaded globally (on every page load) before the page-specific domain.
         // Useful for shared string sets like all user pages sharing one 'User' lang file.
         'extra_lang_domains' => ['User', 'Http'],

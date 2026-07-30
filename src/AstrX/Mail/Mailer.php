@@ -151,6 +151,8 @@ final class Mailer
         string $priority            = 'normal',  // 'high', 'normal', 'low'
         bool   $readReceipt         = false,
         array  $attachments         = [],
+        string $cc                  = '',
+        string $bcc                 = '',
     )
     : Result {
         try {
@@ -165,6 +167,8 @@ final class Mailer
                 $priority,
                 $readReceipt,
                 $attachments,
+                $cc,
+                $bcc,
             );
         } catch (\Throwable $e) {
             return $this->err($e->getMessage());
@@ -190,6 +194,8 @@ final class Mailer
         string $priority            = 'normal',
         bool   $readReceipt         = false,
         array  $attachments         = [],
+        string $cc                  = '',
+        string $bcc                 = '',
     )
     : Result {
         $effectiveFromAddress = $fromAddressOverride !== '' ? $fromAddressOverride : $this->fromAddress;
@@ -210,6 +216,14 @@ final class Mailer
         foreach ([$effectiveFromName, $toName, $subject] as $headerText) {
             if (!$this->headerSafe($headerText)) {
                 return $this->invalidRecipient($headerText);
+            }
+        }
+        // Cc/Bcc envelope recipients (F-07): validate each before dialing.
+        $ccList  = $this->parseAddressList($cc);
+        $bccList = $this->parseAddressList($bcc);
+        foreach (array_merge($ccList, $bccList) as $extraAddr) {
+            if (!$this->validAddress($extraAddr)) {
+                return $this->invalidRecipient($extraAddr);
             }
         }
 
@@ -293,6 +307,13 @@ final class Mailer
         $this->cmd($sock, "RCPT TO:<{$toAddress}>");
         $this->read($sock, '25');   // 250 or 251
 
+        // Deliver to every Cc and Bcc recipient too (F-07). Bcc addresses are
+        // RCPT'd here but deliberately NOT emitted as a header below.
+        foreach (array_merge($ccList, $bccList) as $rcptAddr) {
+            $this->cmd($sock, "RCPT TO:<{$rcptAddr}>");
+            $this->read($sock, '25');
+        }
+
         $this->cmd($sock, "DATA");
         $this->read($sock, '354');
 
@@ -310,6 +331,7 @@ final class Mailer
             $priority,
             $readReceipt,
             $hasAttachments,
+            implode(', ', $ccList),
         );
         $body = $this->buildBody($bodyText, $bodyHtml, $boundary, $attachments);
 
@@ -513,6 +535,23 @@ final class Mailer
         return $response;
     }
 
+    /**
+     * Split a comma-separated address list into trimmed, non-empty parts.
+     *
+     * @return list<string>
+     */
+    private function parseAddressList(string $list): array
+    {
+        $out = [];
+        foreach (explode(',', $list) as $part) {
+            $addr = trim($part);
+            if ($addr !== '') {
+                $out[] = $addr;
+            }
+        }
+        return $out;
+    }
+
     private function buildHeaders(
         string $toAddress,
         string $toName,
@@ -524,14 +563,18 @@ final class Mailer
         string $priority     = 'normal',
         bool   $readReceipt  = false,
         bool   $hasAttachments = false,
+        string $cc           = '',
     )
     : string {
         if ($fromAddress === '') { $fromAddress = $this->fromAddress; }
         if ($fromName    === '') { $fromName    = $this->fromName; }
+        // Escape the quoted display name (F-24): a " or \ would otherwise break
+        // the quoted-string and could forge trailing header tokens. headerSafe()
+        // already blocked CR/LF/NUL upstream.
         $from = $fromName !== '' ?
-            '"' . $fromName . '" <' . $fromAddress . '>' :
+            '"' . addcslashes($fromName, '"\\') . '" <' . $fromAddress . '>' :
             '<' . $fromAddress . '>';
-        $to = $toName !== '' ? '"' . $toName . '" <' . $toAddress . '>' :
+        $to = $toName !== '' ? '"' . addcslashes($toName, '"\\') . '" <' . $toAddress . '>' :
             '<' . $toAddress . '>';
         $msgId = '<' .
                  bin2hex(random_bytes(12)) .
@@ -543,6 +586,9 @@ final class Mailer
 
         $h = "From: {$from}\r\n";
         $h .= "To: {$to}\r\n";
+        if ($cc !== '') {
+            $h .= "Cc: {$cc}\r\n"; // addresses already validated in doSend
+        }
         $h .= "Subject: {$subject}\r\n";
         $h .= "Date: {$date}\r\n";
         $h .= "Message-ID: {$msgId}\r\n";

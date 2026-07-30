@@ -76,7 +76,9 @@ final class CaptchaImageController extends AbstractController
 
         http_response_code(200);
         if (!headers_sent()) {
-            header('Content-Type: image/png');
+            // CaptchaRenderer::render() emits GIF bytes (imagegif) — label them as
+            // such so strict clients that don't content-sniff still display it (F-28).
+            header('Content-Type: image/gif');
             header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
             header('Pragma: no-cache');
             header('Content-Length: ' . (string) strlen($bytes));

@@ -74,6 +74,26 @@ final class UserController extends AbstractController
                     $this->session->userId() === $hexUid
                 ) {
                     $this->session->markVerified();
+                    if ($tokenType === UserService::TOKEN_RECOVER) {
+                        // Already logged in and recovering → grant the reset unlock.
+                        $_SESSION['_pw_reset_until'] = time() + 900;
+                    }
+                } elseif ($tokenType === UserService::TOKEN_RECOVER) {
+                    // Logged-out password recovery: a valid single-use token proves
+                    // control of the recovery address, so authenticate the user and
+                    // grant a short-lived (15 min), one-shot password-reset unlock,
+                    // then drop them on Settings to choose a new password. Without
+                    // this, the old code redirected a logged-out user to Settings,
+                    // which bounced them to Login — recovery could NEVER complete and
+                    // the token was already spent (F-01).
+                    $rowResult = $this->userService->sessionRowFor($hexUid);
+                    $rowResult->drainTo($this->collector);
+                    if ($rowResult->isOk()) {
+                        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string} $resetRow */
+                        $resetRow = $rowResult->unwrap();
+                        $this->session->login($resetRow);
+                        $_SESSION['_pw_reset_until'] = time() + 900;
+                    }
                 }
 
                 // Redirect to settings for recover/email actions, main for delete

@@ -252,33 +252,6 @@ final class CommentRepository
         }
     }
 
-    /** @return Result<int> rows affected */
-    /**
-     * @param array<string,mixed> $filters
-     * @return Result<int>
-     */
-    public function bulkSetHidden(array $filters, bool $hidden): Result
-    {
-        if ($filters === []) {
-            return Result::ok(0);
-        }
-        $where  = [];
-        $params = [':h' => (int) $hidden];
-        foreach ($filters as $col => $val) {
-            $where[]       = "{$col} = :{$col}";
-            $params[":{$col}"] = $val;
-        }
-        try {
-            $stmt = $this->pdo->prepare(
-                'UPDATE comment SET hidden = :h WHERE ' . implode(' AND ', $where)
-            );
-            $stmt->execute($params);
-            return Result::ok($stmt->rowCount());
-        } catch (PDOException $e) {
-            return $this->err($e);
-        }
-    }
-
     // -------------------------------------------------------------------------
 
     /** @return Result<?int> */

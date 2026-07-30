@@ -57,6 +57,10 @@ final class SecureSessionHandler implements
      *  instance) so every ikm() call agrees and the fallback file is touched once. */
     private ?string $ikmCache = null;
 
+    /** Seconds an old (rotated-away) session row stays valid after regeneration.
+     *  Configurable via Session.regenerate_grace_period; enforced in read(). */
+    private int $graceSeconds = 30;
+
     public function __construct(private readonly PDO $pdo) {}
 
     #[InjectConfig('sid_bytes')]
@@ -75,6 +79,12 @@ final class SecureSessionHandler implements
     public function setMaxRetries(int $maxRetries): void
     {
         $this->maxRetries = max(1, $maxRetries);
+    }
+
+    #[InjectConfig('regenerate_grace_period')]
+    public function setGraceSeconds(int $seconds): void
+    {
+        $this->graceSeconds = max(0, $seconds);
     }
 
     #[InjectConfig('server_secret')]
@@ -125,12 +135,25 @@ final class SecureSessionHandler implements
         ]));
 
         // Read an already-persisted secret from the first candidate that has one.
+        $tmpDir = sys_get_temp_dir();
         foreach ($candidates as $file) {
-            if (is_file($file)) {
-                $contents = @file_get_contents($file);
-                if (is_string($contents) && $contents !== '') {
-                    return $this->ikmCache = $contents;
+            if (!is_file($file)) {
+                continue;
+            }
+            // Harden the world-writable temp fallback: only trust it when it is
+            // NOT group/world-accessible, so a local user cannot pre-seed a known
+            // secret at the predictable sys_get_temp_dir() path and downgrade our
+            // session key. The app-private config-dir candidate is trusted as-is
+            // (its exact owner may legitimately differ, e.g. installer vs runtime).
+            if ($tmpDir !== '' && str_starts_with($file, $tmpDir)) {
+                $perms = @fileperms($file);
+                if ($perms === false || ($perms & 0077) !== 0) {
+                    continue;
                 }
+            }
+            $contents = @file_get_contents($file);
+            if (is_string($contents) && $contents !== '') {
+                return $this->ikmCache = $contents;
             }
         }
 
@@ -188,7 +211,7 @@ final class SecureSessionHandler implements
         // PDOException when GC fires — the row DELETE above already ran and is
         // what matters; the pointer cleanup is a no-op when the columns are absent.
         try {
-            $graceCutoff = time() - 300; // generous upper bound; ContentManager uses a tighter value
+            $graceCutoff = time() - $this->graceSeconds; // configurable via Session.regenerate_grace_period
             $stmt2 = $this->pdo->prepare(
                 'UPDATE `session` SET `replaced_by` = NULL, `replace_at` = NULL
                   WHERE `replace_at` IS NOT NULL AND `replace_at` < :gc'
@@ -219,6 +242,18 @@ final class SecureSessionHandler implements
             ? $row['replaced_by'] : null;
         $replaceAt  = isset($row['replace_at'])  && is_int($row['replace_at'])
             ? $row['replace_at'] : null;
+
+        // Grace-period EXPIRY (security): once an old (rotated-away) row is past
+        // the grace window, the old session id MUST stop working. Its timestamp
+        // is refreshed on every use, so gc() (delete-by-inactivity) would never
+        // collect it — a captured/rotated-away id would otherwise stay valid
+        // forever, defeating rotation. The legit client already moved to the
+        // successor id via Set-Cookie, so only stale/in-flight or stolen requests
+        // still carry the old id here.
+        if ($replaceAt !== null && (time() - $replaceAt) > $this->graceSeconds) {
+            $this->destroy($id);
+            return '';
+        }
 
         if ($replacedBy !== null && $replaceAt !== null && !$this->encrypt) {
             // Grace-period handover: a request still carrying the OLD id is served

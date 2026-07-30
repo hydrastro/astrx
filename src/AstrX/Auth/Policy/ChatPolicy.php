@@ -24,7 +24,11 @@ final class ChatPolicy implements PolicyInterface
     public function evaluate(Permission $permission, UserSession $session, object $resource): ?bool
     {
         $authorTypeRaw = $resource->user_type ?? null;
-        $authorType    = UserGroup::tryFrom(is_int($authorTypeRaw) ? $authorTypeRaw : 0);
+        // A null/unknown author type is a GUEST message (rank 0) — NOT USER, whose
+        // enum value happens to be 0. Passing 0 previously mislabelled guest posts
+        // as USER (rank 1), diverging from this class's own comment and CommentPolicy.
+        $authorType    = UserGroup::tryFrom(is_int($authorTypeRaw) ? $authorTypeRaw : UserGroup::GUEST->value)
+            ?? UserGroup::GUEST;
 
         return match ($permission) {
             // Owners may delete their own messages.
@@ -35,8 +39,7 @@ final class ChatPolicy implements PolicyInterface
             // own, unless the actor is an admin. Guest messages carry a null
             // user_type (rank 0) and therefore stay moderatable.
             Permission::CHAT_DELETE_ANY =>
-                ($authorType !== null
-                    && $authorType->rank() >= $session->userType()->rank()
+                ($authorType->rank() >= $session->userType()->rank()
                     && $session->userType() !== UserGroup::ADMIN)
                     ? false
                     : null,

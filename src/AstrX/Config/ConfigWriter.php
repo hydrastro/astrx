@@ -105,7 +105,14 @@ final class ConfigWriter
         if ($value === true)              { return 'true'; }
         if ($value === false)             { return 'false'; }
         if (is_int($value))              { return (string) $value; }
-        if (is_float($value))            { return rtrim(rtrim(sprintf('%F', $value), '0'), '.') ?: '0.0'; }
+        if (is_float($value)) {
+            // Keep a float a float on round-trip: an integer-valued float (1.0)
+            // must NOT serialize to "1" (which reloads as int and breaks is_float/
+            // === checks). Ensure a decimal point survives (F-22).
+            $s = rtrim(rtrim(sprintf('%F', $value), '0'), '.');
+            if ($s === '' || $s === '-') { $s = '0'; }
+            return str_contains($s, '.') ? $s : $s . '.0';
+        }
         if (is_string($value))           { return "'" . addcslashes($value, "'\\") . "'"; }
 
         if (!is_array($value) || $value === []) {

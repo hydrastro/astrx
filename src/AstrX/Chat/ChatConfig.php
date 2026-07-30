@@ -243,7 +243,7 @@ final class ChatConfig
     public function uploadMaxKb(): int          { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int       { return $this->uploadMaxKb * 1024; }
     public function uploadMaxDimension(): int   { return $this->uploadMaxDimension; }
-    public function uploadDir(): string         { return $this->uploadDir; }
+    public function uploadDir(): string         { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'chat_uploads'); }
     public function uploadTypesRaw(): string    { return $this->uploadTypesRaw; }
 
     /** @return list<string> */

@@ -6,6 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
+use AstrX\Mail\EmailService;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
@@ -49,8 +50,38 @@ final class UserSettingsController extends AbstractController
         private readonly ThemeService          $themeService,
         private readonly ApiKeyService         $apiKeys,
         private readonly Gate                  $gate,
+        private readonly EmailService          $emailService,
     ) {
         parent::__construct($collector);
+    }
+
+    /**
+     * Generate a verification token and email a link to $toAddress, mirroring the
+     * registration flow. Best-effort: gated on the send-verification config, and
+     * any failure is drained as a diagnostic rather than blocking the action.
+     */
+    private function sendVerificationTo(string $hexId, string $toAddress, int $tokenType): void
+    {
+        if (!$this->userService->sendVerificationEmail()) {
+            return;
+        }
+        $tokenResult = $this->userService->generateToken($hexId, $tokenType);
+        $tokenResult->drainTo($this->collector);
+        if (!$tokenResult->isOk()) {
+            return;
+        }
+        /** @var array{token:string,user_id:string,expires_at:int} $tok */
+        $tok  = $tokenResult->unwrap();
+        $name = $this->session->displayName() !== ''
+            ? $this->session->displayName()
+            : $this->session->username();
+        $this->emailService->sendVerificationEmail(
+            toAddress: $toAddress,
+            toName:    $name,
+            username:  $this->session->username(),
+            token:     $tok['token'],
+            userHexId: $hexId,
+        )->drainTo($this->collector);
     }
 
     /** @return Result<mixed> */
@@ -129,17 +160,23 @@ final class UserSettingsController extends AbstractController
                 break;
 
             case 'change_recovery_email':
-                $result = $this->userService->changeRecoveryEmail(
-                    $hexId, self::mStr($posted, 'email', ''),
-                );
+                $newEmail = self::mStr($posted, 'email', '');
+                $result = $this->userService->changeRecoveryEmail($hexId, $newEmail);
                 $result->drainTo($this->collector);
-                if ($result->isOk()) {
-                    // TODO: send verification email for new address
+                if ($result->isOk() && $newEmail !== '') {
+                    // Confirm ownership of the new address with a verification link.
+                    $this->sendVerificationTo($hexId, $newEmail, UserService::TOKEN_EMAIL_CHANGE);
                 }
                 break;
 
             case 'change_password':
-                $tokenUnlock = $this->userService->hasUsedToken($hexId, UserService::TOKEN_RECOVER);
+                // Only skip the current-password check for a FRESH, session-bound,
+                // one-shot recovery grant (set when the user arrived via a valid
+                // recovery link this session) — NOT for any historically-used
+                // recovery token, which previously left the check bypassable
+                // indefinitely for a hijacked session (F-05).
+                $resetUntil  = $_SESSION['_pw_reset_until'] ?? 0;
+                $tokenUnlock = is_int($resetUntil) && $resetUntil > time();
                 $result = $this->userService->changePassword(
                     $hexId,
                     self::mStr($posted, 'old_password', ''),
@@ -148,18 +185,18 @@ final class UserSettingsController extends AbstractController
                     $tokenUnlock,
                 );
                 $result->drainTo($this->collector);
+                if ($result->isOk() && $tokenUnlock) {
+                    unset($_SESSION['_pw_reset_until']); // one-shot
+                }
                 break;
 
             case 'verify_email':
-                // Generate verification token and send email
-                $tokenResult = $this->userService->generateToken($hexId, UserService::TOKEN_EMAIL_VERIFY);
-                $tokenResult->drainTo($this->collector);
-                if ($tokenResult->isOk()) {
-                    /** @var array<string,mixed> */
-
-                    $tokenData = $tokenResult->unwrap();
-                    // TODO: send email. Dev notice: link below
-                    // $link = urlGen->toPage('WORDING_USER') . '?_token=...'
+                // Resend a verification link to the user's stored recovery email.
+                $emailResult = $this->userService->recoveryEmailFor($hexId);
+                $emailResult->drainTo($this->collector);
+                $addr = $emailResult->isOk() ? $emailResult->unwrap() : null;
+                if (is_string($addr) && $addr !== '') {
+                    $this->sendVerificationTo($hexId, $addr, UserService::TOKEN_EMAIL_VERIFY);
                 }
                 break;
 
@@ -308,7 +345,11 @@ final class UserSettingsController extends AbstractController
 
         $hasAvatar       = $this->session->hasAvatar();
         $avatarUrl       = $this->urlGen->toPage('avatar') . '?uid=' . $hexId;
-        $tokenUnlock     = $this->userService->hasUsedToken($hexId, UserService::TOKEN_RECOVER);
+        // Hide the old-password field only for a fresh, session-bound recovery
+        // unlock — must match the change_password enforcement (F-05); otherwise a
+        // stale used token would hide the field while the backend still demands it.
+        $resetUntil      = $_SESSION['_pw_reset_until'] ?? 0;
+        $tokenUnlock     = is_int($resetUntil) && $resetUntil > time();
         $isVerified      = $this->session->isVerified();
 
         $this->ctx->set('csrf',              $csrfTokens);

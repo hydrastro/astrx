@@ -20,6 +20,40 @@ if (!is_file($bundle)) {
     $fail('missing compiled bundle', 1);
 }
 
+// Staleness guard (F-26): a bundle older than any bundled source means it was not
+// recompiled after an edit and would serve stale code. build/ is not committed, so
+// whenever a bundle exists it was produced in THIS environment and mtimes are
+// meaningful. The runtime-rewritten template cache is excluded.
+$bundleMtime = (int) (@filemtime($bundle) ?: 0);
+$newest      = 0;
+$newestFile  = '';
+foreach (['src', 'resources'] as $sub) {
+    $base = $root . $sub;
+    if (!is_dir($base)) {
+        continue;
+    }
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($it as $entry) {
+        if (!$entry instanceof SplFileInfo || !$entry->isFile()) {
+            continue;
+        }
+        $path = $entry->getPathname();
+        if (str_contains($path, DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR)) {
+            continue;
+        }
+        $m = (int) $entry->getMTime();
+        if ($m > $newest) {
+            $newest     = $m;
+            $newestFile = $path;
+        }
+    }
+}
+if ($newest > $bundleMtime) {
+    $fail('compiled bundle is STALE — a source file is newer than the bundle: ' . $newestFile, 4);
+}
+
 if (!defined('INDEX_DIR')) {
     define('INDEX_DIR', $root);
 }
