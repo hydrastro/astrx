@@ -1,0 +1,62 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{lbl_heading}}</h2>
+<p>{{lbl_intro}}</p>
+
+{{! ── Generate invites (PRG POST, no JavaScript) ─────────────────────────── }}
+<h3>{{lbl_generate}}</h3>
+<form method="POST" action="{{form_action}}">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  {{&sid_input}}
+  <input type="hidden" name="action" value="create">
+  <p><label>{{lbl_count}}
+     <input type="number" name="count" value="{{count_default}}" min="1" max="{{count_max}}" step="1" class="input" style="width:5em"></label>
+     <small>{{lbl_count_hint}}</small></p>
+  <p><label>{{lbl_note}} <input type="text" name="note" value="" class="input"></label>
+     <small>{{lbl_note_hint}}</small></p>
+  <p><button type="submit" class="input">{{lbl_create}}</button></p>
+</form>
+
+{{! ── Existing invites ───────────────────────────────────────────────────── }}
+<h3>{{lbl_existing}}</h3>
+{{^has_invites}}<p><em>{{lbl_none}}</em></p>{{/has_invites}}
+{{#has_invites}}
+<table class="table">
+  <thead><tr>
+    <th style="text-align:left">{{lbl_code}}</th>
+    <th style="text-align:left">{{lbl_note}}</th>
+    <th style="text-align:left">{{lbl_status}}</th>
+    <th style="text-align:left">{{lbl_created}}</th>
+    <th></th>
+  </tr></thead>
+  <tbody>
+  {{#invites}}
+  <tr>
+    <td><code>{{code}}</code></td>
+    <td>{{note}}</td>
+    <td>{{status_label}}</td>
+    <td>{{created_at}}</td>
+    <td>
+      {{^is_used}}
+      <form method="POST" action="{{form_action}}" style="display:inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        {{&sid_input}}
+        <input type="hidden" name="action" value="revoke">
+        <input type="hidden" name="id"     value="{{id}}">
+        <button type="submit" class="input">{{lbl_revoke}}</button>
+      </form>
+      {{/is_used}}
+    </td>
+  </tr>
+  {{/invites}}
+  </tbody>
+</table>
+{{/has_invites}}
+{{/admin_forbidden}}

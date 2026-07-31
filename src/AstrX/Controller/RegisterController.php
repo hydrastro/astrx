@@ -17,6 +17,8 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Config\Config;
+use AstrX\Invite\InviteRepository;
+use AstrX\Invite\InviteService;
 use AstrX\User\UserService;
 use AstrX\Config\InjectConfig;
 use AstrX\User\UserSession;
@@ -53,6 +55,8 @@ final class RegisterController extends AbstractController
         private readonly Config                $config,
         private readonly EmailService          $emailService,
         private readonly UserRepository        $userRepo,
+        private readonly InviteService         $inviteService,
+        private readonly InviteRepository      $inviteRepo,
     ) {
         parent::__construct($collector);
     }
@@ -96,13 +100,32 @@ final class RegisterController extends AbstractController
         $csrfToken   = self::mStr($posted, '_csrf', '');
         $captchaId   = self::mStr($posted, 'captcha_id', '');
         $captchaText = self::mStr($posted, 'captcha_text', '');
+        $inviteCode  = trim(self::mStr($posted, 'invite_code', ''));
         $termsChecked     = self::mBool($posted, 'terms_accepted');
         $dataUsageChecked = self::mBool($posted, 'data_usage_accepted');
 
         $csrfResult = $this->csrf->verify(self::FORM, $csrfToken);
         if (!$csrfResult->isOk()) {
             $csrfResult->drainTo($this->collector);
-            return $this->renderForm($username, $mailbox, $email, $displayName);
+            return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
+        }
+
+        // Invite-only gate. Validate (read-only) BEFORE the one-shot captcha and
+        // before creating the account: a missing/invalid/used code fails here
+        // with no account created and without burning the captcha. This is only a
+        // UX early-out — the code is ATOMICALLY claimed just before register
+        // (below), which is the real enforcement point.
+        $requireInvite = $this->inviteService->requireInvite();
+        if ($requireInvite) {
+            if ($inviteCode === '') {
+                $this->flash->set('error', $this->t->t('user.register.invite_required'));
+                return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
+            }
+            $validResult = $this->inviteRepo->isValid($inviteCode)->drainTo($this->collector);
+            if (!$validResult->isOk() || $validResult->unwrap() !== true) {
+                $this->flash->set('error', $this->t->t('user.register.invite_invalid'));
+                return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
+            }
         }
 
         // Fix 7.2: captcha check moved BEFORE consent — captchas are one-shot
@@ -115,7 +138,7 @@ final class RegisterController extends AbstractController
             $verifyResult = $this->captchaService->verify($captchaId, $captchaText);
             if (!$verifyResult->isOk()) {
                 $verifyResult->drainTo($this->collector);
-                return $this->renderForm($username, $mailbox, $email, $displayName);
+                return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
             }
         }
 
@@ -123,12 +146,26 @@ final class RegisterController extends AbstractController
         if ($this->config->getConfigBool('RegisterConsent', 'require_terms', false)
             && !$termsChecked) {
             $this->flash->set('error', $this->t->t('user.register.terms_required'));
-            return $this->renderForm($username, $mailbox, $email, $displayName);
+            return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
         }
         if ($this->config->getConfigBool('RegisterConsent', 'require_data_usage', false)
             && !$dataUsageChecked) {
             $this->flash->set('error', $this->t->t('user.register.data_usage_required'));
-            return $this->renderForm($username, $mailbox, $email, $displayName);
+            return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
+        }
+
+        // Invite-only: CLAIM the code atomically right before creating the
+        // account — the SINGLE enforcement point. Only one concurrent sign-up can
+        // win the flip (UPDATE … WHERE used_at IS NULL), so a valid code yields
+        // exactly one account even under a race. (Fixes an R8 TOCTOU where the
+        // post-register consume()'s result was discarded, so N concurrent requests
+        // could all pass the read-only pre-check and share one code.)
+        if ($requireInvite && $inviteCode !== '') {
+            $claim = $this->inviteRepo->claim($inviteCode)->drainTo($this->collector);
+            if (!$claim->isOk() || $claim->unwrap() !== true) {
+                $this->flash->set('error', $this->t->t('user.register.invite_invalid'));
+                return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
+            }
         }
 
         $registerResult = $this->userService->register(
@@ -139,9 +176,19 @@ final class RegisterController extends AbstractController
 
         if (!$registerResult->isOk()) {
             $registerResult->drainTo($this->collector);
-            return $this->renderForm($username, $mailbox, $email, $displayName);
+            // Give the claimed code back so a transient register failure doesn't
+            // burn it (release only un-claims a still-unattributed code).
+            if ($requireInvite && $inviteCode !== '') {
+                $this->inviteRepo->release($inviteCode)->drainTo($this->collector);
+            }
+            return $this->renderForm($username, $mailbox, $email, $displayName, $inviteCode);
         }
         $newHexId = $registerResult->unwrap();
+
+        // Record which user the claimed code belongs to (audit backfill).
+        if ($requireInvite && $inviteCode !== '') {
+            $this->inviteRepo->attributeTo($inviteCode, $newHexId)->drainTo($this->collector);
+        }
 
         // --- Email verification (fix114) ---
         //
@@ -203,6 +250,7 @@ final class RegisterController extends AbstractController
         string $mailbox     = '',
         string $email       = '',
         string $displayName = '',
+        string $inviteCode  = '',
     ): Result {
         if (!$this->userService->allowRegister()) {
             $this->ctx->set('registrations_closed', true);
@@ -250,6 +298,9 @@ final class RegisterController extends AbstractController
         $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
         $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('captcha_image',      $captchaB64);
+        // Invite-only registration: show the code field when the gate is on.
+        $this->ctx->set('show_invite',        $this->inviteService->requireInvite());
+        $this->ctx->set('invite_code_value',  $inviteCode);
         $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$this->mailboxIsUsername);
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());
         $this->ctx->set('show_display_name',  $this->userService->requireDisplayName());
@@ -275,6 +326,8 @@ final class RegisterController extends AbstractController
     {
         $this->ctx->set('reg_heading',      $this->t->t('user.register.heading'));
         $this->ctx->set('reg_description',  $this->t->t('user.register.description'));
+        $this->ctx->set('reg_invite',       $this->t->t('user.field.invite_code'));
+        $this->ctx->set('reg_invite_hint',  $this->t->t('user.field.invite_code_hint'));
         $this->ctx->set('reg_username',     $this->t->t('user.field.username'));
         $this->ctx->set('reg_password',     $this->t->t('user.field.password'));
         $this->ctx->set('reg_repeat',       $this->t->t('user.field.repeat'));

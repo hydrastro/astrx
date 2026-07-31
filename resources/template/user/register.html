@@ -9,6 +9,12 @@
   <input type="hidden" name="prg_id" value="{{prg_id}}">
   <input type="hidden" name="_csrf"  value="{{csrf_token}}">
   <p>
+    {{#show_invite}}
+    <label for="reg_invite">{{reg_invite}}: </label>
+    <input type="text" name="invite_code" class="input" id="reg_invite"
+           value="{{invite_code_value}}" autocomplete="off"
+           placeholder="{{reg_invite_hint}}" title="{{reg_invite_hint}}"><br>
+    {{/show_invite}}
     <label for="reg_user">{{reg_username}}: </label>
     <input type="text" name="username" class="input" id="reg_user" value="{{username_value}}" autocomplete="username"><br>
     <label for="reg_pass">{{reg_password}}: </label>

@@ -12,6 +12,12 @@ use AstrX\Routing\UrlGenerator;
  * draws the page graph as a static inline SVG (no JavaScript). URL building goes
  * through {@see UrlGenerator} so links stay locale-correct and host-relative
  * (Tor-safe).
+ *
+ * Visibility policy (R8) lives here: {@see isLive()} and {@see canView()} decide
+ * whether a page is reachable; the repo applies the matching SQL filters for the
+ * listing/graph/backlink sets.
+ *
+ * @phpstan-type PageRow array{id:int,slug:string,title:string,body:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}
  */
 final class ContentService
 {
@@ -46,6 +52,76 @@ final class ContentService
         return $this->base() . '?view=graph';
     }
 
+    // -------------------------------------------------------------------------
+    // Visibility policy
+    // -------------------------------------------------------------------------
+
+    /**
+     * Is the page published and within its [publish_at, expire_at) window?
+     *
+     * @param array{visible:bool,visibility:string,publish_at:?int,expire_at:?int} $page
+     */
+    public function isLive(array $page): bool
+    {
+        if (!$page['visible']) {
+            return false;
+        }
+        $now = time();
+        if ($page['publish_at'] !== null && $page['publish_at'] > $now) {
+            return false;
+        }
+        if ($page['expire_at'] !== null && $page['expire_at'] <= $now) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * May this viewer see the page directly? Admins always; otherwise the page
+     * must be live and either public/unlisted (reachable by direct URL) or
+     * private-and-the-viewer-is-logged-in.
+     *
+     * @param array{visible:bool,visibility:string,publish_at:?int,expire_at:?int} $page
+     */
+    public function canView(array $page, bool $isAdmin, bool $isLoggedIn): bool
+    {
+        if ($isAdmin) {
+            return true;
+        }
+        if (!$this->isLive($page)) {
+            return false;
+        }
+        if ($page['visibility'] === 'private') {
+            return $isLoggedIn;
+        }
+        return true; // public or unlisted
+    }
+
+    /**
+     * A short state label key for the admin list / preview badge, or '' for a
+     * plainly-live public page.
+     *
+     * @param array{visible:bool,visibility:string,publish_at:?int,expire_at:?int} $page
+     */
+    public function stateLabelKey(array $page): string
+    {
+        if (!$page['visible']) {
+            return 'content.state.draft';
+        }
+        $now = time();
+        if ($page['publish_at'] !== null && $page['publish_at'] > $now) {
+            return 'content.state.scheduled';
+        }
+        if ($page['expire_at'] !== null && $page['expire_at'] <= $now) {
+            return 'content.state.expired';
+        }
+        return match ($page['visibility']) {
+            'unlisted' => 'content.state.unlisted',
+            'private'  => 'content.state.private',
+            default    => '',
+        };
+    }
+
     /**
      * Render a page body to HTML, resolving `[[wiki]]` links against the set of
      * existing slugs (fetched once) so broken targets get the `broken` class.
@@ -66,13 +142,14 @@ final class ContentService
     }
 
     /**
-     * Visible pages for the index, each with a ready URL.
+     * Listed pages for the index, each with a ready URL. Public pages always;
+     * private pages only when the viewer is logged in; unlisted never listed.
      *
-     * @return list<array{slug:string,title:string,url:string,updated_at:string}>
+     * @return list<array{slug:string,title:string,url:string,updated_at:string,visibility:string}>
      */
-    public function index(): array
+    public function index(bool $isLoggedIn): array
     {
-        $r    = $this->repo->all(visibleOnly: true);
+        $r    = $this->repo->listed($isLoggedIn, time());
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -81,19 +158,47 @@ final class ContentService
                 'title'      => $row['title'] !== '' ? $row['title'] : $row['slug'],
                 'url'        => $this->pageUrl($row['slug']),
                 'updated_at' => $row['updated_at'],
+                'visibility' => $row['visibility'],
             ];
         }
         return $out;
     }
 
     /**
-     * Backlinks ("what links here") for a page, with URLs.
+     * Public listed pages for the XML sitemap: live + public only (never
+     * private/unlisted/draft/scheduled/expired). Returns slug + updated_at, NOT a
+     * UrlGenerator URL — the sitemap is a public, cacheable document and must
+     * never carry a cookieless session id, so the caller builds sid-free absolute
+     * URLs itself.
+     *
+     * @return list<array{slug:string,updated_at:string}>
+     */
+    public function sitemapPages(): array
+    {
+        $r    = $this->repo->listed(false, time()); // includePrivate=false → public only
+        $rows = $r->isOk() ? $r->unwrap() : [];
+        $out  = [];
+        foreach ($rows as $row) {
+            $out[] = ['slug' => $row['slug'], 'updated_at' => $row['updated_at']];
+        }
+        return $out;
+    }
+
+    /** The locale-relative content base slug (e.g. 'pages') for sid-free URLs. */
+    public function contentSlug(): string
+    {
+        return $this->t->t('WORDING_CONTENT');
+    }
+
+    /**
+     * Backlinks ("what links here") for a page, with URLs. Only live public
+     * sources (the repo filters), so no private linker leaks.
      *
      * @return list<array{title:string,url:string}>
      */
     public function backlinks(int $pageId): array
     {
-        $r    = $this->repo->backlinks($pageId);
+        $r    = $this->repo->backlinks($pageId, time());
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -111,9 +216,9 @@ final class ContentService
      *
      * @return array{svg:string,count:int}
      */
-    public function graphSvg(): array
+    public function graphSvg(bool $isLoggedIn): array
     {
-        $g     = $this->repo->graph();
+        $g     = $this->repo->graph($isLoggedIn, time());
         $data  = $g->isOk() ? $g->unwrap() : ['nodes' => [], 'edges' => []];
         $nodes = $data['nodes'];
         $edges = $data['edges'];
@@ -201,13 +306,8 @@ final class ContentService
     /** @return array<string,true> */
     private function existingSlugs(): array
     {
-        $r    = $this->repo->all(visibleOnly: false);
-        $rows = $r->isOk() ? $r->unwrap() : [];
-        $set  = [];
-        foreach ($rows as $row) {
-            $set[$row['slug']] = true;
-        }
-        return $set;
+        $r = $this->repo->allSlugs();
+        return $r->isOk() ? $r->unwrap() : [];
     }
 
     /** Format a coordinate compactly for SVG output. */

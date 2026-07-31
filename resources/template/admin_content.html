@@ -13,12 +13,22 @@
 <form method="POST" action="{{form_action}}">
   <input type="hidden" name="prg_id" value="{{prg_id}}">
   <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  {{&sid_input}}
   <input type="hidden" name="action" value="save">
   <input type="hidden" name="id"     value="{{f_id}}">
   <p><label>{{lbl_slug}} <input type="text" name="slug" value="{{f_slug}}" class="input"></label>
      <small>{{lbl_slug_hint}}</small></p>
   <p><label>{{lbl_title}} <input type="text" name="title" value="{{f_title}}" class="input"></label></p>
   <p><label><input type="checkbox" name="visible" value="1"{{#f_visible}} checked{{/f_visible}}> {{lbl_visible}}</label></p>
+  <p><label>{{lbl_visibility}}
+     <select name="visibility" class="input">
+       <option value="public"{{#f_vis_public}} selected{{/f_vis_public}}>{{lbl_vis_public}}</option>
+       <option value="unlisted"{{#f_vis_unlisted}} selected{{/f_vis_unlisted}}>{{lbl_vis_unlisted}}</option>
+       <option value="private"{{#f_vis_private}} selected{{/f_vis_private}}>{{lbl_vis_private}}</option>
+     </select></label></p>
+  <p><label>{{lbl_publish_at}} <input type="datetime-local" name="publish_at" value="{{f_publish_at}}" class="input"></label>
+     &nbsp;<label>{{lbl_expire_at}} <input type="datetime-local" name="expire_at" value="{{f_expire_at}}" class="input"></label><br>
+     <small>{{lbl_schedule_hint}}</small></p>
   <p><label>{{lbl_body}}<br>
      <textarea name="body" rows="18" class="input" style="width:100%;box-sizing:border-box">{{f_body}}</textarea></label><br>
      <small>{{lbl_body_hint}}</small></p>
@@ -42,17 +52,19 @@
 {{^has_pages}}<p><em>{{lbl_none}}</em></p>{{/has_pages}}
 {{#has_pages}}
 <table class="table">
-  <thead><tr><th style="text-align:left">{{lbl_title}}</th><th style="text-align:left">{{lbl_slug}}</th><th></th></tr></thead>
+  <thead><tr><th style="text-align:left">{{lbl_title}}</th><th style="text-align:left">{{lbl_slug}}</th><th style="text-align:left">{{lbl_state}}</th><th></th></tr></thead>
   <tbody>
   {{#pages}}
   <tr>
-    <td><a href="{{view_url}}">{{title}}</a>{{^visible}} <small>({{lbl_unlisted}})</small>{{/visible}}</td>
+    <td><a href="{{view_url}}">{{title}}</a></td>
     <td><code>{{slug}}</code></td>
+    <td><small>{{state}}</small></td>
     <td>
       <a href="{{edit_url}}">{{lbl_edit}}</a>
       <form method="POST" action="{{form_action}}" style="display:inline">
         <input type="hidden" name="prg_id" value="{{prg_id}}">
         <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        {{&sid_input}}
         <input type="hidden" name="action" value="delete">
         <input type="hidden" name="id"     value="{{id}}">
         <button type="submit" class="input">{{lbl_delete}}</button>

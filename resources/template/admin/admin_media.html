@@ -1,0 +1,72 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
+<h2>{{lbl_heading}}</h2>
+<p>{{lbl_intro}}</p>
+
+{{! ── Upload (PRG POST, multipart, no JavaScript) ─────────────────────────── }}
+<h3>{{lbl_upload_heading}}</h3>
+<form method="POST" action="{{form_action}}" enctype="multipart/form-data">
+  <input type="hidden" name="prg_id" value="{{prg_id}}">
+  <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+  {{&sid_input}}
+  <input type="hidden" name="action" value="upload">
+  <p><label>{{lbl_upload_file}} <input type="file" name="file" accept="{{accept}}" class="input"></label></p>
+  <p><small>{{lbl_upload_hint}}</small></p>
+  <p><button type="submit" class="input">{{lbl_upload_btn}}</button></p>
+</form>
+
+{{! ── Media library ──────────────────────────────────────────────────────── }}
+<h3>{{lbl_list_heading}}</h3>
+{{^has_media}}<p><em>{{lbl_none}}</em></p>{{/has_media}}
+{{#has_media}}
+<table class="table">
+  <thead><tr>
+    <th style="text-align:left">{{lbl_col_preview}}</th>
+    <th style="text-align:left">{{lbl_col_name}}</th>
+    <th style="text-align:left">{{lbl_col_size}}</th>
+    <th style="text-align:left">{{lbl_col_dims}}</th>
+    <th style="text-align:left">{{lbl_col_embed}}</th>
+    <th style="text-align:left">{{lbl_col_actions}}</th>
+  </tr></thead>
+  <tbody>
+  {{#media}}
+  <tr>
+    <td><a href="{{url}}"><img src="{{url}}" alt="{{orig_name}}" style="max-width:96px;max-height:96px" loading="lazy" referrerpolicy="no-referrer"></a></td>
+    <td><code>{{name}}</code><br><small>{{orig_name}}</small></td>
+    <td>{{size}}</td>
+    <td>{{dims}}</td>
+    <td>
+      <small>{{lbl_embed_hint}}</small><br>
+      <input type="text" class="input" style="width:100%;box-sizing:border-box" value="{{embed}}" readonly>
+    </td>
+    <td>
+      <a href="{{url}}" class="input">{{lbl_view}}</a>
+      <form method="POST" action="{{form_action}}" style="display:inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        {{&sid_input}}
+        <input type="hidden" name="action" value="rename">
+        <input type="hidden" name="id"     value="{{id}}">
+        <label>{{lbl_rename}} <input type="text" name="name" value="{{base}}" class="input" style="width:8em"></label>
+        <button type="submit" class="input">{{lbl_rename_btn}}</button>
+      </form>
+      <form method="POST" action="{{form_action}}" style="display:inline">
+        <input type="hidden" name="prg_id" value="{{prg_id}}">
+        <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+        {{&sid_input}}
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="id"     value="{{id}}">
+        <button type="submit" class="input">{{lbl_delete}}</button>
+      </form>
+    </td>
+  </tr>
+  {{/media}}
+  </tbody>
+</table>
+{{/has_media}}
+{{/admin_forbidden}}

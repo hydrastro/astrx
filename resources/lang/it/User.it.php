@@ -44,6 +44,8 @@ return [
     'user.field.email'           => 'Email di recupero',
     'user.field.display_name'    => 'Nome visualizzato',
     'user.field.birth_date'      => 'Data di nascita',
+    'user.field.invite_code'     => 'Codice di invito',
+    'user.field.invite_code_hint'=> 'Inserisci il codice di invito che hai ricevuto.',
 
     // -------------------------------------------------------------------------
     // Captcha
@@ -130,6 +132,8 @@ return [
     'user.register.data_usage_label'   => 'Accetto l\'Informativa sul Trattamento dei Dati',
     'user.register.terms_required'     => 'Devi accettare i Termini e Condizioni per registrarti.',
     'user.register.data_usage_required'=> 'Devi accettare l\'Informativa sul Trattamento dei Dati per registrarti.',
+    'user.register.invite_required'    => 'È necessario un codice di invito per registrarsi.',
+    'user.register.invite_invalid'     => 'Il codice di invito non è valido o è già stato utilizzato.',
     'user.register.success' => 'Registrazione completata! Ora puoi accedere.',
     'user.recover.sent'     => 'Se esiste un account con quel nome utente o email, ti abbiamo inviato un link.',
 

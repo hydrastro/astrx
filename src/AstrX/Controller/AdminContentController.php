@@ -101,12 +101,20 @@ final class AdminContentController extends AbstractController
         $body    = self::mStr($posted, 'body', '');
         $visible = self::mBool($posted, 'visible');
 
+        $visibility = self::mStr($posted, 'visibility', 'public');
+        if (!in_array($visibility, ['public', 'unlisted', 'private'], true)) {
+            $visibility = 'public';
+        }
+        $publishAt = $this->parseWhen(self::mStr($posted, 'publish_at', ''));
+        $expireAt  = $this->parseWhen(self::mStr($posted, 'expire_at', ''));
+
         if ($slug === '') {
             $this->flash->set('error', $this->t->t('content.admin.slug_required'));
             return $id > 0 ? '?edit=' . $id : '';
         }
 
-        $r = $this->repo->save($id, $slug, $title, $body, $visible)->drainTo($this->collector);
+        $r = $this->repo->save($id, $slug, $title, $body, $visible, $visibility, $publishAt, $expireAt)
+            ->drainTo($this->collector);
         if (!$r->isOk()) {
             $this->flash->set('error', $this->t->t('content.admin.save_failed'));
             return $id > 0 ? '?edit=' . $id : '';
@@ -136,15 +144,18 @@ final class AdminContentController extends AbstractController
     private function buildContext(string $selfUrl): void
     {
         // Page list.
-        $r    = $this->repo->all(visibleOnly: false)->drainTo($this->collector);
+        $r    = $this->repo->allForAdmin()->drainTo($this->collector);
         $rows = $r->isOk() ? $r->unwrap() : [];
         $list = [];
         foreach ($rows as $row) {
+            $stateKey = $this->service->stateLabelKey($row);
             $list[] = [
                 'id'         => $row['id'],
                 'slug'       => $row['slug'],
                 'title'      => $row['title'] !== '' ? $row['title'] : $row['slug'],
                 'visible'    => $row['visible'],
+                'visibility' => $row['visibility'],
+                'state'      => $this->t->t($stateKey !== '' ? $stateKey : 'content.state.public'),
                 'view_url'   => $this->service->pageUrl($row['slug']),
                 'edit_url'   => $selfUrl . '?edit=' . $row['id'],
                 'updated_at' => $row['updated_at'],
@@ -173,6 +184,14 @@ final class AdminContentController extends AbstractController
         $this->ctx->set('f_visible', $edit === null ? true : $edit['visible']);
         $this->ctx->set('f_view_url', $edit !== null ? $this->service->pageUrl($edit['slug']) : '');
 
+        // Visibility state + scheduling (R8).
+        $curVis = $edit['visibility'] ?? 'public';
+        $this->ctx->set('f_vis_public',   $curVis === 'public');
+        $this->ctx->set('f_vis_unlisted', $curVis === 'unlisted');
+        $this->ctx->set('f_vis_private',  $curVis === 'private');
+        $this->ctx->set('f_publish_at',   $this->whenInput($edit['publish_at'] ?? null));
+        $this->ctx->set('f_expire_at',    $this->whenInput($edit['expire_at']  ?? null));
+
         $this->ctx->set('form_action', $selfUrl);
         $this->ctx->set('new_url',     $selfUrl);
         $this->ctx->set('csrf_token',  $this->csrf->generate(self::FORM));
@@ -189,6 +208,23 @@ final class AdminContentController extends AbstractController
         return trim($s, '-');
     }
 
+    /** Parse a datetime-local field ('' = none) into a unix timestamp or null. */
+    private function parseWhen(string $s): ?int
+    {
+        $s = trim($s);
+        if ($s === '') {
+            return null;
+        }
+        $ts = strtotime($s);
+        return $ts === false ? null : $ts;
+    }
+
+    /** Format a unix ts for a <input type="datetime-local">, '' for null. */
+    private function whenInput(?int $ts): string
+    {
+        return $ts === null ? '' : date('Y-m-d\TH:i', $ts);
+    }
+
     private function setLabels(): void
     {
         foreach ([
@@ -202,6 +238,14 @@ final class AdminContentController extends AbstractController
             'lbl_body'         => 'content.admin.body',
             'lbl_body_hint'    => 'content.admin.body_hint',
             'lbl_visible'      => 'content.admin.visible',
+            'lbl_visibility'   => 'content.admin.visibility',
+            'lbl_vis_public'   => 'content.state.public',
+            'lbl_vis_unlisted' => 'content.state.unlisted',
+            'lbl_vis_private'  => 'content.state.private',
+            'lbl_publish_at'   => 'content.admin.publish_at',
+            'lbl_expire_at'    => 'content.admin.expire_at',
+            'lbl_schedule_hint'=> 'content.admin.schedule_hint',
+            'lbl_state'        => 'content.admin.state',
             'lbl_save'         => 'content.admin.save',
             'lbl_delete'       => 'content.admin.delete',
             'lbl_view'         => 'content.admin.view',

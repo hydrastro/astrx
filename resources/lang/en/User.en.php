@@ -48,6 +48,8 @@ return [
     'user.field.email'           => 'Recovery email',
     'user.field.display_name'    => 'Display name',
     'user.field.birth_date'      => 'Date of birth',
+    'user.field.invite_code'     => 'Invite code',
+    'user.field.invite_code_hint'=> 'Enter the invite code you were given.',
 
     // -------------------------------------------------------------------------
     // Captcha
@@ -135,6 +137,8 @@ return [
     'user.register.data_usage_label'   => 'I accept the Data Usage Policy',
     'user.register.terms_required'     => 'You must accept the Terms and Conditions to register.',
     'user.register.data_usage_required'=> 'You must accept the Data Usage Policy to register.',
+    'user.register.invite_required'    => 'An invite code is required to register.',
+    'user.register.invite_invalid'     => 'That invite code is invalid or has already been used.',
     'user.recover.sent'     => 'If an account with that username or email exists, a reset link has been sent.',
 
     // -------------------------------------------------------------------------

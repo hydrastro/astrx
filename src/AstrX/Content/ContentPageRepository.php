@@ -14,19 +14,31 @@ use PDOException;
  * Data access for the content module: the Markdown pages (`content_page`) and
  * their `[[wiki]]` link graph (`content_link`).
  *
+ * Visibility model (R8):
+ *   - `visible`     TINYINT  — the published/draft master toggle (0 = draft).
+ *   - `visibility`  VARCHAR  — 'public' | 'unlisted' | 'private'.
+ *   - `publish_at`  ?int     — unix ts; NULL = live immediately.
+ *   - `expire_at`   ?int     — unix ts; NULL = never expires.
+ * A page is "live" when visible=1 AND now within [publish_at, expire_at). The
+ * PUBLIC listing (index/graph/sitemap) shows only live `public` pages, plus live
+ * `private` pages to a logged-in viewer; `unlisted` pages are reachable only by
+ * their direct URL. Non-live / non-viewable pages are admin-preview only. The
+ * viewing policy itself lives in {@see ContentService}; the repo just applies the
+ * SQL filters for the listing/graph/backlink sets.
+ *
  * Saving a page re-extracts its outbound links and (re)resolves inbound links,
  * so `content_link.to_id` is always the resolved target id or NULL for a broken
- * link — which is exactly what the backlinks panel, the graph and the broken-link
- * checker read. All queries are bound; native prepares mean integer columns come
- * back as ints.
+ * link. All queries are bound; native prepares mean integer columns come back as
+ * ints.
  *
- * @phpstan-type PageRow array{id:int,slug:string,title:string,body:string,visible:bool,updated_at:string}
+ * @phpstan-type PageRow array{id:int,slug:string,title:string,body:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}
+ * @phpstan-type ListRow array{id:int,slug:string,title:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}
  */
 final class ContentPageRepository
 {
     public function __construct(private readonly PDO $pdo) {}
 
-    /** @return Result<?array{id:int,slug:string,title:string,body:string,visible:bool,updated_at:string}> */
+    /** @return Result<?array{id:int,slug:string,title:string,body:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}> */
     public function bySlug(string $slug): Result
     {
         try {
@@ -44,7 +56,7 @@ final class ContentPageRepository
         }
     }
 
-    /** @return Result<?array{id:int,slug:string,title:string,body:string,visible:bool,updated_at:string}> */
+    /** @return Result<?array{id:int,slug:string,title:string,body:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}> */
     public function byId(int $id): Result
     {
         try {
@@ -63,32 +75,82 @@ final class ContentPageRepository
     }
 
     /**
-     * @param bool $visibleOnly true for the public index, false for the admin list
-     * @return Result<list<array{id:int,slug:string,title:string,visible:bool,updated_at:string}>>
+     * Every page, unfiltered — the admin list.
+     *
+     * @return Result<list<array{id:int,slug:string,title:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}>>
      */
-    public function all(bool $visibleOnly): Result
+    public function allForAdmin(): Result
     {
         try {
-            $sql = 'SELECT `id`, `slug`, `title`, `visible`, `updated_at` FROM `content_page`';
-            if ($visibleOnly) {
-                $sql .= ' WHERE `visible` = 1';
-            }
-            $sql .= ' ORDER BY `title` = \'\', `title` ASC, `slug` ASC';
-            $stmt = $this->pdo->query($sql);
-            $out  = [];
+            $stmt = $this->pdo->query(
+                'SELECT `id`, `slug`, `title`, `visible`, `visibility`, `publish_at`, `expire_at`, `updated_at`
+                   FROM `content_page`
+                  ORDER BY `title` = \'\', `title` ASC, `slug` ASC'
+            );
+            $out = [];
             if ($stmt !== false) {
                 /** @var array<string,mixed> $r */
                 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                    $out[] = [
-                        'id'         => $this->i($r['id'] ?? null),
-                        'slug'       => $this->s($r['slug'] ?? null),
-                        'title'      => $this->s($r['title'] ?? null),
-                        'visible'    => (bool) ($r['visible'] ?? 0),
-                        'updated_at' => $this->s($r['updated_at'] ?? null),
-                    ];
+                    $out[] = $this->listRow($r);
                 }
             }
             return Result::ok($out);
+        } catch (PDOException $e) {
+            return Result::err([], $this->diag($e));
+        }
+    }
+
+    /**
+     * The PUBLIC listing set: live `public` pages, plus live `private` pages when
+     * $includePrivate (a logged-in viewer). `unlisted` never appears here.
+     *
+     * @return Result<list<array{id:int,slug:string,title:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}>>
+     */
+    public function listed(bool $includePrivate, int $now): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT `id`, `slug`, `title`, `visible`, `visibility`, `publish_at`, `expire_at`, `updated_at`
+                   FROM `content_page`
+                  WHERE `visible` = 1
+                    AND (`publish_at` IS NULL OR `publish_at` <= :now)
+                    AND (`expire_at`  IS NULL OR `expire_at`  >  :now2)
+                    AND (`visibility` = \'public\' OR (:priv = 1 AND `visibility` = \'private\'))
+                  ORDER BY `title` = \'\', `title` ASC, `slug` ASC'
+            );
+            $stmt->bindValue(':now',  $now, PDO::PARAM_INT);
+            $stmt->bindValue(':now2', $now, PDO::PARAM_INT);
+            $stmt->bindValue(':priv', $includePrivate ? 1 : 0, PDO::PARAM_INT);
+            $stmt->execute();
+            $out = [];
+            /** @var array<string,mixed> $r */
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $out[] = $this->listRow($r);
+            }
+            return Result::ok($out);
+        } catch (PDOException $e) {
+            return Result::err([], $this->diag($e));
+        }
+    }
+
+    /**
+     * All slugs (any visibility) — used only to resolve `[[wiki]]` links, so a
+     * link to an unlisted/private page still resolves rather than showing broken.
+     *
+     * @return Result<array<string,true>>
+     */
+    public function allSlugs(): Result
+    {
+        try {
+            $stmt = $this->pdo->query('SELECT `slug` FROM `content_page`');
+            $set  = [];
+            if ($stmt !== false) {
+                /** @var array<string,mixed> $r */
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $set[$this->s($r['slug'] ?? null)] = true;
+                }
+            }
+            return Result::ok($set);
         } catch (PDOException $e) {
             return Result::err([], $this->diag($e));
         }
@@ -99,23 +161,42 @@ final class ContentPageRepository
      *
      * @return Result<int>
      */
-    public function save(int $id, string $slug, string $title, string $body, bool $visible): Result
-    {
+    public function save(
+        int $id,
+        string $slug,
+        string $title,
+        string $body,
+        bool $visible,
+        string $visibility,
+        ?int $publishAt,
+        ?int $expireAt,
+    ): Result {
+        // Normalise the visibility to the known set; anything else → 'public'.
+        if (!in_array($visibility, ['public', 'unlisted', 'private'], true)) {
+            $visibility = 'public';
+        }
         try {
             if ($id > 0) {
                 $stmt = $this->pdo->prepare(
-                    'UPDATE `content_page` SET `slug`=:s, `title`=:t, `body`=:b, `visible`=:v WHERE `id`=:i'
+                    'UPDATE `content_page`
+                        SET `slug`=:s, `title`=:t, `body`=:b, `visible`=:v,
+                            `visibility`=:vis, `publish_at`=:pa, `expire_at`=:ea
+                      WHERE `id`=:i'
                 );
                 $stmt->bindValue(':i', $id, PDO::PARAM_INT);
             } else {
                 $stmt = $this->pdo->prepare(
-                    'INSERT INTO `content_page` (`slug`, `title`, `body`, `visible`) VALUES (:s, :t, :b, :v)'
+                    'INSERT INTO `content_page` (`slug`, `title`, `body`, `visible`, `visibility`, `publish_at`, `expire_at`)
+                     VALUES (:s, :t, :b, :v, :vis, :pa, :ea)'
                 );
             }
             $stmt->bindValue(':s', $slug);
             $stmt->bindValue(':t', $title);
             $stmt->bindValue(':b', $body);
             $stmt->bindValue(':v', $visible ? 1 : 0, PDO::PARAM_INT);
+            $stmt->bindValue(':vis', $visibility);
+            $stmt->bindValue(':pa', $publishAt, $publishAt === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $stmt->bindValue(':ea', $expireAt,  $expireAt  === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $stmt->execute();
             if ($id === 0) {
                 $id = (int) $this->pdo->lastInsertId();
@@ -153,22 +234,29 @@ final class ContentPageRepository
     }
 
     /**
-     * Pages that link TO the given page ("what links here").
+     * Pages that link TO the given page ("what links here"). Only live PUBLIC
+     * sources are shown, so a private/unlisted/draft linker is never leaked to a
+     * public viewer.
      *
      * @return Result<list<array{slug:string,title:string}>>
      */
-    public function backlinks(int $toId): Result
+    public function backlinks(int $toId, int $now): Result
     {
         try {
             $stmt = $this->pdo->prepare(
                 'SELECT p.`slug`, p.`title`
                    FROM `content_link` l
                    JOIN `content_page` p ON p.`id` = l.`from_id`
-                  WHERE l.`to_id` = :i AND p.`visible` = 1 AND l.`from_id` <> :i2
+                  WHERE l.`to_id` = :i AND l.`from_id` <> :i2
+                    AND p.`visible` = 1 AND p.`visibility` = \'public\'
+                    AND (p.`publish_at` IS NULL OR p.`publish_at` <= :now)
+                    AND (p.`expire_at`  IS NULL OR p.`expire_at`  >  :now2)
                   ORDER BY p.`title` ASC'
             );
             $stmt->bindValue(':i', $toId, PDO::PARAM_INT);
             $stmt->bindValue(':i2', $toId, PDO::PARAM_INT);
+            $stmt->bindValue(':now', $now, PDO::PARAM_INT);
+            $stmt->bindValue(':now2', $now, PDO::PARAM_INT);
             $stmt->execute();
             /** @var list<array<string,mixed>> $rows */
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -211,38 +299,61 @@ final class ContentPageRepository
     }
 
     /**
-     * Graph data: visible nodes and the resolved edges between them.
+     * Graph data: the listed nodes (same policy as {@see listed()}) and the
+     * resolved edges between them.
      *
      * @return Result<array{nodes:list<array{id:int,slug:string,title:string}>,edges:list<array{from:int,to:int}>}>
      */
-    public function graph(): Result
+    public function graph(bool $includePrivate, int $now): Result
     {
         try {
+            $where = '`visible` = 1
+                      AND (`publish_at` IS NULL OR `publish_at` <= :now)
+                      AND (`expire_at`  IS NULL OR `expire_at`  >  :now2)
+                      AND (`visibility` = \'public\' OR (:priv = 1 AND `visibility` = \'private\'))';
+
             $nodes = [];
-            $nstmt = $this->pdo->query('SELECT `id`, `slug`, `title` FROM `content_page` WHERE `visible` = 1');
-            if ($nstmt !== false) {
-                /** @var array<string,mixed> $r */
-                foreach ($nstmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                    $nodes[] = [
-                        'id'    => $this->i($r['id'] ?? null),
-                        'slug'  => $this->s($r['slug'] ?? null),
-                        'title' => $this->s($r['title'] ?? null),
-                    ];
-                }
+            $nstmt = $this->pdo->prepare('SELECT `id`, `slug`, `title` FROM `content_page` WHERE ' . $where);
+            $nstmt->bindValue(':now', $now, PDO::PARAM_INT);
+            $nstmt->bindValue(':now2', $now, PDO::PARAM_INT);
+            $nstmt->bindValue(':priv', $includePrivate ? 1 : 0, PDO::PARAM_INT);
+            $nstmt->execute();
+            /** @var array<string,mixed> $r */
+            foreach ($nstmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $nodes[] = [
+                    'id'    => $this->i($r['id'] ?? null),
+                    'slug'  => $this->s($r['slug'] ?? null),
+                    'title' => $this->s($r['title'] ?? null),
+                ];
             }
+
             $edges = [];
-            $estmt = $this->pdo->query(
+            $estmt = $this->pdo->prepare(
                 'SELECT l.`from_id` AS f, l.`to_id` AS t
                    FROM `content_link` l
-                   JOIN `content_page` a ON a.`id` = l.`from_id` AND a.`visible` = 1
-                   JOIN `content_page` b ON b.`id` = l.`to_id`  AND b.`visible` = 1'
+                   JOIN `content_page` a ON a.`id` = l.`from_id`
+                   JOIN `content_page` b ON b.`id` = l.`to_id`
+                  WHERE (a.`visible` = 1
+                         AND (a.`publish_at` IS NULL OR a.`publish_at` <= :now)
+                         AND (a.`expire_at`  IS NULL OR a.`expire_at`  >  :now2)
+                         AND (a.`visibility` = \'public\' OR (:priv = 1 AND a.`visibility` = \'private\')))
+                    AND (b.`visible` = 1
+                         AND (b.`publish_at` IS NULL OR b.`publish_at` <= :now3)
+                         AND (b.`expire_at`  IS NULL OR b.`expire_at`  >  :now4)
+                         AND (b.`visibility` = \'public\' OR (:priv2 = 1 AND b.`visibility` = \'private\')))'
             );
-            if ($estmt !== false) {
-                /** @var array<string,mixed> $r */
-                foreach ($estmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                    $edges[] = ['from' => $this->i($r['f'] ?? null), 'to' => $this->i($r['t'] ?? null)];
-                }
+            $estmt->bindValue(':now', $now, PDO::PARAM_INT);
+            $estmt->bindValue(':now2', $now, PDO::PARAM_INT);
+            $estmt->bindValue(':now3', $now, PDO::PARAM_INT);
+            $estmt->bindValue(':now4', $now, PDO::PARAM_INT);
+            $estmt->bindValue(':priv', $includePrivate ? 1 : 0, PDO::PARAM_INT);
+            $estmt->bindValue(':priv2', $includePrivate ? 1 : 0, PDO::PARAM_INT);
+            $estmt->execute();
+            /** @var array<string,mixed> $r */
+            foreach ($estmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $edges[] = ['from' => $this->i($r['f'] ?? null), 'to' => $this->i($r['t'] ?? null)];
             }
+
             return Result::ok(['nodes' => $nodes, 'edges' => $edges]);
         } catch (PDOException $e) {
             return Result::err(['nodes' => [], 'edges' => []], $this->diag($e));
@@ -288,7 +399,25 @@ final class ContentPageRepository
 
     /**
      * @param array<string,mixed> $r
-     * @return array{id:int,slug:string,title:string,body:string,visible:bool,updated_at:string}
+     * @return array{id:int,slug:string,title:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}
+     */
+    private function listRow(array $r): array
+    {
+        return [
+            'id'         => $this->i($r['id'] ?? null),
+            'slug'       => $this->s($r['slug'] ?? null),
+            'title'      => $this->s($r['title'] ?? null),
+            'visible'    => (bool) ($r['visible'] ?? 0),
+            'visibility' => $this->vis($r['visibility'] ?? null),
+            'publish_at' => $this->ni($r['publish_at'] ?? null),
+            'expire_at'  => $this->ni($r['expire_at'] ?? null),
+            'updated_at' => $this->s($r['updated_at'] ?? null),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $r
+     * @return array{id:int,slug:string,title:string,body:string,visible:bool,visibility:string,publish_at:?int,expire_at:?int,updated_at:string}
      */
     private function row(array $r): array
     {
@@ -298,6 +427,9 @@ final class ContentPageRepository
             'title'      => $this->s($r['title'] ?? null),
             'body'       => $this->s($r['body'] ?? null),
             'visible'    => (bool) ($r['visible'] ?? 0),
+            'visibility' => $this->vis($r['visibility'] ?? null),
+            'publish_at' => $this->ni($r['publish_at'] ?? null),
+            'expire_at'  => $this->ni($r['expire_at'] ?? null),
             'updated_at' => $this->s($r['updated_at'] ?? null),
         ];
     }
@@ -315,5 +447,20 @@ final class ContentPageRepository
     private function i(mixed $v): int
     {
         return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
+    }
+
+    /** Nullable int (publish_at / expire_at): NULL stays NULL. */
+    private function ni(mixed $v): ?int
+    {
+        if ($v === null) {
+            return null;
+        }
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : null);
+    }
+
+    private function vis(mixed $v): string
+    {
+        $s = is_scalar($v) ? (string) $v : 'public';
+        return in_array($s, ['public', 'unlisted', 'private'], true) ? $s : 'public';
     }
 }

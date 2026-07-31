@@ -29,7 +29,7 @@ return [
     'content.admin.title'           => 'Titolo',
     'content.admin.body'            => 'Corpo (Markdown)',
     'content.admin.body_hint'       => 'Markdown: # titolo, **grassetto**, *corsivo*, `codice`, - elenchi, > citazioni, [testo](url) e [[slug]] per collegare un\'altra pagina.',
-    'content.admin.visible'         => 'Elencata (visibile a tutti)',
+    'content.admin.visible'         => 'Pubblicata (deseleziona per una bozza)',
     'content.admin.save'            => 'Salva',
     'content.admin.delete'          => 'Elimina',
     'content.admin.view'            => 'Vedi',
@@ -43,4 +43,17 @@ return [
     'content.admin.saved'           => 'Pagina salvata.',
     'content.admin.save_failed'     => 'Impossibile salvare la pagina — lo slug è già in uso?',
     'content.admin.deleted'         => 'Pagina eliminata.',
+
+    // ── Stati di visibilità + pianificazione (R8) ───────────────────────────
+    'content.admin.visibility'      => 'Visibilità',
+    'content.admin.publish_at'      => 'Pubblica il',
+    'content.admin.expire_at'       => 'Scade il',
+    'content.admin.schedule_hint'   => 'Facoltativo. Vuoto = subito attiva / non scade mai. Orari nel fuso del server.',
+    'content.admin.state'           => 'Stato',
+    'content.state.public'          => 'Pubblica',
+    'content.state.unlisted'        => 'Non elencata',
+    'content.state.private'         => 'Privata',
+    'content.state.draft'           => 'Bozza',
+    'content.state.scheduled'       => 'Pianificata',
+    'content.state.expired'         => 'Scaduta',
 ];

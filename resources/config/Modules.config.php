@@ -26,5 +26,6 @@ return [
         'search'     => true,
         'webmail'    => true,
         'content'    => true,
+        'media'      => true,
     ],
 ];

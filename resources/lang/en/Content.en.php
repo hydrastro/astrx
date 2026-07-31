@@ -30,7 +30,7 @@ return [
     'content.admin.title'           => 'Title',
     'content.admin.body'            => 'Body (Markdown)',
     'content.admin.body_hint'       => 'Markdown: # heading, **bold**, *italic*, `code`, - lists, > quotes, [text](url), and [[slug]] to link another page.',
-    'content.admin.visible'         => 'Listed (visible to everyone)',
+    'content.admin.visible'         => 'Published (uncheck to keep as a draft)',
     'content.admin.save'            => 'Save',
     'content.admin.delete'          => 'Delete',
     'content.admin.view'            => 'View',
@@ -44,4 +44,17 @@ return [
     'content.admin.saved'           => 'Page saved.',
     'content.admin.save_failed'     => 'Could not save the page — is the slug already taken?',
     'content.admin.deleted'         => 'Page deleted.',
+
+    // ── Visibility states + scheduling (R8) ─────────────────────────────────
+    'content.admin.visibility'      => 'Visibility',
+    'content.admin.publish_at'      => 'Publish at',
+    'content.admin.expire_at'       => 'Expire at',
+    'content.admin.schedule_hint'   => 'Optional. Blank = live now / never expires. Times use the server timezone.',
+    'content.admin.state'           => 'State',
+    'content.state.public'          => 'Public',
+    'content.state.unlisted'        => 'Unlisted',
+    'content.state.private'         => 'Private',
+    'content.state.draft'           => 'Draft',
+    'content.state.scheduled'       => 'Scheduled',
+    'content.state.expired'         => 'Expired',
 ];

@@ -44,5 +44,7 @@ return [
     'WORDING_ADMIN_TRAP.label'            => 'Trappola per bot',
     'WORDING_CONTENT.label'               => 'Pagine',
     'WORDING_ADMIN_CONTENT.label'         => 'Contenuti',
+    'WORDING_ADMIN_INVITES.label'         => 'Inviti',
+    'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
 ];

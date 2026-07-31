@@ -58,6 +58,16 @@ return [
         'require_data_usage' => false,
         'data_usage_url'     => '',
     ],
+    // ── Invite-only registration ────────────────────────────────────────────
+    // require_invite = true: the register form shows an "Invite code" field and
+    // registration is refused (no account created) unless a valid, unused,
+    // admin-issued invite code is supplied. Codes are minted from the admin
+    // "Invitations" page and are single-use. Read via getConfigBool('Invite', …)
+    // by InviteService::requireInvite(); a getConfig-read section (like
+    // RegisterConsent above) so it needs no #[InjectConfig] setter.
+    'Invite' => [
+        'require_invite' => false,
+    ],
 
     'AvatarService' => [
         'avatar_dir' => '/app/resources/avatar',

@@ -13,6 +13,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 
 /**
@@ -38,6 +39,7 @@ final class ContentController extends AbstractController
         private readonly CurrentUrl             $currentUrl,
         private readonly ContentPageRepository  $repo,
         private readonly ContentService         $service,
+        private readonly UserSession            $session,
     ) {
         parent::__construct($collector);
     }
@@ -55,12 +57,14 @@ final class ContentController extends AbstractController
         $slug = self::str($this->currentUrl->tailSegment(0));
         $view = self::queryStr($this->request, 'view');
 
+        $isLoggedIn = $this->session->isLoggedIn();
+
         if ($slug !== '') {
             $this->renderView($slug);
         } elseif ($view === 'graph') {
-            $this->renderGraph();
+            $this->renderGraph($isLoggedIn);
         } else {
-            $this->renderIndex();
+            $this->renderIndex($isLoggedIn);
         }
 
         $this->ctx->set('index_url', $this->service->indexUrl());
@@ -73,9 +77,14 @@ final class ContentController extends AbstractController
     {
         $r    = $this->repo->bySlug($slug)->drainTo($this->collector);
         $page = $r->isOk() ? $r->unwrap() : null;
-        $isAdmin = $this->gate->can(Permission::ADMIN_ACCESS);
+        $isAdmin    = $this->gate->can(Permission::ADMIN_ACCESS);
+        $isLoggedIn = $this->session->isLoggedIn();
 
-        if ($page === null || (!$page['visible'] && !$isAdmin)) {
+        // Visibility gate: a draft/scheduled/expired page is admin-preview only; a
+        // `private` page needs a logged-in viewer; `public`/`unlisted` are
+        // reachable by direct URL. Anything the viewer may not see → a plain 404
+        // (no existence signal).
+        if ($page === null || !$this->service->canView($page, $isAdmin, $isLoggedIn)) {
             http_response_code(404);
             $this->ctx->set('is_missing',  true);
             $this->ctx->set('missing_slug', $slug);
@@ -86,28 +95,33 @@ final class ContentController extends AbstractController
         $title = $page['title'] !== '' ? $page['title'] : $slug;
         $backlinks = $this->service->backlinks($page['id']);
 
+        // Admin preview badge: show WHY a non-public/non-live page is only visible
+        // to staff (draft / scheduled / expired / unlisted / private).
+        $stateKey = $this->service->stateLabelKey($page);
+
         $this->ctx->set('is_view',       true);
         $this->ctx->set('title',         $title);       // document <title>
         $this->ctx->set('page_title',    $title);
         $this->ctx->set('page_html',     $this->service->renderBody($page['body']));
         $this->ctx->set('updated_at',    $page['updated_at']);
-        $this->ctx->set('page_hidden',   !$page['visible']);   // admin preview of an unlisted page
+        $this->ctx->set('page_state',    $stateKey !== '' ? $this->t->t($stateKey) : '');
+        $this->ctx->set('page_hidden',   $stateKey !== '');   // any non-plain-public state
         $this->ctx->set('backlinks',     $backlinks);
         $this->ctx->set('has_backlinks', $backlinks !== []);
     }
 
-    private function renderGraph(): void
+    private function renderGraph(bool $isLoggedIn): void
     {
-        $graph = $this->service->graphSvg();
+        $graph = $this->service->graphSvg($isLoggedIn);
         $this->ctx->set('is_graph',  true);
         $this->ctx->set('graph_svg', $graph['svg']);
         $this->ctx->set('graph_empty', $graph['count'] === 0);
         $this->ctx->set('title', $this->t->t('content.graph_heading'));
     }
 
-    private function renderIndex(): void
+    private function renderIndex(bool $isLoggedIn): void
     {
-        $pages = $this->service->index();
+        $pages = $this->service->index($isLoggedIn);
         $this->ctx->set('is_index',   true);
         $this->ctx->set('pages',      $pages);
         $this->ctx->set('has_pages',  $pages !== []);
