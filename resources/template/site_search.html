@@ -23,6 +23,7 @@
     <div class="search-header"><h1>{{lbl_heading}}</h1></div>
 
     <form class="search-form" method="get" action="{{form_action}}">
+        {{&sid_input}}
         <p><label>{{lbl_query}} <input type="text" name="q" value="{{query}}" autocomplete="off"></label></p>
         <p><label>{{lbl_type}}
             <select name="type">

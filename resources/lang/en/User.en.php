@@ -82,6 +82,13 @@ return [
     'user.recover.submit'        => 'Send reset link',
     'user.recover.back_to_login' => 'Back to login',
     'user.recover.unavailable'   => 'Password recovery is not available.',
+    'user.recover.reset_heading'     => 'Set a new password',
+    'user.recover.reset_description' => 'Choose a new password for your account. After saving, sign in with your new password.',
+    'user.recover.reset_new'         => 'New password',
+    'user.recover.reset_repeat'      => 'Repeat new password',
+    'user.recover.reset_submit'      => 'Set new password',
+    'user.recover.reset_done'        => 'Your password has been updated. Please sign in with your new password.',
+    'user.recover.reset_expired'     => 'The recovery link has expired. Please request a new one.',
 
     // -------------------------------------------------------------------------
     // User home

@@ -24,6 +24,7 @@
     <div class="board-header"><h1>{{lbl_search_heading}}</h1></div>
 
     <form class="search-form" method="get" action="{{form_action}}">
+        {{&sid_input}}
         <p><label>{{lbl_search_query}} <input type="text" name="q" value="{{q}}" autocomplete="off"></label></p>
         {{#has_boards}}
         <p><label>{{lbl_search_board}}

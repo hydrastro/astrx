@@ -240,8 +240,13 @@ final class SecureSessionHandler implements
         // transparently redirect to the successor session.
         $replacedBy = isset($row['replaced_by']) && is_string($row['replaced_by'])
             ? $row['replaced_by'] : null;
-        $replaceAt  = isset($row['replace_at'])  && is_int($row['replace_at'])
-            ? $row['replace_at'] : null;
+        // Coerce via is_numeric()/cast rather than is_int(): under PDO
+        // ATTR_EMULATE_PREPARES=true the INT column is returned as a STRING, so
+        // an is_int() check would yield null and silently DISABLE the
+        // grace-period expiry below — letting a rotated-away/stolen old sid stay
+        // valid indefinitely. A numeric string is honoured either way.
+        $replaceAt  = isset($row['replace_at']) && is_numeric($row['replace_at'])
+            ? (int) $row['replace_at'] : null;
 
         // Grace-period EXPIRY (security): once an old (rotated-away) row is past
         // the grace window, the old session id MUST stop working. Its timestamp

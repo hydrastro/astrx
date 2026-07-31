@@ -4,6 +4,7 @@
 
     {{#comments_any}}
     <form method="GET" action="{{comments_filter_action}}">
+        {{&sid_input}}
         {{&comments_base_query_inputs}}
         <p>
             <label>{{comment_label_show}}: <input type="number" name="cs" class="input" size="4" value="{{comments_per_page_val}}" min="0"></label>

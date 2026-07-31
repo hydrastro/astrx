@@ -305,6 +305,45 @@ final class DefaultTemplateContext
             'lang_nav_show' => false,
         ];
 
+        // Cookieless session propagation: expose the current session id so links
+        // and forms can carry it when the deployment runs without cookies (Tor
+        // admins may disable them entirely). {{sid}} is the raw id; {{&sid_input}}
+        // is a ready hidden <input> to drop into GET forms — a GET submit rebuilds
+        // its query string from fields, dropping a sid that lived only in the
+        // action URL. Both are '' in cookie mode, so they're safe to place
+        // unconditionally in templates.
+        $sid = '';
+        $sidInput = '';
+        if (!$this->config->getConfigBool('Session', 'use_cookies', true)) {
+            $sidVal = session_id();
+            $sid    = is_string($sidVal) ? $sidVal : '';
+            if ($sid !== '') {
+                $sessionKey = $this->config->getConfigString('Routing', 'session_key', 'sid');
+                $sidInput = '<input type="hidden" name="'
+                    . htmlspecialchars($sessionKey, ENT_QUOTES) . '" value="'
+                    . htmlspecialchars($sid, ENT_QUOTES) . '">';
+            }
+        }
+        $this->vars['sid']       = $sid;
+        $this->vars['sid_input'] = $sidInput;
+        // The site-title/logo link (title_url, default '/') is a raw config value
+        // that bypasses UrlGenerator; in cookieless rewrite mode inject the sid as
+        // the leading path segment so clicking the logo keeps the session. Only
+        // internal root-relative targets are touched (never '//host' or an
+        // absolute external URL an operator may have configured).
+        if ($sid !== '' && $this->config->getConfigBool('Routing', 'url_rewrite', true)) {
+            $titleUrl = $this->config->getConfigString('ContentManager', 'title_url', '/');
+            if (str_starts_with($titleUrl, '/') && !str_starts_with($titleUrl, '//')) {
+                // Prepend [locale]/<sid> so the logo link keeps BOTH the session
+                // AND the current locale (matches UrlGenerator's segment order);
+                // injecting only the sid silently reverted the user to the
+                // default locale on a logo click.
+                $loc    = $this->t->getLocale();
+                $prefix = '/' . ($loc !== '' ? $loc . '/' : '') . $sid;
+                $this->vars['title_url'] = $prefix . ($titleUrl === '/' ? '' : $titleUrl);
+            }
+        }
+
         // ── Module contributions ──────────────────────────────────────────────
         // Enabled modules contribute their nav partial slots and header/footer
         // vars: the imageboard/chat nav slots ({{> board_nav}}/{{> chat_nav}})

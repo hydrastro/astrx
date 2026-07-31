@@ -596,8 +596,13 @@ final class UserService
 
         $tokenType = (is_int($row['token_type']) ? $row['token_type'] : 0);
 
-        // Mark token as used
-        $this->repo->markTokenUsed($hexId);
+        // Atomically consume the single-use token: only the request that flips
+        // unused→used proceeds. A concurrent double-click, a replay, or a failed
+        // UPDATE yields ok(false)/err → treat as not-found (closes TOCTOU/replay).
+        $consumed = $this->repo->markTokenUsed($hexId);
+        if (!$consumed->isOk() || $consumed->unwrap() !== true) {
+            return $this->opErr('token_not_found');
+        }
 
         // Email verify and email change both confirm the address
         if ($tokenType === self::TOKEN_EMAIL_VERIFY || $tokenType === self::TOKEN_EMAIL_CHANGE) {

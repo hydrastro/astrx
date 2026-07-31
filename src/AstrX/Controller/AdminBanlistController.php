@@ -63,7 +63,7 @@ final class AdminBanlistController extends AbstractController
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
             $qs = $this->processForm($prgToken);
-            Response::redirect($this->request->uri()->path() . $qs)
+            Response::redirect($this->appendSid($this->request->uri()->path() . $qs))
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -364,13 +364,13 @@ final class AdminBanlistController extends AbstractController
                 'name'       => (string) $route['name'],
                 'rounds'     => $rounds,
                 'is_editing' => $isEditing,
-                'edit_url'   => $this->request->uri()->path() . '?route_edit=' . rawurlencode($key),
+                'edit_url'   => $this->appendSid($this->request->uri()->path() . '?route_edit=' . rawurlencode($key)),
                 'cancel_url' => $this->request->uri()->path(),
             ];
         }
 
         $csrfToken = $this->csrf->generate(self::FORM);
-        $prgId     = $this->prg->createId($this->request->uri()->path());
+        $prgId     = $this->prg->createId($this->appendSid($this->request->uri()->path()));
 
         $this->ctx->set('csrf_token',     $csrfToken);
         $this->ctx->set('prg_id',         $prgId);
@@ -383,6 +383,30 @@ final class AdminBanlistController extends AbstractController
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Append the cookieless query-mode session id to a raw self-URL so the PRG
+     * replay redirect, the PRG target stored for the settling GET, and the route
+     * "edit" link keep the session. Rewrite mode carries the sid in the path
+     * already; cookie mode has nothing to add — a no-op unless cookies are OFF and
+     * URL-rewrite is OFF (the sid rides as a query parameter).
+     *
+     * NOTE: {{base_url}} is intentionally NOT routed through this — admin_banlist.html
+     * concatenates it as `{{base_url}}?edit={{id}}`, so a `?sid=` suffix here would
+     * produce a double `?`. Fixing the ban edit/cancel links needs a template change.
+     */
+    private function appendSid(string $url): string
+    {
+        if (!$this->config->getConfigBool('Session', 'use_cookies', true)
+            && !$this->config->getConfigBool('Routing', 'url_rewrite', true)) {
+            $sk  = $this->config->getConfigString('Routing', 'session_key', 'sid');
+            $sid = session_id();
+            if (is_string($sid) && $sid !== '') {
+                $url .= (str_contains($url, '?') ? '&' : '?') . rawurlencode($sk) . '=' . rawurlencode($sid);
+            }
+        }
+        return $url;
+    }
 
     /** @return array<string, list<array<string,mixed>>> */
     private function loadRoutes(): array

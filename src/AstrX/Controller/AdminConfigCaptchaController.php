@@ -235,7 +235,11 @@ final class AdminConfigCaptchaController extends AbstractController
         $full['CaptchaRenderer']['login_captcha_difficulty']    = self::mInt($p, 'login_captcha_difficulty', CaptchaType::MEDIUM->value);
         $full['CaptchaRenderer']['register_captcha_difficulty'] = self::mInt($p, 'register_captcha_difficulty', CaptchaType::MEDIUM->value);
         $full['CaptchaRenderer']['recover_captcha_difficulty']  = self::mInt($p, 'recover_captcha_difficulty', CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['comment_captcha_difficulty']  = self::mInt($p, 'comment_captcha_difficulty', CaptchaType::MEDIUM->value);
+        // Clamp to the CaptchaType range (0..2) at the point of storage: the
+        // consumer (CommentController, guest comment form) resolves this via
+        // CaptchaType::from()/tryFrom(), and an out-of-range value would
+        // otherwise be persisted and 500 every guest rendering comments.
+        $full['CaptchaRenderer']['comment_captcha_difficulty']  = max(0, min(2, self::mInt($p, 'comment_captcha_difficulty', CaptchaType::MEDIUM->value)));
         return $this->writer->write('Captcha', $full);
     }
 

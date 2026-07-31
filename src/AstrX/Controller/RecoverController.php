@@ -25,7 +25,8 @@ use AstrX\User\Diagnostic\UserNotFoundDiagnostic;
  */
 final class RecoverController extends AbstractController
 {
-    private const FORM = 'recover';
+    private const FORM       = 'recover';
+    private const RESET_FORM = 'recover_reset';
 
     public function __construct(
         DiagnosticsCollector                   $collector,
@@ -51,6 +52,21 @@ final class RecoverController extends AbstractController
             Response::redirect($this->urlGen->toPage($this->t->t('WORDING_USER_HOME')))
                 ->send()->drainTo($this->collector);
             exit;
+        }
+
+        // Recovery set-password step: reached after clicking a valid recovery
+        // link, which granted a one-shot _pw_reset_uid capability (NO session).
+        // Render/process the "choose a new password" form here, logged-out; a
+        // session is only established when the user logs in fresh afterwards.
+        $resetUid   = $_SESSION['_pw_reset_uid']   ?? null;
+        $resetUntil = $_SESSION['_pw_reset_until'] ?? 0;
+        if (is_string($resetUid) && $resetUid !== ''
+            && is_int($resetUntil) && $resetUntil > time()) {
+            $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
+            if (is_string($prgToken) && $prgToken !== '') {
+                return $this->processReset($prgToken, $resetUid);
+            }
+            return $this->renderResetForm();
         }
 
         if (!$this->userService->requireRecoveryEmail()) {
@@ -163,9 +179,85 @@ final class RecoverController extends AbstractController
         exit;
     }
 
+    /**
+     * Process the recovery set-password submission. Validates CSRF + the one-shot
+     * grant, sets the new password (no current-password needed — the recovery
+     * token already proved control), burns the grant, and sends the user to log
+     * in fresh. Deliberately does NOT auto-login: clicking a link never yields a
+     * session, and the new session comes only from a clean login with the new
+     * password.
+     *
+     * @return Result<mixed>
+     */
+    private function processReset(string $prgToken, string $resetUid): Result
+    {
+        $posted    = $this->prg->pull($prgToken) ?? [];
+        $csrfToken = self::mStr($posted, '_csrf', '');
+
+        $csrfResult = $this->csrf->verify(self::RESET_FORM, $csrfToken);
+        if (!$csrfResult->isOk()) {
+            $csrfResult->drainTo($this->collector);
+            return $this->renderResetForm();
+        }
+
+        // Re-validate the grant at submit time — it may have expired between the
+        // GET that rendered the form and this POST — and confirm it still binds
+        // to the same uid.
+        $stillUid   = $_SESSION['_pw_reset_uid']   ?? null;
+        $stillUntil = $_SESSION['_pw_reset_until'] ?? 0;
+        if (!(is_string($stillUid) && $stillUid === $resetUid
+              && is_int($stillUntil) && $stillUntil > time())) {
+            unset($_SESSION['_pw_reset_uid'], $_SESSION['_pw_reset_until']);
+            $this->flash->set('error', $this->t->t('user.recover.reset_expired'));
+            Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))
+                ->send()->drainTo($this->collector);
+            exit;
+        }
+
+        $new    = self::mStr($posted, 'new_password', '');
+        $repeat = self::mStr($posted, 'repeat_password', '');
+
+        // tokenUnlock=true → changePassword skips the current-password check.
+        $result = $this->userService->changePassword($resetUid, '', $new, $repeat, true);
+        $result->drainTo($this->collector);
+        if (!$result->isOk()) {
+            return $this->renderResetForm();
+        }
+
+        // Success: burn the one-shot grant and require a fresh login.
+        unset($_SESSION['_pw_reset_uid'], $_SESSION['_pw_reset_until']);
+        $this->flash->set('success', $this->t->t('user.recover.reset_done'));
+        Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))
+            ->send()->drainTo($this->collector);
+        exit;
+    }
+
+    /** @return Result<mixed> */
+    private function renderResetForm(): Result
+    {
+        $csrfToken = $this->csrf->generate(self::RESET_FORM);
+        $pageUrl   = $this->request->uri()->path();
+        $prgId     = $this->prg->createId($pageUrl);
+
+        $this->ctx->set('reset_mode',           true);
+        $this->ctx->set('prg_id',               $prgId);
+        $this->ctx->set('csrf_token',           $csrfToken);
+        $this->ctx->set('recovery_unavailable', false);
+        $this->ctx->set('reset_heading',        $this->t->t('user.recover.reset_heading'));
+        $this->ctx->set('reset_description',    $this->t->t('user.recover.reset_description'));
+        $this->ctx->set('reset_new',            $this->t->t('user.recover.reset_new'));
+        $this->ctx->set('reset_repeat',         $this->t->t('user.recover.reset_repeat'));
+        $this->ctx->set('reset_submit',         $this->t->t('user.recover.reset_submit'));
+        $this->ctx->set('login_url',            $this->urlGen->toPage($this->t->t('WORDING_LOGIN')));
+        $this->ctx->set('recover_back',         $this->t->t('user.recover.back_to_login'));
+        return $this->ok();
+    }
+
     /** @return Result<mixed> */
     private function renderForm(): Result
     {
+        $this->ctx->set('reset_mode', false);
+
         $csrfToken = $this->csrf->generate(self::FORM);
         $pageUrl   = $this->request->uri()->path();
         $prgId     = $this->prg->createId($pageUrl);

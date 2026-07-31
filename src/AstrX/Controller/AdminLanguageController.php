@@ -103,6 +103,15 @@ final class AdminLanguageController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function save(array $posted): string
     {
+        // Entry is ADMIN_ACCESS (a MOD may view the translation console), but
+        // writing translation strings overwrites core/module locale files —
+        // re-gate on ADMIN_CONFIG_SYSTEM so a view-only MOD cannot rewrite them.
+        // Mirrors AdminContentController::save()/delete() and AdminSearchController.
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         $domain = self::mStr($posted, 'domain', '');
         $lang   = self::mStr($posted, 'lang', '');
         if ($domain === '' || $lang === '' || !$this->catalog->localeExists($lang)) {
@@ -135,6 +144,14 @@ final class AdminLanguageController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function addLanguage(array $posted): string
     {
+        // Re-gate: adding a language clones a whole locale tree AND rewrites
+        // resources/config/config.php (available_languages) via ConfigWriter —
+        // a config-system mutation, not a plain-MOD action. See save().
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         $code   = strtolower(trim(self::mStr($posted, 'new_locale', '')));
         $source = strtolower(trim(self::mStr($posted, 'source_locale', $this->catalog->primary())));
 
@@ -156,6 +173,14 @@ final class AdminLanguageController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function deleteLanguage(array $posted): string
     {
+        // Re-gate: deleting a language recursively removes its locale file tree
+        // (rmTree/unlink/rmdir) AND rewrites resources/config/config.php — a
+        // config-system mutation, not a plain-MOD action. See save().
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         $code = strtolower(trim(self::mStr($posted, 'locale', '')));
 
         // Never delete the primary (reference/fallback) or the configured default.

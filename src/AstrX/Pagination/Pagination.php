@@ -22,6 +22,17 @@ use AstrX\Http\Request;
  */
 final class Pagination
 {
+    /**
+     * Upper bound applied to a REQUEST-supplied per-page ('show') value.
+     * Resource-amplification defence: without a cap an unauthenticated
+     * ?show=0 selects the whole table unpaged (isUnpaged() → LIMIT-less
+     * SELECT) and ?show=<huge> requests an unbounded page — both saturate a
+     * bandwidth-limited onion. This bound constrains ONLY values that came
+     * from the request; an admin-configured default (fromRequest's
+     * $defaultPerPage) is honoured as-is, including a deliberate 0 = unpaged.
+     */
+    public const int MAX_REQUEST_PER_PAGE = 200;
+
     public readonly int    $page;
     public readonly int    $perPage;
     public readonly bool   $descending;
@@ -58,9 +69,21 @@ final class Pagination
     ): self {
         $pageVal    = $request->query()->getInt($pnKey, 1)->valueOr(1);
         $page    = max(1, is_int($pageVal) ? $pageVal : 1);
-        $perPageVal = $request->query()->getInt($showKey, $defaultPerPage)
-                          ->valueOr($defaultPerPage);
-        $perPage = max(0, is_int($perPageVal) ? $perPageVal : $defaultPerPage);
+        // Per-page clamp (resource-amplification defence). A value that the
+        // request supplied via $showKey is clamped to [1, MAX_REQUEST_PER_PAGE]
+        // so a public ?show=0 cannot force an unpaged full-table dump and
+        // ?show=<huge> cannot request an unbounded page. When $showKey is NOT
+        // present in the request we fall back to the admin-configured
+        // $defaultPerPage unchanged — including a deliberate 0 (unpaged), which
+        // only an operator can set (News.per_page), never a public request.
+        if ($request->query()->has($showKey)) {
+            $perPageVal = $request->query()->getInt($showKey, $defaultPerPage)
+                              ->valueOr($defaultPerPage);
+            $perPageInt = is_int($perPageVal) ? $perPageVal : $defaultPerPage;
+            $perPage    = max(1, min(self::MAX_REQUEST_PER_PAGE, $perPageInt));
+        } else {
+            $perPage = max(0, $defaultPerPage);
+        }
 
         $rawOrder   = $request->query()->get($orderKey);
         $descending = match (is_string($rawOrder) ? strtolower($rawOrder) : '') {

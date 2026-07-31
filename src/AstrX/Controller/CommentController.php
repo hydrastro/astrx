@@ -347,9 +347,14 @@ final class CommentController extends AbstractController
         $captchaId    = '';
         $captchaImage = '';
         if (!$this->session->isLoggedIn()) {
-            $commentDifficulty = CaptchaType::from(
+            // tryFrom(...) ?? MEDIUM: comment_captcha_difficulty is MOD-settable
+            // via the admin config with no guaranteed 0..2 clamp, and
+            // CaptchaType::from() would throw a ValueError (→ 500) on any
+            // out-of-range value, breaking comment rendering for EVERY guest.
+            // Fall back to MEDIUM instead of trusting the stored int.
+            $commentDifficulty = CaptchaType::tryFrom(
                 $this->config->getConfigInt('CaptchaRenderer', 'comment_captcha_difficulty', CaptchaType::MEDIUM->value)
-            );
+            ) ?? CaptchaType::MEDIUM;
             $captchaGen = $this->captchaService->generateWithType($commentDifficulty);
             if ($captchaGen->isOk()) {
                 ['id' => $captchaId, 'image_b64' => $captchaImage] = $captchaGen->unwrap();

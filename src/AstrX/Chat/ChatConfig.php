@@ -134,8 +134,12 @@ final class ChatConfig
     #[InjectConfig('min_refresh_secs')]      public function setMinRefreshSecs(int $v): void       { $this->minRefreshSecs = max(1, $v); }
     #[InjectConfig('max_refresh_secs')]      public function setMaxRefreshSecs(int $v): void       { $this->maxRefreshSecs = max(1, $v); }
     #[InjectConfig('online_window_secs')]    public function setOnlineWindowSecs(int $v): void     { $this->onlineWindowSecs = max(5, $v); }
-    #[InjectConfig('nick_min_len')]          public function setNickMinLen(int $v): void           { $this->nickMinLen = max(1, $v); }
-    #[InjectConfig('nick_max_len')]          public function setNickMaxLen(int $v): void           { $this->nickMaxLen = max(1, $v); }
+    // Nick length bounds feed a `{min,max}` regex quantifier in ChatLoginController;
+    // clamping each independently could leave min > max (an invalid quantifier that
+    // would fail to compile). Enforce max >= min in BOTH setters so the invariant
+    // holds regardless of config-injection order.
+    #[InjectConfig('nick_min_len')]          public function setNickMinLen(int $v): void           { $this->nickMinLen = max(1, $v); if ($this->nickMaxLen < $this->nickMinLen) { $this->nickMaxLen = $this->nickMinLen; } }
+    #[InjectConfig('nick_max_len')]          public function setNickMaxLen(int $v): void           { $this->nickMaxLen = max(1, $v); if ($this->nickMaxLen < $this->nickMinLen) { $this->nickMaxLen = $this->nickMinLen; } }
     #[InjectConfig('names_link_to_profile')] public function setNamesLinkToProfile(bool $v): void  { $this->namesLinkToProfile = $v; }
     #[InjectConfig('allow_user_color')]      public function setAllowUserColor(bool $v): void      { $this->allowUserColor = $v; }
     #[InjectConfig('default_color')]         public function setDefaultColor(string $v): void      { $this->defaultColor = trim($v); }

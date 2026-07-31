@@ -10,6 +10,8 @@ use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\User\UserGroup;
+use AstrX\User\UserSession;
 
 /**
  * Moderation actions on a chat identity — all gated by CHAT_MODERATE.
@@ -31,6 +33,7 @@ final class ChatModerationService
         private readonly ChatRepository      $chat,
         private readonly ChatService         $announce,
         private readonly ChatKickPenalty     $kickPenalty,
+        private readonly UserSession         $session,
     ) {}
 
     /**
@@ -46,6 +49,11 @@ final class ChatModerationService
             return $this->denied();
         }
         $p    = $this->presenceRow($ident);
+        // Rank guard: a MOD may not act on a peer MOD or an ADMIN (only an ADMIN
+        // may act on an equal-or-higher rank). Mirrors ChatPolicy CHAT_DELETE_ANY.
+        if ($p !== null && $this->outranksActor($p)) {
+            return $this->denied();
+        }
         $nick = $p !== null && is_scalar($p['nick'] ?? null) ? (string) $p['nick'] : '';
 
         $result = $this->presence->kick($ident);
@@ -68,6 +76,9 @@ final class ChatModerationService
         if ($p === null) {
             return Result::ok(false);
         }
+        if ($this->outranksActor($p)) {
+            return $this->denied();
+        }
         [$hexUserId, $packedIp] = $this->identityBits($p);
         // Mute keys on the account (members) or the per-visitor chat ident
         // (guests) — never the shared Tor exit IP, which would mute every guest
@@ -85,6 +96,9 @@ final class ChatModerationService
         $p = $this->presenceRow($ident);
         if ($p === null) {
             return Result::ok(false);
+        }
+        if ($this->outranksActor($p)) {
+            return $this->denied();
         }
 
         $nick      = is_scalar($p['nick']   ?? null) ? (string) $p['nick']   : '';
@@ -126,6 +140,9 @@ final class ChatModerationService
         $p = $this->presenceRow($ident);
         if ($p === null) {
             return Result::ok(false);
+        }
+        if ($this->outranksActor($p)) {
+            return $this->denied();
         }
         $nick = is_scalar($p['nick'] ?? null) ? (string) $p['nick'] : '';
 
@@ -208,6 +225,28 @@ final class ChatModerationService
     {
         $r = $this->presence->presence($ident);
         return $r->isOk() ? $r->unwrap() : null;
+    }
+
+    /**
+     * Rank guard — refuse when the TARGET's chat rank is >= the ACTOR's own,
+     * unless the actor is an ADMIN. The CHAT_MODERATE analogue of the
+     * CHAT_DELETE_ANY rule in {@see \AstrX\Auth\Policy\ChatPolicy}: it stops a MOD
+     * kicking/muting/banning/purging a peer MOD or an ADMIN. The target's rank
+     * comes from the presence row's `role` (the UserGroup value stored at join,
+     * resolved exactly as ChatPolicy resolves its author type); the actor's from
+     * the live session.
+     *
+     * @param array<string,mixed> $p presence row
+     */
+    private function outranksActor(array $p): bool
+    {
+        $roleRaw    = $p['role'] ?? UserGroup::GUEST->value;
+        $targetType = UserGroup::tryFrom(
+            is_int($roleRaw) ? $roleRaw : (is_numeric($roleRaw) ? (int) $roleRaw : UserGroup::GUEST->value)
+        ) ?? UserGroup::GUEST;
+
+        $actor = $this->session->userType();
+        return $targetType->rank() >= $actor->rank() && $actor !== UserGroup::ADMIN;
     }
 
     /**

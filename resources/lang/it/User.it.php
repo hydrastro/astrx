@@ -78,6 +78,13 @@ return [
     'user.recover.submit'        => 'Invia link',
     'user.recover.back_to_login' => 'Torna al login',
     'user.recover.unavailable'   => 'Il recupero della password non è disponibile.',
+    'user.recover.reset_heading'     => 'Imposta una nuova password',
+    'user.recover.reset_description' => 'Scegli una nuova password per il tuo account. Dopo il salvataggio, accedi con la nuova password.',
+    'user.recover.reset_new'         => 'Nuova password',
+    'user.recover.reset_repeat'      => 'Ripeti la nuova password',
+    'user.recover.reset_submit'      => 'Imposta nuova password',
+    'user.recover.reset_done'        => 'La tua password è stata aggiornata. Accedi con la nuova password.',
+    'user.recover.reset_expired'     => 'Il link di recupero è scaduto. Richiedine uno nuovo.',
 
     // -------------------------------------------------------------------------
     // Home utente

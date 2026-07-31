@@ -84,22 +84,22 @@ final class UserController extends AbstractController
                         // Already logged in and recovering → grant the reset unlock.
                         $_SESSION['_pw_reset_until'] = time() + 900;
                     }
-                } elseif ($tokenType === UserService::TOKEN_RECOVER) {
-                    // Logged-out password recovery: a valid single-use token proves
-                    // control of the recovery address, so authenticate the user and
-                    // grant a short-lived (15 min), one-shot password-reset unlock,
-                    // then drop them on Settings to choose a new password. Without
-                    // this, the old code redirected a logged-out user to Settings,
-                    // which bounced them to Login — recovery could NEVER complete and
-                    // the token was already spent (F-01).
-                    $rowResult = $this->userService->sessionRowFor($hexUid);
-                    $rowResult->drainTo($this->collector);
-                    if ($rowResult->isOk()) {
-                        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string} $resetRow */
-                        $resetRow = $rowResult->unwrap();
-                        $this->session->login($resetRow);
-                        $_SESSION['_pw_reset_until'] = time() + 900;
-                    }
+                } elseif (!$this->session->isLoggedIn() && $tokenType === UserService::TOKEN_RECOVER) {
+                    // Logged-out password recovery. SECURITY (R3-11): a valid
+                    // single-use token proves control of the recovery address, but
+                    // clicking the link must NOT establish a session for whoever
+                    // opened it — otherwise an attacker who mails their OWN valid
+                    // link to a victim gets the victim operating inside the
+                    // attacker's account (login CSRF / session fixation). Instead
+                    // grant a narrow, one-shot, 15-minute capability to set a NEW
+                    // password for THIS uid only (no login), and send them to the
+                    // recovery page's set-password step. A session is established
+                    // only after a new password is chosen — which the attacker
+                    // cannot know. (Handled in RecoverController::renderResetForm.)
+                    $_SESSION['_pw_reset_uid']   = $hexUid;
+                    $_SESSION['_pw_reset_until'] = time() + 900;
+                    header('Location: ' . $this->urlGen->toPage($this->t->t('WORDING_RECOVER')));
+                    exit;
                 }
 
                 // Redirect to settings for recover/email actions, main for delete

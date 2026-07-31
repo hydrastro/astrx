@@ -18,6 +18,7 @@ use AstrX\Chat\Diagnostic\ChatEntryPasswordDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNickBlockedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNickInvalidDiagnostic;
 use AstrX\Chat\Diagnostic\ChatNickTakenDiagnostic;
+use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -72,6 +73,7 @@ final class ChatLoginController extends AbstractController
         private readonly ChatService            $chat,
         private readonly ChatFilterService      $filters,
         private readonly Gate                   $gate,
+        private readonly Config                 $sysConfig,
     ) {
         parent::__construct($collector);
     }
@@ -122,7 +124,7 @@ final class ChatLoginController extends AbstractController
             // On success this redirects onward and exits; otherwise it returns and
             // we bounce back to the (freshly re-rendered) form with the diagnostic.
             $this->processSubmission($prgToken);
-            Response::redirect($this->request->uri()->path())
+            Response::redirect($this->appendSid($this->request->uri()->path()))
                 ->send()->drainTo($this->collector);
             exit;
         }
@@ -173,7 +175,12 @@ final class ChatLoginController extends AbstractController
         if ($custom !== '' && @preg_match($custom, '') !== false) {
             $pattern = $custom;
         }
-        if (preg_match($pattern, $nick) !== 1) {
+        // @-guarded: a malformed pattern makes preg_match return false + emit an
+        // E_WARNING (which the error handler turns into a 500). Suppress the warning
+        // and treat false/no-match alike as an invalid nick — never a 500. (The
+        // built-in pattern can no longer be malformed now ChatConfig enforces
+        // nick_max_len >= nick_min_len; this also covers the custom-regex branch.)
+        if (@preg_match($pattern, $nick) !== 1) {
             $this->emit(new ChatNickInvalidDiagnostic('astrx.chat/nick_invalid', DiagnosticLevel::NOTICE));
             return;
         }
@@ -256,7 +263,7 @@ final class ChatLoginController extends AbstractController
     /** @return Result<mixed> */
     private function renderForm(): Result
     {
-        $selfUrl = $this->request->uri()->path();
+        $selfUrl = $this->appendSid($this->request->uri()->path());
 
         $this->ctx->set('prg_id',     $this->prg->createId($selfUrl));
         $this->ctx->set('csrf_token', $this->csrf->generate(self::FORM));
@@ -379,6 +386,27 @@ final class ChatLoginController extends AbstractController
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Append the cookieless query-mode session id to a raw self-URL so the PRG
+     * target stored for the settling GET and the post-submission redirect keep
+     * the session. Rewrite mode carries the sid in the path already; cookie mode
+     * has nothing to add — a no-op unless cookies are OFF and URL-rewrite is OFF.
+     *
+     * Uses the core Config ($sysConfig); note $this->config here is the ChatConfig.
+     */
+    private function appendSid(string $url): string
+    {
+        if (!$this->sysConfig->getConfigBool('Session', 'use_cookies', true)
+            && !$this->sysConfig->getConfigBool('Routing', 'url_rewrite', true)) {
+            $sk  = $this->sysConfig->getConfigString('Routing', 'session_key', 'sid');
+            $sid = session_id();
+            if (is_string($sid) && $sid !== '') {
+                $url .= (str_contains($url, '?') ? '&' : '?') . rawurlencode($sk) . '=' . rawurlencode($sid);
+            }
+        }
+        return $url;
+    }
 
     /**
      * Resolve the chosen colour: a valid custom #hex wins, otherwise the named

@@ -11,7 +11,9 @@
 {{#webmail_imap_error}}<p class="diag-error">{{webmail_login_error}}</p>{{/webmail_imap_error}}
 <form method="POST">
     <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
     <input type="hidden" name="action" value="imap_login">
+    {{&sid_input}}
     <table>
         <tr>
             <th>{{webmail_login_password}}</th>
@@ -59,6 +61,7 @@
         {{! ── Filter toolbar (show + sort) — plain form, no JS ─────────────────── }}
         <div class="wm-toolbar">
             <form method="GET" action="{{filter_action}}">
+                {{&sid_input}}
                 <input type="hidden" name="folder" value="{{current_folder}}">
                 {{label_show}}: <input type="text" name="show" class="input" size="4"
                                        value="{{current_per_page}}">
@@ -152,6 +155,7 @@
         <div class="wm-pager">
             {{#has_prev}}<a href="{{prev_url}}" class="input">{{label_prev}}</a>{{/has_prev}}
             <form method="GET" action="{{filter_action}}">
+                {{&sid_input}}
                 <input type="hidden" name="folder"  value="{{current_folder}}">
                 <input type="hidden" name="show"    value="{{current_per_page}}">
                 <input type="hidden" name="sort"    value="{{current_sort}}">

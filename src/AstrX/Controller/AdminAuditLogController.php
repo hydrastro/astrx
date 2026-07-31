@@ -35,6 +35,7 @@ final class AdminAuditLogController extends AbstractController
         private readonly Gate                  $gate,
         private readonly PDO                   $pdo,
         private readonly Translator            $t,
+        private readonly Config                $config,
     ) {
         parent::__construct($collector);
     }
@@ -69,12 +70,31 @@ final class AdminAuditLogController extends AbstractController
         $this->ctx->set('filter_action', $filterAct);
         $this->ctx->set('has_prev',      $page > 1);
         $this->ctx->set('has_next',      $page < $pages);
-        $this->ctx->set('prev_url',      $selfUrl . '?' . http_build_query(array_filter(['page' => $page - 1, 'user' => $filterUser, 'action' => $filterAct])));
-        $this->ctx->set('next_url',      $selfUrl . '?' . http_build_query(array_filter(['page' => $page + 1, 'user' => $filterUser, 'action' => $filterAct])));
-        $this->ctx->set('filter_url',    $selfUrl);
+        $this->ctx->set('prev_url',      $this->appendSid($selfUrl . '?' . http_build_query(array_filter(['page' => $page - 1, 'user' => $filterUser, 'action' => $filterAct]))));
+        $this->ctx->set('next_url',      $this->appendSid($selfUrl . '?' . http_build_query(array_filter(['page' => $page + 1, 'user' => $filterUser, 'action' => $filterAct]))));
+        $this->ctx->set('filter_url',    $this->appendSid($selfUrl));
         $this->setI18n();
 
         return $this->ok();
+    }
+
+    /**
+     * Append the cookieless query-mode session id to a raw self-URL so the filter
+     * and pagination links keep the session. Rewrite mode carries the sid in the
+     * path already; cookie mode has nothing to add — so this is a no-op unless
+     * cookies are OFF and URL-rewrite is OFF (the sid rides as a query parameter).
+     */
+    private function appendSid(string $url): string
+    {
+        if (!$this->config->getConfigBool('Session', 'use_cookies', true)
+            && !$this->config->getConfigBool('Routing', 'url_rewrite', true)) {
+            $sk  = $this->config->getConfigString('Routing', 'session_key', 'sid');
+            $sid = session_id();
+            if (is_string($sid) && $sid !== '') {
+                $url .= (str_contains($url, '?') ? '&' : '?') . rawurlencode($sk) . '=' . rawurlencode($sid);
+            }
+        }
+        return $url;
     }
 
     /** @return array{0: list<array<string,string>>, 1: int} */

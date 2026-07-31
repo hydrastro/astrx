@@ -99,9 +99,9 @@ final class UserSession
         // used after login.
         $_SESSION['_regen_force'] = true;
         $_SESSION[self::LOGGED_IN] = true;
-        // A stale password-reset grant must never survive a fresh login (the
-        // recovery flow re-sets it AFTER calling login()).
-        unset($_SESSION['_pw_reset_until']);
+        // A stale password-reset grant (from a recovery-link click) must never
+        // survive a fresh login — clear both the unlock window and the bound uid.
+        unset($_SESSION['_pw_reset_until'], $_SESSION['_pw_reset_uid']);
         /** @var array{id:string,username:string,display_name:string,type:int,verified:bool,avatar:bool,mailbox:string,theme:string} $_SESSION */
         $_SESSION[self::KEY] = [
             'id'           => (string)  $row['id'],
@@ -263,7 +263,7 @@ final class UserSession
         $_SESSION['_regen_force'] = true;
         $_SESSION[self::LOGGED_IN] = false;
         unset($_SESSION[self::KEY]);
-        unset($_SESSION['_pw_reset_until']); // don't leak a reset grant across sessions
+        unset($_SESSION['_pw_reset_until'], $_SESSION['_pw_reset_uid']); // don't leak a reset grant across sessions
         unset($_SESSION['_remember_until']); // drop the remember-me re-issue window too
         $this->clearImapPassword();
     }

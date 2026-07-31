@@ -363,12 +363,26 @@ final class UserRepository
     }
 
     /** @return Result<bool> */
+    /**
+     * Atomically consume a single-use token: flips `token_used` 0→1 and reports
+     * whether THIS call won the flip (rowCount === 1). A concurrent double-click,
+     * a replay of an already-used token, or a silently-failed UPDATE yields
+     * ok(false) / err, so verifyToken() can reject — closing the read-then-write
+     * TOCTOU and the "UPDATE failed → token stays replayable" window.
+     *
+     * @return Result<bool>
+     */
     public function markTokenUsed(string $hexId): Result
     {
-        return $this->exec(
-            'UPDATE `user` SET `token_used` = 1 WHERE `id` = UNHEX(:id)',
-            [':id' => $hexId],
-        );
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE `user` SET `token_used` = 1 WHERE `id` = UNHEX(:id) AND `token_used` = 0'
+            );
+            $stmt->execute([':id' => $hexId]);
+            return Result::ok($stmt->rowCount() === 1);
+        } catch (PDOException $e) {
+            return $this->dbErr($e);
+        }
     }
 
     /** @return Result<bool> */

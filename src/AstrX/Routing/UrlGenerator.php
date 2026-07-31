@@ -29,6 +29,14 @@ use AstrX\Config\Config;
  *   order — 'asc' or 'desc'
  *   show  — items per page
  *
+ * Cookieless sessions: when `Session.use_cookies` is false, the session id must
+ * travel in every generated URL or navigation loses the session (Tor operators
+ * may disable browser cookies entirely). The sid is injected as a path segment
+ * in rewrite mode ([locale]/<sid>/page/…, matching the router's expected slot)
+ * and as the `Routing.session_key` query param in query mode. In cookie mode the
+ * sid is empty here and URLs are unchanged. Only INTERNAL page URLs pass through
+ * this class, so an external link never receives a sid.
+ *
  * $resolvedUrlId must already be translated for the current locale.
  */
 final class UrlGenerator
@@ -49,17 +57,19 @@ final class UrlGenerator
      */
     public function toPage(string $resolvedUrlId, array $queryParams = []): string
     {
-        [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale] =
+        [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale, $sessionKey, $sid] =
             $this->routingConfig();
 
         $extra = $queryParams !== [] ? '?' . http_build_query($queryParams) : '';
 
         if ($urlRewrite) {
             $base = rtrim($basePath, '/');
-            $path = $locale !== ''
-                ? $base . '/' . $locale . '/' . $resolvedUrlId
-                : $base . '/' . $resolvedUrlId;
-            return $this->withRoutePrefix($path . $extra);
+            // Segment order MUST match the router: [locale] / [sid] / page / tail
+            $segs = [];
+            if ($locale !== '') { $segs[] = $locale; }
+            if ($sid    !== '') { $segs[] = $sid; }
+            $segs[] = $resolvedUrlId;
+            return $this->withRoutePrefix($base . '/' . implode('/', $segs) . $extra);
         }
 
         $query = [];
@@ -68,6 +78,10 @@ final class UrlGenerator
         }
         $query[$pageKey] = $resolvedUrlId;
         $query           = array_merge($query, $queryParams);
+        if ($sid !== '') {
+            // After the merge so a caller's $queryParams can't drop/override it.
+            $query[$sessionKey] = $sid;
+        }
 
         return $this->withRoutePrefix($entryPoint . '?' . http_build_query($query));
     }
@@ -100,12 +114,12 @@ final class UrlGenerator
         array  $extraQuery     = [],
         array  $pathSegments   = [],  // rewrite-mode extra segments appended after primary
     ): string {
-        [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale] =
+        [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale, $sessionKey, $sid] =
             $this->routingConfig();
 
         if ($urlRewrite) {
             return $this->rewriteSubPage(
-                $basePath, $locale, $resolvedUrlId,
+                $basePath, $locale, $sid, $resolvedUrlId,
                 $page, $order, $perPage,
                 $defaultPage, $defaultOrder, $defaultPerPage,
                 $extraQuery, $pathSegments,
@@ -113,7 +127,7 @@ final class UrlGenerator
         }
 
         return $this->querySubPage(
-            $entryPoint, $localeKey, $locale, $pageKey, $resolvedUrlId,
+            $entryPoint, $localeKey, $locale, $pageKey, $sessionKey, $sid, $resolvedUrlId,
             $page, $order, $perPage,
             $defaultPage, $defaultOrder, $defaultPerPage,
             $extraQuery,
@@ -124,7 +138,7 @@ final class UrlGenerator
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    /** @return array{bool, string, string, string, string, string} */
+    /** @return array{bool, string, string, string, string, string, string, string} */
     private function routingConfig(): array
     {
         $urlRewrite  = $this->config->getConfigBool('Routing', 'url_rewrite',  true);
@@ -135,7 +149,25 @@ final class UrlGenerator
         $localeRaw   = $this->currentUrl->get($localeKey, '');
         $locale      = is_string($localeRaw) ? $localeRaw : '';
 
-        return [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale];
+        // Cookieless session propagation (see class docblock). Read the live sid
+        // from CurrentUrl (ContentManager stamps it there post-regeneration), but
+        // ONLY when the deployment is cookieless — otherwise $sid stays '' and no
+        // URL is altered.
+        $sessionKey  = $this->config->getConfigString('Routing', 'session_key', 'sid');
+        $useCookies  = $this->config->getConfigBool('Session', 'use_cookies', true);
+        $sid         = '';
+        if (!$useCookies) {
+            // Read the LIVE session id, NOT a CurrentUrl snapshot: the login path
+            // calls session_regenerate_id(true) mid-request (UserService::login),
+            // so an id stamped into CurrentUrl at routing time goes stale and the
+            // post-login redirect would carry a destroyed sid — landing the user
+            // on a dead session (logged out). session_id() always reflects the
+            // current, post-regeneration id. (Matches DefaultTemplateContext.)
+            $sidVal = session_id();
+            $sid    = is_string($sidVal) && $sidVal !== '' ? $sidVal : '';
+        }
+
+        return [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale, $sessionKey, $sid];
     }
 
     /**
@@ -147,6 +179,7 @@ final class UrlGenerator
     private function rewriteSubPage(
         string $basePath,
         string $locale,
+        string $sid,
         string $resolvedUrlId,
         int    $page,
         string $order,
@@ -158,9 +191,12 @@ final class UrlGenerator
         array  $pathSegments = [],
     ): string {
         $base = rtrim($basePath, '/');
-        $root = $locale !== ''
-            ? $base . '/' . $locale . '/' . $resolvedUrlId
-            : $base . '/' . $resolvedUrlId;
+        // Root = [locale] / [sid] / page  (sid slot matches the router, §parse).
+        $rootSegs = [];
+        if ($locale !== '') { $rootSegs[] = $locale; }
+        if ($sid    !== '') { $rootSegs[] = $sid; }
+        $rootSegs[] = $resolvedUrlId;
+        $root = $base . '/' . implode('/', $rootSegs);
 
         if ($pathSegments !== []) {
             // When secondary segments are present, all three primary segments must
@@ -195,6 +231,8 @@ final class UrlGenerator
         string $localeKey,
         string $locale,
         string $pageKey,
+        string $sessionKey,
+        string $sid,
         string $resolvedUrlId,
         int    $page,
         string $order,
@@ -221,6 +259,9 @@ final class UrlGenerator
         }
 
         $query = array_merge($query, $extraQuery);
+        if ($sid !== '') {
+            $query[$sessionKey] = $sid;
+        }
 
         return $this->withRoutePrefix($entryPoint . '?' . http_build_query($query));
     }
@@ -269,4 +310,3 @@ final class UrlGenerator
         return $url;
     }
 }
-

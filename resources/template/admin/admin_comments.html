@@ -3,6 +3,7 @@
 {{! ── Moderation (requires ADMIN_COMMENTS) ────────────────────────────── }}
 {{#can_moderate}}
 <form method="GET">
+    {{&sid_input}}
     <p>
         <label>{{label_filter}} page ID:
             <input type="number" name="page_id" class="input" value="{{filter_page_id}}" style="width:5em">

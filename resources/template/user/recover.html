@@ -1,3 +1,24 @@
+{{#reset_mode}}
+<h2>{{reset_heading}}</h2>
+<p>{{reset_description}}</p>
+<hr>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    {{&sid_input}}
+    <p>
+        <label for="rp_new">{{reset_new}}: </label>
+        <input type="password" name="new_password" class="input" id="rp_new"
+               autocomplete="new-password" style="width:20em"><br>
+        <label for="rp_rep">{{reset_repeat}}: </label>
+        <input type="password" name="repeat_password" class="input" id="rp_rep"
+               autocomplete="new-password" style="width:20em"><br>
+        <input type="submit" value="{{reset_submit}}" class="input">
+    </p>
+</form>
+<p><a href="{{login_url}}">{{recover_back}}</a>.</p>
+{{/reset_mode}}
+{{^reset_mode}}
 <h2>{{recover_heading}}</h2>
 {{#recovery_unavailable}}
 <p>{{recover_unavailable_msg}}</p>
@@ -8,6 +29,7 @@
 <form method="POST">
     <input type="hidden" name="prg_id" value="{{prg_id}}">
     <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    {{&sid_input}}
     <p>
         <label for="rec_id">{{recover_identifier}}: </label>
         <input type="text" name="username_or_email" class="input" id="rec_id"><br>
@@ -17,3 +39,4 @@
 </form>
 {{/recovery_unavailable}}
 <p><a href="{{login_url}}">{{recover_back}}</a>.</p>
+{{/reset_mode}}

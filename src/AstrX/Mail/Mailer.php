@@ -245,7 +245,11 @@ final class Mailer
             // H7: pin the certificate to the configured host (SNI + peer_name)
             // and honour smtp_verify_ssl BEFORE upgrading the plaintext socket.
             $this->applyTlsContext($sock);
-            if (!stream_socket_enable_crypto(
+            // @-suppress: a TLS-handshake failure raises E_WARNING, which the
+            // ErrorHandler would escalate to a forced HTTP 500. We already fail
+            // closed on the boolean return, and send()'s try/catch converts the
+            // follow-on Result::err path — a mail failure must not 500 the page.
+            if (!@stream_socket_enable_crypto(
                 $sock,
                 true,
                 STREAM_CRYPTO_METHOD_TLS_CLIENT
@@ -370,7 +374,11 @@ final class Mailer
                 'verify_peer_name'  => $this->smtpVerifySsl,
                 'allow_self_signed' => !$this->smtpVerifySsl,
             ]]);
-            $sock = stream_socket_client(
+            // @-suppress: an unreachable/misconfigured SMTP server raises
+            // E_WARNING here, which the ErrorHandler escalates to a forced 500.
+            // $errno/$errstr are captured and the false return throws below,
+            // where send()'s try/catch turns it into Result::err instead.
+            $sock = @stream_socket_client(
                 "ssl://{$this->host}:{$this->port}",
                 $errno,
                 $errstr,
@@ -379,7 +387,9 @@ final class Mailer
                 $ctx
             );
         } else {
-            $sock = stream_socket_client(
+            // @-suppress: see the ssl:// branch above — a failed connect must
+            // resolve to Result::err, not a forced 500.
+            $sock = @stream_socket_client(
                 "tcp://{$this->host}:{$this->port}",
                 $errno,
                 $errstr,
@@ -402,7 +412,10 @@ final class Mailer
             // unverified handshake must never fall through to a cleartext send;
             // the throw is converted to Result::err() by send()'s catch.
             $this->applyTlsContext($sock);
-            if (stream_socket_enable_crypto(
+            // @-suppress: a TLS-handshake failure over the tunnel raises
+            // E_WARNING (→ forced 500). We fail closed on the non-true return
+            // and throw; send()'s try/catch converts that to Result::err.
+            if (@stream_socket_enable_crypto(
                 $sock,
                 true,
                 STREAM_CRYPTO_METHOD_TLS_CLIENT
@@ -424,7 +437,10 @@ final class Mailer
     private function connectViaSocks5()
     : mixed
     {
-        $sock = stream_socket_client(
+        // @-suppress: an unreachable SOCKS5 proxy raises E_WARNING (→ forced
+        // 500). The false return throws below and send()'s try/catch converts
+        // it to Result::err.
+        $sock = @stream_socket_client(
             "tcp://{$this->socks5Host}:{$this->socks5Port}",
             $errno,
             $errstr,
@@ -441,8 +457,11 @@ final class Mailer
             $sock,
             "\x05\x01\x00"
         );              // version=5, nmethods=1, method=noauth
+        // Guard a short read: fread() may return fewer than 2 bytes, so accessing
+        // $resp[1] without a length check raises an undefined-offset E_WARNING
+        // (→ forced 500). Mirror ImapClient::connectViaSocks5's `strlen($resp) < 2`.
         $resp = fread($sock, 2);
-        if ($resp === false || $resp[1] !== "\x00") {
+        if ($resp === false || strlen($resp) < 2 || $resp[1] !== "\x00") {
             throw new \RuntimeException("SOCKS5 proxy rejected no-auth method");
         }
 
