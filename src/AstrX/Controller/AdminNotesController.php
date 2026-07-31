@@ -62,7 +62,11 @@ final class AdminNotesController extends AbstractController
         if (is_string($prgToken) && $prgToken !== '') {
             $posted = $this->prg->pull($prgToken) ?? [];
             $this->processPost($posted);
-            return Response::redirect($selfUrl); /** @phpstan-ignore return.type */
+            // Must send + drain, then exit — the dispatcher calls ->drainTo() on
+            // handle()'s return, and a bare Response has no drainTo() (→ fatal 500
+            // on every notes save/clear, though the note was already persisted).
+            Response::redirect($selfUrl)->send()->drainTo($this->collector);
+            exit;
         }
 
         // ── Render ────────────────────────────────────────────────────────────

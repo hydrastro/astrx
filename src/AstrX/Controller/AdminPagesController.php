@@ -357,7 +357,7 @@ final class AdminPagesController extends AbstractController
         try {
             $stmt = $this->pdo->query(
                 'SELECT p.id, p.url_id, p.file_name, p.i18n, p.template, p.controller,
-                        p.hidden, p.comments, pm.title, pm.description,
+                        p.hidden, p.comments, p.api_enabled, pm.title, pm.description,
                         pr.`index` AS index_flag, pr.follow AS follow_flag
                    FROM page p
                    LEFT JOIN page_meta   pm ON pm.page_id = p.id

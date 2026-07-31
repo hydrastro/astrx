@@ -30,6 +30,32 @@ final class ConfigWriter
     public function write(string $fileBaseName, array $config): Result
     {
         $path = (configDir()) . $fileBaseName . '.config.php';
+
+        // Merge the incoming section(s)/key(s) OVER the existing file rather than
+        // replacing it wholesale. Many admin save-handlers rebuild only the keys
+        // that have a form field, so a full replace silently DROPS every other key
+        // in the section — e.g. the imageboard tripcode_salt/poster_id_salt
+        // (→ forgeable tripcodes, predictable poster IDs) or the session
+        // server_secret / regenerate_interval (→ session-fixation defence off).
+        // Shallow per-section key merge: new keys win, keys the handler omitted
+        // are preserved, and whole untouched sections are kept intact.
+        $existing = is_file($path) ? @include $path : null;
+        if (is_array($existing)) {
+            /** @var array<string, mixed> $existing */
+            $merged = $existing;
+            foreach ($config as $section => $keys) {
+                if (is_array($keys) && isset($merged[$section]) && is_array($merged[$section])) {
+                    /** @var array<string, mixed> $prev */
+                    $prev = $merged[$section];
+                    $merged[$section] = array_merge($prev, $keys);
+                } else {
+                    $merged[$section] = $keys;
+                }
+            }
+            /** @var array<string, array<string, mixed>> $merged */
+            $config = $merged;
+        }
+
         $php  = $this->render($config);
         $tmp  = $path . '.tmp.' . bin2hex(random_bytes(4));
 

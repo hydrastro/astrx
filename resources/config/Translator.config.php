@@ -2,27 +2,20 @@
 
 declare(strict_types = 1);
 
+// NOTE: this file previously declared a stale COPY of the 'Session' section,
+// which `loadModuleConfig('Translator')` merged over the real Session config on
+// load — clobbering server_secret / regenerate_interval / regenerate_grace_period
+// (session-fixation defence, depending on class construction order). It must
+// declare the 'Translator' section that the Translator reads and that the admin
+// System-config page writes (AdminConfigSystemController::saveTranslator).
 return [
-    'Session' => [
-        'use_cookies' => true,
+    'Translator' => [
+        // Extra lang-file directory to load on top of the built-in resources/lang
+        // ('' = built-in catalogs only).
+        'lang_dir' => '',
 
-        // sid length in bytes for random_bytes (128 bytes => 256 hex chars)
-        'sid_bytes' => 128,
-
-        // routing-layer pattern only (optional)
-        'session_id_regex' => '/^[\da-fA-F]{256}$/',
-
-        // encryption policy
-        'encrypt' => true,
-
-        // cipher: AES-256-CTR, HMAC: SHA-256 — hardcoded, not configurable
-        // (changing these would silently corrupt existing encrypted sessions)
-
-        // PRG
-        'prg_token_key' => 'prg',
-        'prg_token_regex' => '/^[\da-fA-F]{64}$/',
-
-        // collision retry
-        'max_sid_retries' => 8,
+        // When a translation key is missing, fall back to rendering the key itself
+        // (true) rather than an empty string — easier to spot untranslated strings.
+        'fallback_to_key' => true,
     ],
 ];

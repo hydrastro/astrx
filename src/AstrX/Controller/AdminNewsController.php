@@ -119,6 +119,11 @@ final class AdminNewsController extends AbstractController
                 }
                 break;
             case 'update':
+                // Same guards as create — an empty title/content (or id<=0) must not
+                // blank an existing row and then flash "updated".
+                if ($id <= 0 || $title === '' || $content === '') {
+                    return;
+                }
                 $r = $this->news->update($id, $title, $content, $hidden);
                 $r->drainTo($this->collector);
                 if ($r->isOk()) {

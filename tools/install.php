@@ -305,8 +305,11 @@ function runSQL(PDO $pdo, string $file): string
                 $cursor->closeCursor();
             }
         } catch (\PDOException $e) {
-            // Ignore "already exists" / duplicate-key style errors so re-runs are safe.
-            if (!in_array((string) $e->getCode(), ['42S01', '42S21', '23000', '42000'], true)) {
+            // Ignore ONLY specific "already exists" / duplicate-key SQLSTATEs so
+            // re-runs are safe. NOT '42000' (generic syntax/access-rule violation):
+            // swallowing it recorded genuinely-failed migrations as applied, and
+            // the checksum lock then blocked any clean re-run.
+            if (!in_array((string) $e->getCode(), ['42S01', '42S21', '23000'], true)) {
                 return $e->getMessage() . ' | ' . substr($stmt, 0, 200);
             }
         }

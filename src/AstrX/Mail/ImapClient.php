@@ -579,6 +579,13 @@ final class ImapClient
             // Literal: "* N FETCH (...{SIZE}"
             if (preg_match('/\{(\d+)\}\s*$/', $line, $m)) {
                 $literalSize    = (int) $m[1];
+                // Cap the server-declared literal size: a hostile/compromised/MITM'd
+                // server (imap_verify_ssl may be off on onion transport) could
+                // declare a multi-GB literal to exhaust memory. Refuse oversized ones
+                // rather than streaming them into RAM.
+                if ($literalSize < 0 || $literalSize > 52428800) { // 50 MiB
+                    return $tag . ' BAD literal too large';
+                }
                 $literalContent = $this->readBytes($literalSize);
                 // Read trailing CRLF
                 $this->readLine();

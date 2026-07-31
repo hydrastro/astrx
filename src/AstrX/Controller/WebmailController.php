@@ -196,7 +196,7 @@ final class WebmailController extends AbstractController
         // Establish IMAP for mutation actions
         $imapPass = $this->session->imapPassword();
         if ($imapPass !== '') {
-            $this->webmail->connect($this->session->mailbox(), $imapPass)
+            $this->webmail->connect($this->session->mailbox(), $imapPass, $this->session->username())
                 ->drainTo($this->collector);
         }
 
@@ -374,7 +374,7 @@ final class WebmailController extends AbstractController
         $index  = (is_numeric($vq_attachment = $this->request->query()->get('attachment')) ? (int)$vq_attachment : 0);
         if ($uid <= 0) { return; }
 
-        $this->webmail->connect($this->session->mailbox(), $imapPass);
+        $this->webmail->connect($this->session->mailbox(), $imapPass, $this->session->username());
         $r = $this->webmail->getAttachment($folder, $uid, $index);
         if (!$r->isOk()) { $r->drainTo($this->collector); return; }
 

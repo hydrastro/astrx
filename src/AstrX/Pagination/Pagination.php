@@ -89,7 +89,18 @@ final class Pagination
     // Helpers
     // -------------------------------------------------------------------------
 
-    public function offset(): int    { return ($this->page - 1) * $this->perPage; }
+    public function offset(): int
+    {
+        if ($this->perPage <= 0) {
+            return 0;
+        }
+        // Clamp the page so (page-1)*perPage can never overflow to a float —
+        // under strict_types that throws a TypeError on the ": int" return, so a
+        // public, unauthenticated "?pn=<huge>" would otherwise 500 the page.
+        $maxPage = intdiv(PHP_INT_MAX, $this->perPage) + 1;
+        $page    = $this->page < $maxPage ? $this->page : $maxPage;
+        return ($page - 1) * $this->perPage;
+    }
     public function isUnpaged(): bool { return $this->perPage === 0; }
     public function hasPrev(): bool  { return $this->page > 1; }
     public function hasNext(): bool  { return $this->page < $this->pageCount; }

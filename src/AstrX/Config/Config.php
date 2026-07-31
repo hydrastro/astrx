@@ -15,7 +15,7 @@ use function AstrX\Support\configDir;
 final class Config
 {
     /** @var array<string, array<string, mixed>> */
-    private array $configuration;
+    private array $configuration = [];
 
     /**
      * Tracks which config keys have been consumed (either via getConfig() or

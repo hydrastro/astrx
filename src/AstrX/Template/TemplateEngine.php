@@ -723,14 +723,18 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             $code .= 'function ' . $sectionFnName
                      . $iteration . '($args,$parent,$i){$buffer="";';
 
+            // Escape the section name like the var/partial paths do — a name with
+            // a " or \ would otherwise produce a PHP parse error in the eval'd
+            // template class and silently fail the whole render.
+            $sectionName = addslashes((string) $endParent[self::AST_VALUE]);
             $code .= match ($endParent[self::AST_TYPE]) {
                 self::TOKEN_TYPE_INVERTED_LOOP_START =>
                     '$resolved=$this->TemplateEngine->resolveValue("'
-                    . $endParent[self::AST_VALUE]
+                    . $sectionName
                     . '",$args,$parent,$i);if(!$resolved){',
                 default =>
                     '$resolved=$this->TemplateEngine->resolveValue("'
-                    . $endParent[self::AST_VALUE]
+                    . $sectionName
                     . '",$args,$parent,$i);'
                     . 'if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}'
                     . '$parent=$resolved;for($i=0;$i<$count;$i++){',

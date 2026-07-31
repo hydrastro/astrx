@@ -100,7 +100,19 @@ final class AdminConfigImageboardController extends AbstractController
 
         // The page hosts several forms sharing one CSRF token: the global config
         // save and the board create/update/delete actions. Route by 'action'.
-        match (self::mStr($posted, 'action', 'save_config')) {
+        $action = self::mStr($posted, 'action', 'save_config');
+
+        // Board CRUD is reserved for BOARD_ADMIN; the page-level gate is only the
+        // weaker ADMIN_CONFIG_IMAGEBOARD ("global defaults") permission, which a
+        // MOD may hold. Without this re-check a mod could create/delete boards
+        // (and cascade-destroy their threads/posts).
+        if (in_array($action, ['board_create', 'board_update', 'board_delete'], true)
+            && $this->gate->cannot(Permission::BOARD_ADMIN)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return;
+        }
+
+        match ($action) {
             'board_create' => $this->createBoard($posted),
             'board_update' => $this->updateBoard($posted),
             'board_delete' => $this->deleteBoard($posted),

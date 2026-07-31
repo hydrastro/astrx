@@ -253,7 +253,7 @@ function runSQL(PDO $pdo, string $file): string
                 $cursor->closeCursor();
             }
         } catch (\PDOException $e) {
-            if (!in_array((string)$e->getCode(), ['42S01','42S21','23000','42000'], true)) {
+            if (!in_array((string)$e->getCode(), ['42S01','42S21','23000'], true)) {
                 return $e->getMessage() . ' | ' . substr($stmt, 0, 200);
             }
         }
