@@ -122,20 +122,27 @@ final class NavbarHandler
     /** @return list<array<string,mixed>> */
     private function fetchRows(int $navbarId): array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT `id`, `internal`, `name`, `i18n`, `active`,
-                    `entry_sort_order`, `pin_id`, `pin_sort_order`, `pin_sort_mode`,
-                    `page_id`, `url`, `url_id`, `page_file_name`, `page_i18n`
-               FROM `resolved_navbar`
-              WHERE `navbar_id` = :navbar_id
-                AND `active`    = 1'
-        );
-        $stmt->execute(['navbar_id' => $navbarId]);
-        /** @var list<array<string,mixed>> $rows */
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Non-fatal: a partially-migrated `resolved_navbar` (e.g. missing a column
+        // this SELECT names) must degrade to an empty navbar, not 500 the whole
+        // page — mirrors disabledPageIds() and the contract documented in
+        // ContentManager ("renders with an empty navbar rather than taking down
+        // the whole page").
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT `id`, `internal`, `name`, `i18n`, `active`,
+                        `entry_sort_order`, `pin_id`, `pin_sort_order`, `pin_sort_mode`,
+                        `page_id`, `url`, `url_id`, `page_file_name`, `page_i18n`
+                   FROM `resolved_navbar`
+                  WHERE `navbar_id` = :navbar_id
+                    AND `active`    = 1'
+            );
+            $stmt->execute(['navbar_id' => $navbarId]);
             /** @var list<array<string,mixed>> $rows */
-
-        return $rows;
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $rows;
+        } catch (\PDOException) {
+            return [];
+        }
     }
 
     /**

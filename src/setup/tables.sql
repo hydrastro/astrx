@@ -232,7 +232,7 @@ CREATE TABLE `user`
     `verified`         TINYINT      NOT NULL DEFAULT 0,
     `avatar`           TINYINT      NOT NULL DEFAULT 0,
     `deleted`          TINYINT      NOT NULL DEFAULT 0,
-    `deletion_mode`    TINYINT      NULL,                 -- 0=full 1=hard_redact 2=soft_redact 3=keep_visible 4=keep_suspended
+    `deletion_mode`    VARCHAR(16)  NULL,                 -- DeletionMode enum value: none|full_delete|hard_redact|soft_redact|keep_visible|keep_suspended
     `theme`            VARCHAR(64)  NULL,                 -- per-user theme override, NULL = use global
     `token_hash`       VARCHAR(255) NULL,
     `token_type`       TINYINT      NULL,

@@ -348,6 +348,18 @@ final class AdminConfigSystemController extends AbstractController
                 'extra_lang_domains' => $extraDomains,
                 'status_bar_min_level' => self::mInt($p, 'status_bar_min_level', 2),
                 'status_bar_level_classes' => $levelClasses,
+                // Preserve keys with no field on this form — a full-file rewrite
+                // would otherwise drop them, silently reverting behaviour (e.g.
+                // losing the Secure-cookie proxy-trust flag on the next save).
+                'content_security_policy' => $this->config->getConfigString(
+                    'ContentManager', 'content_security_policy', ''
+                ),
+                'trust_forwarded_proto' => $this->config->getConfig(
+                    'ContentManager', 'trust_forwarded_proto', false
+                ) === true,
+                'expose_server_timing' => $this->config->getConfig(
+                    'ContentManager', 'expose_server_timing', false
+                ) === true,
             ],
         ]);
     }

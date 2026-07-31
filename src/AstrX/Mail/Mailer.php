@@ -308,10 +308,16 @@ final class Mailer
         $this->read($sock, '25');   // 250 or 251
 
         // Deliver to every Cc and Bcc recipient too (F-07). Bcc addresses are
-        // RCPT'd here but deliberately NOT emitted as a header below.
+        // RCPT'd here but deliberately NOT emitted as a header below. A rejected
+        // SECONDARY recipient must NOT abort delivery to the accepted ones (the
+        // primary To already succeeded above), so skip a failed cc/bcc and carry on.
         foreach (array_merge($ccList, $bccList) as $rcptAddr) {
-            $this->cmd($sock, "RCPT TO:<{$rcptAddr}>");
-            $this->read($sock, '25');
+            try {
+                $this->cmd($sock, "RCPT TO:<{$rcptAddr}>");
+                $this->read($sock, '25');
+            } catch (\Throwable) {
+                continue;
+            }
         }
 
         $this->cmd($sock, "DATA");
@@ -335,7 +341,12 @@ final class Mailer
         );
         $body = $this->buildBody($bodyText, $bodyHtml, $boundary, $attachments);
 
-        fwrite($sock, $headers . "\r\n" . $body . "\r\n.\r\n");
+        // Dot-stuff (RFC 5321 §4.5.2): a body line beginning with '.' gets an extra
+        // leading '.', otherwise a body line of just "." would prematurely END the
+        // DATA phase — letting a webmail-composed body smuggle SMTP commands.
+        $stuffed = preg_replace('/(\r\n|^)\./', '$1..', $body);
+        if (!is_string($stuffed)) { $stuffed = $body; }
+        fwrite($sock, $headers . "\r\n" . $stuffed . "\r\n.\r\n");
         $this->read($sock, '250');
 
         $this->cmd($sock, "QUIT");

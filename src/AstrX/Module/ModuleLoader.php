@@ -72,6 +72,7 @@ final class ModuleLoader
         // under a single config file without touching ContentManager or adding
         // per-class annotations.
         $configDir = configDir();
+        $parentDomain = null;
         if (!file_exists($configDir . $domain . '.config.php')) {
             $namespaceParts = explode('\\', $fqcn);
             // [0]=AstrX [1]=Captcha [2]=CaptchaRenderer → parent = 'Captcha'
@@ -85,6 +86,17 @@ final class ModuleLoader
         }
 
         $this->config->applyModuleConfig($instance, $domain);
+        // Some classes keep their config section under the PARENT-namespace name,
+        // not the class name — e.g. SecureSessionHandler ← the 'Session' section of
+        // Session.config.php (which ContentManager also reads via
+        // getConfig('Session',...), so it can't be renamed to the class name).
+        // applyModuleConfig no-ops on a missing section, so applying the parent
+        // domain too injects that config WITHOUT touching classes whose section
+        // already matches their name. Without this, Session's server_secret /
+        // encrypt / max_sid_retries / regenerate_grace_period were silently ignored.
+        if ($parentDomain !== null && $parentDomain !== $domain) {
+            $this->config->applyModuleConfig($instance, $parentDomain);
+        }
         // Only check for unused config keys on classes that declare
         // #[InjectConfig] setters. Those keys are resolved at construction
         // time and can be checked immediately. Classes that read config via

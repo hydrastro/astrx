@@ -73,7 +73,13 @@ final class UserController extends AbstractController
                     $this->session->isLoggedIn() &&
                     $this->session->userId() === $hexUid
                 ) {
-                    $this->session->markVerified();
+                    // Only email verify/change tokens actually confirm the address
+                    // (verifyToken sets DB `verified` for those only) — marking the
+                    // session verified on a RECOVER token would desync session vs DB.
+                    if ($tokenType === UserService::TOKEN_EMAIL_VERIFY
+                        || $tokenType === UserService::TOKEN_EMAIL_CHANGE) {
+                        $this->session->markVerified();
+                    }
                     if ($tokenType === UserService::TOKEN_RECOVER) {
                         // Already logged in and recovering → grant the reset unlock.
                         $_SESSION['_pw_reset_until'] = time() + 900;
