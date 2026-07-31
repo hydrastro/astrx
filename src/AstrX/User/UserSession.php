@@ -211,22 +211,39 @@ final class UserSession
     /** Remove the stored IMAP password (called on logout or failed auth). */
     public function clearImapPassword(): void
     {
-        unset($_SESSION['_webmail_pass']);
+        unset($_SESSION['_webmail_pass'], $_SESSION['_webmail_key']);
+    }
+
+    /** Stable per-session key for obfuscating the stored IMAP password: created
+     *  once and kept in the session, so it survives session-ID regeneration
+     *  (unlike session_id()). */
+    private function webmailKey(): string
+    {
+        $k = $_SESSION['_webmail_key'] ?? '';
+        if (!is_string($k) || $k === '') {
+            $k = bin2hex(random_bytes(32));
+            $_SESSION['_webmail_key'] = $k;
+        }
+        return $k;
     }
 
     /**
-     * XOR $data with a keystream derived from the current session ID.
+     * XOR $data with a keystream derived from a STABLE per-session key (NOT the
+     * session ID, which rotates on every regeneration — the old SID-based scheme
+     * obfuscated the IMAP password with the login request's SID, then couldn't
+     * decode it after the very next request rotated the SID, so the "don't
+     * re-prompt for webmail" feature never worked, R3-12). Under the default
+     * encrypt=true the whole session (this key included) is AES-encrypted at rest.
      * Applying this twice (encrypt then decrypt) recovers the original.
      */
     private function xorWithSessionKey(string $data): string
     {
-        $sid = session_id();
-        if ($sid === false || $sid === '' || $data === '') {
+        if ($data === '') {
             return $data;
         }
         // Derive a keystream of the same length as $data.
         $key = '';
-        $block = hash('sha256', $sid, true); // 32-byte seed block
+        $block = hash('sha256', $this->webmailKey(), true); // 32-byte seed block
         $needed = strlen($data);
         for ($i = 0; strlen($key) < $needed; $i++) {
             // 4-byte big-endian counter — equivalent to pack('N', $i) but
@@ -245,6 +262,7 @@ final class UserSession
         $_SESSION[self::LOGGED_IN] = false;
         unset($_SESSION[self::KEY]);
         unset($_SESSION['_pw_reset_until']); // don't leak a reset grant across sessions
+        unset($_SESSION['_remember_until']); // drop the remember-me re-issue window too
         $this->clearImapPassword();
     }
 

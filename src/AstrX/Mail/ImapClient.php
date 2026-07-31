@@ -52,6 +52,16 @@ final class ImapClient
      */
     private bool   $verifySsl   = true;
 
+    /**
+     * Whether to trust a "* PREAUTH" greeting (R4-25a). A PREAUTH greeting means
+     * the server considers the connection already authenticated (e.g. a trusted
+     * local pipe or client-cert transport). Trusting it blindly lets a hostile
+     * or MITM'd server skip LOGIN *and* skip the STARTTLS upgrade, so it is only
+     * honoured when the operator explicitly opts in. Default: do NOT trust it —
+     * fall through to STARTTLS + LOGIN as for a normal greeting.
+     */
+    private bool   $allowPreauth = false;
+
     #[InjectConfig('imap_host')]
     public function setHost(string $v): void { $this->host = $v; }
 
@@ -72,6 +82,9 @@ final class ImapClient
 
     #[InjectConfig('imap_verify_ssl')]
     public function setVerifySsl(bool $v): void { $this->verifySsl = $v; }
+
+    #[InjectConfig('imap_allow_preauth')]
+    public function setAllowPreauth(bool $v): void { $this->allowPreauth = $v; }
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +112,11 @@ final class ImapClient
             if (!str_starts_with($greeting, '* OK') && !str_starts_with($greeting, '* PREAUTH')) {
                 return $this->err('connect', "Unexpected greeting: $greeting");
             }
-            if (str_starts_with($greeting, '* PREAUTH')) {
+            // R4-25a: only treat PREAUTH as already-authenticated when explicitly
+            // configured. Otherwise ignore the assertion and continue as for a
+            // plain greeting, so a hostile/MITM server cannot use PREAUTH to skip
+            // the STARTTLS upgrade below or the LOGIN credential exchange.
+            if ($this->allowPreauth && str_starts_with($greeting, '* PREAUTH')) {
                 $this->loggedIn = true;
             }
             // STARTTLS upgrade
@@ -587,16 +604,31 @@ final class ImapClient
                     return $tag . ' BAD literal too large';
                 }
                 $literalContent = $this->readBytes($literalSize);
-                // Read trailing CRLF
-                $this->readLine();
-                // For FETCH responses, store the literal content
-                if (str_contains($line, 'FETCH') || str_contains($line, 'RFC822')) {
+
+                // RFC822 / RFC822.HEADER fetches: the literal IS the payload the
+                // caller wants (fetchMessage/fetchHeaders read lastLiteralContent).
+                // Keep the existing behaviour — stash it and discard the trailing
+                // ")" segment.
+                if (str_contains($line, 'RFC822')) {
+                    $this->readLine(); // trailing segment after the payload
                     $this->lastLiteralContent = $literalContent;
-                    // Also extract FLAGS from the surrounding line
-                    $this->lastFlags = $this->extractFlags($line);
+                    $this->lastFlags          = $this->extractFlags($line);
+                    $this->untaggedBuffer[]   = $line;
+                    continue;
                 }
-                $this->untaggedBuffer[] = $line;
-                continue;
+
+                // Otherwise (ENVELOPE etc.) the literal is a value embedded mid
+                // logical-line — e.g. a subject or from-name the server chose to
+                // send as a literal. R4-25b: splice it back inline (as a quoted
+                // string the envelope tokeniser understands) and reassemble the
+                // continuation, which may itself end in a further literal, so the
+                // field is no longer lost to "(no subject)"/dropped sender.
+                $assembled = $this->reassembleLiteralLine($line, $literalContent);
+                if ($assembled === false) {
+                    return $tag . ' BAD literal too large';
+                }
+                $line = $assembled;
+                // fall through to classify the fully-assembled line
             }
 
             // Tagged final response
@@ -609,6 +641,51 @@ final class ImapClient
                 $this->untaggedBuffer[] = $line;
             }
         }
+    }
+
+    /**
+     * Reassemble a logical response line whose first literal has already been
+     * read (its bytes passed in $firstLiteral). Splices each literal inline as a
+     * quoted string and appends the continuation segment that follows it,
+     * resolving any further embedded literals, until the line no longer ends in
+     * a "{N}" marker. Returns false if a continuation literal exceeds the cap.
+     */
+    private function reassembleLiteralLine(string $line, string $firstLiteral): string|false
+    {
+        $line = $this->stripLiteralMarker($line) . $this->quoteLiteral($firstLiteral);
+
+        while (true) {
+            $cont = $this->readLine();
+            if ($cont === false) {
+                return $line; // connection ended mid-line; parse what we have
+            }
+            $line .= $cont;
+            if (!preg_match('/\{(\d+)\}\s*$/', $line, $m)) {
+                return $line; // no further literal — logical line complete
+            }
+            $size = (int) $m[1];
+            if ($size < 0 || $size > 52428800) { // 50 MiB
+                return false;
+            }
+            $line = $this->stripLiteralMarker($line) . $this->quoteLiteral($this->readBytes($size));
+        }
+    }
+
+    /** Drop a trailing "{N}" literal marker from a line. */
+    private function stripLiteralMarker(string $line): string
+    {
+        return (string) preg_replace('/\{\d+\}\s*$/', '', $line);
+    }
+
+    /**
+     * Represent raw literal bytes as an IMAP quoted string so the envelope
+     * tokeniser reads them as ONE token (a literal is semantically a string;
+     * splicing the bytes bare would let spaces/parens inside a subject or name
+     * mis-tokenise). Only '"' and '\' need escaping for our tokeniser.
+     */
+    private function quoteLiteral(string $s): string
+    {
+        return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $s) . '"';
     }
 
     private function writeLine(string $line): void
@@ -719,11 +796,24 @@ final class ImapClient
                 $tokens[] = $val;
                 $i = $j;
             } elseif ($s[$i] === '(') {
-                // Parenthesised group — find matching close
+                // Parenthesised group — find matching close. R4-25c: skip over
+                // quoted strings while counting depth so a ")" inside a quoted
+                // display name (e.g. "Doe, John (Work)") does not close the group
+                // early and truncate the address list.
                 $depth = 1; $j = $i + 1;
                 while ($j < $len && $depth > 0) {
-                    if ($s[$j] === '(') { $depth++; }
-                    elseif ($s[$j] === ')') { $depth--; }
+                    $c = $s[$j];
+                    if ($c === '"') {
+                        $j++;
+                        while ($j < $len) {
+                            if ($s[$j] === '\\') { $j += 2; continue; }
+                            if ($s[$j] === '"')  { $j++; break; }
+                            $j++;
+                        }
+                        continue;
+                    }
+                    if ($c === '(') { $depth++; }
+                    elseif ($c === ')') { $depth--; }
                     $j++;
                 }
                 $tokens[] = substr($s, $i + 1, $j - $i - 2);
@@ -746,20 +836,21 @@ final class ImapClient
     private function parseAddressList(string $raw): string
     {
         if ($raw === '' || strtoupper($raw) === 'NIL') { return ''; }
-        // May contain multiple addresses: "(A)(B)"
+        // May contain multiple addresses: "(A)(B)". R4-25c: split with the
+        // quote-aware tokeniser instead of /\(([^)]*)\)/, which stopped at the
+        // first ")" — including one inside a quoted display name — and dropped
+        // or mangled the rest of the list.
         $addresses = [];
-        if (preg_match_all('/\(([^)]*)\)/', $raw, $matches)) {
-            foreach ($matches[1] as $addrStr) {
-                $parts = $this->tokeniseEnvelope($addrStr);
-                $name  = isset($parts[0]) && $parts[0] !== '' ? $this->mimeDecodeHeader($parts[0]) : '';
-                $local = $parts[2] ?? '';
-                $domain= $parts[3] ?? '';
-                $email = $local !== '' && $domain !== '' ? "{$local}@{$domain}" : '';
-                if ($name !== '' && $email !== '') {
-                    $addresses[] = "{$name} <{$email}>";
-                } elseif ($email !== '') {
-                    $addresses[] = $email;
-                }
+        foreach ($this->tokeniseEnvelope($raw) as $addrStr) {
+            $parts = $this->tokeniseEnvelope($addrStr);
+            $name  = isset($parts[0]) && $parts[0] !== '' ? $this->mimeDecodeHeader($parts[0]) : '';
+            $local = $parts[2] ?? '';
+            $domain= $parts[3] ?? '';
+            $email = $local !== '' && $domain !== '' ? "{$local}@{$domain}" : '';
+            if ($name !== '' && $email !== '') {
+                $addresses[] = "{$name} <{$email}>";
+            } elseif ($email !== '') {
+                $addresses[] = $email;
             }
         }
         return implode(', ', $addresses);

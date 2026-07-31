@@ -36,6 +36,7 @@ return [
     'board.images'          => 'images',
     'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 quotes, [spoiler], [code], [b] [i]',
     'board.no_such_board'   => 'No such board.',
+    'board.error.banned'    => 'You are banned from posting here.',
     'board.captcha'         => 'Type the text shown',
     'board.style'           => 'Style',
     'board.style_default'   => 'Default',

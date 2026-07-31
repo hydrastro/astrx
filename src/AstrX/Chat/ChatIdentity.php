@@ -21,4 +21,21 @@ final class ChatIdentity
         public readonly ?string $color,
         public readonly int     $role,
     ) {}
+
+    /**
+     * The binary rate-limit / mute key for a GUEST chat ident: the 32-hex-char
+     * presence token packed to 16 bytes, so it fits the shared VARBINARY(16)
+     * `ip` column that keys the flood/mute lookups WITHOUT colliding with the
+     * single Tor exit IP every guest shares. Members key on their user id, not
+     * this. Returns null for a token that is not 32 hex chars, letting the caller
+     * fall back to the raw IP rather than key on a malformed value.
+     */
+    public static function guestRateKey(string $ident): ?string
+    {
+        if (strlen($ident) !== 32 || !ctype_xdigit($ident)) {
+            return null;
+        }
+        $packed = @hex2bin($ident);
+        return $packed !== false ? $packed : null;
+    }
 }

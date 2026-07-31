@@ -98,6 +98,28 @@ final class ChatPmRepository
         } catch (PDOException $e) { return $this->err($e); }
     }
 
+    /**
+     * UNIX timestamp of the most recent PM SENT by $fromIdent, or null if none.
+     * Backs the per-sender PM cooldown (R3-25) — keyed on from_ident, which is
+     * the sender's per-visitor ident, so it needs no dedicated timestamp column.
+     *
+     * @return Result<?int>
+     */
+    public function lastSentTime(string $fromIdent): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT UNIX_TIMESTAMP(created_at) AS ts FROM chat_pm
+                  WHERE from_ident = :id ORDER BY created_at DESC, id DESC LIMIT 1'
+            );
+            $stmt->execute([':id' => $fromIdent]);
+            $fetched = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($fetched === false) { return Result::ok(null); }
+            /** @var array<string,mixed> $fetched */
+            return Result::ok(is_numeric($fetched['ts']) ? (int) $fetched['ts'] : 0);
+        } catch (PDOException $e) { return $this->err($e); }
+    }
+
     /** @return Result<int> unread count for $ident */
     public function unreadCount(string $ident): Result
     {

@@ -9,7 +9,10 @@ services:
             context: .
             dockerfile: docker/nginx/Dockerfile
         ports:
-            - "80:80"
+            # R4-18: bind to loopback only so the onion content is reachable by
+            # the host's local tor daemon / reverse proxy but NOT published on the
+            # host's clearnet interfaces (plain "80:80" listens on 0.0.0.0).
+            - "127.0.0.1:80:80"
         volumes:
             - ./public:/app/public
             - ./src:/app/src
@@ -55,7 +58,10 @@ services:
         networks:
             - php-network
         environment:
-            MARIADB_ROOT_PASSWORD_HASH: "*2470C0C06DEE42FD1618BB99005ADCA2EC9D1E19"
+            # R4-17: no default weak secret in the repo. The committed value used
+            # to be the MariaDB hash of 'password'. Provide the hash via .env
+            # (MARIADB_ROOT_PASSWORD_HASH=...); compose fails fast if it is unset.
+            MARIADB_ROOT_PASSWORD_HASH: "${MARIADB_ROOT_PASSWORD_HASH:?set MARIADB_ROOT_PASSWORD_HASH in .env}"
             MYSQL_DATABASE: content_manager
 
 networks:

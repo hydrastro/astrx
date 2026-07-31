@@ -105,6 +105,87 @@ final class BanRepository
     }
 
     /**
+     * The active, unexpired ban in force against this poster right now, if any.
+     * A ban matches on the account (user_id) OR the packed IP — honouring the
+     * ban's stored CIDR prefix_len — and must be scoped to THIS board or be a
+     * global (board_id IS NULL) ban. Returns the matching row, or null when the
+     * poster is not banned. Called on the post write-path to reject before create.
+     *
+     * The small candidate set (active bans in scope) is fetched and the account /
+     * CIDR match finished in PHP: a correct prefix comparison on VARBINARY reads
+     * far clearer here than in SQL, and moderation ban lists are tiny. The raw
+     * `ip` bytes are returned for the in-PHP mask; nothing binary is displayed.
+     *
+     * @return Result<array<string,mixed>|null>
+     */
+    public function findActiveFor(?string $hexUserId, ?string $packedIp, int $boardId): Result
+    {
+        $uid = ($hexUserId !== null && $hexUserId !== '' && ctype_xdigit($hexUserId))
+            ? strtolower($hexUserId)
+            : null;
+        if ($uid === null && $packedIp === null) {
+            return Result::ok(null);   // nothing to match on
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT LOWER(HEX(user_id)) AS user_id, ip, prefix_len, reason,
+                        UNIX_TIMESTAMP(expires_at) AS expires_ts
+                   FROM board_ban
+                  WHERE active = 1
+                    AND (board_id IS NULL OR board_id = :b)
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                    AND (user_id IS NOT NULL OR ip IS NOT NULL)'
+            );
+            $stmt->execute([':b' => $boardId]);
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $row) {
+                $banUid = is_string($row['user_id'] ?? null) ? $row['user_id'] : '';
+                if ($uid !== null && $banUid !== '' && $banUid === $uid) {
+                    return Result::ok($row);
+                }
+                $banIp = $row['ip'] ?? null;
+                if ($packedIp !== null && is_string($banIp) && $banIp !== '') {
+                    $plen = is_numeric($row['prefix_len'] ?? null) ? (int) $row['prefix_len'] : 128;
+                    if (self::ipInCidr($packedIp, $banIp, $plen)) {
+                        return Result::ok($row);
+                    }
+                }
+            }
+            return Result::ok(null);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
+     * True if a packed (inet_pton) IP falls inside a packed network / prefix.
+     * Compares the leading whole bytes, then the partial byte under a bit mask.
+     * A length mismatch (v4 vs v6) never matches.
+     */
+    private static function ipInCidr(string $ip, string $network, int $prefixLen): bool
+    {
+        $len = strlen($ip);
+        if ($len !== strlen($network) || ($len !== 4 && $len !== 16)) {
+            return false;
+        }
+        $prefixLen = max(0, min($len * 8, $prefixLen));
+        if ($prefixLen === 0) {
+            return true;
+        }
+        $fullBytes = intdiv($prefixLen, 8);
+        if ($fullBytes > 0 && strncmp($ip, $network, $fullBytes) !== 0) {
+            return false;
+        }
+        $remBits = $prefixLen % 8;
+        if ($remBits === 0) {
+            return true;
+        }
+        $mask = (~0 << (8 - $remBits)) & 0xFF;
+        return (ord($ip[$fullBytes]) & $mask) === (ord($network[$fullBytes]) & $mask);
+    }
+
+    /**
      * Lift a ban (deactivate). The row is kept for the audit trail rather than
      * deleted.
      *

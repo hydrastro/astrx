@@ -552,6 +552,12 @@ final class BoardModController extends AbstractController
                 'board:' . $slug,
                 'No.' . $no . ($global ? ' global' : '') . ($days > 0 ? ' ' . $days . 'd' : ' perm'),
             );
+            // Ban-without-delete keeps the post: flag it banned so Search (which
+            // filters banned = 0) drops it and the thread shows the notice. When
+            // also deleting the row is about to go, so the UPDATE is skipped.
+            if (!$alsoDel) {
+                $this->posts->markBanned($postId)->drainTo($this->collector);
+            }
         }
 
         if ($alsoDel) {

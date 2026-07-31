@@ -9,6 +9,7 @@ use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\Http\UploadedFile;
 use AstrX\I18n\Translator;
+use AstrX\Imageboard\BanRepository;
 use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\BoardView;
@@ -24,6 +25,7 @@ use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
+use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserSession;
@@ -76,6 +78,8 @@ final class BoardController extends AbstractController
         private readonly Translator             $t,
         private readonly UserSession            $session,
         private readonly BoardNav               $nav,
+        private readonly BanRepository          $bans,
+        private readonly FlashBag               $flash,
     ) {
         parent::__construct($collector);
     }
@@ -462,6 +466,23 @@ final class BoardController extends AbstractController
         $ip        = $this->packedIp();
         $posterKey = $ip !== null ? hash('sha256', $ip) : '';
 
+        // Ban enforcement: reject a banned poster before any post is created.
+        // The check uses the REAL logged-in account (even when the poster ticks
+        // "anonymous") and the REAL request IP (even when store_poster_ip is off),
+        // not the possibly-null persisted identity — otherwise a ban could be
+        // dodged by posting anonymously or on the onion default. A global or
+        // this-board ban, on the account OR the IP/CIDR, blocks the post.
+        $banUid = $this->session->isLoggedIn() ? $this->session->userId() : null;
+        // Don't IP-match a loopback/shared REMOTE_ADDR (mirrors the cooldown guard):
+        // on a Tor/proxied deployment every visitor shares it, so IP-matching a ban
+        // would otherwise block ALL posting site-wide once one poster's IP is banned.
+        $banIp  = ($ip !== null && !self::isLoopback($ip)) ? $ip : null;
+        $banR   = $this->bans->findActiveFor($banUid, $banIp, $bid);
+        if ($banR->isOk() && $banR->unwrap() !== null) {
+            $this->flash->set('error', $this->t->t('board.error.banned'));
+            return $backUrl;
+        }
+
         // Flood control: enforce the board's per-poster cooldown.
         $cooldown = self::mInt($board, 'cooldown_secs');
         if ($cooldown > 0 && $this->onCooldown($bid, $posterKey, $ip, $cooldown)) {
@@ -523,14 +544,14 @@ final class BoardController extends AbstractController
             $r = $this->postService->reply($threadId, $submission);
             $r->drainTo($this->collector);
             if ($r->isOk()) {
-                $this->markPosted();
+                $this->markPosted($bid);
             }
             return $this->threadUrl($slug, $threadId);
         }
         $r = $this->postService->createThread($bid, $submission);
         $r->drainTo($this->collector);
         if ($r->isOk()) {
-            $this->markPosted();
+            $this->markPosted($bid);
             return $this->threadUrl($slug, $r->unwrap());
         }
         return $this->indexUrl($slug);
@@ -576,7 +597,10 @@ final class BoardController extends AbstractController
      */
     private function onCooldown(int $boardId, string $posterKey, ?string $ip, int $cooldown): bool
     {
-        $last   = $_SESSION['board_last_post'] ?? null;
+        // Per-board session timer: a cooldown on /a/ must not block /b/. Keyed by
+        // board id (an older single-scalar value is simply ignored on read).
+        $store  = $_SESSION['board_last_post'] ?? null;
+        $last   = (is_array($store) && isset($store[$boardId])) ? $store[$boardId] : null;
         $lastTs = is_int($last) ? $last : 0;
         if ($lastTs > 0 && (time() - $lastTs) < $cooldown) {
             return true;
@@ -591,9 +615,15 @@ final class BoardController extends AbstractController
         return false;
     }
 
-    private function markPosted(): void
+    private function markPosted(int $boardId): void
     {
-        $_SESSION['board_last_post'] = time();
+        // Per-board timestamps so each board's cooldown is independent.
+        $store = $_SESSION['board_last_post'] ?? null;
+        if (!is_array($store)) {
+            $store = [];
+        }
+        $store[$boardId] = time();
+        $_SESSION['board_last_post'] = $store;
     }
 
     /** True if a packed (inet_pton) address is loopback (127.0.0.0/8, ::1, or ::ffff:127/8). */

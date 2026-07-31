@@ -167,8 +167,11 @@ final class Request
             return true;
         }
 
-        $portVal = $this->server->get('SERVER_PORT', '');
-        return (is_string($portVal) ? $portVal : '') === '443';
+        // SERVER_PORT may arrive as an int (443) or a string ('443'); the old
+        // string-only compare reported an int 443 as not-secure. Compare
+        // numerically so both forms are handled.
+        $portVal = $this->server->get('SERVER_PORT');
+        return is_scalar($portVal) && (int) $portVal === 443;
     }
 
     public function ip(bool $trustProxyHeaders = false): string

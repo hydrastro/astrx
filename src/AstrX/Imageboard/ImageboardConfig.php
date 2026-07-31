@@ -195,7 +195,21 @@ final class ImageboardConfig
     }
 
     /**
+     * The image extensions the file controllers can always serve, whatever the
+     * strip_exif setting. 'jpeg' is an accepted alias (relabelled to jpg).
+     */
+    private const SERVABLE_UPLOAD_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+    /**
      * Normalised, lower-cased list of allowed upload extensions.
+     *
+     * Constrained to the SERVABLE set (R3-24): with strip_exif OFF the sanitizer
+     * keeps a decodable-but-foreign image (e.g. bmp/tiff) verbatim under a '.bin'
+     * name that BoardFileController can never serve, so an admin-added type
+     * outside the servable set is dropped here rather than stored unservable.
+     * The list is never returned empty — the sanitizer treats [] as "allow any
+     * extension", which would re-open the exact hole — so a config with no
+     * servable type falls back to the full servable set.
      *
      * @return list<string>
      */
@@ -204,8 +218,10 @@ final class ImageboardConfig
         $out = [];
         foreach (explode(',', strtolower($this->uploadTypesRaw)) as $t) {
             $t = trim($t);
-            if ($t !== '') { $out[] = $t; }
+            if ($t !== '' && in_array($t, self::SERVABLE_UPLOAD_TYPES, true) && !in_array($t, $out, true)) {
+                $out[] = $t;
+            }
         }
-        return $out;
+        return $out !== [] ? $out : self::SERVABLE_UPLOAD_TYPES;
     }
 }

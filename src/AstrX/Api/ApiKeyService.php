@@ -151,9 +151,11 @@ final class ApiKeyService
     // -------------------------------------------------------------------------
 
     /**
-     * List all non-revoked keys for the given user. Used by the future
-     * settings-page UI. Returns rows with id, label, created_at, last_used_at,
-     * expires_at — never the hash or raw key.
+     * List ALL keys for the given user — including revoked ones — for the
+     * settings-page UI. The query intentionally does not filter on `revoked`;
+     * each row carries the `revoked` flag so the UI can show or grey out revoked
+     * keys. Returns rows with id, label, created_at, last_used_at, expires_at
+     * and revoked — never the hash or raw key.
      *
      * @return Result<list<array<string,mixed>>>
      */

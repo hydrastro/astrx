@@ -6,13 +6,17 @@ namespace AstrX\Session;
 final class PrgHandler
 {
     private const POST_PREFIX = 'POST_';
+    /** Parallel per-token creation timestamp, so payloads can be aged out (R3-27). */
+    private const POST_META_PREFIX = 'POST_META_';
     private const TARGET_PREFIX = 'PRG_TARGET_';
     private const TOKEN_QUERY_KEY = '_prg';
 
     /** @param array<string,mixed> $data */
     public function store(string $token, array $data): void
     {
-        $_SESSION[self::POST_PREFIX . $token] = $data;
+        $_SESSION[self::POST_PREFIX . $token]      = $data;
+        $_SESSION[self::POST_META_PREFIX . $token] = time();
+        $this->gcPostPayloads();
     }
 
     /** @param array<string,mixed> $data */
@@ -45,7 +49,7 @@ final class PrgHandler
         $key = self::POST_PREFIX . $token;
 
         $value = $_SESSION[$key] ?? null;
-        unset($_SESSION[$key]);
+        unset($_SESSION[$key], $_SESSION[self::POST_META_PREFIX . $token]);
         if (!is_array($value)) { return null; }
         /** @var array<string,mixed> $value */
         return $value;
@@ -53,7 +57,7 @@ final class PrgHandler
 
     public function forget(string $token): void
     {
-        unset($_SESSION[self::POST_PREFIX . $token]);
+        unset($_SESSION[self::POST_PREFIX . $token], $_SESSION[self::POST_META_PREFIX . $token]);
     }
 
     /** Max seconds a PRG target may sit unused before being pruned. */
@@ -65,6 +69,7 @@ final class PrgHandler
     public function createId(string $url): string
     {
         $this->pruneTargets();
+        $this->gcPostPayloads();
         $prgId = bin2hex(random_bytes(16));
         $_SESSION[self::TARGET_PREFIX . $prgId] = [
             'url' => $url,
@@ -108,6 +113,58 @@ final class PrgHandler
                 unset($_SESSION[$key]);
                 if (--$count <= self::TARGET_CAP) { break; }
             }
+        }
+    }
+
+    /**
+     * Sweep abandoned PRG POST payloads and the upload temp files they hold
+     * (R3-27). A payload is stored on submit and consumed by pull() on the
+     * settling GET; if the user abandons the redirect (or it fails validation
+     * and is never pulled), the payload — and any upload files ContentManager
+     * moved into the system temp dir and recorded under __files__ — would linger
+     * forever. Prune payloads older than the PRG TTL, unlinking their temp files
+     * first. A missing meta timestamp means a pre-fix (legacy) entry, also aged
+     * out. Runs on store() and createId(), the frequent PRG entry points.
+     */
+    private function gcPostPayloads(): void
+    {
+        $cutoff = time() - self::TARGET_TTL;
+        foreach ($_SESSION as $key => $value) {
+            if (!str_starts_with($key, self::POST_PREFIX)) { continue; }
+            if (str_starts_with($key, self::POST_META_PREFIX)) { continue; } // its own meta row
+
+            $token   = substr($key, strlen(self::POST_PREFIX));
+            $metaKey = self::POST_META_PREFIX . $token;
+            $tsRaw   = $_SESSION[$metaKey] ?? null;
+            $ts      = is_int($tsRaw) ? $tsRaw : 0;
+
+            if ($ts >= $cutoff) { continue; }
+
+            if (is_array($value)) {
+                /** @var array<string,mixed> $value */
+                $this->purgeUploadTemps($value);
+            }
+            unset($_SESSION[$key], $_SESSION[$metaKey]);
+        }
+    }
+
+    /**
+     * Unlink upload temp files recorded in a PRG payload's __files__ block. Only
+     * paths whose basename carries ContentManager's 'astrx_upload_' prefix are
+     * touched, so the sweep can never remove anything it did not create.
+     *
+     * @param array<string,mixed> $payload
+     */
+    private function purgeUploadTemps(array $payload): void
+    {
+        $files = $payload['__files__'] ?? null;
+        if (!is_array($files)) { return; }
+        foreach ($files as $meta) {
+            if (!is_array($meta)) { continue; }
+            $path = $meta['temp_path'] ?? null;
+            if (!is_string($path) || $path === '') { continue; }
+            if (!str_starts_with(basename($path), 'astrx_upload_')) { continue; }
+            if (is_file($path)) { @unlink($path); }
         }
     }
 

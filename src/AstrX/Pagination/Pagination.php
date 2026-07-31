@@ -97,9 +97,15 @@ final class Pagination
         // Clamp the page so (page-1)*perPage can never overflow to a float —
         // under strict_types that throws a TypeError on the ": int" return, so a
         // public, unauthenticated "?pn=<huge>" would otherwise 500 the page.
-        $maxPage = intdiv(PHP_INT_MAX, $this->perPage) + 1;
-        $page    = $this->page < $maxPage ? $this->page : $maxPage;
-        return ($page - 1) * $this->perPage;
+        // Work in (page-1) space so the guard itself never overflows: for
+        // perPage==1, intdiv(PHP_INT_MAX,1)+1 would round up to a float and
+        // defeat the clamp, so compute the max (page-1) directly and cap there.
+        $maxPageMinus1 = intdiv(PHP_INT_MAX, $this->perPage);
+        $pageMinus1    = $this->page - 1;
+        if ($pageMinus1 > $maxPageMinus1) {
+            $pageMinus1 = $maxPageMinus1;
+        }
+        return $pageMinus1 * $this->perPage;
     }
     public function isUnpaged(): bool { return $this->perPage === 0; }
     public function hasPrev(): bool  { return $this->page > 1; }

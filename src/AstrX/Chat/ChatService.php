@@ -205,20 +205,34 @@ final class ChatService
             $color = $this->bbcode->safeColor($identity->color);
         }
 
+        // Rate-limit / mute key: members key on their account (user id); GUESTS
+        // key on their per-visitor chat ident (the presence token) — NOT the Tor
+        // exit IP every guest shares — so one guest tripping the flood limit can't
+        // mute all guests and the cooldown is per-visitor (R3-16). The 32-hex-char
+        // ident packs to 16 bytes, matching the VARBINARY(16) `ip` column the
+        // flood/mute lookups key on. The real $packedIp is still used above for
+        // the filter-kick ban.
+        $rateKey = $hexUserId !== null
+            ? null
+            : (ChatIdentity::guestRateKey($identity->ident) ?? $packedIp);
+        // What lands in chat_message.ip — the same key the guest flood lookup
+        // reads back (that column is used for nothing else). Members keep the raw IP.
+        $storeIp = $hexUserId !== null ? $packedIp : $rateKey;
+
         // Mute (global chat mute — page_id IS NULL).
-        $muteResult = $this->repo->isMuted($hexUserId, $packedIp);
+        $muteResult = $this->repo->isMuted($hexUserId, $rateKey);
         if ($muteResult->isOk() && $muteResult->unwrap() === true) {
             return $this->opErr('muted');
         }
 
         // Flood, with an automatic short mute on breach.
         if ($this->config->minFloodSecs() > 0) {
-            $lastResult = $this->repo->lastMessageTime($hexUserId, $packedIp);
+            $lastResult = $this->repo->lastMessageTime($hexUserId, $rateKey);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $elapsed = time() - $lastResult->unwrap();
                 if ($elapsed < $this->config->minFloodSecs()) {
                     if ($this->config->floodMuteSecs() > 0) {
-                        $this->repo->addMute($hexUserId, $packedIp, $this->config->floodMuteSecs());
+                        $this->repo->addMute($hexUserId, $rateKey, $this->config->floodMuteSecs());
                     }
                     return $this->opErr('flood');
                 }
@@ -240,7 +254,7 @@ final class ChatService
         }
 
         $expiresAt    = date('Y-m-d H:i:s', time() + $this->config->retentionMinutes() * 60);
-        $createResult = $this->repo->create($roomId, $hexUserId, $nick, $color, $content, $expiresAt, $packedIp, $type);
+        $createResult = $this->repo->create($roomId, $hexUserId, $nick, $color, $content, $expiresAt, $storeIp, $type);
 
         if ($attachMeta !== null) {
             if ($createResult->isOk()) {

@@ -75,13 +75,41 @@ final class AstrXCompiler
     {
         $this->collectSource();
         $this->collectResources();
-        $this->writeBundle();
-        $this->writeFrontController();
-        $this->writeCompileFrontController();
+
+        // R4-16: write to ".tmp" siblings first, lint the generated wrappers AND
+        // every embedded source string, and only rename into place on full
+        // success — so a syntax error in generated output can never leave a
+        // corrupt live bundle / front controller behind (the old code wrote the
+        // real files first and only linted the outer wrapper).
+        $bundleTmp       = $this->outFile . '.tmp';
+        $frontTmp        = $this->frontController . '.tmp';
+        $compileFrontTmp = $this->compileFrontController . '.tmp';
+
+        try {
+            $this->writeBundle($bundleTmp);
+            $this->writeFrontControllerFile($frontTmp, null);
+            $this->writeFrontControllerFile($compileFrontTmp, '/compile');
+
+            $this->lint($bundleTmp);
+            $this->lint($frontTmp);
+            $this->lint($compileFrontTmp);
+            // The bundle lint only validates the outer Bundle class; each
+            // per-file source is stored as a string literal it eval()s at
+            // runtime, so lint every one of those on its own too.
+            $this->lintEmbeddedSources();
+
+            $this->promote($bundleTmp, $this->outFile);
+            $this->promote($frontTmp, $this->frontController);
+            $this->promote($compileFrontTmp, $this->compileFrontController);
+        } catch (\Throwable $e) {
+            // Leave the live files untouched; drop any temp artifacts.
+            foreach ([$bundleTmp, $frontTmp, $compileFrontTmp] as $tmp) {
+                if (is_file($tmp)) { @unlink($tmp); }
+            }
+            throw $e;
+        }
+
         $this->warmTemplateCache();
-        $this->lint($this->outFile);
-        $this->lint($this->frontController);
-        $this->lint($this->compileFrontController);
 
         $sourceBytes = filesize($this->outFile) ?: 0;
         $frontBytes  = filesize($this->frontController) ?: 0;
@@ -202,9 +230,9 @@ final class AstrXCompiler
         return false;
     }
 
-    private function writeBundle(): void
+    private function writeBundle(string $target): void
     {
-        $dir = dirname($this->outFile);
+        $dir = dirname($target);
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new RuntimeException("Could not create {$dir}");
         }
@@ -341,7 +369,7 @@ final class Bundle
 Bundle::register();
 PHP;
 
-        file_put_contents($this->outFile, $bundle);
+        file_put_contents($target, $bundle);
     }
 
 
@@ -361,16 +389,6 @@ PHP;
         }
 
         $this->warnings[] = 'server-side template cache warmed';
-    }
-
-    private function writeFrontController(): void
-    {
-        $this->writeFrontControllerFile($this->frontController, null);
-    }
-
-    private function writeCompileFrontController(): void
-    {
-        $this->writeFrontControllerFile($this->compileFrontController, '/compile');
     }
 
     private function writeFrontControllerFile(string $target, ?string $prefix): void
@@ -640,10 +658,52 @@ PHP;
 
     private function lint(string $file): void
     {
+        $out = [];
         $cmd = 'php -l ' . escapeshellarg($file) . ' 2>&1';
         exec($cmd, $out, $code);
         if ($code !== 0) {
             throw new RuntimeException("PHP lint failed for {$file}:\n" . implode("\n", $out));
+        }
+    }
+
+    /**
+     * Lint every embedded, preamble-stripped source fragment. These strings are
+     * what Bundle::loadFile() eval()s at runtime; linting the bundle wrapper
+     * treats them as opaque string literals, so validate each independently by
+     * writing it to a temp file with the "<?php" the strip removed re-added.
+     */
+    private function lintEmbeddedSources(): void
+    {
+        foreach ($this->sourcePayload as $rel => $code) {
+            $tmp = tempnam(sys_get_temp_dir(), 'astrx_lint_');
+            if ($tmp === false) {
+                throw new RuntimeException("Could not create temp file to lint {$rel}");
+            }
+            try {
+                if (file_put_contents($tmp, "<?php\n" . $code) === false) {
+                    throw new RuntimeException("Could not write temp lint file for {$rel}");
+                }
+                $out = [];
+                $cmd = 'php -l ' . escapeshellarg($tmp) . ' 2>&1';
+                exec($cmd, $out, $exit);
+                if ($exit !== 0) {
+                    throw new RuntimeException("PHP lint failed for embedded source {$rel}:\n" . implode("\n", $out));
+                }
+            } finally {
+                @unlink($tmp);
+            }
+        }
+    }
+
+    /** Atomically move a validated ".tmp" output into its final path. */
+    private function promote(string $tmp, string $target): void
+    {
+        $dir = dirname($target);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new RuntimeException("Could not create {$dir}");
+        }
+        if (!rename($tmp, $target)) {
+            throw new RuntimeException("Could not move {$tmp} into place at {$target}");
         }
     }
 

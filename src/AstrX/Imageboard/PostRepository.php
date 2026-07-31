@@ -235,6 +235,23 @@ final class PostRepository
     }
 
     /**
+     * Flag a post as banned ("USER WAS BANNED FOR THIS POST"). A banned-but-kept
+     * post must carry this so Search (which filters `banned = 0`) drops it and the
+     * thread view can show the notice.
+     *
+     * @return Result<bool>
+     */
+    public function markBanned(int $id): Result
+    {
+        try {
+            $this->pdo->prepare('UPDATE board_post SET banned = 1 WHERE id = :id')->execute([':id' => $id]);
+            return Result::ok(true);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
+    /**
      * The packed (inet_pton) IP stored for a post, or null when none is on
      * record (the onion default stores no IP). Returned as the raw VARBINARY
      * bytes, ready to feed straight into a ban's `ip` column.

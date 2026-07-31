@@ -32,6 +32,10 @@ return [
         // over a SOCKS5 tunnel). Keep true for clearnet. Onion-only deployments
         // where Tor already authenticates the hidden service may set this false.
         'imap_verify_ssl' => (getenv('IMAP_VERIFY_SSL') ?: 'true') === 'true',
+        // Trust a bare "* PREAUTH" greeting as already-authenticated (skips LOGIN).
+        // Default false — an unauthenticated/MITM'd server could otherwise assert
+        // PREAUTH to skip credentials. Only enable for a trusted local IMAP.
+        'imap_allow_preauth' => (getenv('IMAP_ALLOW_PREAUTH') ?: 'false') === 'true',
     ],
     'WebmailService' => [
         'mail_domain'                 => getenv('MAIL_DOMAIN')        ?: 'localhost',

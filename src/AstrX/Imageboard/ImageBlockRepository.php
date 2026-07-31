@@ -67,6 +67,41 @@ final class ImageBlockRepository
         }
     }
 
+    /**
+     * Is this image on the blocklist? Matches on the exact content hash (sha256)
+     * OR the perceptual hash (ahash). A zero ahash / empty sha256 means "not set"
+     * on the upload and is skipped, so it never collides with a block row that
+     * keys only on the other hash (both columns default to 0 / '').
+     *
+     * @return Result<bool>
+     */
+    public function isBlocked(string $sha256, int $ahash): Result
+    {
+        $sha    = substr($sha256, 0, 64);
+        $conds  = [];
+        $params = [];
+        if ($sha !== '') {
+            $conds[]        = 'sha256 = :sha';
+            $params[':sha'] = $sha;
+        }
+        if ($ahash !== 0) {
+            $conds[]       = 'ahash = :ah';
+            $params[':ah'] = sprintf('%u', $ahash);
+        }
+        if ($conds === []) {
+            return Result::ok(false);   // nothing to match on
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT 1 FROM board_image_block WHERE ' . implode(' OR ', $conds) . ' LIMIT 1'
+            );
+            $stmt->execute($params);
+            return Result::ok($stmt->fetchColumn() !== false);
+        } catch (PDOException $e) {
+            return $this->err($e);
+        }
+    }
+
     /** @return Result<bool> */
     public function remove(int $blockId): Result
     {

@@ -81,10 +81,13 @@ final class CaptchaRenderer
     // Config setters
     // -------------------------------------------------------------------------
 
+    // Config values are admin-supplied; clamp to sane bounds so a typo (or a
+    // compromised admin) can't request a multi-gigapixel canvas or an infinite
+    // draw loop and OOM/hang the captcha endpoint (defence in depth).
     #[InjectConfig('image_width')]
-    public function setImageWidth(int $v): void { $this->imageWidth = $v; }
+    public function setImageWidth(int $v): void { $this->imageWidth = max(1, min(4096, $v)); }
     #[InjectConfig('image_height')]
-    public function setImageHeight(int $v): void { $this->imageHeight = $v; }
+    public function setImageHeight(int $v): void { $this->imageHeight = max(1, min(4096, $v)); }
     #[InjectConfig('background_color')]
     public function setBackgroundColor(string $v): void { $this->backgroundColor = ltrim($v, '#'); }
     #[InjectConfig('text_color')]
@@ -100,19 +103,19 @@ final class CaptchaRenderer
     #[InjectConfig('dots_color_random')]
     public function setDotsColorRandom(bool $v): void { $this->dotsColorRandom = $v; }
     #[InjectConfig('lines_number')]
-    public function setLinesNumber(int $v): void { $this->linesNumber = $v; }
+    public function setLinesNumber(int $v): void { $this->linesNumber = max(0, min(100000, $v)); }
     #[InjectConfig('lines_start_from_border')]
     public function setLinesStartFromBorder(bool $v): void { $this->linesStartFromBorder = $v; }
     #[InjectConfig('dots_number')]
-    public function setDotsNumber(int $v): void { $this->dotsNumber = $v; }
+    public function setDotsNumber(int $v): void { $this->dotsNumber = max(0, min(100000, $v)); }
     #[InjectConfig('char_list')]
     public function setCharList(string $v): void { if ($v !== '') $this->charList = $v; }
     #[InjectConfig('captcha_length')]
-    public function setCaptchaLength(int $v): void { if ($v > 0) $this->captchaLength = $v; }
+    public function setCaptchaLength(int $v): void { if ($v > 0) $this->captchaLength = min(64, $v); }
     #[InjectConfig('captcha_type')]
     public function setCaptchaType(int $v): void { $this->captchaType = CaptchaType::tryFrom($v) ?? CaptchaType::MEDIUM; }
     #[InjectConfig('font_size')]
-    public function setFontSize(int $v): void { if ($v > 0) $this->fontSize = $v; }
+    public function setFontSize(int $v): void { if ($v > 0) $this->fontSize = min(512, $v); }
     #[InjectConfig('font_file')]
     public function setFontFile(string $v): void
     {

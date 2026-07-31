@@ -23,8 +23,9 @@ use PDOException;
  *      and optionally narrowed by doc_type.
  *
  *   2. LIVE FALLBACK — the classic bound-LIKE queries (via {@see SearchSources})
- *      run only for source rows NEWER than the newest indexed_at timestamp, so
- *      content created since the last crawl is found immediately. When the index
+ *      run only for source rows created at/after the crawl start (the oldest
+ *      indexed_at), so content created since — or during — the last crawl is
+ *      found immediately. When the index
  *      is empty or unavailable (e.g. not yet migrated) the fallback widens to a
  *      full live search, so search degrades gracefully to its pre-index
  *      behaviour and never hard-fails on a missing table.
@@ -84,7 +85,8 @@ final class SiteSearchService
 
             // Layer 2: live fallback. When the index is unavailable or empty we
             // run a FULL live search (cutoff 0, pages included); otherwise only
-            // rows created after the newest indexed_at are fetched.
+            // rows created at/after the crawl start (oldest indexed_at) are
+            // fetched, so content created mid-crawl is not hidden (R4-24).
             $cutoff     = $indexAvailable ? $this->indexCutoff() : 0;
             $indexEmpty = $cutoff === 0;
             $liveHits   = $this->fromLive($like, $type, $limit, $cutoff, includePages: $indexEmpty);
@@ -164,10 +166,21 @@ final class SiteSearchService
         return [$out, true];
     }
 
-    /** Newest indexed_at as a unix timestamp, or 0 when the index is empty. */
+    /**
+     * Crawl-start cutoff as a unix timestamp, or 0 when the index is empty.
+     *
+     * R4-24: this is the OLDEST indexed_at, not the newest. A crawl stamps each
+     * row's indexed_at as it upserts, so MAX(indexed_at) is the crawl END —
+     * using it hides content created mid-crawl (after its source was already
+     * crawled) until the next full crawl, because such rows are neither indexed
+     * nor newer than the end cutoff. MIN(indexed_at) approximates the crawl
+     * START (and is older still for a partial index), so the live fallback
+     * covers everything created at/after it; boundary duplicates with the index
+     * are removed by dedupe().
+     */
     private function indexCutoff(): int
     {
-        $stmt = $this->pdo->query('SELECT UNIX_TIMESTAMP(MAX(`indexed_at`)) FROM `search_index`');
+        $stmt = $this->pdo->query('SELECT UNIX_TIMESTAMP(MIN(`indexed_at`)) FROM `search_index`');
         if ($stmt === false) {
             return 0;
         }

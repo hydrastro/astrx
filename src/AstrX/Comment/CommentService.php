@@ -160,6 +160,15 @@ final class CommentService
             if ($parentPageId !== $pageId) {
                 return $this->opErr('reply_wrong_page');
             }
+            // A reply must also target the SAME item as its parent — page_id alone
+            // does not pin the thread on a multi-item page, so without this an item
+            // reply could attach across items (R3-26). item_id is NULL for
+            // page-level comments; both sides must match (NULL == NULL).
+            $pItem = $parent['item_id'] ?? null;
+            $parentItemId = is_int($pItem) ? $pItem : (is_numeric($pItem) ? (int) $pItem : null);
+            if ($parentItemId !== $itemId) {
+                return $this->opErr('reply_wrong_page');
+            }
         }
 
         // Antispam regex
@@ -185,9 +194,11 @@ final class CommentService
 
         // ── Flood check ───────────────────────────────────────────────
         // Comment moderators / admins are exempt from the post cooldown.
+        // The lookup is page-scoped to match the page-scoped auto-mute and mute
+        // check below — the keying is consistent (R3-18).
         $isStaff = $this->gate->can(Permission::ADMIN_COMMENTS);
         if (!$isStaff && $this->minimumFloodSecs > 0) {
-            $lastResult = $this->repo->lastCommentTime($hexUserId, $ip);
+            $lastResult = $this->repo->lastCommentTime($hexUserId, $ip, $pageId);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $lastTs = $lastResult->unwrap();
                 $elapsed = time() - $lastTs;

@@ -21,9 +21,10 @@ use AstrX\Result\Result;
 final class ImageService
 {
     public function __construct(
-        private readonly ImageRepository  $repo,
-        private readonly ImageSanitizer   $sanitizer,
-        private readonly ImageboardConfig $config,
+        private readonly ImageRepository     $repo,
+        private readonly ImageSanitizer      $sanitizer,
+        private readonly ImageboardConfig    $config,
+        private readonly ImageBlockRepository $blocks,
     ) {}
 
     /**
@@ -68,6 +69,15 @@ final class ImageService
             return Result::err($res->error(), $res->diagnostics());
         }
         $img = $res->unwrap();
+
+        // Moderator blocklist: reject a known-bad image by exact (sha256) or
+        // perceptual (ahash) hash before it is written to disk. A DB error is
+        // fail-open (the lookup Result is not ok) so a blocklist outage does not
+        // take posting down; a positive match is a hard reject.
+        $blockR = $this->blocks->isBlocked($img->sha256 ?? '', $img->averageHash ?? 0);
+        if ($blockR->isOk() && $blockR->unwrap() === true) {
+            return $this->fail();
+        }
 
         $dir = $this->config->uploadDir();
         if ($dir === '' || (!is_dir($dir) && !@mkdir($dir, 0775, true))) {

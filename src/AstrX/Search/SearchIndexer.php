@@ -97,26 +97,41 @@ final class SearchIndexer
                      `indexed_at` = CURRENT_TIMESTAMP"
             );
 
+            // Source types crawled to completion this run — the ONLY types it is
+            // safe to sweep (see below).
+            $sweepTypes = [];
             foreach (SearchSources::TYPES as $type) {
                 if ($count >= self::MAX_DOCS) {
                     $capped = true;
                     break;
                 }
-                $written = $this->crawlType($type, $upsert, $count, $progress);
-                $count  += $written;
+                $result  = $this->crawlType($type, $upsert, $count, $progress);
+                $count  += $result['written'];
+                if ($result['complete']) {
+                    $sweepTypes[] = $type;
+                }
                 if ($progress !== null) {
-                    $progress($type . ': indexed ' . $written . ' (total ' . $count . ')');
+                    $progress($type . ': indexed ' . $result['written'] . ' (total ' . $count . ')');
                 }
             }
 
             // Mark-and-sweep: drop rows not refreshed this run (their source is
-            // gone/hidden). Skipped when we hit the runaway ceiling — a partial
-            // crawl must not delete a previously-complete index — or when the DB
-            // clock was unreadable.
-            if (!$capped && $runStart !== '') {
-                $del = $this->pdo->prepare('DELETE FROM `search_index` WHERE `indexed_at` < :cut');
-                $del->bindValue(':cut', $runStart);
-                $del->execute();
+            // gone/hidden). R4-22: restricted to the source types crawled to
+            // COMPLETION. A type truncated mid-crawl by the global MAX_DOCS cap
+            // (or the per-source batch cap / cursor guard), or skipped entirely
+            // once the cap was hit, still holds unseen-but-live rows, so sweeping
+            // it would delete live content — scope the delete per doc_type and
+            // only for types that finished. Skipped when the DB clock was
+            // unreadable ($runStart empty).
+            if ($runStart !== '' && $sweepTypes !== []) {
+                $del = $this->pdo->prepare(
+                    'DELETE FROM `search_index` WHERE `doc_type` = :dt AND `indexed_at` < :cut'
+                );
+                foreach ($sweepTypes as $sweepType) {
+                    $del->bindValue(':dt',  $sweepType);
+                    $del->bindValue(':cut', $runStart);
+                    $del->execute();
+                }
             }
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -145,22 +160,29 @@ final class SearchIndexer
      * advance (infinite-refetch guard), the per-source batch cap, or the global
      * doc ceiling — so it can never spin forever.
      *
+     * The returned `complete` flag says whether the source was crawled to its
+     * natural end (empty/short batch) rather than cut short by a cap or the
+     * cursor guard. rebuild() only sweeps types that completed (R4-22), so a
+     * truncated source never has its unseen-but-live rows deleted.
+     *
      * @param \PDOStatement $upsert prepared once by rebuild(), re-executed here
      * @param (callable(string): void)|null $progress
-     * @return int number of documents written for this source
+     * @return array{written:int,complete:bool}
      */
-    private function crawlType(string $type, \PDOStatement $upsert, int $already, ?callable $progress): int
+    private function crawlType(string $type, \PDOStatement $upsert, int $already, ?callable $progress): array
     {
-        $afterId = 0;
-        $written = 0;
+        $afterId  = 0;
+        $written  = 0;
+        $complete = false;
 
         for ($batch = 0; $batch < self::MAX_BATCHES_PER_TYPE; $batch++) {
             if ($already + $written >= self::MAX_DOCS) {
-                break;
+                break; // global doc ceiling → truncated (not complete)
             }
 
             $docs = $this->fetchBatch($type, $afterId, self::CRAWL_BATCH);
             if ($docs === []) {
+                $complete = true; // no more rows for this source
                 break;
             }
 
@@ -188,14 +210,15 @@ final class SearchIndexer
                 if ($progress !== null) {
                     $progress($type . ': cursor stalled at id ' . $afterId . ' — stopping (guard)');
                 }
-                break;
+                break; // guard fired → treat as truncated (not complete)
             }
             if (count($docs) < self::CRAWL_BATCH) {
+                $complete = true; // short batch → end of source
                 break;
             }
         }
 
-        return $written;
+        return ['written' => $written, 'complete' => $complete];
     }
 
     /** DB server clock as 'Y-m-d H:i:s', or '' if unreadable (sweep then skipped). */

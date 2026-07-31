@@ -135,45 +135,10 @@ final class ContentManager
         // for the lifetime of this request. This is independent of the /api/
         // URL marker — a bearer token works on the regular web URL too,
         // although in practice only API callers will use it.
-        $bearer = $request->bearerToken();
-        if ($bearer !== null && $bearer !== '') {
-            $apiKeyResult = $this->injector->createClass(\AstrX\Api\ApiKeyService::class)
-                ->drainTo($this->collector);
-            if ($apiKeyResult->isOk()) {
-                /** @var \AstrX\Api\ApiKeyService $apiKeySvc */
-                $apiKeySvc = $apiKeyResult->unwrap();
-                $authedUserId = $apiKeySvc->validate($bearer);
-                if ($authedUserId !== null) {
-                    $request->setApiKeyUser($authedUserId);
-
-                    // Bootstrap UserSession as the bearer-authenticated user.
-                    // We load the user record and inject it into the session
-                    // WITHOUT triggering the session-fixation regeneration
-                    // (loginFromApiKey omits the _regen_force flag): API
-                    // requests should never rewrite session IDs.
-                    $userRepoResult = $this->injector->createClass(\AstrX\User\UserRepository::class)
-                        ->drainTo($this->collector);
-                    $userSessResult = $this->injector->createClass(\AstrX\User\UserSession::class)
-                        ->drainTo($this->collector);
-                    if ($userRepoResult->isOk() && $userSessResult->isOk()) {
-                        /** @var \AstrX\User\UserRepository $userRepo */
-                        $userRepo = $userRepoResult->unwrap();
-                        /** @var \AstrX\User\UserSession $userSess */
-                        $userSess = $userSessResult->unwrap();
-
-                        $userRow = $userRepo->findById($authedUserId);
-                        $userRow->drainTo($this->collector);
-                        if ($userRow->isOk()) {
-                            $row = $userRow->unwrap();
-                            if (is_array($row) && !empty($row['id']) && empty($row['deleted'])) {
-                                /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
-                                $userSess->loginFromApiKey($row);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Bearer/API-key auth is bootstrapped AFTER session_start (below), once
+        // $_SESSION actually exists — doing it here (before session_start) wrote
+        // into a $_SESSION that session_start() then re-initialised, so the entire
+        // API-auth path was silently inert (R4-13).
 
         $this->translator->setLocale($locale);
         $this->moduleLoader->setLocale($locale);
@@ -268,6 +233,43 @@ final class ContentManager
         $current->set($sessionKey, $sid);
         $request->query()->set($sessionKey, $sid);
 
+        // ── Bearer / API-key authentication ───────────────────────────────────
+        // Must run AFTER session_start so the identity survives, and after
+        // regeneration so a stateless API call doesn't rotate a guest session.
+        // loginFromApiKey() omits _regen_force, so it triggers no further regen.
+        $bearer = $request->bearerToken();
+        if ($bearer !== null && $bearer !== '') {
+            $apiKeyResult = $this->injector->createClass(\AstrX\Api\ApiKeyService::class)
+                ->drainTo($this->collector);
+            if ($apiKeyResult->isOk()) {
+                /** @var \AstrX\Api\ApiKeyService $apiKeySvc */
+                $apiKeySvc = $apiKeyResult->unwrap();
+                $authedUserId = $apiKeySvc->validate($bearer);
+                if ($authedUserId !== null) {
+                    $request->setApiKeyUser($authedUserId);
+                    $userRepoResult = $this->injector->createClass(\AstrX\User\UserRepository::class)
+                        ->drainTo($this->collector);
+                    $userSessResult = $this->injector->createClass(\AstrX\User\UserSession::class)
+                        ->drainTo($this->collector);
+                    if ($userRepoResult->isOk() && $userSessResult->isOk()) {
+                        /** @var \AstrX\User\UserRepository $userRepo */
+                        $userRepo = $userRepoResult->unwrap();
+                        /** @var \AstrX\User\UserSession $userSess */
+                        $userSess = $userSessResult->unwrap();
+                        $userRow = $userRepo->findById($authedUserId);
+                        $userRow->drainTo($this->collector);
+                        if ($userRow->isOk()) {
+                            $row = $userRow->unwrap();
+                            if (is_array($row) && !empty($row['id']) && empty($row['deleted'])) {
+                                /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
+                                $userSess->loginFromApiKey($row);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         $pageToken = ($pageToken === '' ? $defaultPageToken : $pageToken);
         $current->set($pageKey, $pageToken);
         $request->query()->set($pageKey, $pageToken);
@@ -334,9 +336,11 @@ final class ContentManager
                         ];
                     }
                 }
-                if ($fileMeta !== []) {
-                    $payload['__files__'] = $fileMeta;
-                }
+                // ALWAYS overwrite the reserved __files__ key (even with []) so a
+                // user-supplied __files__ (e.g. a crafted temp_path) can never
+                // survive into the stored PRG payload and later reach @unlink (PRG
+                // GC) or a file read via UploadedFile::fromTempPath.
+                $payload['__files__'] = $fileMeta;
                 $token = $prgHandler->storeFromPayload($payload);
                 $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
                     ->drainTo($this->collector);
@@ -761,12 +765,21 @@ final class ContentManager
             $stack      = UrlStack::fromRequest($requestUri, $basePath);
 
             $a = $stack->pop();
-            $b = $stack->pop();
 
             $localeFromUrl = ($a !== null && in_array($a, $availableLocales, true));
             $locale        = ($localeFromUrl && $a !== null) ? $a : $defaultLocale;
 
-            if (!$localeFromUrl) {
+            // Only consume a SECOND segment when the first one was the locale.
+            // With no locale prefix, $a IS the page token and every remaining
+            // segment (login, page number, sort, …) must stay on the stack so
+            // setTail() below can see it. The old code popped $b unconditionally
+            // and then reassigned $b = $a, silently discarding the segment after
+            // the page token on locale-less URLs — e.g. /user/login resolved to
+            // page 'user' with an empty tail (login lost); /main/2 lost its page
+            // number (R3-19).
+            if ($localeFromUrl) {
+                $b = $stack->pop();
+            } else {
                 $b = $a;
             }
 
@@ -1181,6 +1194,22 @@ final class ContentManager
         $handler->markReplaced($oldHashedId, $newHashedId);
 
         $_SESSION['_regen_at'] = time();
+
+        // Preserve an active remember-me expiry across regeneration — otherwise the
+        // regenerated cookie reverts to a session-lifetime cookie and remember-me
+        // is silently lost on the request after login (R3-13).
+        $rememberUntil = $_SESSION['_remember_until'] ?? 0;
+        if (is_int($rememberUntil) && $rememberUntil > time()) {
+            $params = session_get_cookie_params();
+            setcookie((string) session_name(), (string) session_id(), [
+                'expires'  => $rememberUntil,
+                'path'     => $params['path'],
+                'domain'   => $params['domain'],
+                'secure'   => $params['secure'],
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+        }
     }
 
     private function isTimeBasedRegenDue(): bool

@@ -85,6 +85,17 @@ final class AdminBanlistController extends AbstractController
 
         $action = self::mStr($posted, 'action', '');
 
+        // R4-19: the page is gated on ADMIN_BANLIST (ban moderation), but adding
+        // / editing / deleting route + round CONFIG (the schedule written to
+        // BanlistRepository.config.php) is access configuration and must require
+        // the stronger ADMIN_CONFIG_ACCESS on top of it.
+        $routeConfigActions = ['add_route', 'delete_route', 'add_round', 'update_round', 'delete_round'];
+        if (in_array($action, $routeConfigActions, true)
+            && $this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         switch ($action) {
             // ── Bans ──────────────────────────────────────────────────────────
             case 'ban':
@@ -207,7 +218,13 @@ final class AdminBanlistController extends AbstractController
                 // Fix 3.4: refuse delete if any active bans reference this route.
                 $usage = $this->banlist->countBansForRoute($key);
                 $usage->drainTo($this->collector);
-                $count = $usage->isOk() ? (int) $usage->unwrap() : 0;
+                // R4-19: a FAILED count must not read as "0 in use" and fall
+                // through to the delete — fail closed and keep the route.
+                if (!$usage->isOk()) {
+                    $this->flash->set('error', $this->t->t('admin.banlist.route_in_use'));
+                    break;
+                }
+                $count = (int) $usage->unwrap();
                 if ($count > 0) {
                     $this->flash->set('error',
                         $this->t->t('admin.banlist.route_in_use'));

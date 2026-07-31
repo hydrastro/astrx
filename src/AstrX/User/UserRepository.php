@@ -44,7 +44,7 @@ final class UserRepository
         return $this->fetchOne(
             'SELECT LOWER(HEX(`id`)) AS id, `username`, `password`, `mailbox`,
                     `email`, `display_name`, `type`, `verified`, `avatar`,
-                    `login_attempts`, `login_locked_until`, `deleted`, `theme`
+                    `login_attempts`, `login_locked_until`, `deleted`, `deletion_mode`, `theme`
                FROM `user`
               WHERE LOWER(`username`) = LOWER(:u) AND `deleted` = 0',
             [':u' => $username],

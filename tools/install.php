@@ -408,7 +408,19 @@ function removeSeedAdmin(PDO $pdo): string
 function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 {
     try {
-        $stmt = $pdo->prepare('INSERT INTO `user` (id,username,mailbox,password,type,verified,deleted) VALUES (UNHEX(:id),:u,:m,:p,1,1,0)');
+        // R4-20: idempotent. A bare INSERT into the UNIQUE username threw 23000
+        // on any re-run of the installer. ON DUPLICATE KEY UPDATE re-provisions
+        // the existing admin (mailbox/password/flags) in place, keeping its id.
+        $stmt = $pdo->prepare(
+            'INSERT INTO `user` (id,username,mailbox,password,type,verified,deleted)
+             VALUES (UNHEX(:id),:u,:m,:p,1,1,0)
+             ON DUPLICATE KEY UPDATE
+                 `mailbox`  = VALUES(`mailbox`),
+                 `password` = VALUES(`password`),
+                 `type`     = VALUES(`type`),
+                 `verified` = VALUES(`verified`),
+                 `deleted`  = VALUES(`deleted`)'
+        );
         $stmt->execute([
             ':id' => bin2hex(random_bytes(16)),
             ':u'  => $user,

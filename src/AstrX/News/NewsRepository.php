@@ -78,7 +78,12 @@ final class NewsRepository
      * controller (fix115) and any other "latest news" consumer that
      * doesn't need full pagination semantics.
      *
-     * @return Result<list<array{id:int,title:string,content:string,created_at:string}>>
+     * created_at is returned as a UNIX timestamp (created_ts) rather than a
+     * pre-formatted string: R4-23, the feed must stamp it as real UTC, and a
+     * DATE_FORMAT('…Z') in the DB/session timezone is not UTC. The caller
+     * formats the timestamp with gmdate(), matching the board feed.
+     *
+     * @return Result<list<array{id:int,title:string,content:string,created_ts:int}>>
      */
     public function fetchRecent(int $limit = 20): Result
     {
@@ -86,7 +91,7 @@ final class NewsRepository
         try {
             $stmt = $this->pdo->prepare(
                 'SELECT `id`, `title`, `content`,
-                        DATE_FORMAT(`created_at`, \'%Y-%m-%dT%H:%i:%sZ\') AS `created_at`
+                        UNIX_TIMESTAMP(`created_at`) AS `created_ts`
                    FROM `news`
                   WHERE `hidden` = 0
                ORDER BY `created_at` DESC, `id` DESC
@@ -95,7 +100,7 @@ final class NewsRepository
             $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
             $stmt->execute();
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-            /** @var list<array{id:int,title:string,content:string,created_at:string}> $typed */
+            /** @var list<array{id:int,title:string,content:string,created_ts:int}> $typed */
             $typed = is_array($rows) ? $rows : [];
             return Result::ok($typed);
         } catch (\PDOException $e) {

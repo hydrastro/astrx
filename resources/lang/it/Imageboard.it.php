@@ -36,6 +36,7 @@ return [
     'board.images'          => 'immagini',
     'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 citazioni, [spoiler], [code], [b] [i]',
     'board.no_such_board'   => 'Board inesistente.',
+    'board.error.banned'    => 'Ti è vietato pubblicare qui.',
     'board.captcha'         => 'Scrivi il testo mostrato',
     'board.style'           => 'Stile',
     'board.style_default'   => 'Predefinito',

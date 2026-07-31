@@ -69,7 +69,11 @@ final class ChatModerationService
             return Result::ok(false);
         }
         [$hexUserId, $packedIp] = $this->identityBits($p);
-        return $this->chat->addMute($hexUserId, $packedIp, max(1, $secs));
+        // Mute keys on the account (members) or the per-visitor chat ident
+        // (guests) — never the shared Tor exit IP, which would mute every guest
+        // and, post R3-16, would no longer match the guest's own post-time check.
+        $muteKey = $hexUserId !== null ? null : (ChatIdentity::guestRateKey($ident) ?? $packedIp);
+        return $this->chat->addMute($hexUserId, $muteKey, max(1, $secs));
     }
 
     /** @return Result<bool> */

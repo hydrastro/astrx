@@ -10,6 +10,7 @@ use ReflectionNamedType;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\Injector\Diagnostic\CircularDependencyDiagnostic;
 use AstrX\Injector\Diagnostic\ClassNotFoundDiagnostic;
 use AstrX\Injector\Diagnostic\ClassReflectionDiagnostic;
 use AstrX\Injector\Diagnostic\HelperInvalidSignatureDiagnostic;
@@ -49,11 +50,17 @@ final class Injector
     public const string ID_METHOD_NOT_FOUND           = 'astrx.injector/method_not_found';
     public const DiagnosticLevel LVL_METHOD_NOT_FOUND = DiagnosticLevel::ERROR;
 
+    public const string ID_CIRCULAR_DEPENDENCY        = 'astrx.injector/circular_dependency';
+    public const DiagnosticLevel LVL_CIRCULAR_DEPENDENCY = DiagnosticLevel::ERROR;
+
     /** @var array<string, object> Shared instances keyed by FQCN. */
     private array $classes = [];
 
     /** @var array<string, array<string, mixed>> Per-class constructor argument overrides. */
     private array $classesArgs = [];
+
+    /** @var array<string, true> Classes currently mid-construction (cycle guard). */
+    private array $constructing = [];
 
     /** @var list<RegisteredHelper> */
     private array $helpers = [];
@@ -182,6 +189,23 @@ final class Injector
             ));
         }
 
+        // Cycle guard (R4-15): getClass() resolves a not-yet-shared class by
+        // recursing into createClass(), so mutual constructor deps (A needs B,
+        // B needs A) would recurse until a stack-overflow fatal. Track classes
+        // currently mid-construction and return a clean error Result on a
+        // revisit instead. Cleared in finally so a later, legitimate build of
+        // the same class still succeeds.
+        if (isset($this->constructing[$className])) {
+            return Result::err(null, Diagnostics::of(
+                new CircularDependencyDiagnostic(
+                    self::ID_CIRCULAR_DEPENDENCY,
+                    self::LVL_CIRCULAR_DEPENDENCY,
+                    $className,
+                )
+            ));
+        }
+        $this->constructing[$className] = true;
+
         try {
             $rc           = new ReflectionClass($className);
             $dependencies = [];
@@ -191,8 +215,12 @@ final class Injector
                     $argName = $parameter->getName();
                     $arg     = $this->getClassArg($className, $argName);
 
+                    // Key by parameter NAME so PHP unpacks these as named
+                    // arguments (R4-15): a skipped optional parameter no longer
+                    // shifts a later provided/resolved argument into the wrong
+                    // positional slot.
                     if ($arg !== null) {
-                        $dependencies[] = $arg;
+                        $dependencies[$argName] = $arg;
                         continue;
                     }
 
@@ -217,7 +245,7 @@ final class Injector
                         return Result::err(null, $depResult->diagnostics());
                     }
 
-                    $dependencies[] = $depResult->unwrap();
+                    $dependencies[$argName] = $depResult->unwrap();
                 }
             }
 
@@ -255,6 +283,8 @@ final class Injector
                     $e->getMessage(),
                 )
             ));
+        } finally {
+            unset($this->constructing[$className]);
         }
     }
 

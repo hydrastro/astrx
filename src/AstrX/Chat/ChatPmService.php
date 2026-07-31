@@ -7,6 +7,7 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatCensoredDiagnostic;
 use AstrX\Chat\Diagnostic\ChatEmptyDiagnostic;
+use AstrX\Chat\Diagnostic\ChatFloodDiagnostic;
 use AstrX\Chat\Diagnostic\ChatMutedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Chat\Diagnostic\ChatPmTargetDiagnostic;
@@ -52,13 +53,28 @@ final class ChatPmService
         }
 
         // Anti-abuse: PMs must respect the same mute as public messages, else a
-        // muted user can still spam via PM (F-06). NOTE: public-message flood
-        // tracking is keyed on the main message table, which PMs don't write, so
-        // full PM-flood parity would need a dedicated PM-send timestamp.
+        // muted user can still spam via PM (F-06). Guests key on their per-visitor
+        // ident (not the shared Tor IP), matching how the mute is recorded post
+        // R3-16; members key on their account.
         $hexUserId  = $from->isMember ? $from->userId : null;
-        $muteResult = $this->chatRepo->isMuted($hexUserId, $packedIp);
+        $rateKey    = $hexUserId !== null
+            ? null
+            : (ChatIdentity::guestRateKey($from->ident) ?? $packedIp);
+        $muteResult = $this->chatRepo->isMuted($hexUserId, $rateKey);
         if ($muteResult->isOk() && $muteResult->unwrap() === true) {
             return $this->err('muted');
+        }
+
+        // Per-sender PM cooldown (R3-25): PMs enforced mute + censor but had no
+        // flood limit, so scripted PM floods weren't stopped. Reuse the public-
+        // message flood interval, keyed on the sender's ident (per-visitor for
+        // guests, per-account for members) via chat_pm.from_ident.
+        if ($this->config->minFloodSecs() > 0) {
+            $lastResult = $this->repo->lastSentTime($from->ident);
+            if ($lastResult->isOk() && $lastResult->unwrap() !== null
+                && (time() - $lastResult->unwrap()) < $this->config->minFloodSecs()) {
+                return $this->err('flood');
+            }
         }
 
         $toNick       = trim($toNick);
@@ -139,6 +155,7 @@ final class ChatPmService
             'too_long'    => new ChatTooLongDiagnostic('astrx.chat/too_long', DiagnosticLevel::NOTICE),
             'censored'    => new ChatCensoredDiagnostic('astrx.chat/censored', DiagnosticLevel::NOTICE),
             'muted'       => new ChatMutedDiagnostic('astrx.chat/muted', DiagnosticLevel::NOTICE),
+            'flood'       => new ChatFloodDiagnostic('astrx.chat/flood', DiagnosticLevel::NOTICE),
             default       => new ChatPmTargetDiagnostic('astrx.chat/pm_target', DiagnosticLevel::NOTICE),
         };
         return Result::err(null, Diagnostics::of($d));

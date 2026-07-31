@@ -96,7 +96,7 @@ final class CommentRepository
     {
         try {
             $stmt = $this->pdo->prepare(
-                'SELECT c.id, c.page_id, LOWER(HEX(c.user_id)) AS user_id,
+                'SELECT c.id, c.page_id, c.item_id, LOWER(HEX(c.user_id)) AS user_id,
                         c.name, c.email, c.content, c.reply_to, c.flagged, c.hidden, c.created_at,
                         u.type AS user_type
                    FROM comment c
@@ -254,22 +254,31 @@ final class CommentRepository
 
     // -------------------------------------------------------------------------
 
-    /** @return Result<?int> */
-    public function lastCommentTime(?string $hexUserId, ?string $packedIp): Result
+    /**
+     * UNIX timestamp of the poster's most recent comment ON THIS PAGE, or null.
+     * Scoped to $pageId so the flood LOOKUP matches the page-scoped auto-mute and
+     * mute-check (R3-18) — keying is consistent instead of a global lookup that
+     * fed a page-scoped penalty.
+     *
+     * @return Result<?int>
+     */
+    public function lastCommentTime(?string $hexUserId, ?string $packedIp, int $pageId): Result
     {
         try {
             if ($hexUserId !== null) {
                 $stmt = $this->pdo->prepare(
                     'SELECT UNIX_TIMESTAMP(created_at) AS ts FROM comment
-                      WHERE user_id = UNHEX(:uid) ORDER BY created_at DESC LIMIT 1'
+                      WHERE user_id = UNHEX(:uid) AND page_id = :pid
+                      ORDER BY created_at DESC LIMIT 1'
                 );
-                $stmt->execute([':uid' => $hexUserId]);
+                $stmt->execute([':uid' => $hexUserId, ':pid' => $pageId]);
             } elseif ($packedIp !== null) {
                 $stmt = $this->pdo->prepare(
                     'SELECT UNIX_TIMESTAMP(created_at) AS ts FROM comment
-                      WHERE ip = :ip ORDER BY created_at DESC LIMIT 1'
+                      WHERE ip = :ip AND page_id = :pid
+                      ORDER BY created_at DESC LIMIT 1'
                 );
-                $stmt->execute([':ip' => $packedIp]);
+                $stmt->execute([':ip' => $packedIp, ':pid' => $pageId]);
             } else {
                 return Result::ok(null);
             }
@@ -285,13 +294,18 @@ final class CommentRepository
     {
         try {
             $now = date('Y-m-d H:i:s');
+            // Comment mutes are always page-scoped (they carry a real page_id).
+            // Match ONLY rows for THIS page — never page_id IS NULL — so chat/
+            // global mutes (the shared `mute` table stores those with page_id NULL)
+            // can no longer block commenting site-wide (R3-17). The intended
+            // per-page comment mute is preserved.
             $conds = []; $params = [':now' => $now, ':page_id' => $pageId];
             if ($hexUserId !== null) {
-                $conds[] = '(user_id = UNHEX(:uid) AND (page_id IS NULL OR page_id = :page_id))';
+                $conds[] = '(user_id = UNHEX(:uid) AND page_id = :page_id)';
                 $params[':uid'] = $hexUserId;
             }
             if ($packedIp !== null) {
-                $conds[] = '(ip = :ip AND (page_id IS NULL OR page_id = :page_id2))';
+                $conds[] = '(ip = :ip AND page_id = :page_id2)';
                 $params[':ip'] = $packedIp; $params[':page_id2'] = $pageId;
             }
             if ($conds === []) { return Result::ok(false); }

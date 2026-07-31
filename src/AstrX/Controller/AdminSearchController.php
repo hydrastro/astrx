@@ -125,6 +125,13 @@ final class AdminSearchController extends AbstractController
      */
     private function resetJob(): void
     {
+        // R4-14: resetting a wedged job clears crawler state and re-enables the
+        // Rebuild button — same privilege bar as rebuild_now.
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return;
+        }
+
         $this->indexer->resetJob()->drainTo($this->collector);
         $this->flash->set('success', $this->t->t('admin.search.flash.reset'));
         $this->audit->log('search.index.reset', 'search_index')->drainTo($this->collector);
@@ -137,6 +144,14 @@ final class AdminSearchController extends AbstractController
      */
     private function rebuildNow(): void
     {
+        // R4-14: the page enters on blanket ADMIN_ACCESS, but a live rebuild
+        // forks an OS process + full index crawl — too heavy for a plain MOD to
+        // spam. Re-gate the expensive action on ADMIN_CONFIG_SYSTEM.
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return;
+        }
+
         if ($this->execAvailable()) {
             $this->spawnBackgroundRebuild();
             $this->indexer->markRunning();

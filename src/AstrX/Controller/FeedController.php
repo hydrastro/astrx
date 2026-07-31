@@ -67,9 +67,14 @@ final class FeedController extends AbstractController
         $selfUrl = $siteUrl . $this->request->uri()->path();
         $feedId  = $selfUrl;   // Atom requires a stable globally-unique id
 
-        // Updated = newest item's created_at, or now if no items.
-        $newest = $items[0]['created_at'] ?? '';
-        $updated = $newest !== '' ? (string) $newest : gmdate('Y-m-d\TH:i:s\Z');
+        // Updated = newest item's created_at, or now if no items. R4-23: format
+        // from a UNIX timestamp with gmdate() so the "Z" really is UTC on a
+        // non-UTC host (matching the board feed), instead of a DB-timezone
+        // string mislabelled with a trailing Z.
+        $newestTs = (isset($items[0]['created_ts']) && is_scalar($items[0]['created_ts']))
+            ? (int) $items[0]['created_ts']
+            : time();
+        $updated  = gmdate('Y-m-d\TH:i:s\Z', $newestTs);
 
         $xml  = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
         $xml .= '<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="' . $this->xmlAttr($locale) . '">' . "\n";
@@ -82,10 +87,11 @@ final class FeedController extends AbstractController
         $xml .= '  <generator uri="https://github.com/anthropics/astrx" version="1.0">' . $this->xmlText($siteName) . '</generator>' . "\n";
 
         foreach ($items as $item) {
-            $id      = is_scalar($item['id']         ?? null) ? (int)    $item['id']         : 0;
-            $title   = is_scalar($item['title']      ?? null) ? (string) $item['title']      : '';
-            $content = is_scalar($item['content']    ?? null) ? (string) $item['content']    : '';
-            $created = is_scalar($item['created_at'] ?? null) ? (string) $item['created_at'] : $updated;
+            $id        = is_scalar($item['id']         ?? null) ? (int)    $item['id']         : 0;
+            $title     = is_scalar($item['title']      ?? null) ? (string) $item['title']      : '';
+            $content   = is_scalar($item['content']    ?? null) ? (string) $item['content']    : '';
+            $createdTs = is_scalar($item['created_ts'] ?? null) ? (int)    $item['created_ts'] : $newestTs;
+            $created   = gmdate('Y-m-d\TH:i:s\Z', $createdTs);
 
             // Per-item URI — points back to the news index. A future fix
             // could add deep links to individual news pages; for now the

@@ -289,7 +289,10 @@ final class UserService
         if ($row !== null && $this->loginLockoutThreshold > 0) {
             $lockedUntil = $this->intVal($row['login_locked_until'] ?? null);
             if ($lockedUntil > time()) {
-                return $this->opErr('login_restricted');
+                // Return the generic failure (not 'login_restricted'): a distinct
+                // "locked" message only ever appears for an EXISTING account, which
+                // is an account-existence oracle. The lockout still applies below.
+                return $this->opErr('login_failed');
             }
         }
 
@@ -319,6 +322,15 @@ final class UserService
             return $this->opErr('not_verified');
         }
 
+        // Closed accounts (keep_visible / keep_suspended / …) must not log in even
+        // though keep_visible keeps `deleted = 0` for content visibility — the
+        // `deleted = 0` filter alone doesn't catch it (R3-15). NONE is the only
+        // login-allowing DeletionMode.
+        $deletionMode = is_scalar($row['deletion_mode'] ?? null) ? (string) $row['deletion_mode'] : '';
+        if ($deletionMode !== '' && $deletionMode !== 'none') {
+            return $this->opErr('login_failed');
+        }
+
         // Success: update DB, set session
         $hexId = (is_scalar($row['id']) ? (string)$row['id'] : '');
 
@@ -339,6 +351,10 @@ final class UserService
         session_regenerate_id(true);
 
         if ($rememberMe && $this->rememberMeTime > 0) {
+            // Persist the remember-me expiry so a later session-ID regeneration
+            // re-issues the cookie with THIS expiry rather than a session-lifetime
+            // one (otherwise the next request's regen silently reverts remember-me).
+            $_SESSION['_remember_until'] = time() + $this->rememberMeTime;
             $params = session_get_cookie_params();
             setcookie(
                 (string) session_name(),
@@ -457,11 +473,18 @@ final class UserService
                 return $this->opErr('invalid_date');
             }
             $birth     = sprintf('%04d-%02d-%02d', $year, $month, $day);
-            $ageSeconds = time() - strtotime($birth);
-            if ($this->minimumAge > 0 && $ageSeconds < $this->minimumAge) {
+            // minimum_age / maximum_age are in YEARS. Use an EXACT calendar-year
+            // diff (not seconds / 365.25) so a registrant exactly on their birthday
+            // isn't rejected as underage by averaged-year rounding (R3-21).
+            $birthDt  = date_create($birth);
+            $nowDt    = date_create('today');
+            $ageYears = ($birthDt !== false && $nowDt !== false)
+                ? (int) $birthDt->diff($nowDt)->y
+                : 0;
+            if ($this->minimumAge > 0 && $ageYears < $this->minimumAge) {
                 return $this->opErr('too_young');
             }
-            if ($this->maximumAge > 0 && $ageSeconds > $this->maximumAge) {
+            if ($this->maximumAge > 0 && $ageYears > $this->maximumAge) {
                 return $this->opErr('invalid_date');
             }
         }
