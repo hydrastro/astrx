@@ -179,6 +179,19 @@ final class ContentManager
 
         session_set_save_handler($sessionHandler, true);
 
+        // Bearer/API requests must be STATELESS: never mint or reuse a browser
+        // cookie session for them. Otherwise a cookie-jar client that sends the
+        // key once keeps an authenticated session cookie that (a) then works
+        // WITHOUT the key and (b) survives key revocation/expiry — defeating the
+        // credential's primary control. Detect the bearer before session_start,
+        // ignore any inbound session cookie (so a bearer call can't hijack or
+        // overwrite the caller's own browser session), and suppress Set-Cookie
+        // via the ini flags set just below.
+        $bearerPresent = (($request->bearerToken() ?? '') !== '');
+        if ($bearerPresent) {
+            unset($_COOKIE[session_name()]);
+        }
+
         if (!$sessionUseCookies && $sidCandidate !== null) {
             if ($sessionHandler->validateId($sidCandidate)) {
                 session_id($sidCandidate);
@@ -216,6 +229,14 @@ final class ContentManager
             // uninitialised/attacker-supplied session ID is never adopted.
             // This activates SecureSessionHandler::validateId() on the incoming ID.
             ini_set('session.use_strict_mode', '1');
+            // Genuinely honour a cookieless deployment (php.ini ships
+            // use_cookies=1, so the mode was silently still emitting cookies), and
+            // force cookieless for stateless bearer requests — no Set-Cookie is
+            // emitted in either case.
+            if (!$sessionUseCookies || $bearerPresent) {
+                ini_set('session.use_cookies', '0');
+                ini_set('session.use_only_cookies', '0');
+            }
             session_start();
         }
 
@@ -260,7 +281,15 @@ final class ContentManager
                         $userRow->drainTo($this->collector);
                         if ($userRow->isOk()) {
                             $row = $userRow->unwrap();
-                            if (is_array($row) && !empty($row['id']) && empty($row['deleted'])) {
+                            // A closed account (keep_visible keeps deleted=0 for
+                            // content visibility) must not authenticate via its API
+                            // key either — password login already blocks non-'none'
+                            // deletion_mode; mirror that on the bearer path so a
+                            // key can't outlive the account being closed.
+                            $delMode = (is_array($row) && is_scalar($row['deletion_mode'] ?? null))
+                                ? (string) $row['deletion_mode'] : '';
+                            $accountOpen = ($delMode === '' || $delMode === 'none');
+                            if (is_array($row) && !empty($row['id']) && empty($row['deleted']) && $accountOpen) {
                                 /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
                                 $userSess->loginFromApiKey($row);
                             }

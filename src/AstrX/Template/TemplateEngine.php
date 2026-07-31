@@ -71,10 +71,25 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     public const int INDEX_RENDER_BODY    = 1;
     public const int INDEX_FUNCTIONS_CODE = 2;
 
+    /**
+     * Maximum {{>partial}} include nesting depth. A page whose computed include
+     * path resolves back to itself or an ancestor would otherwise recurse until
+     * the PHP call stack overflows (a fatal 500). 32 is far beyond any legitimate
+     * layout → page → component nesting, so valid templates never reach it.
+     */
+    private const int MAX_PARTIAL_DEPTH = 32;
+
     /** @var array<string, mixed> */
     private array $globalArgs = [];
 
     private int $parseMode = self::PARSE_MODE_TEMPLATE;
+
+    /**
+     * Current {{>partial}} include nesting depth. Incremented before a partial is
+     * rendered and decremented after (in a finally), so a runaway self-including
+     * template is stopped at MAX_PARTIAL_DEPTH instead of overflowing the stack.
+     */
+    private int $partialDepth = 0;
 
     /** @var array<string, string> template name => compiled class name */
     private array $knownTemplates = [];
@@ -371,6 +386,55 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     public function getTemplateClass(string $className): object
     {
         return new $className($this);
+    }
+
+    /**
+     * Render a {{>partial}} / include by name, bounding include depth.
+     *
+     * The compiled template's partial codegen calls this instead of doing
+     * loadTemplate()+render() inline, so the engine can guard against runaway
+     * recursion: a page whose computed include path (DefaultTemplateContext's
+     * buildIncludePath) resolves back to the including template itself or an
+     * ancestor would recurse until the PHP call stack overflows — a fatal 500.
+     * Past MAX_PARTIAL_DEPTH levels we stop, emit a diagnostic, and return ''
+     * instead of recursing. The depth counter is restored in a finally so one
+     * deep (or throwing) render never poisons later renders on this engine.
+     *
+     * Behaviour for normal (non-recursive) templates is unchanged: a non-string
+     * or empty name renders nothing, an unloadable template renders nothing, and
+     * otherwise the partial's rendered output is returned verbatim.
+     *
+     * @param array<string, mixed> $args
+     */
+    public function renderPartial(mixed $name, array $args, mixed $parent): string
+    {
+        if (!is_string($name) || $name === '') {
+            return '';
+        }
+
+        if ($this->partialDepth >= self::MAX_PARTIAL_DEPTH) {
+            $this->sink->emit(new TemplateEvaluationDiagnostic(
+                                  self::ID_TEMPLATE_EVALUATION,
+                                  self::LVL_TEMPLATE_EVALUATION,
+                                  'Maximum partial include depth (' . self::MAX_PARTIAL_DEPTH
+                                  . ') exceeded rendering "' . $name . '"; possible recursive include.',
+                              ));
+            return '';
+        }
+
+        $tpl = $this->loadTemplate($name);
+        if ($tpl === null) {
+            return '';
+        }
+
+        $this->partialDepth++;
+        try {
+            assert(method_exists($tpl, 'render'));
+            $rendered = $tpl->render($args, $parent);
+            return is_scalar($rendered) ? (string) $rendered : '';
+        } finally {
+            $this->partialDepth--;
+        }
     }
 
     /**
@@ -723,19 +787,22 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             $code .= 'function ' . $sectionFnName
                      . $iteration . '($args,$parent,$i){$buffer="";';
 
-            // Escape the section name like the var/partial paths do — a name with
-            // a " or \ would otherwise produce a PHP parse error in the eval'd
-            // template class and silently fail the whole render.
-            $sectionName = addslashes((string) $endParent[self::AST_VALUE]);
+            // Emit the section name as a var_export()'d single-quoted PHP literal
+            // (like the TEXT branch) so ", \ and $ are all safely encoded. In a
+            // double-quoted literal a name containing $ (e.g. {{#x$args}}) would
+            // interpolate a live render() variable — the wrong key plus an "Array
+            // to string conversion" warning the ErrorHandler turns into a 500.
+            // A single-quoted var_export literal never interpolates.
+            $sectionName = var_export((string) $endParent[self::AST_VALUE], true);
             $code .= match ($endParent[self::AST_TYPE]) {
                 self::TOKEN_TYPE_INVERTED_LOOP_START =>
-                    '$resolved=$this->TemplateEngine->resolveValue("'
+                    '$resolved=$this->TemplateEngine->resolveValue('
                     . $sectionName
-                    . '",$args,$parent,$i);if(!$resolved){',
+                    . ',$args,$parent,$i);if(!$resolved){',
                 default =>
-                    '$resolved=$this->TemplateEngine->resolveValue("'
+                    '$resolved=$this->TemplateEngine->resolveValue('
                     . $sectionName
-                    . '",$args,$parent,$i);'
+                    . ',$args,$parent,$i);'
                     . 'if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}'
                     . '$parent=$resolved;for($i=0;$i<$count;$i++){',
             };
@@ -752,8 +819,12 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
             $type       = $ast[$i][self::AST_TYPE] ?? self::TOKEN_TYPE_TEXT;
             $val        = $ast[$i][self::AST_VALUE] ?? '';
+            // var_export() emits a single-quoted literal, so a var name containing
+            // $ (e.g. {{x$args}}) can't interpolate a live render() variable the way
+            // a double-quoted "$args" would (wrong key + an "Array to string
+            // conversion" 500). Covers ", \ and $ in one step.
             $valueExpr  = in_array($type, [self::TOKEN_TYPE_VAR, self::TOKEN_TYPE_UNESCAPED_VAR], true)
-                ? '$this->TemplateEngine->resolveValue("' . addslashes($val) . '",$args,$parent,$i)'
+                ? '$this->TemplateEngine->resolveValue(' . var_export($val, true) . ',$args,$parent,$i)'
                 : $val;
 
             switch ($type) {
@@ -788,13 +859,17 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                     $varName = 'p' . $iteration;
                     $iteration++;
 
-                    $code .= '$' . $varName . 'Name=$this->TemplateEngine->resolveValue("'
-                             . addslashes($raw)
-                             . '",$args,$parent,$i);'
-                             . 'if(is_string($' . $varName . 'Name)&&$' . $varName . 'Name!==""){'
-                             . '$' . $varName . '=$this->TemplateEngine->loadTemplate($' . $varName . 'Name);'
-                             . 'if($' . $varName . '!==null){$buffer.=$' . $varName . '->render($args,$parent);}'
-                             . '}';
+                    // Resolve the partial name, then render it via the engine's
+                    // renderPartial() instead of inline loadTemplate()+render(). That
+                    // routing lets the engine bound include depth: a page whose
+                    // computed include path resolves back to itself/an ancestor would
+                    // otherwise recurse until the PHP stack overflows (a fatal 500).
+                    // The name is emitted via var_export() (single-quoted literal) so a
+                    // path containing $, " or \ cannot corrupt the generated code.
+                    $code .= '$' . $varName . 'Name=$this->TemplateEngine->resolveValue('
+                             . var_export($raw, true)
+                             . ',$args,$parent,$i);'
+                             . '$buffer.=$this->TemplateEngine->renderPartial($' . $varName . 'Name,$args,$parent);';
                     break;
 
                 case self::TOKEN_TYPE_TEXT:

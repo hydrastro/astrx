@@ -299,10 +299,16 @@ final class CommentRepository
             // global mutes (the shared `mute` table stores those with page_id NULL)
             // can no longer block commenting site-wide (R3-17). The intended
             // per-page comment mute is preserved.
-            $conds = []; $params = [':now' => $now, ':page_id' => $pageId];
+            // Bind :page_id ONLY inside the member branch that references it. A
+            // guest call (hexUserId null) builds SQL that uses :page_id2/:ip but
+            // NOT :page_id, so seeding :page_id unconditionally left it bound-but-
+            // absent → PDO HY093 "Invalid parameter number" on native prepares →
+            // the try/catch returned Result::err and the caller (which only acts
+            // on isOk()) skipped the mute check, i.e. guest mutes failed open.
+            $conds = []; $params = [':now' => $now];
             if ($hexUserId !== null) {
                 $conds[] = '(user_id = UNHEX(:uid) AND page_id = :page_id)';
-                $params[':uid'] = $hexUserId;
+                $params[':uid'] = $hexUserId; $params[':page_id'] = $pageId;
             }
             if ($packedIp !== null) {
                 $conds[] = '(ip = :ip AND page_id = :page_id2)';

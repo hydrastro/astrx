@@ -170,6 +170,15 @@ final class AdminSearchController extends AbstractController
     /** Queue a rebuild for the next cron tick / manual CLI run. */
     private function queueRebuild(): void
     {
+        // R4-14: request_rebuild only flags the job 'requested', but the cron
+        // then runs the identical full crawl rebuild_now would fork inline. Hold
+        // it to the same ADMIN_CONFIG_SYSTEM bar or a plain MOD bypasses the
+        // heavy-op gate via the queue.
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return;
+        }
+
         $this->indexer->requestRebuild()->drainTo($this->collector);
         $this->flash->set('success', $this->t->t('admin.search.flash.requested'));
         $this->audit->log('search.index.request', 'search_index')->drainTo($this->collector);

@@ -175,14 +175,16 @@ final class UserSession
 
     /**
      * Store the user's IMAP password in the session, XOR-obfuscated with a
-     * key derived from the current session ID.
+     * keystream derived from a stable per-session key (see webmailKey()).
      *
-     * Rationale: even when SecureSessionHandler encryption is disabled, the
-     * password is not stored as a legible string. An attacker with only the
-     * raw session DB row cannot recover it without also knowing the session ID.
-     * An attacker who already has the session ID can read the whole session
-     * regardless, so this provides meaningful defence-in-depth against
-     * database-only compromise.
+     * Rationale: the obfuscation keeps the password from sitting as a legible
+     * string inside the session payload. Because the per-session key lives in
+     * the SAME session row, this is meaningful defence-in-depth only when the
+     * session store itself is encrypted (SecureSessionHandler encrypt=true, the
+     * default) — a database-only attacker then sees ciphertext for the whole
+     * blob. With encrypt=false the row is plaintext and holds BOTH the key and
+     * the obfuscated password, so it adds no protection against a database-only
+     * compromise; keep session encryption enabled for webmail deployments.
      */
     public function storeImapPassword(string $password): void
     {

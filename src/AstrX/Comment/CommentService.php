@@ -177,7 +177,11 @@ final class CommentService
             return $this->opErr('antispam', $spamErr);
         }
 
-        // Build packed IP
+        // Build packed IP — the real REMOTE_ADDR. Kept as the MEMBER's stored IP,
+        // but NOT used as the guest flood/mute key: on a Tor hidden service the app
+        // only ever sees a single shared loopback/exit REMOTE_ADDR, so keying guest
+        // flood + auto-mute on it makes one guest's cooldown/mute collide with every
+        // other guest on the page (see $floodKey below).
         $ip = null;
         if ($remoteIp !== null && filter_var($remoteIp, FILTER_VALIDATE_IP)) {
             $packed = inet_pton($remoteIp);
@@ -186,8 +190,26 @@ final class CommentService
 
         $hexUserId = $this->session->isLoggedIn() ? $this->session->userId() : null;
 
+        // Flood / mute key. MEMBERS keep the existing user-id keying with a null IP
+        // (the mute/flood lookups then match on user_id alone). GUESTS key on a
+        // stable per-visitor token instead of the shared IP — the same idea the
+        // chat module uses (ChatService + ChatIdentity::guestRateKey) and the
+        // imageboard uses for its per-session identity token. The token is 16 raw
+        // bytes so it fits the VARBINARY(16) `ip` column the flood/mute lookups key
+        // on (mute.ip and comment.ip). A session is always started before any
+        // controller runs, so session_id() is available here.
+        $floodKey = $hexUserId !== null
+            ? null
+            : substr(hash('sha256', 'comment-guest|' . session_id(), true), 0, 16);
+
+        // What lands in comment.ip: members keep their real IP; guests store the
+        // very token the flood lookup (lastCommentTime, keyed on comment.ip) reads
+        // back, so a guest's cooldown matches their own prior comment — never a
+        // different guest's — and never the shared REMOTE_ADDR.
+        $storeIp = $hexUserId !== null ? $ip : $floodKey;
+
         // ── Mute check ────────────────────────────────────────────────
-        $muteResult = $this->repo->isMuted($hexUserId, $ip, $pageId);
+        $muteResult = $this->repo->isMuted($hexUserId, $floodKey, $pageId);
         if ($muteResult->isOk() && $muteResult->unwrap() === true) {
             return $this->opErr('muted');
         }
@@ -198,13 +220,13 @@ final class CommentService
         // check below — the keying is consistent (R3-18).
         $isStaff = $this->gate->can(Permission::ADMIN_COMMENTS);
         if (!$isStaff && $this->minimumFloodSecs > 0) {
-            $lastResult = $this->repo->lastCommentTime($hexUserId, $ip, $pageId);
+            $lastResult = $this->repo->lastCommentTime($hexUserId, $floodKey, $pageId);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
                 $lastTs = $lastResult->unwrap();
                 $elapsed = time() - $lastTs;
                 if ($elapsed < $this->minimumFloodSecs) {
                     if ($this->antispamTimeSecs > 0) {
-                        $this->repo->addMute($hexUserId, $ip, $pageId, $this->antispamTimeSecs);
+                        $this->repo->addMute($hexUserId, $floodKey, $pageId, $this->antispamTimeSecs);
                     }
                     return $this->opErr('flood');
                 }
@@ -215,7 +237,7 @@ final class CommentService
             $pageId, $hexUserId,
             $hexUserId !== null ? null : $name,
             $hexUserId !== null ? null : $email,
-            $content, $replyTo, $ip, $itemId,
+            $content, $replyTo, $storeIp, $itemId,
         );
     }
 

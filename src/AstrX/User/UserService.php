@@ -292,6 +292,11 @@ final class UserService
                 // Return the generic failure (not 'login_restricted'): a distinct
                 // "locked" message only ever appears for an EXISTING account, which
                 // is an account-existence oracle. The lockout still applies below.
+                // Run one dummy verify first so a locked (existing) account costs
+                // the same as the not-found path below — the early return would
+                // otherwise be a *timing* existence oracle (fast = locked/existing,
+                // slow = argon2 for not-found).
+                password_verify($password, self::DUMMY_ARGON2ID);
                 return $this->opErr('login_failed');
             }
         }
@@ -671,18 +676,17 @@ final class UserService
         }
 
         if (!$tokenUnlock) {
-            // Verify current password
-            $findResult = $this->repo->findById($hexId);
-            if (!$findResult->isOk()) {
-                return Result::err(null, $findResult->diagnostics());
+            // Verify current password. Use findPasswordHash() — findById() does
+            // NOT select the `password` column, so reading $row['password'] there
+            // raised an "undefined array key" warning (forced 500 under the error
+            // handler) and left $pwHash = '', making password_verify always fail;
+            // the non-recovery change-password path was effectively broken.
+            $hashResult = $this->repo->findPasswordHash($hexId);
+            if (!$hashResult->isOk()) {
+                return Result::err(null, $hashResult->diagnostics());
             }
-            /** @var array<string,mixed>|null $row */
-            $row = $findResult->unwrap();
-        if ($row === null) {
-                return $this->opErr('wrong_password');
-            }
-            $pwHash = is_scalar($row['password']) ? (string)$row['password'] : '';
-        if (!password_verify($oldPassword, $pwHash)) {
+            $pwHash = $hashResult->unwrap();
+            if ($pwHash === null || !password_verify($oldPassword, $pwHash)) {
                 return $this->opErr('wrong_password');
             }
         }

@@ -1,4 +1,16 @@
-CREATE USER IF NOT EXISTS 'user'@'%' IDENTIFIED BY 'password';
-CREATE DATABASE IF NOT EXISTS content_manager;
-GRANT ALL PRIVILEGES ON content_manager.* TO 'user'@'%';
-FLUSH PRIVILEGES;
+-- R6 (MEDIUM hardening): database and DB-account provisioning moved OUT of this
+-- file. It previously hardcoded a shared, checked-in application account (a
+-- fixed user name + fixed passphrase) with GRANT ALL PRIVILEGES on the app
+-- schema and a wildcard '%' host — a weak default credential. That has been
+-- removed.
+--
+-- The official MariaDB entrypoint now provisions everything from values in .env
+-- (see the mariadb service in docker-compose.yml):
+--   * the database        -> MARIADB_DATABASE  = ${DB_NAME}
+--   * a scoped app account -> MARIADB_USER / MARIADB_PASSWORD = ${DB_USER} /
+--     ${DB_PASSWORD}, granted privileges on that ONE database only.
+-- Supply strong, unique values there; never commit real secrets.
+--
+-- This file is intentionally left with no executable statements. It runs only
+-- on FIRST provisioning of a fresh data volume; add project-specific schema or
+-- seed DDL below if it is ever needed.

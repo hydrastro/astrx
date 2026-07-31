@@ -161,7 +161,7 @@ final class UserRepository
     {
         return $this->fetchOne(
             'SELECT LOWER(HEX(`id`)) AS id, `username`, `mailbox`, `display_name`, `type`,
-                    `verified`, `avatar`, `deleted`, `theme`,
+                    `verified`, `avatar`, `deleted`, `deletion_mode`, `theme`,
                     `token_hash`, `token_type`, `token_used`,
                     UNIX_TIMESTAMP(`token_expires_at`) AS token_expires_at
                FROM `user`
@@ -564,7 +564,9 @@ final class UserRepository
 
     /**
      * Keep visible — mark account as voluntarily closed.
-     * Content and profile remain visible; login is blocked by deleted=1.
+     * Content and profile remain visible; login is blocked by the non-'none'
+     * deletion_mode gate at login (this deliberately keeps deleted=0, so the
+     * deleted flag alone does NOT block it — see UserService::login, R3-15).
      *
      * @return Result<bool>
      */

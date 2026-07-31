@@ -62,7 +62,17 @@ services:
             # to be the MariaDB hash of 'password'. Provide the hash via .env
             # (MARIADB_ROOT_PASSWORD_HASH=...); compose fails fast if it is unset.
             MARIADB_ROOT_PASSWORD_HASH: "${MARIADB_ROOT_PASSWORD_HASH:?set MARIADB_ROOT_PASSWORD_HASH in .env}"
-            MYSQL_DATABASE: content_manager
+            # R6 (MEDIUM): provision the application DB account through the
+            # official MariaDB entrypoint instead of a hardcoded CREATE USER /
+            # GRANT ALL in init.sql. The entrypoint creates the database and a
+            # least-privilege app user granted rights on THAT database only (no
+            # wildcard ALL PRIVILEGES on *.*). Values come from .env; compose
+            # fails fast if DB_USER / DB_PASSWORD are unset. NB: the running app
+            # reads its own resources/config/PDO.config.php — keep that file's
+            # db_name/db_username/db_password in sync with these values.
+            MARIADB_DATABASE: "${DB_NAME:-content_manager}"
+            MARIADB_USER: "${DB_USER:?set DB_USER in .env}"
+            MARIADB_PASSWORD: "${DB_PASSWORD:?set a strong DB_PASSWORD in .env}"
 
 networks:
   php-network:

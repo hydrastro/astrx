@@ -86,6 +86,15 @@ final class AdminContentController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function save(array $posted): string
     {
+        // Content pages are public site pages: entry is ADMIN_ACCESS (a MOD may
+        // view), but mutating them requires ADMIN_PAGES. Re-gate here so a MOD
+        // cannot deface or replace live content — mirrors board CRUD's
+        // BOARD_ADMIN re-check under a weaker entry gate.
+        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         $id      = self::mInt($posted, 'id', 0);
         $slug    = $this->slugify(self::mStr($posted, 'slug', ''));
         $title   = trim(self::mStr($posted, 'title', ''));
@@ -109,6 +118,13 @@ final class AdminContentController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function delete(array $posted): string
     {
+        // Deleting a public content page is a page mutation: re-gate on
+        // ADMIN_PAGES so a view-only MOD cannot remove live pages.
+        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return '';
+        }
+
         $id = self::mInt($posted, 'id', 0);
         if ($id > 0) {
             $this->repo->delete($id)->drainTo($this->collector);

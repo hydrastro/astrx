@@ -149,7 +149,23 @@ final class ImageboardConfig
     }
 
     /**
+     * The video extensions the pipeline can actually validate and serve — the
+     * exact set ImageService::videoMime() magic-checks. No entry overlaps the
+     * image SERVABLE_UPLOAD_TYPES, so a video type can never steal an image
+     * upload into the video path.
+     */
+    private const SERVABLE_VIDEO_TYPES = ['webm', 'mp4'];
+
+    /**
      * Normalised, lower-cased list of allowed video extensions.
+     *
+     * Constrained to the SERVABLE video set (R6): videoMime() only accepts webm
+     * and mp4, so a configured type outside that set — or one overlapping the
+     * image uploadTypes (e.g. 'gif') — would route those uploads to storeVideo()
+     * where they fail the magic check and can no longer post as images. Unlike
+     * uploadTypes() this is NOT back-filled when empty: both consumers test
+     * membership (in_array) or build an accept="" hint, so [] safely disables
+     * video rather than re-opening a hole.
      *
      * @return list<string>
      */
@@ -158,7 +174,9 @@ final class ImageboardConfig
         $out = [];
         foreach (explode(',', strtolower($this->videoTypesRaw)) as $t) {
             $t = trim($t);
-            if ($t !== '') { $out[] = $t; }
+            if ($t !== '' && in_array($t, self::SERVABLE_VIDEO_TYPES, true) && !in_array($t, $out, true)) {
+                $out[] = $t;
+            }
         }
         return $out;
     }

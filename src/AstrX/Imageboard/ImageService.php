@@ -125,6 +125,19 @@ final class ImageService
         if ($mime === '') {
             return $this->fail();   // magic-number check failed → not a real webm/mp4
         }
+
+        // Moderator blocklist: reject a known-bad video by exact (sha256) hash
+        // before it is written to disk, mirroring the image path in store(). A
+        // video carries no perceptual ahash, so pass 0 — isBlocked() treats a
+        // zero ahash as "not set" and matches on sha256 alone. A DB error is
+        // fail-open (the lookup Result is not ok) so a blocklist outage does not
+        // take posting down; a positive match is a hard reject.
+        $sha256 = hash('sha256', $raw);
+        $blockR = $this->blocks->isBlocked($sha256, 0);
+        if ($blockR->isOk() && $blockR->unwrap() === true) {
+            return $this->fail();
+        }
+
         $dir = $this->config->uploadDir();
         if ($dir === '' || (!is_dir($dir) && !@mkdir($dir, 0775, true))) {
             return $this->fail();
@@ -145,7 +158,7 @@ final class ImageService
             'thumb_w'    => 0,
             'thumb_h'    => 0,
             'ahash'      => 0,
-            'sha256'     => hash('sha256', $raw),
+            'sha256'     => $sha256,
             'orig_name'  => $file->clientFilename(),
             'spoiler'    => $spoiler,
         ]);

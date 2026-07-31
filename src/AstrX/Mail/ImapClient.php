@@ -569,7 +569,22 @@ final class ImapClient
         $this->untaggedBuffer    = [];
         $this->lastLiteralContent = '';
         $this->lastFlags          = [];
-        $this->writeLine("{$tag} {$cmd}");
+        // The command may embed one or more SYNCHRONIZING IMAP literals
+        // ("{N}\r\n" + N octets) that quoteString() emits for a value which
+        // cannot be sent as a quoted string (it contains NUL/CR/LF/'"'/'\').
+        // RFC 3501 §4.3 requires the client to wait for the server's "+"
+        // continuation request after each "{N}\r\n" marker before writing the N
+        // octets — so this must NOT be a single inline writeLine(). Delegate to
+        // the literal-aware writer, which performs that "+" handshake exactly as
+        // appendToSent() already does for APPEND.
+        $rejection = $this->sendCommandLine("{$tag} {$cmd}");
+        if ($rejection !== null) {
+            // Server answered a literal marker with something other than "+"
+            // (e.g. a tagged NO/BAD). Surface it like any other command failure.
+            return Result::err($rejection, Diagnostics::of(
+                new ImapCommandFailedDiagnostic('astrx.mail/imap.command', DiagnosticLevel::ERROR, $rejection)
+            ));
+        }
 
         $tagged = $this->readTaggedResponse($tag);
         if (str_starts_with($tagged, $tag . ' OK')) {
@@ -690,10 +705,70 @@ final class ImapClient
 
     private function writeLine(string $line): void
     {
+        $this->writeRaw($line . "\r\n");
+    }
+
+    /** Write raw bytes to the socket verbatim — no CRLF is appended. */
+    private function writeRaw(string $data): void
+    {
         if ($this->socket === null) {
             throw new \RuntimeException("Not connected");
         }
-        fwrite($this->socket, $line . "\r\n");
+        fwrite($this->socket, $data);
+    }
+
+    /**
+     * Write a full command line that may contain synchronizing IMAP literals,
+     * performing the RFC 3501 §4.3 continuation handshake for each one.
+     *
+     * quoteString() renders a value that cannot be a quoted string (it contains
+     * NUL, CR, LF, '"' or '\') as a *synchronizing* literal: the marker
+     * "{N}\r\n" immediately followed by N raw octets. Those octets MUST NOT be
+     * put on the wire until the server answers the marker with a command
+     * continuation request ("+ …"); sending them inline (as the old single
+     * writeLine did) can make an RFC-strict server hang or reject the command.
+     * This is the same "+" handshake appendToSent() already performs for APPEND.
+     *
+     * The line is split at each literal boundary: flush up to and including the
+     * "{N}\r\n" marker, block for the "+" line, send exactly N octets, then
+     * resume scanning *after* those octets. Because we advance by the declared
+     * byte length (never by re-scanning payload), literal payload bytes that
+     * themselves look like "{…}\r\n" or contain CRLF are treated as data, not as
+     * a marker; and since the literal is length-delimited and never parsed, no
+     * command injection is possible. A literal-free command matches no marker
+     * and is written in a single shot, exactly as before.
+     *
+     * @return string|null null once the whole line (plus terminating CRLF) has
+     *                     been sent; otherwise the server's rejection line if it
+     *                     answered a marker with something other than "+".
+     */
+    private function sendCommandLine(string $full): ?string
+    {
+        $offset = 0;
+        while (preg_match('/\{(\d+)\}\r\n/', $full, $m, PREG_OFFSET_CAPTURE, $offset)) {
+            $markerPos = (int) $m[0][1];
+            $litSize   = (int) $m[1][0];
+            $dataStart = $markerPos + strlen((string) $m[0][0]);
+
+            // Flush command text up to and including the "{N}\r\n" marker. The
+            // marker already ends the physical line, so no extra CRLF here.
+            $this->writeRaw(substr($full, $offset, $dataStart - $offset));
+
+            // Block for the "+" continuation before the octets go on the wire.
+            $cont = (string) $this->readLine();
+            if (!str_starts_with($cont, '+')) {
+                return $cont; // server refused the literal (tagged NO/BAD/…)
+            }
+
+            // Send exactly N octets of literal payload, then resume past them.
+            $this->writeRaw(substr($full, $dataStart, $litSize));
+            $offset = $dataStart + $litSize;
+        }
+
+        // Trailing segment (empty when the line ended with literal octets) plus
+        // the command-terminating CRLF. Literal-free commands take only this.
+        $this->writeRaw(substr($full, $offset) . "\r\n");
+        return null;
     }
 
     private function readLine(): string|false
