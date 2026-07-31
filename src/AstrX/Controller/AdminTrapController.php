@@ -104,6 +104,16 @@ final class AdminTrapController extends AbstractController
             return;
         }
 
+        // R9: the bot-trap is a system-level anti-abuse control (its tarpit is a
+        // privacy/abuse defence on a Tor deployment). Entry is ADMIN_ACCESS so a
+        // MOD may view it, but WRITING it requires ADMIN_CONFIG_SYSTEM (which a MOD
+        // lacks) — otherwise a moderator could silently disable the trap. Mirrors
+        // the AdminSearch/AdminLanguage config re-gates.
+        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $this->flash->set('error', $this->t->t('admin.forbidden'));
+            return;
+        }
+
         // Rewrites BotTrap.config.php's single 'BotTrapConfig' section whole.
         // Both knobs are clamped to the same hard bounds BotTrapConfig enforces;
         // unchecked checkboxes are simply absent from POST, so mBool yields false

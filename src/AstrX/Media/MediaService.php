@@ -11,8 +11,8 @@ use AstrX\Image\ImageSanitizer;
 use AstrX\Media\Diagnostic\MediaUploadDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
+use AstrX\Config\Config;
 use AstrX\Result\Result;
-use AstrX\Routing\UrlGenerator;
 
 /**
  * Media library service — a thin consumer of the shared ImageSanitizer, exactly
@@ -34,7 +34,7 @@ final class MediaService
         private readonly MediaRepository $repo,
         private readonly ImageSanitizer  $sanitizer,
         private readonly MediaConfig     $config,
-        private readonly UrlGenerator    $urlGen,
+        private readonly Config          $routing,
         private readonly Translator      $t,
     ) {}
 
@@ -225,13 +225,42 @@ final class MediaService
         return Result::ok(true);
     }
 
-    /** Public URL to the media-file route for a stored name (query-param, mode-safe). */
+    /**
+     * Public URL to the media-file route for a stored name.
+     *
+     * SECURITY (R9): built sid-FREE, deliberately NOT through UrlGenerator. In
+     * cookieless mode UrlGenerator injects the CURRENT session id into every URL —
+     * but this URL is the copy-to-embed snippet, designed to be pasted into a
+     * public content page body and PERSISTED. A sid here would bake the admin's
+     * live session into a shared public artifact, letting any reader adopt it
+     * (cookieless session hijack → admin takeover). The media endpoint is public
+     * and needs no session, so mirror SitemapController and emit no sid.
+     */
     public function fileUrl(string $name): string
     {
         if (!$this->isSafeName($name)) {
             return '';
         }
-        return $this->urlGen->toPage($this->t->t('WORDING_MEDIA_FILE', fallback: 'media'), ['name' => $name]);
+        $slug   = $this->t->t('WORDING_MEDIA_FILE', fallback: 'media');
+        $locale = $this->t->getLocale();
+
+        if ($this->routing->getConfigBool('Routing', 'url_rewrite', true)) {
+            $path = rtrim($this->routing->getConfigString('Routing', 'base_path', '/'), '/');
+            if ($locale !== '') {
+                $path .= '/' . rawurlencode($locale);
+            }
+            $path .= '/' . rawurlencode($slug);
+            return $path . '?name=' . rawurlencode($name);
+        }
+
+        $q = [];
+        $localeKey = $this->routing->getConfigString('Routing', 'locale_key', 'lang');
+        if ($locale !== '') {
+            $q[$localeKey] = $locale;
+        }
+        $q[$this->routing->getConfigString('Routing', 'page_key', 'page')] = $slug;
+        $q['name'] = $name;
+        return $this->routing->getConfigString('Routing', 'entry_point', 'index.php') . '?' . http_build_query($q);
     }
 
     /**

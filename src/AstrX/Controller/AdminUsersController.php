@@ -260,12 +260,7 @@ final class AdminUsersController extends AbstractController
      */
     private function saveUserService(array $p): Result
     {
-        return $this->writer->write('User', array_merge(
-            $this->loadUserConfig(),
-            ['EmailService' => [
-                'site_url'  => self::mStr($p, 'site_url',  ''),
-                'site_name' => self::mStr($p, 'site_name', ''),
-            ],
+        $sections = [
             'UserService' => [
                 'token_expiration_time'          => max(60, self::mInt($p, 'token_expiration_time', 21600)),
                 'allow_register'                 => self::mBool($p, 'allow_register'),
@@ -290,8 +285,22 @@ final class AdminUsersController extends AbstractController
                 'remember_me_time'               => max(0, self::mInt($p, 'remember_me_time', 2592000)),
                 'username_regex'                 => $this->parseRegexTable($p, 'username'),
                 'password_regex'                 => $this->parseRegexTable($p, 'password'),
-            ]]
-        ));
+            ],
+        ];
+        // site_url/site_name (EmailService section) are the base of every emailed
+        // auth link (verification/recovery) and the feed/sitemap absolute URLs —
+        // SYSTEM-level. Only an actor with ADMIN_CONFIG_SYSTEM may write them from
+        // this page, so a MOD (who holds admin.config.users but NOT
+        // admin.config.system) can't repoint auth links to a phishing host (R9
+        // HIGH-2). Skipping the section for a MOD also means a MOD's users-config
+        // save never blanks site_url.
+        if ($this->gate->can(Permission::ADMIN_CONFIG_SYSTEM)) {
+            $sections['EmailService'] = [
+                'site_url'  => self::mStr($p, 'site_url',  ''),
+                'site_name' => self::mStr($p, 'site_name', ''),
+            ];
+        }
+        return $this->writer->write('User', array_merge($this->loadUserConfig(), $sections));
     }
 
     /** @param array<string, mixed> $p
@@ -454,7 +463,10 @@ final class AdminUsersController extends AbstractController
             if ($k <= 0) { continue; }
             $patRaw = $patterns[$i] ?? '';
             $pattern = trim(is_scalar($patRaw) ? (string)$patRaw : '');
-            if ($pattern === '') { continue; }
+            // Reject an uncompilable pattern at save (R9): storing a malformed
+            // regex would 500 every subsequent registration / password change when
+            // checkRegex runs it. Skip it here so it never reaches disk.
+            if ($pattern === '' || @preg_match($pattern, '') === false) { continue; }
             $msgRaw = $messages[$i] ?? '';
             $result[$k] = [
                 'regex'        => $pattern,

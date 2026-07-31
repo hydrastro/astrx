@@ -966,7 +966,16 @@ final class UserService
             if ($regex === '') {
                 continue;
             }
-            $matches = (bool) preg_match($regex, $value);
+            // Suppress + guard: the pattern is admin/MOD-settable, and a malformed
+            // one (missing delimiter, bad quantifier) makes preg_match emit a
+            // warning → forced 500 on the PUBLIC registration form and the
+            // password-change form. Treat a compile failure as "rule skipped"
+            // rather than a crash (R9; save-time validation also rejects it).
+            $res = @preg_match($regex, $value);
+            if ($res === false) {
+                continue;
+            }
+            $matches = $res === 1;
             if ($matches === $checkingFor) {
                 return $message; // rule triggered → validation failed
             }

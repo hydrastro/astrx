@@ -63,7 +63,11 @@ return [
                 'admin.comments',
                 'admin.config.captcha',
                 'admin.config.users',
-                'admin.config.mail',
+                // R9: 'admin.config.mail' removed from MOD. The mail page configures
+                // the SMTP relay host/credentials — i.e. WHERE password-reset tokens
+                // are delivered — so a MOD holding it could repoint the relay to a
+                // host they control, trigger an ADMIN password reset, and harvest the
+                // token (full ADMIN takeover). Mail relay config is ADMIN-only now.
                 'api.key.create',
                 'api.key.revoke',
                 // Chat

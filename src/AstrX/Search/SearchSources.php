@@ -102,6 +102,7 @@ final class SearchSources
                FROM page p
                JOIN page_meta pm ON pm.page_id = p.id
               WHERE p.hidden = 0
+                AND p.template = 1
                 AND p.file_name NOT LIKE 'admin%'
                 AND p.id > :after
               ORDER BY p.id ASC
