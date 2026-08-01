@@ -16,6 +16,7 @@ use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Imageboard\ImageBlockRepository;
 use AstrX\Imageboard\ImageRepository;
+use AstrX\Imageboard\ImageService;
 use AstrX\Imageboard\PostRepository;
 use AstrX\Imageboard\ReportRepository;
 use AstrX\Imageboard\ThreadRepository;
@@ -75,6 +76,7 @@ final class BoardModController extends AbstractController
         private readonly ThreadRepository       $threads,
         private readonly PostRepository         $posts,
         private readonly ImageRepository        $images,
+        private readonly ImageService           $imageService,
         private readonly ReportRepository       $reports,
         private readonly BanRepository          $bans,
         private readonly ImageBlockRepository   $blocks,
@@ -639,6 +641,17 @@ final class BoardModController extends AbstractController
         $threadId = self::mInt($posted, 'thread_id');
 
         if ($this->lookupBoardThread($bid, $threadId) !== null) {
+            // Shred the files first: the row cascade removes board_image rows but
+            // not the blobs, so unlink them while we still have the post ids.
+            $postsR = $this->posts->forThread($threadId);
+            if ($postsR->isOk()) {
+                $pids = [];
+                foreach ($postsR->unwrap() as $p) {
+                    $pid = self::mInt($p, 'id');
+                    if ($pid > 0) { $pids[] = $pid; }
+                }
+                $this->imageService->deleteFilesForPosts($pids);
+            }
             $this->threads->delete($threadId)->drainTo($this->collector);
             $this->audit->log('board.delete_thread', 'board:' . $slug, 'thread #' . $threadId);
         }
@@ -811,6 +824,8 @@ final class BoardModController extends AbstractController
         $tid = self::mInt($post, 'thread_id');
         $imgCount = count($this->postImages($pid));
 
+        // Shred the post's image files before the row cascade drops board_image.
+        $this->imageService->deleteFilesForPosts([$pid]);
         $this->posts->delete($pid)->drainTo($this->collector);
         $this->threads
             ->adjustCounts($tid, self::mBool($post, 'is_op') ? 0 : -1, -$imgCount)

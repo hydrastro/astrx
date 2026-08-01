@@ -137,12 +137,23 @@ final class FeedController extends AbstractController
     /** Escape a string for XML text content. */
     private function xmlText(string $s): string
     {
-        return htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        return htmlspecialchars(self::stripXmlControlChars($s), ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
 
     /** Escape a string for XML attribute value. */
     private function xmlAttr(string $s): string
     {
-        return htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        return htmlspecialchars(self::stripXmlControlChars($s), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * Remove characters that are illegal in XML 1.0 even when escaped (C0 controls
+     * except TAB/LF/CR). htmlspecialchars entity-escapes markup but cannot make a
+     * raw 0x0C form-feed legal, so a copy-pasted control char in a news title/body
+     * would otherwise produce a document strict readers reject wholesale.
+     */
+    private static function stripXmlControlChars(string $s): string
+    {
+        return (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $s);
     }
 }

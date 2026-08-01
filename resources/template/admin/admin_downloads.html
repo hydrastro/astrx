@@ -1,3 +1,10 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
 <h2>{{dl_heading}}</h2>
 <p>{{dl_intro}}</p>
 <p><small>{{hint_sign}}</small></p>
@@ -27,3 +34,4 @@
     <input type="hidden" name="action" value="clear">
     <p><input type="submit" value="{{btn_clear}}" class="input"></p>
 </form>
+{{/admin_forbidden}}

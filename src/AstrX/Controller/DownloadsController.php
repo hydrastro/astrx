@@ -36,7 +36,10 @@ final class DownloadsController extends AbstractController
     {
         $this->ctx->set('dl_heading', $this->t->t('downloads.heading'));
 
-        $manifest = trim($this->cfg('manifest_text'));
+        // Verify over the STORED bytes (not a trimmed copy): the signature was made
+        // over specific bytes, so trimming here would break a valid signature.
+        $stored   = $this->cfg('manifest_text');
+        $manifest = trim($stored); // trimmed copy is for the empty-check + display only
         if ($manifest === '') {
             http_response_code(404);
             $this->ctx->set('has_manifest', false);
@@ -46,7 +49,7 @@ final class DownloadsController extends AbstractController
 
         $pubkey = trim($this->cfg('manifest_pubkey'));
         $sig    = trim($this->cfg('manifest_sig'));
-        $status = $this->verifySignature($manifest, $sig, $pubkey);
+        $status = $this->verifySignature($stored, $sig, $pubkey);
 
         $this->ctx->set('has_manifest', true);
         $this->ctx->set('dl_intro',       $this->t->t('downloads.intro'));
@@ -81,8 +84,21 @@ final class DownloadsController extends AbstractController
             || strlen($pubkey) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
             return 'invalid';
         }
+        // The manifest is stored LF-normalized (AdminDownloadsController), but the
+        // paste round-trip may add or drop a single trailing newline versus the
+        // bytes the operator actually signed. Accept the stored form, the form with
+        // no trailing newline, and the form with exactly one — so a correctly-signed
+        // manifest verifies regardless. An attacker still needs the private key to
+        // produce a signature over ANY of these.
+        $base = rtrim($manifest, "\n");
+        $candidates = array_values(array_unique([$manifest, $base, $base . "\n"]));
         try {
-            return sodium_crypto_sign_verify_detached($sig, $manifest, $pubkey) ? 'valid' : 'invalid';
+            foreach ($candidates as $candidate) {
+                if (sodium_crypto_sign_verify_detached($sig, $candidate, $pubkey)) {
+                    return 'valid';
+                }
+            }
+            return 'invalid';
         } catch (\SodiumException) {
             return 'invalid';
         }

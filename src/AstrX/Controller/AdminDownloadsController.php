@@ -123,7 +123,12 @@ final class AdminDownloadsController extends AbstractController
             }
         }
 
-        $this->put('manifest_text',   mb_substr(self::mStr($posted, 'manifest', ''), 0, 20000));
+        // Normalise the textarea's CRLF newlines to LF before storing: the operator
+        // signs the LF form offline (every unix tool emits LF), but browsers submit
+        // <textarea> content with CRLF — verifying the raw CRLF bytes against an
+        // LF signature would fail every correctly-signed manifest.
+        $manifest = str_replace("\r\n", "\n", self::mStr($posted, 'manifest', ''));
+        $this->put('manifest_text',   mb_substr($manifest, 0, 20000));
         $this->put('manifest_pubkey', $pubkey);
         $this->put('manifest_sig',    $sig);
 

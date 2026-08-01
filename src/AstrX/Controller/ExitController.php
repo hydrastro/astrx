@@ -40,9 +40,11 @@ final class ExitController extends AbstractController
         $this->ctx->set('btn_back',     $this->t->t('exit.back'));
 
         $target = self::queryStr($this->request, 'to');
-        // Only ever present an http(s) destination; reject everything else so the
-        // Continue link can never carry a javascript:/data: or same-page scheme.
-        if ($target === '' || preg_match('#^https?://#i', $target) !== 1) {
+        // Accept an http(s):// destination OR a protocol-relative //host (a valid
+        // external navigation the content renderer routes here); reject everything
+        // else so the Continue link can never carry a javascript:/data:/same-page
+        // scheme (those match neither branch).
+        if ($target === '' || preg_match('#^(https?:)?//#i', $target) !== 1) {
             http_response_code(400);
             $this->ctx->set('has_target', false);
             $this->ctx->set('exit_invalid', $this->t->t('exit.invalid'));

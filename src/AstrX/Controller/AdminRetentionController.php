@@ -87,6 +87,8 @@ final class AdminRetentionController extends AbstractController
         $this->ctx->set('btn_gc',         $this->t->t('admin.retention.gc'));
         $this->ctx->set('btn_shred_all',  $this->t->t('admin.retention.shred_all'));
         $this->ctx->set('btn_run_all',    $this->t->t('admin.retention.run_all'));
+        $this->ctx->set('btn_reap',       $this->t->t('admin.retention.reap'));
+        $this->ctx->set('reap_hint',      $this->t->t('admin.retention.reap_hint'));
         $this->ctx->set('expiry_note',    $this->t->t('admin.retention.expiry_note'));
         $this->ctx->set('targets',        $rows);
         $this->ctx->set('prg_id',         $this->prg->createId($selfUrl));
@@ -123,6 +125,12 @@ final class AdminRetentionController extends AbstractController
                 $n = $this->retention->purgeAll($key);
                 $this->flash->set('success', $this->t->t('admin.retention.done') . ' (' . $n . ')');
                 $this->audit->log('retention.shred_all', $key . '×' . $n)->drainTo($this->collector);
+                return;
+
+            case 'reap':
+                $n = $this->retention->reapOrphanFiles();
+                $this->flash->set('success', $this->t->t('admin.retention.done') . ' (' . $n . ')');
+                $this->audit->log('retention.reap', 'orphan_files×' . $n)->drainTo($this->collector);
                 return;
 
             case 'run_all':

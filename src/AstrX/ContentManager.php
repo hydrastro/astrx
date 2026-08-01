@@ -414,9 +414,18 @@ final class ContentManager
                 // Persist uploaded files through the PRG cycle: move each file to a
                 // persistent temp path and store its metadata in __files__ so the
                 // GET side can reconstruct UploadedFile objects before routing.
+                // During a lockdown a non-operator's settling GET is sealed anyway,
+                // so don't move their files to temp at all — otherwise a pre-obtained
+                // upload token could spool junk into the temp dir while locked. The
+                // panicActive() check only runs for requests that actually carry
+                // files, so the common (file-less) POST intake is untouched.
+                $files = $request->files()->all();
+                $lockedForActor = $files !== []
+                    && $this->panicActive()
+                    && $this->gate->cannot(Permission::ADMIN_PANIC);
                 $payload = $request->body()->all();
                 $fileMeta = [];
-                foreach ($request->files()->all() as $fieldName => $uploadedFile) {
+                foreach (($lockedForActor ? [] : $files) as $fieldName => $uploadedFile) {
                     if (!$uploadedFile instanceof UploadedFile || $uploadedFile->hasError()) {
                         continue;
                     }
@@ -567,8 +576,13 @@ final class ContentManager
         // mutate elsewhere). API controllers run through this same dispatch, so the
         // API path is covered here too. Login + captcha + the error page stay open
         // so an admin can still authenticate and lift the lockdown.
+        //
+        // Key on ADMIN_PANIC — the permission that ARMS/DISARMS the lockdown — NOT
+        // ADMIN_ACCESS, which MOD also holds. Bypass ⟺ can-disarm: only an operator
+        // who could lift the lockdown is exempt from it, so a compromised MOD is
+        // sealed like every other non-operator.
         if ($this->panicActive()
-            && $this->gate->cannot(Permission::ADMIN_ACCESS)
+            && $this->gate->cannot(Permission::ADMIN_PANIC)
             && !self::isPanicExempt($page)) {
             $this->renderPanicLockdown($request);
             return;
@@ -664,7 +678,7 @@ final class ContentManager
         // sealed non-exempt pages, but an exempt page that happened to have
         // comments enabled would otherwise still accept a guest comment — deny it.
         if ($page->comments
-            && !($this->panicActive() && $this->gate->cannot(Permission::ADMIN_ACCESS))) {
+            && !($this->panicActive() && $this->gate->cannot(Permission::ADMIN_PANIC))) {
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
             $this->translator->loadDomain(langDir(), 'Comment');

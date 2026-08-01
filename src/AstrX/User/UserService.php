@@ -194,11 +194,11 @@ final class UserService
     /**
      * Read a user's TOTP state (safe: any error → disabled/empty).
      *
-     * @return array{enabled:bool,secret:string,recovery:list<string>}
+     * @return array{enabled:bool,secret:string,recovery:list<string>,last_step:int}
      */
     public function totpInfo(string $hexId): array
     {
-        $off = ['enabled' => false, 'secret' => '', 'recovery' => []];
+        $off = ['enabled' => false, 'secret' => '', 'recovery' => [], 'last_step' => 0];
         $r = $this->repo->getTotp($hexId);
         if (!$r->isOk()) {
             return $off;
@@ -221,7 +221,26 @@ final class UserService
                 }
             }
         }
-        return ['enabled' => $enabled, 'secret' => $secret, 'recovery' => $recovery];
+        return [
+            'enabled'   => $enabled,
+            'secret'    => $secret,
+            'recovery'  => $recovery,
+            'last_step' => $this->intVal($row['totp_last_step'] ?? null),
+        ];
+    }
+
+    /**
+     * Persist the highest TOTP step accepted for this user (replay prevention).
+     * Returns whether the write succeeded — the challenge grants the session only
+     * when it did, so a failed write can't silently leave the step un-advanced and
+     * a just-used code replayable.
+     */
+    public function setTotpLastStep(string $hexId, int $step): bool
+    {
+        if ($hexId === '') {
+            return false;
+        }
+        return $this->repo->setTotpLastStep($hexId, $step)->isOk();
     }
 
     /** Is TOTP active for this user? */
@@ -253,26 +272,68 @@ final class UserService
     }
 
     /**
-     * Record a post-password authentication failure (a wrong TOTP / recovery code
-     * at the /login-2fa challenge) against the SAME brute-force counter the
-     * password path uses, and lock the account when the threshold is reached.
-     * This is what stops an attacker who already has the password from online-
-     * guessing TOTP codes: once locked, userService->login() rejects the password
-     * step too, so they cannot reopen a fresh challenge window until the cooldown.
-     * Mirrors the lockout logic in login(). Returns true if the account is now locked.
+     * Record a wrong TOTP / recovery code at the /login-2fa challenge and lock the
+     * account when the threshold is reached. The counter is the DEDICATED
+     * `totp_fail_count`, NOT `login_attempts`: a successful password step resets
+     * login_attempts to 0 (login():436), so counting 2FA failures there let an
+     * attacker who holds the password reset the throttle just by re-submitting the
+     * password. totp_fail_count is only ever cleared by clearAuthFailure() on a
+     * SUCCESSFUL second factor, so failures accumulate across re-opened windows.
+     * On threshold it sets the shared brute-force lockout (which login() checks
+     * up front, so the password step is then rejected too) and resets the counter
+     * so the next cooldown starts fresh. Returns true if the account is now locked.
      */
     public function registerAuthFailure(string $hexId): bool
     {
         if ($hexId === '' || $this->loginLockoutThreshold <= 0) {
             return false;
         }
-        $attempts = $this->repo->loginAttemptsFor($hexId);
-        $this->repo->updateLoginAttempts($hexId, +1);
-        if (($attempts + 1) >= $this->loginLockoutThreshold) {
+        $fails = $this->repo->totpFailCountFor($hexId);
+        $this->repo->bumpTotpFail($hexId);
+        if (($fails + 1) >= $this->loginLockoutThreshold) {
             $this->repo->setLockout($hexId, time() + $this->loginLockoutCooldown);
+            $this->repo->resetTotpFail($hexId);
             return true;
         }
         return false;
+    }
+
+    /** Clear the 2FA-challenge failure counter after a SUCCESSFUL second factor. */
+    public function clearAuthFailure(string $hexId): void
+    {
+        if ($hexId !== '') {
+            $this->repo->resetTotpFail($hexId);
+        }
+    }
+
+    /**
+     * Is the account currently under a brute-force lockout? The /login-2fa
+     * challenge checks this so a lockout tripped during guessing seals EVERY
+     * pending challenge window (not just the one that tripped it) — otherwise an
+     * attacker could pre-open many windows and the per-account limit would not bind.
+     */
+    public function isLockedOut(string $hexId): bool
+    {
+        return $hexId !== '' && $this->repo->lockedUntilFor($hexId) > time();
+    }
+
+    /**
+     * Verify a plaintext password against the account's stored hash — for
+     * re-authenticating a sensitive settings change (e.g. enabling 2FA) so a
+     * merely-borrowed session can't perform it. Uses findPasswordHash (findById
+     * does NOT select `password`). Returns false on any error/mismatch.
+     */
+    public function verifyPassword(string $hexId, string $password): bool
+    {
+        if ($hexId === '' || $password === '') {
+            return false;
+        }
+        $hashResult = $this->repo->findPasswordHash($hexId);
+        if (!$hashResult->isOk()) {
+            return false;
+        }
+        $pwHash = $hashResult->unwrap();
+        return is_string($pwHash) && $pwHash !== '' && password_verify($password, $pwHash);
     }
 
     // -------------------------------------------------------------------------

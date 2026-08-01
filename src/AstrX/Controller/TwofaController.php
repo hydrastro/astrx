@@ -67,6 +67,17 @@ final class TwofaController extends AbstractController
             exit;
         }
 
+        // Honour the brute-force lockout HERE, not just at the password step: while
+        // the account is locked every pending challenge window is unanswerable, so
+        // an attacker can't pre-provision a batch of windows to outrun the counter.
+        if ($this->userService->isLockedOut($uid)) {
+            $this->clearPending();
+            $this->flash->set('error', $this->t->t('twofa.locked'));
+            Response::redirect($this->urlGen->toPage($this->t->t('WORDING_LOGIN')))
+                ->send()->drainTo($this->collector);
+            exit;
+        }
+
         $selfUrl  = $this->request->uri()->path();
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {
@@ -103,7 +114,21 @@ final class TwofaController extends AbstractController
         $code = trim(self::mStr($posted, 'code', ''));
         $info = $this->userService->totpInfo($uid);
 
-        $ok = $info['secret'] !== '' && $this->totp->verifyCode($info['secret'], $code);
+        // Verify the TOTP code AND enforce single-use (RFC 6238 §5.2): accept only a
+        // time-step strictly greater than the last one accepted for this account, so
+        // a code observed and replayed inside its ~90s window is refused. A replay
+        // (matched step <= last_step) is treated as a wrong code and throttled below.
+        $ok = false;
+        if ($info['secret'] !== '') {
+            $step = $this->totp->verifyCodeStep($info['secret'], $code);
+            // Accept only a step strictly greater than the last accepted one, AND
+            // only once that advance is durably recorded — otherwise a failed write
+            // would leave the code replayable within its window.
+            if ($step !== null && $step > $info['last_step']
+                && $this->userService->setTotpLastStep($uid, $step)) {
+                $ok = true;
+            }
+        }
         if (!$ok && $info['recovery'] !== []) {
             $idx = $this->totp->verifyRecovery($code, $info['recovery']);
             if ($idx !== null) {
@@ -133,7 +158,8 @@ final class TwofaController extends AbstractController
             return;
         }
 
-        // Second factor cleared — grant the session now.
+        // Second factor cleared — clear the challenge throttle and grant the session.
+        $this->userService->clearAuthFailure($uid);
         $data = $_SESSION['astrx_pending_2fa_data'] ?? null;
         if (is_array($data)) {
             /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string,theme?:string} $data */

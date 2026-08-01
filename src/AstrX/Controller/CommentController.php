@@ -279,7 +279,7 @@ final class CommentController extends AbstractController
                 $profileUrl  = '';
                 $avatarSrc   = $useIdenticons
                     ? $this->urlGen->toPage('avatar', [
-                        'seed' => hash('sha256', (is_scalar($row['name']) ? (string)$row['name'] : '') . (is_scalar($row['ip']) ? (string)$row['ip'] : '')),
+                        'seed' => hash('sha256', is_scalar($row['name'] ?? null) ? (string)$row['name'] : ''),
                     ])
                     : '';
             }

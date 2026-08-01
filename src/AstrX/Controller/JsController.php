@@ -58,8 +58,38 @@ final class JsController extends AbstractController
         private readonly UrlGenerator $urlGenerator,
         private readonly ThemeService $themeService,
         private readonly PDO $pdo,
+        private readonly \AstrX\Module\ModuleRegistry $modules,
     ) {
         parent::__construct($collector);
+    }
+
+    /**
+     * Page ids owned by a currently-disabled module — excluded from the manifest
+     * so the no-JS shell doesn't advertise slugs / API endpoints (incl. the bot-trap
+     * honeypot) that 404 when their module is off. Mirrors NavbarHandler.
+     *
+     * @return array<int,true>
+     */
+    private function disabledPageIds(): array
+    {
+        $disabled = $this->modules->disabledModules();
+        if ($disabled === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($disabled), '?'));
+        $ids = [];
+        try {
+            $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `module` IN ({$placeholders})");
+            $stmt->execute(array_values($disabled));
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+                if (is_int($id)) {
+                    $ids[$id] = true;
+                }
+            }
+        } catch (\PDOException) {
+            return [];
+        }
+        return $ids;
     }
 
     /** @return Result<mixed> */
@@ -1245,11 +1275,13 @@ JS;
         );
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         /** @var list<array<string,mixed>> $rows */
+        $disabledIds = $this->disabledPageIds();
         $pages = [];
         foreach ($rows as $row) {
             $urlId = is_scalar($row['url_id'] ?? null) ? (string) $row['url_id'] : '';
             $fileName = is_scalar($row['file_name'] ?? null) ? (string) $row['file_name'] : '';
-            if ($urlId === '' || $fileName === 'error') {
+            $pageId = is_numeric($row['id'] ?? null) ? (int) $row['id'] : 0;
+            if ($urlId === '' || $fileName === 'error' || isset($disabledIds[$pageId])) {
                 continue;
             }
             $slug = (bool) ($row['i18n'] ?? false)
@@ -1297,11 +1329,13 @@ JS;
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         /** @var list<array<string,mixed>> $rows */
 
+        $disabledIds = $this->disabledPageIds();
         $endpoints = [];
         foreach ($rows as $row) {
             $urlId = is_scalar($row['url_id'] ?? null) ? (string) $row['url_id'] : '';
             $fileName = is_scalar($row['file_name'] ?? null) ? (string) $row['file_name'] : '';
-            if ($urlId === '' || $fileName === 'error' || $fileName === 'js') {
+            $pageId = is_numeric($row['id'] ?? null) ? (int) $row['id'] : 0;
+            if ($urlId === '' || $fileName === 'error' || $fileName === 'js' || isset($disabledIds[$pageId])) {
                 continue;
             }
 

@@ -34,6 +34,10 @@
     <input type="hidden" name="_csrf"  value="{{csrf_token}}">
     <input type="hidden" name="action" value="confirm">
     <p>
+        <label for="confirm_pw">{{confirm_pw_label}}:</label>
+        <input type="password" name="password" id="confirm_pw" class="input" autocomplete="off">
+    </p>
+    <p>
         <label for="code">{{confirm_label}}:</label>
         <input type="text" name="code" id="code" class="input" autocomplete="off" inputmode="numeric">
     </p>

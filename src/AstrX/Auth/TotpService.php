@@ -49,6 +49,31 @@ final class TotpService
         return false;
     }
 
+    /**
+     * Like verifyCode, but returns the ABSOLUTE time-step the code matched (or null
+     * if none), so the login challenge can enforce RFC 6238 §5.2 single-use:
+     * accept only a step strictly greater than the last one accepted for this user.
+     */
+    public function verifyCodeStep(string $secretB32, string $code, int $window = 1): ?int
+    {
+        $code = trim($code);
+        if (preg_match('/^\d{6}$/', $code) !== 1) {
+            return null;
+        }
+        $key = self::base32Decode($secretB32);
+        if ($key === '') {
+            return null;
+        }
+        $counter = intdiv(time(), self::PERIOD);
+        for ($i = -$window; $i <= $window; $i++) {
+            $step = $counter + $i;
+            if (hash_equals($this->hotp($key, $step), $code)) {
+                return $step;
+            }
+        }
+        return null;
+    }
+
     /** The otpauth:// provisioning URI an authenticator imports (QR or manual). */
     public function provisioningUri(string $secretB32, string $account, string $issuer): string
     {

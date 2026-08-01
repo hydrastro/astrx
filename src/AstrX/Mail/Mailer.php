@@ -714,9 +714,17 @@ final class Mailer
             $data        = $att['data'];
             if ($data === '') { continue; }
 
-            // Sanitise filename — strip path components and CRLF (header
-            // injection defence).
+            // Sanitise filename — strip path components + CRLF (header-injection
+            // defence) AND escape the quote/backslash that would otherwise break out
+            // of the quoted MIME parameter.
             $safeName = preg_replace('/[\r\n]/', '', basename($filename)) ?? 'attachment';
+            $safeName = addcslashes($safeName, '"\\');
+            // Never emit an attacker-shaped Content-Type: a CRLF or stray char there
+            // could forge MIME headers/boundaries. Accept only a plain type/subtype;
+            // fall back to a safe default otherwise.
+            if (preg_match('#^[\w.+-]+/[\w.+-]+$#', $contentType) !== 1) {
+                $contentType = 'application/octet-stream';
+            }
 
             $out .= "--{$boundary}\r\n";
             $out .= "Content-Type: {$contentType}; name=\"{$safeName}\"\r\n";

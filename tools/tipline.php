@@ -79,6 +79,7 @@ switch ($cmd) {
             tl_fail('could not read the secret-key file.');
         }
         $sec = base64_decode(trim($raw), true);
+        sodium_memzero($raw); // don't leave the base64 secret lingering in memory
         if ($sec === false || strlen($sec) !== SODIUM_CRYPTO_BOX_SECRETKEYBYTES) {
             tl_fail('the secret-key file is not a valid base64 sealed-box secret key.');
         }
@@ -97,7 +98,14 @@ switch ($cmd) {
                 tl_out("----- tip {$n}: SKIPPED (not base64) -----\n");
                 continue;
             }
-            $plain = sodium_crypto_box_seal_open($cipher, $kp);
+            // Some libsodium builds throw SodiumException on malformed ciphertext
+            // instead of returning false — catch it so one bad line doesn't abort
+            // the whole batch.
+            try {
+                $plain = sodium_crypto_box_seal_open($cipher, $kp);
+            } catch (\SodiumException) {
+                $plain = false;
+            }
             if ($plain === false) {
                 tl_out("----- tip {$n}: FAILED to open (wrong key or corrupt) -----\n");
                 continue;

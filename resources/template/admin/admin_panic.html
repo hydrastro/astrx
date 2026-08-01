@@ -1,3 +1,10 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
 <h2>{{panic_heading}}</h2>
 <p>{{panic_intro}}</p>
 
@@ -31,3 +38,4 @@
     <p><small>{{message_hint}}</small></p>
     <p><input type="submit" value="{{btn_save}}" class="input"></p>
 </form>
+{{/admin_forbidden}}

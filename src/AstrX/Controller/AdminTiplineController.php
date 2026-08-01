@@ -91,7 +91,6 @@ final class AdminTiplineController extends AbstractController
         $this->ctx->set('label_sealed',   $this->t->t('admin.tipline.sealed'));
         $this->ctx->set('none_yet',       $this->t->t('admin.tipline.none'));
         $this->ctx->set('pubkey',         $pubkey);
-        $this->ctx->set('has_pubkey',     $pubkey !== '');
         $this->ctx->set('pubkey_bad',     $pubkey !== '' && !TiplineCrypto::isValidPubkey($pubkey));
         $this->ctx->set('pubkey_bad_msg', $this->t->t('admin.tipline.bad_pubkey'));
         $this->ctx->set('count',          (string) count($tips));

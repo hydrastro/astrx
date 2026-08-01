@@ -293,9 +293,22 @@ final class UserRepository
     public function getTotp(string $hexId): Result
     {
         return $this->fetchOne(
-            'SELECT `totp_secret`, `totp_enabled`, `totp_recovery`
+            'SELECT `totp_secret`, `totp_enabled`, `totp_recovery`, `totp_last_step`
                FROM `user` WHERE `id` = UNHEX(:id)',
             [':id' => $hexId],
+        );
+    }
+
+    /**
+     * Record the highest TOTP step accepted for this account (replay prevention).
+     *
+     * @return Result<bool>
+     */
+    public function setTotpLastStep(string $hexId, int $step): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `totp_last_step` = :s WHERE `id` = UNHEX(:id)',
+            [':s' => $step, ':id' => $hexId],
         );
     }
 
@@ -307,6 +320,42 @@ final class UserRepository
                 SET `totp_secret` = :s, `totp_enabled` = :e, `totp_recovery` = :r
               WHERE `id` = UNHEX(:id)',
             [':s' => $secret, ':e' => $enabled ? 1 : 0, ':r' => $recoveryJson, ':id' => $hexId],
+        );
+    }
+
+    /** The dedicated 2FA-challenge failure counter for an account (0 if unreadable). */
+    public function totpFailCountFor(string $hexId): int
+    {
+        $r = $this->fetchOne(
+            'SELECT `totp_fail_count` FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+        if (!$r->isOk()) {
+            return 0;
+        }
+        $row = $r->unwrap();
+        if (!is_array($row)) {
+            return 0;
+        }
+        $v = $row['totp_fail_count'] ?? 0;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
+    }
+
+    /** @return Result<bool> */
+    public function bumpTotpFail(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `totp_fail_count` = `totp_fail_count` + 1 WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+    }
+
+    /** @return Result<bool> */
+    public function resetTotpFail(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `totp_fail_count` = 0 WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
         );
     }
 
@@ -345,24 +394,6 @@ final class UserRepository
         return $this->exec($sql, $params);
     }
 
-    /** Current failed-login counter for an account, or 0 if unreadable (fail-safe). */
-    public function loginAttemptsFor(string $hexId): int
-    {
-        $r = $this->fetchOne(
-            'SELECT `login_attempts` FROM `user` WHERE `id` = UNHEX(:id)',
-            [':id' => $hexId],
-        );
-        if (!$r->isOk()) {
-            return 0;
-        }
-        $row = $r->unwrap();
-        if (!is_array($row)) {
-            return 0;
-        }
-        $v = $row['login_attempts'] ?? 0;
-        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
-    }
-
     /**
      * Set or clear the brute-force lockout expiry for a user.
      * Pass a unix timestamp to lock the account until that moment, or null to
@@ -376,6 +407,24 @@ final class UserRepository
             'UPDATE `user` SET `login_locked_until` = :u WHERE `id` = UNHEX(:id)',
             [':u' => $until, ':id' => $hexId],
         );
+    }
+
+    /** The account's brute-force lockout expiry (unix ts), or 0 if not locked / unreadable. */
+    public function lockedUntilFor(string $hexId): int
+    {
+        $r = $this->fetchOne(
+            'SELECT `login_locked_until` FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+        if (!$r->isOk()) {
+            return 0;
+        }
+        $row = $r->unwrap();
+        if (!is_array($row)) {
+            return 0;
+        }
+        $v = $row['login_locked_until'] ?? null;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
     }
 
     /** @return Result<bool> */

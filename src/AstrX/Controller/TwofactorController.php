@@ -76,7 +76,7 @@ final class TwofactorController extends AbstractController
         $this->ctx->set('tf_enabled',      $enabled);
         $this->ctx->set('status_on',       $this->t->t('twofactor.status_on'));
         $this->ctx->set('status_off',      $this->t->t('twofactor.status_off'));
-        $this->ctx->set('label_code',      $this->t->t('twofactor.code'));
+        $this->ctx->set('confirm_pw_label', $this->t->t('twofactor.confirm_password'));
         $this->ctx->set('btn_begin',       $this->t->t('twofactor.begin'));
         $this->ctx->set('btn_confirm',     $this->t->t('twofactor.confirm'));
         $this->ctx->set('btn_cancel',      $this->t->t('twofactor.cancel'));
@@ -143,6 +143,14 @@ final class TwofactorController extends AbstractController
             case 'confirm':
                 $secret = is_string($_SESSION['astrx_2fa_setup'] ?? null) ? (string) $_SESSION['astrx_2fa_setup'] : '';
                 if ($secret === '') {
+                    return;
+                }
+                // Re-authenticate: enabling 2FA is a sensitive change, so require the
+                // account password (like changePassword) — otherwise a merely-borrowed
+                // session could plant an attacker-controlled second factor and lock
+                // the owner out durably (a password reset does not clear TOTP).
+                if (!$this->userService->verifyPassword($uid, self::mStr($posted, 'password', ''))) {
+                    $this->flash->set('error', $this->t->t('twofactor.wrong_password'));
                     return;
                 }
                 if (!$this->totp->verifyCode($secret, self::mStr($posted, 'code', ''))) {

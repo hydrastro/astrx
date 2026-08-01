@@ -196,8 +196,14 @@ final class ImageService
         if ($dir === '') {
             return;
         }
-        @unlink($dir . '/' . $meta['full_name']);
-        @unlink($dir . '/' . $meta['thumb_name']);
+        // Guard empty names: a video row has thumb_name = '', and @unlink($dir.'/')
+        // would target the directory itself (EISDIR) — harmless under @, but skip it.
+        if ($meta['full_name'] !== '') {
+            @unlink($dir . '/' . $meta['full_name']);
+        }
+        if ($meta['thumb_name'] !== '') {
+            @unlink($dir . '/' . $meta['thumb_name']);
+        }
     }
 
     /**
@@ -210,6 +216,30 @@ final class ImageService
     {
         $r = $this->repo->forPosts($postIds);
         return $r->isOk() ? $r->unwrap() : [];
+    }
+
+    /**
+     * Unlink the on-disk files for the given posts. Call this BEFORE deleting the
+     * post/thread rows (the FK cascade removes the board_image rows but not the
+     * files), so an explicit moderation delete shreds the image promptly rather
+     * than leaving it recoverable until the retention reaper runs.
+     *
+     * @param list<int> $postIds
+     */
+    public function deleteFilesForPosts(array $postIds): void
+    {
+        if ($postIds === []) {
+            return;
+        }
+        foreach ($this->forPosts($postIds) as $images) {
+            foreach ($images as $img) {
+                $full  = is_scalar($img['full_name'] ?? null) ? (string) $img['full_name'] : '';
+                $thumb = is_scalar($img['thumb_name'] ?? null) ? (string) $img['thumb_name'] : '';
+                if ($full !== '' || $thumb !== '') {
+                    $this->discard(['full_name' => $full, 'thumb_name' => $thumb]);
+                }
+            }
+        }
     }
 
     /** @return Result<never> */

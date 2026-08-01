@@ -153,9 +153,9 @@ final class Markdown
             return "\x01" . (count($codes) - 1) . "\x01";
         }, $text) ?? $text;
 
-        // 3. Images: ![alt](src)
+        // 3. Images: ![alt](src) — block external srcs (off-site image = view beacon).
         $text = preg_replace_callback('/!\[([^\]]*)\]\(([^)\s]+)\)/', static function (array $m): string {
-            return '<img src="' . self::safeUrl($m[2]) . '" alt="' . $m[1] . '">';
+            return '<img src="' . self::safeUrl($m[2], null, true) . '" alt="' . $m[1] . '">';
         }, $text) ?? $text;
 
         // 4. Wiki links: [[slug]] or [[slug|label]]
@@ -201,21 +201,34 @@ final class Markdown
      * @param (callable(string): string)|null $ext optional external-link rewriter
      *        (applied only to whitelisted external http(s) targets — the caller
      *        routes them through the exit interstitial). Its result is re-escaped.
+     * @param bool $blockExternal when true, an external (http(s)://, //host, or the
+     *        backslash variants) target becomes '#'. Used for IMAGE srcs: an inline
+     *        <img> auto-loads on view and can't be routed through the interstitial,
+     *        so an off-site image is a zero-click deanonymisation beacon on a hidden
+     *        service — refuse it rather than emit a direct external src.
      */
-    private static function safeUrl(string $escapedUrl, ?callable $ext = null): string
+    private static function safeUrl(string $escapedUrl, ?callable $ext = null, bool $blockExternal = false): string
     {
         // The URL was HTML-escaped by esc(); decode for the scheme test, keep the
-        // escaped form for output (safe in a double-quoted attribute).
+        // escaped form for output (safe in a double-quoted attribute). Backslashes
+        // are normalised to '/' for the scheme test because browsers treat '\' as
+        // '/' in http(s) URLs — so `/\evil.com` resolves to `//evil.com` and must be
+        // classified the same way (else it would slip past the interstitial routing).
         $decoded = html_entity_decode($escapedUrl, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $probe   = strtolower(trim($decoded));
+        $probe   = str_replace('\\', '/', strtolower(trim($decoded)));
         if (preg_match(self::SAFE_URL, $probe) !== 1) {
             return '#';
         }
-        // External target → optionally route through the caller's rewriter (the
-        // exit interstitial). Matches http(s):// AND protocol-relative //host, so a
-        // `[x](//evil.tld)` can't slip past the interstitial. The rewriter returns
-        // a raw URL which we escape.
-        if ($ext !== null && preg_match('#^(https?:)?//#i', $probe) === 1) {
+        // Matches http(s):// AND protocol-relative //host (incl. the backslash
+        // variants normalised above).
+        $isExternal = preg_match('#^(https?:)?//#i', $probe) === 1;
+        if ($blockExternal && $isExternal) {
+            return '#';
+        }
+        // External link target → optionally route through the caller's rewriter (the
+        // exit interstitial) so `[x](//evil.tld)` / `[x](/\evil.tld)` can't slip past
+        // it. The rewriter returns a raw URL which we escape.
+        if ($ext !== null && $isExternal) {
             return self::esc($ext(trim($decoded)));
         }
         return $escapedUrl;

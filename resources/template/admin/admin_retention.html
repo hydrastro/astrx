@@ -1,3 +1,10 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
 <h2>{{ret_heading}}</h2>
 <p>{{ret_intro}}</p>
 <p><small>{{window_hint}}</small></p>
@@ -58,3 +65,14 @@
     <input type="hidden" name="action" value="run_all">
     <p><input type="submit" value="{{btn_run_all}}" class="input"></p>
 </form>
+
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="reap">
+    <p>
+        <input type="submit" value="{{btn_reap}}" class="input">
+        <br><small>{{reap_hint}}</small>
+    </p>
+</form>
+{{/admin_forbidden}}

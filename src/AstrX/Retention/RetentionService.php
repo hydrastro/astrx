@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\Retention;
 
+use AstrX\Chat\ChatConfig;
+use AstrX\Imageboard\ImageboardConfig;
 use PDO;
 
 /**
@@ -39,8 +41,11 @@ final class RetentionService
         ['key' => 'chat_pm',      'table' => 'chat_pm',      'col' => 'expires_at', 'mode' => 'expiry'],
     ];
 
-    public function __construct(private readonly PDO $pdo)
-    {
+    public function __construct(
+        private readonly PDO              $pdo,
+        private readonly ImageboardConfig $imageboardConfig,
+        private readonly ChatConfig       $chatConfig,
+    ) {
     }
 
     /**
@@ -179,7 +184,119 @@ final class RetentionService
         foreach (self::TARGETS as $t) {
             $out[$t['key']] = $this->shred($t['key']);
         }
+        // Also GC the blobs whose DB row is gone (deleted/expired/pruned content):
+        // the FK cascades drop board_image / chat_attachment rows but not the files.
+        $out['orphan_files'] = $this->reapOrphanFiles();
         return $out;
+    }
+
+    /**
+     * Reap orphaned upload files — blobs on disk whose owning DB row no longer
+     * exists (a board post/thread was deleted, a chat message expired/was purged;
+     * the cascade removed the row but not the file). This is the authoritative
+     * garbage-collector behind the shredding promise; it catches orphans from every
+     * source, including ones an immediate-unlink path missed or a crash left behind.
+     *
+     * SAFE BY CONSTRUCTION:
+     *   - the referenced-name set is built from BOTH tables and the whole reap is
+     *     ABORTED if any query errors — a DB hiccup can never cause a mass delete,
+     *     and it stays correct even if the board and chat upload dirs coincide;
+     *   - only files matching the exact random upload-name pattern (32 hex + ext)
+     *     are candidates, so a stray/config file in the dir is never touched;
+     *   - files newer than a 1-hour margin are skipped, so an upload whose row is
+     *     still being written is never raced.
+     *
+     * @return int files removed
+     */
+    public function reapOrphanFiles(): int
+    {
+        $referenced = $this->referencedUploadNames();
+        if ($referenced === null) {
+            return 0; // a query failed — never delete on partial knowledge
+        }
+        $dirs = array_values(array_unique(array_filter([
+            $this->imageboardConfig->uploadDir(),
+            $this->chatConfig->uploadDir(),
+        ], static fn(string $d): bool => $d !== '')));
+
+        $removed = 0;
+        foreach ($dirs as $dir) {
+            $removed += $this->reapDir($dir, $referenced);
+        }
+        return $removed;
+    }
+
+    /**
+     * The set of every filename referenced by an upload table. Returns null if any
+     * query errors, so the caller aborts rather than treating "no rows" as "all
+     * orphaned".
+     *
+     * @return array<string,true>|null
+     */
+    private function referencedUploadNames(): ?array
+    {
+        $set = [];
+        $queries = [
+            'SELECT `full_name` AS n FROM `board_image` UNION SELECT `thumb_name` FROM `board_image`',
+            'SELECT `stored_name` AS n FROM `chat_attachment`',
+        ];
+        foreach ($queries as $sql) {
+            try {
+                $stmt = $this->pdo->query($sql);
+                if ($stmt === false) {
+                    return null;
+                }
+                while (true) {
+                    $v = $stmt->fetchColumn();
+                    if ($v === false) {
+                        break;
+                    }
+                    if (is_string($v) && $v !== '') {
+                        $set[$v] = true;
+                    }
+                }
+            } catch (\PDOException) {
+                return null;
+            }
+        }
+        return $set;
+    }
+
+    /**
+     * Unlink orphaned files in one directory. Only names matching the upload
+     * pattern and absent from $referenced and older than the safety margin.
+     *
+     * @param array<string,true> $referenced
+     */
+    private function reapDir(string $dir, array $referenced): int
+    {
+        if (!is_dir($dir)) {
+            return 0;
+        }
+        $entries = @scandir($dir);
+        if ($entries === false) {
+            return 0;
+        }
+        $cutoff  = time() - 3600;
+        $removed = 0;
+        foreach ($entries as $name) {
+            if (preg_match('/^[0-9a-f]{32}\.[A-Za-z0-9]{1,8}$/', $name) !== 1
+                || isset($referenced[$name])) {
+                continue;
+            }
+            $path = $dir . '/' . $name;
+            if (!is_file($path)) {
+                continue;
+            }
+            $mtime = @filemtime($path);
+            if ($mtime !== false && $mtime > $cutoff) {
+                continue; // too fresh — an in-flight upload's row may still be committing
+            }
+            if (@unlink($path)) {
+                $removed++;
+            }
+        }
+        return $removed;
     }
 
     private function cfg(string $key): string

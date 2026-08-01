@@ -630,9 +630,12 @@ final class ImapClient
 
                 // RFC822 / RFC822.HEADER fetches: the literal IS the payload the
                 // caller wants (fetchMessage/fetchHeaders read lastLiteralContent).
-                // Keep the existing behaviour — stash it and discard the trailing
-                // ")" segment.
-                if (str_contains($line, 'RFC822')) {
+                // Match only when the literal is the RFC822 DATA ITEM — i.e. the
+                // item name sits directly before the {size} — NOT merely when the
+                // line contains the substring "RFC822" (which a subject/from value
+                // like "RFC822 Working Group" would, wrongly stealing an ENVELOPE
+                // literal and blanking that message's fields).
+                if (preg_match('/RFC822(\.[A-Z]+)?\s+\{\d+\}\s*$/', $line) === 1) {
                     $this->readLine(); // trailing segment after the payload
                     $this->lastLiteralContent = $literalContent;
                     $this->lastFlags          = $this->extractFlags($line);

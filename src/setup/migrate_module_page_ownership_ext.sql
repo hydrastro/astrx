@@ -12,6 +12,9 @@
 UPDATE `page` SET `module` = 'search'
  WHERE `module` = '' AND `file_name` IN ('site_search', 'admin_search');
 
--- Webmail client page (the shared Mail backend is core and stays untagged).
+-- Webmail client page + its admin config editor (the shared Mail backend is core
+-- and stays untagged). Tagging the admin page too means disabling the webmail
+-- module also 404s /admin-config-webmail and drops its admin-nav entry, matching
+-- how the other modules own their admin-config pages.
 UPDATE `page` SET `module` = 'webmail'
- WHERE `module` = '' AND `file_name` = 'webmail';
+ WHERE `module` = '' AND `file_name` IN ('webmail', 'admin_config_webmail');

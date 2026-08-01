@@ -1,3 +1,10 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
 <h2>{{tip_heading}}</h2>
 <p>{{tip_intro}}</p>
 
@@ -46,3 +53,4 @@
 {{^has_tips}}
 <p>{{none_yet}}</p>
 {{/has_tips}}
+{{/admin_forbidden}}

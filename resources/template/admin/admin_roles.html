@@ -1,3 +1,10 @@
+{{#admin_forbidden}}
+<div class="error-page">
+  <h2>{{forbidden_message}}</h2>
+</div>
+{{/admin_forbidden}}
+
+{{^admin_forbidden}}
 <h2>{{roles_heading}}</h2>
 <p>{{roles_intro}}</p>
 <p><small>{{roles_legend}}</small></p>
@@ -9,3 +16,4 @@
 {{/perms}}
 </ul>
 {{/roles}}
+{{/admin_forbidden}}

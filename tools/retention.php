@@ -15,7 +15,9 @@ declare(strict_types=1);
  *   0 * * * * php /path/to/tools/retention.php run
  */
 
+use AstrX\Chat\ChatConfig;
 use AstrX\Config\Config;
+use AstrX\Imageboard\ImageboardConfig;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Retention\RetentionService;
 
@@ -98,7 +100,22 @@ try {
     rt_fail('database connection failed: ' . $e->getMessage());
 }
 
-$service = new RetentionService($pdo);
+// Configure the imageboard/chat configs (their upload dirs drive the orphan-file
+// reaper) exactly as the module loader does in the web app: load the domain, then
+// apply its InjectConfig setters. If a config file is absent the defaults stand.
+// loadModuleConfig names the FILE (Imageboard.config.php), but applyModuleConfig
+// names the SECTION inside it — which is the class short name, not the file base
+// (Imageboard.config.php holds ['ImageboardConfig' => [...]]). Using the file name
+// here would silently no-op and leave the configs at their defaults, so the cron
+// reaper would scan the wrong dir on any deployment with a custom upload_dir.
+$config->loadModuleConfig('Imageboard');
+$config->loadModuleConfig('Chat');
+$imageboardConfig = new ImageboardConfig();
+$config->applyModuleConfig($imageboardConfig, 'ImageboardConfig');
+$chatConfig = new ChatConfig();
+$config->applyModuleConfig($chatConfig, 'ChatConfig');
+
+$service = new RetentionService($pdo, $imageboardConfig, $chatConfig);
 $counts  = $service->runAll();
 $total   = array_sum($counts);
 foreach ($counts as $key => $n) {
