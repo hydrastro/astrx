@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Content;
 
+use AstrX\Config\Config;
 use AstrX\I18n\Translator;
 use AstrX\Routing\UrlGenerator;
 
@@ -26,6 +27,7 @@ final class ContentService
         private readonly Markdown              $markdown,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly Config                $config,
     ) {}
 
     /** The /<locale>/pages base URL that content pages hang off. */
@@ -138,7 +140,15 @@ final class ContentService
             ];
         };
 
-        return $this->markdown->render($body, $resolver);
+        // Route external links on operator-authored content pages through the
+        // off-site exit interstitial (default on; toggle with Content.exit_interstitial).
+        $rewriter = null;
+        if ($this->config->getConfigBool('Content', 'exit_interstitial', true)) {
+            $exitBase = $this->urlGen->toPage($this->t->t('WORDING_EXIT'));
+            $rewriter = static fn (string $url): string => $exitBase . '?to=' . rawurlencode($url);
+        }
+
+        return $this->markdown->render($body, $resolver, $rewriter);
     }
 
     /**

@@ -1,0 +1,17 @@
+<h2>{{exit_heading}}</h2>
+{{#has_target}}
+<p class="warning">{{exit_warning}}</p>
+<p>{{exit_dest_label}}:</p>
+<pre class="exit_target">{{target_url}}</pre>
+{{#has_host}}
+<p><small>{{exit_host_label}}: {{target_host}}</small></p>
+{{/has_host}}
+<p>
+    <a href="{{target_url}}" rel="noreferrer noopener nofollow" class="input">{{btn_continue}}</a>
+    <a href="/" class="input">{{btn_back}}</a>
+</p>
+{{/has_target}}
+{{^has_target}}
+<p class="warning">{{exit_invalid}}</p>
+<p><a href="/" class="input">{{btn_back}}</a></p>
+{{/has_target}}

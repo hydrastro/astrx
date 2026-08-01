@@ -285,6 +285,31 @@ final class UserRepository
         );
     }
 
+    /**
+     * The user's TOTP row (secret / enabled / recovery), or null if not found.
+     *
+     * @return Result<array<string,mixed>|null>
+     */
+    public function getTotp(string $hexId): Result
+    {
+        return $this->fetchOne(
+            'SELECT `totp_secret`, `totp_enabled`, `totp_recovery`
+               FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+    }
+
+    /** @return Result<bool> */
+    public function setTotp(string $hexId, ?string $secret, bool $enabled, ?string $recoveryJson): Result
+    {
+        return $this->exec(
+            'UPDATE `user`
+                SET `totp_secret` = :s, `totp_enabled` = :e, `totp_recovery` = :r
+              WHERE `id` = UNHEX(:id)',
+            [':s' => $secret, ':e' => $enabled ? 1 : 0, ':r' => $recoveryJson, ':id' => $hexId],
+        );
+    }
+
     /** @return Result<bool> */
     public function updateDisplayName(string $hexId, string $name): Result
     {
@@ -318,6 +343,24 @@ final class UserRepository
         // when the SQL actually uses it.
         $params = $delta >= 0 ? [':d' => abs($delta), ':id' => $hexId] : [':id' => $hexId];
         return $this->exec($sql, $params);
+    }
+
+    /** Current failed-login counter for an account, or 0 if unreadable (fail-safe). */
+    public function loginAttemptsFor(string $hexId): int
+    {
+        $r = $this->fetchOne(
+            'SELECT `login_attempts` FROM `user` WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+        if (!$r->isOk()) {
+            return 0;
+        }
+        $row = $r->unwrap();
+        if (!is_array($row)) {
+            return 0;
+        }
+        $v = $row['login_attempts'] ?? 0;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : 0);
     }
 
     /**

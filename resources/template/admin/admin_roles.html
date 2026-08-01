@@ -1,0 +1,11 @@
+<h2>{{roles_heading}}</h2>
+<p>{{roles_intro}}</p>
+<p><small>{{roles_legend}}</small></p>
+{{#roles}}
+<h3>{{name}} — {{label_count}}: {{count}}{{#is_wildcard}} ({{label_wildcard}}){{/is_wildcard}}</h3>
+<ul>
+{{#perms}}
+    <li>{{#sensitive}}<strong>{{pattern}}</strong> — {{sensitive_tag}}{{/sensitive}}{{^sensitive}}{{pattern}}{{/sensitive}}</li>
+{{/perms}}
+</ul>
+{{/roles}}

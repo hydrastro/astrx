@@ -1,0 +1,22 @@
+<h2>{{dl_heading}}</h2>
+{{#has_manifest}}
+<p>{{dl_intro}}</p>
+{{#sig_valid}}
+<p class="success"><strong>{{sig_valid_msg}}</strong></p>
+{{/sig_valid}}
+{{#sig_invalid}}
+<p class="warning"><strong>{{sig_invalid_msg}}</strong></p>
+{{/sig_invalid}}
+{{#sig_unsigned}}
+<p><em>{{sig_unsigned_msg}}</em></p>
+{{/sig_unsigned}}
+<pre class="manifest">{{manifest}}</pre>
+{{#has_pubkey}}
+<p><small>{{dl_pubkey_label}}:</small></p>
+<pre class="pubkey">{{pubkey}}</pre>
+{{/has_pubkey}}
+<p><small>{{dl_verify_hint}}</small></p>
+{{/has_manifest}}
+{{^has_manifest}}
+<p>{{dl_none}}</p>
+{{/has_manifest}}

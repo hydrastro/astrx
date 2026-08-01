@@ -1,0 +1,60 @@
+<h2>{{ret_heading}}</h2>
+<p>{{ret_intro}}</p>
+<p><small>{{window_hint}}</small></p>
+
+<table class="input">
+    <tr>
+        <th>{{label_target}}</th>
+        <th>{{label_rows}}</th>
+        <th>{{label_window}}</th>
+    </tr>
+    {{#targets}}
+    <tr>
+        <td>{{label}}</td>
+        <td>{{count}}</td>
+        <td>
+            {{#is_age}}
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="save_window">
+                <input type="hidden" name="key" value="{{key}}">
+                <input type="text" name="window" value="{{window}}" size="4" class="input">
+                <input type="submit" value="{{btn_save}}" class="input">
+            </form>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="shred">
+                <input type="hidden" name="key" value="{{key}}">
+                <input type="submit" value="{{btn_shred}}" class="input">
+            </form>
+            {{/is_age}}
+            {{^is_age}}
+            <em>{{expiry_note}}</em>
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="shred">
+                <input type="hidden" name="key" value="{{key}}">
+                <input type="submit" value="{{btn_gc}}" class="input">
+            </form>
+            {{/is_age}}
+            <form method="POST" style="display:inline">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="shred_all">
+                <input type="hidden" name="key" value="{{key}}">
+                <input type="submit" value="{{btn_shred_all}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/targets}}
+</table>
+
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="run_all">
+    <p><input type="submit" value="{{btn_run_all}}" class="input"></p>
+</form>

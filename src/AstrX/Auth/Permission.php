@@ -97,4 +97,19 @@ enum Permission: string
 
     // ---- Onion mirrors ------------------------------------------------------
     case ADMIN_MIRRORS = 'admin.mirrors'; // edit the onion / mirror anti-phishing data
+
+    // ---- Roles viewer -------------------------------------------------------
+    case ADMIN_ROLES = 'admin.roles';     // view the roles / sensitive-levers audit
+
+    // ---- Signed downloads ---------------------------------------------------
+    case ADMIN_DOWNLOADS = 'admin.downloads'; // edit / publish the signed release manifest
+
+    // ---- Encrypted tip line -------------------------------------------------
+    case ADMIN_TIPLINE = 'admin.tipline';   // manage the anonymous tip line (pubkey + queue)
+
+    // ---- Data retention -----------------------------------------------------
+    case ADMIN_RETENTION = 'admin.retention'; // run the data-retention / shred console
+
+    // ---- Panic / lockdown ---------------------------------------------------
+    case ADMIN_PANIC = 'admin.panic';       // arm / disarm the site-wide panic lockdown
 }

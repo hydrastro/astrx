@@ -8,6 +8,7 @@ use AstrX\Captcha\CaptchaType;
 use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
+use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
@@ -177,8 +178,26 @@ final class UserController extends AbstractController
 
         $this->resetLoginFailCount();
 
-        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string,password?:string} $userData */
         $userData = $loginResult->unwrap();
+
+        // ── Second factor gate (mirror of LoginController) ────────────────────
+        // If the account has TOTP on, defer the session grant to /login-2fa; the
+        // session is not authenticated until session->login() runs there.
+        $uid = is_scalar($userData['id'] ?? null) ? (string) $userData['id'] : '';
+        if ($uid !== '' && $this->userService->isTotpEnabled($uid)) {
+            unset($userData['password']);
+            if ($this->webmail->mailserverIsLocal() && $password !== '') {
+                $this->session->storeImapPassword($password);
+            }
+            $_SESSION['astrx_pending_2fa']      = $uid;
+            $_SESSION['astrx_pending_2fa_data'] = $userData;
+            $_SESSION['astrx_pending_2fa_ts']   = time();
+            Response::redirect($this->urlGen->toPage($this->t->t('WORDING_TWOFA')))
+                ->send()->drainTo($this->collector);
+            exit;
+        }
+
         $this->session->login($userData);
 
         // When the mail server is local (shares user DB with this app), the

@@ -1,0 +1,17 @@
+<h2>{{tip_heading}}</h2>
+{{#tip_open}}
+<p>{{tip_intro}}</p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="message">{{label_message}}:</label><br>
+        <textarea name="message" id="message" rows="10" class="input"></textarea>
+    </p>
+    {{> captcha}}
+    <p><input type="submit" value="{{btn_send}}" class="input"></p>
+</form>
+{{/tip_open}}
+{{^tip_open}}
+<p>{{tip_closed}}</p>
+{{/tip_open}}

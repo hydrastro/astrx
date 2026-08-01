@@ -1,0 +1,58 @@
+<h2>{{tf_heading}}</h2>
+<p>{{tf_intro}}</p>
+
+{{#show_recovery}}
+<div class="warning">
+    <h3>{{recovery_heading}}</h3>
+    <p>{{recovery_intro}}</p>
+    <ul>
+        {{#recovery}}<li><code>{{code}}</code></li>{{/recovery}}
+    </ul>
+</div>
+{{/show_recovery}}
+
+{{#tf_enabled}}
+<p><strong>{{status_on}}</strong></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="disable">
+    <p>
+        <label for="code">{{disable_label}}:</label>
+        <input type="text" name="code" id="code" class="input" autocomplete="off">
+    </p>
+    <p><input type="submit" value="{{btn_disable}}" class="input"></p>
+</form>
+{{/tf_enabled}}
+
+{{#tf_setup}}
+<p>{{setup_intro}}</p>
+<p>{{secret_label}}: <code>{{secret}}</code></p>
+<p>{{uri_label}}<br><code>{{otpauth}}</code></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="confirm">
+    <p>
+        <label for="code">{{confirm_label}}:</label>
+        <input type="text" name="code" id="code" class="input" autocomplete="off" inputmode="numeric">
+    </p>
+    <p><input type="submit" value="{{btn_confirm}}" class="input"></p>
+</form>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="cancel">
+    <p><input type="submit" value="{{btn_cancel}}" class="input"></p>
+</form>
+{{/tf_setup}}
+
+{{#tf_can_begin}}
+<p><strong>{{status_off}}</strong></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="begin">
+    <p><input type="submit" value="{{btn_begin}}" class="input"></p>
+</form>
+{{/tf_can_begin}}

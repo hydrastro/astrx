@@ -1,0 +1,29 @@
+<h2>{{dl_heading}}</h2>
+<p>{{dl_intro}}</p>
+<p><small>{{hint_sign}}</small></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="manifest">{{label_manifest}}:</label><br>
+        <textarea name="manifest" id="manifest" rows="14" class="input">{{manifest}}</textarea>
+    </p>
+    <p>
+        <label for="pubkey">{{label_pubkey}}:</label><br>
+        <input type="text" name="pubkey" id="pubkey" class="input" value="{{pubkey}}">
+    </p>
+    <p>
+        <label for="sig">{{label_sig}}:</label><br>
+        <input type="text" name="sig" id="sig" class="input" value="{{sig}}">
+    </p>
+    <p>
+        <input type="hidden" name="action" value="save">
+        <input type="submit" value="{{btn_save}}" class="input">
+    </p>
+</form>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="clear">
+    <p><input type="submit" value="{{btn_clear}}" class="input"></p>
+</form>

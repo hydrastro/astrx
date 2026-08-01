@@ -26,8 +26,13 @@ final class Markdown
      * @param (callable(string): array{url:string,exists:bool})|null $wikiResolver
      *        Resolve a `[[slug]]` target to a URL + existence flag. Null renders
      *        wiki links as plain text.
+     * @param (callable(string): string)|null $externalLinkRewriter
+     *        Given a raw (decoded) external http(s) URL that passed the safe-scheme
+     *        whitelist, return a replacement href (e.g. a same-origin /exit?to=…
+     *        interstitial URL). The result is HTML-escaped before output. Null
+     *        leaves external links untouched.
      */
-    public function render(string $markdown, ?callable $wikiResolver = null): string
+    public function render(string $markdown, ?callable $wikiResolver = null, ?callable $externalLinkRewriter = null): string
     {
         $text  = str_replace(["\r\n", "\r"], "\n", $markdown);
         $lines = explode("\n", $text);
@@ -63,7 +68,7 @@ final class Markdown
             // ATX heading.
             if (preg_match('/^(#{1,6})\s+(.*?)\s*#*\s*$/', $line, $m) === 1) {
                 $level  = strlen($m[1]);
-                $html[] = "<h{$level}>" . $this->inline($m[2], $wikiResolver) . "</h{$level}>";
+                $html[] = "<h{$level}>" . $this->inline($m[2], $wikiResolver, $externalLinkRewriter) . "</h{$level}>";
                 continue;
             }
 
@@ -74,7 +79,7 @@ final class Markdown
                     $buf[] = $mm[1];
                     $i++;
                 }
-                $inner = array_map(fn(string $l): string => $this->inline($l, $wikiResolver), $buf);
+                $inner = array_map(fn(string $l): string => $this->inline($l, $wikiResolver, $externalLinkRewriter), $buf);
                 $html[] = '<blockquote><p>' . implode('<br>', $inner) . '</p></blockquote>';
                 continue;
             }
@@ -88,7 +93,7 @@ final class Markdown
                     $i++;
                 }
                 $tag = $ordered ? 'ol' : 'ul';
-                $li  = array_map(fn(string $it): string => '<li>' . $this->inline($it, $wikiResolver) . '</li>', $items);
+                $li  = array_map(fn(string $it): string => '<li>' . $this->inline($it, $wikiResolver, $externalLinkRewriter) . '</li>', $items);
                 $html[] = "<{$tag}>" . implode('', $li) . "</{$tag}>";
                 continue;
             }
@@ -100,7 +105,7 @@ final class Markdown
                 $buf[] = $lines[$i + 1];
                 $i++;
             }
-            $para = array_map(fn(string $l): string => $this->inline($l, $wikiResolver), $buf);
+            $para = array_map(fn(string $l): string => $this->inline($l, $wikiResolver, $externalLinkRewriter), $buf);
             $html[] = '<p>' . implode('<br>', $para) . '</p>';
         }
 
@@ -131,8 +136,11 @@ final class Markdown
     // Inline
     // -------------------------------------------------------------------------
 
-    /** @param (callable(string): array{url:string,exists:bool})|null $wiki */
-    private function inline(string $text, ?callable $wiki): string
+    /**
+     * @param (callable(string): array{url:string,exists:bool})|null $wiki
+     * @param (callable(string): string)|null $ext
+     */
+    private function inline(string $text, ?callable $wiki, ?callable $ext = null): string
     {
         // 1. Escape everything first — no raw HTML/script can survive.
         $text = self::esc($text);
@@ -163,8 +171,8 @@ final class Markdown
         }, $text) ?? $text;
 
         // 5. Links: [text](url)
-        $text = preg_replace_callback('/\[([^\]]+)\]\(([^)\s]+)\)/', static function (array $m): string {
-            return '<a href="' . self::safeUrl($m[2]) . '">' . $m[1] . '</a>';
+        $text = preg_replace_callback('/\[([^\]]+)\]\(([^)\s]+)\)/', static function (array $m) use ($ext): string {
+            return '<a href="' . self::safeUrl($m[2], $ext) . '">' . $m[1] . '</a>';
         }, $text) ?? $text;
 
         // 6. Bold then italic.
@@ -187,12 +195,29 @@ final class Markdown
         return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
     }
 
-    /** Whitelist link/image URLs; anything not clearly safe becomes '#'. */
-    private static function safeUrl(string $escapedUrl): string
+    /**
+     * Whitelist link/image URLs; anything not clearly safe becomes '#'.
+     *
+     * @param (callable(string): string)|null $ext optional external-link rewriter
+     *        (applied only to whitelisted external http(s) targets — the caller
+     *        routes them through the exit interstitial). Its result is re-escaped.
+     */
+    private static function safeUrl(string $escapedUrl, ?callable $ext = null): string
     {
         // The URL was HTML-escaped by esc(); decode for the scheme test, keep the
         // escaped form for output (safe in a double-quoted attribute).
-        $probe = strtolower(trim(html_entity_decode($escapedUrl, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-        return preg_match(self::SAFE_URL, $probe) === 1 ? $escapedUrl : '#';
+        $decoded = html_entity_decode($escapedUrl, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $probe   = strtolower(trim($decoded));
+        if (preg_match(self::SAFE_URL, $probe) !== 1) {
+            return '#';
+        }
+        // External target → optionally route through the caller's rewriter (the
+        // exit interstitial). Matches http(s):// AND protocol-relative //host, so a
+        // `[x](//evil.tld)` can't slip past the interstitial. The rewriter returns
+        // a raw URL which we escape.
+        if ($ext !== null && preg_match('#^(https?:)?//#i', $probe) === 1) {
+            return self::esc($ext(trim($decoded)));
+        }
+        return $escapedUrl;
     }
 }

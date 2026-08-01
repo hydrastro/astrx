@@ -114,8 +114,28 @@ final class LoginController extends AbstractController
         // session starts clean.
         $this->resetLoginFailCount();
 
-        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string} $userData */
+        /** @var array{id:string,username:string,display_name:string,type:int,verified:bool|int,avatar:bool|int,mailbox?:string,password?:string} $userData */
         $userData = $loginResult->unwrap();
+
+        // ── Second factor gate ────────────────────────────────────────────────
+        // Password verified. If this account has TOTP on, DO NOT grant the session
+        // yet — the session only becomes authenticated at session->login(), which
+        // we defer to the /login-2fa challenge. Remember-me (a session-lifetime
+        // cookie set inside userService->login) is harmless meanwhile: it just
+        // extends an as-yet-UNauthenticated session. API-key logins never reach
+        // here, so they are unaffected.
+        $uid = is_scalar($userData['id'] ?? null) ? (string) $userData['id'] : '';
+        if ($uid !== '' && $this->userService->isTotpEnabled($uid)) {
+            unset($userData['password']); // never stash the hash in the session
+            $this->session->storeImapPassword($password); // encrypted; survives to post-2FA
+            $_SESSION['astrx_pending_2fa']      = $uid;
+            $_SESSION['astrx_pending_2fa_data'] = $userData;
+            $_SESSION['astrx_pending_2fa_ts']   = time();
+            Response::redirect($this->urlGen->toPage($this->t->t('WORDING_TWOFA')))
+                ->send()->drainTo($this->collector);
+            exit;
+        }
+
         $this->session->login($userData);
         // Store cleartext password in the AES-encrypted session so webmail
         // can connect to IMAP without re-prompting the user.

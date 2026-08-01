@@ -64,6 +64,17 @@ final class Gate
     }
 
     /**
+     * The configured role → permission-pattern grants — read-only, for the R14
+     * admin roles / sensitive-levers viewer.
+     *
+     * @return array<string, list<string>>
+     */
+    public function grants(): array
+    {
+        return $this->grants;
+    }
+
+    /**
      * Register a policy for a resource class.
      * Called by the controller or a service provider at boot time.
      */

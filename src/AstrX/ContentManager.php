@@ -558,6 +558,22 @@ final class ContentManager
             exit;
         }
 
+        // ── Panic / lockdown gate ─────────────────────────────────────────────
+        // When the operator flips panic on, every NON-admin request is sealed off.
+        // This deliberately runs at the SETTLING GET / dispatch point, where $page
+        // is the REAL executor: for a PRG mutation that is the prg_id's target (the
+        // getUrl redirect above), NOT the POST landing URL — which is exactly the
+        // hole the earlier intake-level gate left open (exempt /login as a landing,
+        // mutate elsewhere). API controllers run through this same dispatch, so the
+        // API path is covered here too. Login + captcha + the error page stay open
+        // so an admin can still authenticate and lift the lockdown.
+        if ($this->panicActive()
+            && $this->gate->cannot(Permission::ADMIN_ACCESS)
+            && !self::isPanicExempt($page)) {
+            $this->renderPanicLockdown($request);
+            return;
+        }
+
         // Load lang files for the current page and all its ancestors (bottom-up order,
         // so more-specific pages override ancestor values where keys overlap).
         // This replaces the old 'extra_lang_domains' config list — just add pages to the
@@ -644,7 +660,11 @@ final class ContentManager
 
         // Dispatch the comment controller if comments are enabled on this page.
         // This runs AFTER the main controller so it can see any vars already set.
-        if ($page->comments) {
+        // Also honour a panic lockdown for non-admins: the gate above already
+        // sealed non-exempt pages, but an exempt page that happened to have
+        // comments enabled would otherwise still accept a guest comment — deny it.
+        if ($page->comments
+            && !($this->panicActive() && $this->gate->cannot(Permission::ADMIN_ACCESS))) {
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
             $this->translator->loadDomain(langDir(), 'Comment');
@@ -1065,6 +1085,93 @@ final class ContentManager
         } catch (\Throwable) {
             return '';
         }
+    }
+
+    /** Is the operator's panic / lockdown switch on? (site_config panic_active = '1'). */
+    private function panicActive(): bool
+    {
+        try {
+            $pdoRes = $this->injector->getClass(\PDO::class);
+            if (!$pdoRes->isOk()) { return false; }
+            $pdo = $pdoRes->unwrap();
+            if (!$pdo instanceof \PDO) { return false; }
+            $stmt = $pdo->prepare("SELECT `value` FROM `site_config` WHERE `key` = 'panic_active' LIMIT 1");
+            $stmt->execute();
+            $v = $stmt->fetchColumn();
+            return is_string($v) && $v === '1';
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** The operator-set lockdown message shown on the panic page (site_config), or a default. */
+    private function panicMessage(): string
+    {
+        try {
+            $pdoRes = $this->injector->getClass(\PDO::class);
+            if ($pdoRes->isOk()) {
+                $pdo = $pdoRes->unwrap();
+                if ($pdo instanceof \PDO) {
+                    $stmt = $pdo->prepare("SELECT `value` FROM `site_config` WHERE `key` = 'panic_message' LIMIT 1");
+                    $stmt->execute();
+                    $v = $stmt->fetchColumn();
+                    if (is_string($v) && trim($v) !== '') {
+                        return trim($v);
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // fall through to the default
+        }
+        return 'This service is temporarily unavailable. Please check back later.';
+    }
+
+    /**
+     * Pages that stay reachable during a panic lockdown — the login page and the
+     * assets it needs (captcha) plus the error page — so an admin can still sign
+     * in and lift the lockdown. Keyed on file_name (never translated/editable).
+     */
+    private static function isPanicExempt(Page $page): bool
+    {
+        // 'twofa' is the second-factor challenge: a TOTP-protected admin lands
+        // there mid-login, so it must stay open or they could never sign in to
+        // lift the lockdown.
+        return in_array($page->fileName, ['login', 'twofa', 'captcha_image', 'captcha_frame', 'error'], true);
+    }
+
+    /** Emit the lockdown response (503) — JSON for API callers, a minimal no-JS page otherwise. */
+    private function renderPanicLockdown(Request $request): void
+    {
+        http_response_code(HttpStatus::SERVICE_UNAVAILABLE->value);
+
+        if ($request->isApi()) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json; charset=utf-8');
+                header('Retry-After: 3600');
+            }
+            echo json_encode([
+                'ok'     => false,
+                'status' => 503,
+                'error'  => ['id' => 'astrx.panic/locked', 'message' => 'Service temporarily locked.'],
+            ], JSON_UNESCAPED_SLASHES);
+            return;
+        }
+
+        $this->emitSecurityHeaders();
+        if (!headers_sent()) {
+            header('Retry-After: 3600');
+        }
+        $safe = htmlspecialchars($this->panicMessage(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        echo <<<HTML
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><meta name="robots" content="noindex,nofollow"><title>Temporarily unavailable</title></head>
+        <body>
+          <h1>Temporarily unavailable</h1>
+          <p>{$safe}</p>
+        </body>
+        </html>
+        HTML;
     }
 
     private function renderError(HttpStatus $status): void

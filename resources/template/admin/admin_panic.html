@@ -1,0 +1,33 @@
+<h2>{{panic_heading}}</h2>
+<p>{{panic_intro}}</p>
+
+{{#panic_active}}
+<p class="warning"><strong>{{status_on}}</strong></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="disable">
+    <p><input type="submit" value="{{btn_disable}}" class="input"></p>
+</form>
+{{/panic_active}}
+{{^panic_active}}
+<p><strong>{{status_off}}</strong></p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="enable">
+    <p><input type="submit" value="{{btn_enable}}" class="input"></p>
+</form>
+{{/panic_active}}
+
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="save_message">
+    <p>
+        <label for="message">{{label_message}}:</label><br>
+        <textarea name="message" id="message" rows="4" class="input">{{panic_message}}</textarea>
+    </p>
+    <p><small>{{message_hint}}</small></p>
+    <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>

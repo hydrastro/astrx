@@ -1,0 +1,48 @@
+<h2>{{tip_heading}}</h2>
+<p>{{tip_intro}}</p>
+
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="save_pubkey">
+    <p>
+        <label for="pubkey">{{label_pubkey}}:</label><br>
+        <input type="text" name="pubkey" id="pubkey" class="input" value="{{pubkey}}">
+    </p>
+    {{#pubkey_bad}}<p class="warning">{{pubkey_bad_msg}}</p>{{/pubkey_bad}}
+    <p><small>{{hint_keygen}}</small></p>
+    <p><input type="submit" value="{{btn_save}}" class="input"></p>
+</form>
+
+<h3>{{queue_heading}} ({{count}})</h3>
+<p><small>{{hint_decrypt}}</small></p>
+{{#has_tips}}
+<table class="input">
+    <tr><th>#</th><th>{{label_time}}</th><th>{{label_sealed}}</th><th></th></tr>
+    {{#tips}}
+    <tr>
+        <td>{{id}}</td>
+        <td>{{created_at}}</td>
+        <td><pre class="tipline_sealed">{{sealed}}</pre></td>
+        <td>
+            <form method="POST">
+                <input type="hidden" name="prg_id" value="{{prg_id}}">
+                <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="id" value="{{id}}">
+                <input type="submit" value="{{btn_delete}}" class="input">
+            </form>
+        </td>
+    </tr>
+    {{/tips}}
+</table>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="purge">
+    <p><input type="submit" value="{{btn_purge}}" class="input"></p>
+</form>
+{{/has_tips}}
+{{^has_tips}}
+<p>{{none_yet}}</p>
+{{/has_tips}}

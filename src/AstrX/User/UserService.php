@@ -188,6 +188,94 @@ final class UserService
     public function allowLoginNonVerifiedUsers(): bool   { return $this->allowLoginNonVerified; }
 
     // -------------------------------------------------------------------------
+    // TOTP (two-factor auth)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Read a user's TOTP state (safe: any error → disabled/empty).
+     *
+     * @return array{enabled:bool,secret:string,recovery:list<string>}
+     */
+    public function totpInfo(string $hexId): array
+    {
+        $off = ['enabled' => false, 'secret' => '', 'recovery' => []];
+        $r = $this->repo->getTotp($hexId);
+        if (!$r->isOk()) {
+            return $off;
+        }
+        $row = $r->unwrap();
+        if (!is_array($row)) {
+            return $off;
+        }
+        $secret  = is_scalar($row['totp_secret'] ?? null) ? (string) $row['totp_secret'] : '';
+        $enabled = $this->intVal($row['totp_enabled'] ?? null) === 1 && $secret !== '';
+        $recovery = [];
+        $rawRec = $row['totp_recovery'] ?? null;
+        if (is_string($rawRec) && $rawRec !== '') {
+            $decoded = json_decode($rawRec, true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $h) {
+                    if (is_string($h) && $h !== '') {
+                        $recovery[] = $h;
+                    }
+                }
+            }
+        }
+        return ['enabled' => $enabled, 'secret' => $secret, 'recovery' => $recovery];
+    }
+
+    /** Is TOTP active for this user? */
+    public function isTotpEnabled(string $hexId): bool
+    {
+        return $this->totpInfo($hexId)['enabled'];
+    }
+
+    /**
+     * Enable (or re-persist) TOTP: store secret + enabled + recovery-code hashes.
+     *
+     * @param list<string> $recoveryHashes
+     * @return Result<bool>
+     */
+    public function enableTotp(string $hexId, string $secret, array $recoveryHashes): Result
+    {
+        $json = json_encode(array_values($recoveryHashes));
+        return $this->repo->setTotp($hexId, $secret, true, $json === false ? '[]' : $json);
+    }
+
+    /**
+     * Disable TOTP and wipe the secret + recovery codes.
+     *
+     * @return Result<bool>
+     */
+    public function disableTotp(string $hexId): Result
+    {
+        return $this->repo->setTotp($hexId, null, false, null);
+    }
+
+    /**
+     * Record a post-password authentication failure (a wrong TOTP / recovery code
+     * at the /login-2fa challenge) against the SAME brute-force counter the
+     * password path uses, and lock the account when the threshold is reached.
+     * This is what stops an attacker who already has the password from online-
+     * guessing TOTP codes: once locked, userService->login() rejects the password
+     * step too, so they cannot reopen a fresh challenge window until the cooldown.
+     * Mirrors the lockout logic in login(). Returns true if the account is now locked.
+     */
+    public function registerAuthFailure(string $hexId): bool
+    {
+        if ($hexId === '' || $this->loginLockoutThreshold <= 0) {
+            return false;
+        }
+        $attempts = $this->repo->loginAttemptsFor($hexId);
+        $this->repo->updateLoginAttempts($hexId, +1);
+        if (($attempts + 1) >= $this->loginLockoutThreshold) {
+            $this->repo->setLockout($hexId, time() + $this->loginLockoutCooldown);
+            return true;
+        }
+        return false;
+    }
+
+    // -------------------------------------------------------------------------
     // Captcha policy
     // -------------------------------------------------------------------------
 
