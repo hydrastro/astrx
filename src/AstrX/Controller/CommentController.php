@@ -199,8 +199,12 @@ final class CommentController extends AbstractController
         $order      = is_string($orderRaw) ? $orderRaw : self::DEFAULT_ORDER;
         $descending = ($order === 'desc');
         $perPage    = $this->commentService->commentsPerPage();
+        // R11 (LOW): a REQUEST-supplied count is clamped to [1,200] — a public
+        // ?cs=0 must NOT force an unpaged full-page comment load (onion-bandwidth
+        // amplification). Only the admin default ($perPage) may be 0 (= show all),
+        // matching Pagination::fromRequest's MAX_REQUEST_PER_PAGE cap.
         $csPerPage  = ($this->request->query()->get(self::CP_SHOW) !== null)
-            ? max(0, (is_numeric($csShowRaw2 = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw2 : 0))
+            ? max(1, min(200, (is_numeric($csShowRaw2 = $this->request->query()->get(self::CP_SHOW)) ? (int)$csShowRaw2 : 1)))
             : $perPage;
         $indent     = ($this->request->query()->get(self::CP_INDENT) !== null)
             ? (is_numeric($indRaw = $this->request->query()->get(self::CP_INDENT)) ? (int)$indRaw : self::DEFAULT_INDENT)
@@ -288,6 +292,16 @@ final class CommentController extends AbstractController
                     'is_own'       => $this->session->isLoggedIn()
                                       && $row['user_id'] === $this->session->userId(),
                 ];
+
+            // R11 (HIGH): $row carries every DB column, including a guest
+            // commenter's self-submitted `email` (PII / deanonymization) and the
+            // internal `flagged`/`hidden` moderation state. This item is published
+            // to the API via ContextScope::SHARED, so on a page that is BOTH
+            // api_enabled and comments-enabled (the seeded front page is both) an
+            // UNAUTHENTICATED API caller would receive them. The HTML template
+            // renders none of these — strip them so the API projection can never
+            // expose more than the web view. ($isHidden was already captured.)
+            unset($enriched['email'], $enriched['flagged'], $enriched['hidden']);
 
             // reply_url MUST be set before the section wrappers below.
             // The snapshot [$enriched] is taken by value — any key added after

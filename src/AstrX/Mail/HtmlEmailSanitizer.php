@@ -94,6 +94,20 @@ final class HtmlEmailSanitizer
             }
         }
 
+        // ── 1b. Strip comment and processing-instruction nodes (R11 HIGH) ────
+        // libxml parses "<!--><img src=x onerror=...>-->" as a SINGLE comment
+        // node, and the allowlist walk below descends only into DOMElement — so
+        // an <img> hidden inside a comment is never seen by the walker and is
+        // emitted verbatim by extractBody(). The browser then re-parses "<!-->"
+        // as an ABRUPTLY-CLOSED empty comment (HTML5), making the following tag
+        // LIVE → its onerror fires = stored XSS on message view. Comments (and
+        // PIs) carry no display value in webmail, so remove them before serialize.
+        foreach (iterator_to_array($xpath->query('//comment() | //processing-instruction()') ?: new \ArrayIterator()) as $node) {
+            if ($node instanceof \DOMNode && $node->parentNode instanceof \DOMNode) {
+                $node->parentNode->removeChild($node);
+            }
+        }
+
         // ── 2. Allowlist walk: unwrap unknown tags, strip attributes, validate
         //       URL schemes, block remote images, harden links. Depth-first so
         //       an unwrapped element's already-sanitised children move up clean.

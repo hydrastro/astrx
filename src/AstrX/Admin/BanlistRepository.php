@@ -190,8 +190,15 @@ final class BanlistRepository
             $rows = $banStmt->fetchAll(PDO::FETCH_ASSOC);
             /** @var list<array<string,mixed>> $rows */
             foreach ($rows as $row) {
-                if (self::ipMatchesCidr($packedIp, is_scalar($row['network']) ? (string)$row['network'] : '', is_int($row['prefix_len']) ? $row['prefix_len'] : 0)) {
-                    return Result::ok(is_int($row['id']) ? $row['id'] : 0);
+                // R11 (LOW): fail CLOSED. is_int() on a fetched integer is false
+                // under non-default fetch modes (STRINGIFY_FETCHES, non-mysqlnd,
+                // BIGINT>PHP_INT_MAX), and defaulting prefix_len to 0 makes
+                // applyMask() zero every byte → the ban NEVER matches, silently
+                // un-enforcing the IP ban (fails OPEN). Use is_numeric with a /128
+                // (exact-match) fallback, mirroring Imageboard\BanRepository.
+                $prefixLen = is_int($row['prefix_len']) ? $row['prefix_len'] : (is_numeric($row['prefix_len']) ? (int)$row['prefix_len'] : 128);
+                if (self::ipMatchesCidr($packedIp, is_scalar($row['network']) ? (string)$row['network'] : '', $prefixLen)) {
+                    return Result::ok(is_int($row['id']) ? $row['id'] : (is_numeric($row['id']) ? (int)$row['id'] : 0));
                 }
             }
             return Result::ok(null);

@@ -113,6 +113,16 @@ final class AdminConfigChatController extends AbstractController
      */
     private function sectionFrom(array $p): array
     {
+        // R11 (HIGH image_embed / MED upload_dir): both are SYSTEM-level. With
+        // image_embed ON, BbcodeRenderer turns any posted image URL into an <img>
+        // that EVERY viewer's browser auto-fetches — an IP-correlation / de-
+        // anonymization channel against all chat participants on a hidden service
+        // (it defaults OFF for exactly this "TOR privacy" reason). upload_dir
+        // repoints where attachments are written and served, potentially outside
+        // the CHAT_VIEW-gated, Tor-hardened file controller. The page gate is only
+        // ADMIN_CONFIG_CHAT (a MOD may hold it); these two are admin-only, so a
+        // non-system actor's save PRESERVES the current on-disk values (R10 pattern).
+        $maySetSystem = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
         return [
             // ── Access ──────────────────────────────────────────────────────
             'guest_posting'           => self::mBool($p, 'guest_posting'),
@@ -135,7 +145,7 @@ final class AdminConfigChatController extends AbstractController
             'link_conversion'         => self::mBool($p, 'link_conversion'),
             'announce_join_leave'     => self::mBool($p, 'announce_join_leave'),
             'announce_mod_actions'    => self::mBool($p, 'announce_mod_actions'),
-            'image_embed'             => self::mBool($p, 'image_embed'),
+            'image_embed'             => $maySetSystem ? self::mBool($p, 'image_embed') : $this->chatConfig->imageEmbed(),
             // ── Rate limiting / flood ───────────────────────────────────────
             'min_flood_secs'          => self::mInt($p, 'min_flood_secs', 3),
             'flood_mute_secs'         => self::mInt($p, 'flood_mute_secs', 30),
@@ -189,7 +199,7 @@ final class AdminConfigChatController extends AbstractController
             'upload_max_kb'           => self::mInt($p, 'upload_max_kb', 2048),
             'upload_max_dimension'    => self::mInt($p, 'upload_max_dimension', 1600),
             'upload_types'            => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
-            'upload_dir'              => self::mStr($p, 'upload_dir', ''),
+            'upload_dir'              => $maySetSystem ? self::mStr($p, 'upload_dir', '') : $this->chatConfig->uploadDirRaw(),
         ];
     }
 

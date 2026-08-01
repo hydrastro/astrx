@@ -105,7 +105,13 @@ final class FeedController extends AbstractController
             $xml .= '    <link rel="alternate" href="' . $this->xmlAttr($entryUrl) . '" type="text/html"/>' . "\n";
             $xml .= '    <published>' . $this->xmlText($created) . '</published>' . "\n";
             $xml .= '    <updated>'   . $this->xmlText($created) . '</updated>' . "\n";
-            $xml .= '    <content type="html">' . $this->xmlText($content) . '</content>' . "\n";
+            // R10 LOW: the homepage renders news via an ESCAPED placeholder
+            // ({{content}} in main.html), i.e. news bodies are shown as literal
+            // text, not HTML. Declaring type="html" here would make a feed reader
+            // XML-unescape and then interpret the body AS HTML — diverging from
+            // the on-site view (and letting an authored '<' become a tag). type=
+            // "text" makes readers render it literally, matching the site.
+            $xml .= '    <content type="text">' . $this->xmlText($content) . '</content>' . "\n";
             $xml .= '  </entry>' . "\n";
         }
 
@@ -114,9 +120,12 @@ final class FeedController extends AbstractController
         http_response_code(200);
         if (!headers_sent()) {
             header('Content-Type: application/atom+xml; charset=utf-8');
-            // 1-hour cache. Aggressive enough to be polite to scrapers,
-            // gentle enough that fresh news shows up reasonably quickly.
-            header('Cache-Control: public, max-age=3600');
+            // R11 (LOW): private, no-store. In cookieless REWRITE mode the feed's
+            // self/entry links (built via UrlGenerator / the request path) carry
+            // the URL session id, and 'public' let a shared cache store — and
+            // potentially serve cross-user — that sid-bearing document. Never
+            // shared-cache a body that can contain a session id.
+            header('Cache-Control: private, no-store');
             header('Content-Length: ' . (string) strlen($xml));
         }
         echo $xml;

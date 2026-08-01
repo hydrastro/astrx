@@ -220,8 +220,24 @@ final class AdminConfigImageboardController extends AbstractController
         // setters) so the persisted config file can never hold an out-of-range
         // value — e.g. upload_max_pixels can't be driven to 0 to disable the
         // decompression-bomb guard.
+        //
+        // R10 RBAC-F1 (HIGH): strip_exif and store_poster_ip are ANONYMITY-
+        // critical. Turning strip_exif OFF leaks EXIF/GPS metadata from every
+        // uploaded image; turning store_poster_ip ON begins logging poster IPs —
+        // both DEANONYMIZE posters on a hidden-service board. The page gate is
+        // only ADMIN_CONFIG_IMAGEBOARD (a MOD may hold it), but these two knobs
+        // are system-level. So a non-system actor's save PRESERVES the current
+        // persisted values (mirrors the R9-02 site_url precedent); only an actor
+        // with ADMIN_CONFIG_SYSTEM can change them.
+        $maySetAnonymity = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
+        $stripExif     = $maySetAnonymity ? self::mBool($p, 'strip_exif')      : $this->config->stripExif();
+        $storePosterIp = $maySetAnonymity ? self::mBool($p, 'store_poster_ip') : $this->config->storePosterIp();
+
         return [
-            'upload_dir'          => self::mStr($p, 'upload_dir', ''),
+            // R11 (MED): upload_dir is system-level (repoints where board uploads
+            // are written/served, potentially outside the BOARD_VIEW-gated file
+            // controller); preserve it for a non-system actor like the two knobs above.
+            'upload_dir'          => $maySetAnonymity ? self::mStr($p, 'upload_dir', '') : $this->config->uploadDirRaw(),
             'upload_max_kb'       => max(1,       self::mInt($p, 'upload_max_kb', 4096)),
             'upload_max_pixels'   => max(1000000, self::mInt($p, 'upload_max_pixels', 16000000)),
             'full_max_dimension'  => max(64,      self::mInt($p, 'full_max_dimension', 1600)),
@@ -229,9 +245,9 @@ final class AdminConfigImageboardController extends AbstractController
             'upload_types'        => self::mStr($p, 'upload_types', 'jpg,jpeg,png,gif,webp'),
             'anon_name'           => self::mStr($p, 'anon_name', 'Anonymous'),
             'guest_captcha'       => self::mBool($p, 'guest_captcha'),
-            'strip_exif'          => self::mBool($p, 'strip_exif'),
+            'strip_exif'          => $stripExif,
             'allow_authenticated_posts' => self::mBool($p, 'allow_authenticated_posts'),
-            'store_poster_ip'     => self::mBool($p, 'store_poster_ip'),
+            'store_poster_ip'     => $storePosterIp,
             'default_max_replies' => max(0,       self::mInt($p, 'default_max_replies', 500)),
             'flag_base_path'      => self::mStr($p, 'flag_base_path', '/flags'),
             'threads_per_page'    => max(1,       self::mInt($p, 'threads_per_page', 10)),

@@ -192,7 +192,13 @@ final class ContentManager
             unset($_COOKIE[session_name()]);
         }
 
-        if (!$sessionUseCookies && $sidCandidate !== null) {
+        // R10: exclude bearer requests from URL-sid adoption too. In cookieless
+        // mode the sid rides in the URL; without this guard a bearer call would
+        // adopt a victim-supplied sid and loginFromApiKey() would then overwrite
+        // THAT session with the API-key identity — poisoning the victim's session.
+        // A bearer request must run on a throwaway session (mirrors the cookie
+        // unset above).
+        if (!$sessionUseCookies && $sidCandidate !== null && !$bearerPresent) {
             if ($sessionHandler->validateId($sidCandidate)) {
                 session_id($sidCandidate);
             }
@@ -292,6 +298,46 @@ final class ContentManager
                             if (is_array($row) && !empty($row['id']) && empty($row['deleted']) && $accountOpen) {
                                 /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
                                 $userSess->loginFromApiKey($row);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Cookie-session re-validation (R11, MED) ───────────────────────────
+        // The Gate resolves a request's role from SESSION state, written once at
+        // login and never re-checked against the DB. Without this, an admin action
+        // that demotes, bans, or deletes a user does NOT take effect until that
+        // user logs out or the session expires (up to the remember-me lifetime) —
+        // so a rogue/compromised privileged account can't be evicted, which is a
+        // core incident-response need. Re-load the row per request for a logged-in
+        // COOKIE session (the bearer path did its own check above): drop the
+        // session if the account is now closed/deleted; otherwise refresh the
+        // cached group so a role change applies immediately. Fails OPEN on a DB
+        // error (a transient hiccup must not mass-logout everyone).
+        if (!$bearerPresent) {
+            $revSessRes = $this->injector->createClass(\AstrX\User\UserSession::class)->drainTo($this->collector);
+            $revRepoRes = $this->injector->createClass(\AstrX\User\UserRepository::class)->drainTo($this->collector);
+            if ($revSessRes->isOk() && $revRepoRes->isOk()) {
+                /** @var \AstrX\User\UserSession $revSess */
+                $revSess = $revSessRes->unwrap();
+                /** @var \AstrX\User\UserRepository $revRepo */
+                $revRepo = $revRepoRes->unwrap();
+                if ($revSess->isLoggedIn() && $revSess->userId() !== '') {
+                    $rowRes = $revRepo->findById($revSess->userId());
+                    $rowRes->drainTo($this->collector);
+                    if ($rowRes->isOk()) {
+                        $row = $rowRes->unwrap();
+                        if (!is_array($row)) {
+                            $revSess->logout();   // row vanished → session no longer valid
+                        } else {
+                            $delMode     = is_scalar($row['deletion_mode'] ?? null) ? (string) $row['deletion_mode'] : '';
+                            $accountOpen = ($delMode === '' || $delMode === 'none');
+                            if (!empty($row['deleted']) || !$accountOpen) {
+                                $revSess->logout();
+                            } elseif (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
+                                $revSess->refreshType((int) $row['type']);
                             }
                         }
                     }

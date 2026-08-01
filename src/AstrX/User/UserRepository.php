@@ -296,7 +296,13 @@ final class UserRepository
             ? 'UPDATE `user` SET `login_attempts` = `login_attempts` + :d WHERE `id` = UNHEX(:id)'
             : 'UPDATE `user` SET `login_attempts` = 0 WHERE `id` = UNHEX(:id)';
 
-        return $this->exec($sql, [':d' => abs($delta), ':id' => $hexId]);
+        // The reset branch's SQL has no :d placeholder; binding it anyway throws
+        // HY093 under native prepares (the shipped emulate_prepares=false), which
+        // exec() swallows → the reset silently no-ops so login_attempts only ever
+        // grows, progressively locking out legitimate users (R10). Bind :d only
+        // when the SQL actually uses it.
+        $params = $delta >= 0 ? [':d' => abs($delta), ':id' => $hexId] : [':id' => $hexId];
+        return $this->exec($sql, $params);
     }
 
     /**

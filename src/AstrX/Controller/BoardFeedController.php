@@ -105,6 +105,10 @@ final class BoardFeedController extends AbstractController
         header('Content-Type: application/atom+xml; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
         header('Referrer-Policy: no-referrer');
+        // R11 (LOW): the feed's UrlGenerator-built links carry the URL session id
+        // in cookieless rewrite mode; never let a shared cache store this
+        // sid-bearing body (matches the news feed / sitemap policy).
+        header('Cache-Control: private, no-store');
         echo $xml;
         exit;
     }

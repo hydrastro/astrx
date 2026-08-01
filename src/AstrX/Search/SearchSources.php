@@ -98,11 +98,20 @@ final class SearchSources
     public function crawlPages(int $afterId, int $limit): array
     {
         $stmt = $this->pdo->prepare(
+            // R11 (MED): honor the noindex contract every OTHER layer enforces
+            // (page_robots.index=0, the controller's X-Robots-Tag, robots.txt).
+            // Without the page_robots join the crawler indexed the bot-trap
+            // honeypot (seeded template=1, hidden=0, robots index=0) and the
+            // noindex auth-gated pages into PUBLIC first-party search — surfacing
+            // the trap as a clickable result that tarpits real users and logs them
+            // as bots, poisoning the operator's abuse signal.
             "SELECT p.id, p.url_id, p.i18n, pm.title, pm.description
                FROM page p
                JOIN page_meta pm ON pm.page_id = p.id
+               LEFT JOIN page_robots pr ON pr.page_id = p.id
               WHERE p.hidden = 0
                 AND p.template = 1
+                AND COALESCE(pr.`index`, 1) = 1
                 AND p.file_name NOT LIKE 'admin%'
                 AND p.id > :after
               ORDER BY p.id ASC
@@ -258,14 +267,98 @@ final class SearchSources
         return $out;
     }
 
+    // =========================================================================
+    // Query-time re-validation (R11 / R10-deferred MED). The FULLTEXT index
+    // stores title/body/url as they were at CRAWL time, so a row hidden,
+    // deleted, banned or deactivated SINCE the last crawl would keep surfacing
+    // until the next crawl re-sweeps it out. Re-check every index hit against
+    // LIVE visibility — one bounded IN(...) query per doc_type present — and drop
+    // the suppressed ones. Predicates mirror the crawl*() visibility rules.
+    // =========================================================================
+
+    /**
+     * @param  list<array{type:string,ref_id:int,title:string,excerpt:string,url:string,time:int}> $hits
+     * @return list<array{type:string,ref_id:int,title:string,excerpt:string,url:string,time:int}>
+     */
+    public function revalidate(array $hits): array
+    {
+        if ($hits === []) { return []; }
+        /** @var array<string,list<int>> $idsByType */
+        $idsByType = [];
+        foreach ($hits as $h) {
+            $idsByType[$h['type']][] = $h['ref_id'];
+        }
+        /** @var array<string,array<int,true>> $visible */
+        $visible = [];
+        foreach ($idsByType as $type => $ids) {
+            $visible[$type] = $this->visibleIds($type, array_values(array_unique($ids)));
+        }
+        $out = [];
+        foreach ($hits as $h) {
+            if (isset($visible[$h['type']][$h['ref_id']])) {
+                $out[] = $h;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Subset of $ids whose row is still live-visible for $type, as a set. Fails
+     * CLOSED: an unknown type or a query error yields "none visible", so a
+     * suppressed/stale hit is never served when validation can't run.
+     *
+     * @param  list<int> $ids
+     * @return array<int,true>
+     */
+    private function visibleIds(string $type, array $ids): array
+    {
+        if ($ids === []) { return []; }
+        $place = implode(',', array_fill(0, count($ids), '?'));
+        $sql = match ($type) {
+            self::TYPE_NEWS     => "SELECT id FROM news WHERE hidden = 0 AND id IN ($place)",
+            self::TYPE_PAGES    => "SELECT p.id FROM page p
+                                      LEFT JOIN page_robots pr ON pr.page_id = p.id
+                                     WHERE p.hidden = 0 AND p.template = 1
+                                       AND COALESCE(pr.`index`, 1) = 1
+                                       AND p.file_name NOT LIKE 'admin%' AND p.id IN ($place)",
+            self::TYPE_COMMENTS => "SELECT c.id FROM comment c
+                                      JOIN page pg ON pg.id = c.page_id
+                                     WHERE c.hidden = 0 AND pg.hidden = 0 AND c.id IN ($place)",
+            self::TYPE_BOARD    => "SELECT p.id FROM board_post p
+                                      JOIN board b ON b.id = p.board_id AND b.active = 1
+                                     WHERE p.banned = 0 AND p.id IN ($place)",
+            default             => null,
+        };
+        if ($sql === null) { return []; }
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($ids as $i => $id) { $stmt->bindValue($i + 1, $id, PDO::PARAM_INT); }
+            $stmt->execute();
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (\PDOException) {
+            return [];
+        }
+        $set = [];
+        foreach ($rows as $r) {
+            $set[$this->i($r['id'] ?? null)] = true;
+        }
+        return $set;
+    }
+
     /** @return list<array{type:string,ref_id:int,title:string,excerpt:string,url:string,time:int}> */
     public function livePages(string $like, int $limit): array
     {
         $stmt = $this->pdo->prepare(
+            // R11 (MED): mirror crawlPages — exclude noindex pages (bot-trap +
+            // auth-gated) from the live fallback too, so they never surface.
             "SELECT p.id, p.url_id, p.i18n, pm.title, pm.description
                FROM page p
                JOIN page_meta pm ON pm.page_id = p.id
+               LEFT JOIN page_robots pr ON pr.page_id = p.id
               WHERE p.hidden = 0
+                AND p.template = 1
+                AND COALESCE(pr.`index`, 1) = 1
                 AND p.file_name NOT LIKE 'admin%'
                 AND (pm.title LIKE :q ESCAPE '\\\\' OR pm.description LIKE :q2 ESCAPE '\\\\')
               ORDER BY pm.title ASC

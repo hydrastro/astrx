@@ -59,7 +59,11 @@ CREATE TABLE `keyword`
 (
     `id`      INT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
     `keyword` VARCHAR(64) NOT NULL,
-    `i18n`    TINYINT     NOT NULL DEFAULT 0
+    `i18n`    TINYINT     NOT NULL DEFAULT 0,
+    -- R11: natural key so re-running tables.sql (setup re-entry runs it in full,
+    -- unconditionally) can't duplicate seed keywords; paired with INSERT IGNORE
+    -- on the seed below. keyword is only ever populated by that seed.
+    UNIQUE KEY `uq_keyword` (`keyword`, `i18n`)
 );
 
 CREATE TABLE `page_keyword`
@@ -98,7 +102,11 @@ CREATE TABLE `page_template`
 CREATE TABLE `navbar`
 (
     `id`   INT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(64) NOT NULL
+    `name` VARCHAR(64) NOT NULL,
+    -- R11: navbar names are unique — only 'public'/'user'/'admin' are ever
+    -- created (no dynamic navbar creation), so this + INSERT IGNORE makes the
+    -- seed idempotent when tables.sql is re-run on setup re-entry.
+    UNIQUE KEY `uq_navbar_name` (`name`)
 );
 
 CREATE TABLE `navbar_pin`
@@ -552,7 +560,7 @@ VALUES
     (18,28),(18,29),(18,30);
 
 
-INSERT INTO `keyword` (keyword, i18n)
+INSERT IGNORE INTO `keyword` (keyword, i18n)
 VALUES
     ('WORDING_MAIN_PAGE',   1), ('WORDING_INDEX',       1), ('User',                0),
     ('Profile',             0), ('Login',               0), ('Register',            0),
@@ -587,16 +595,24 @@ VALUES
 -- Navbars
 -- ----------------------------------------------------------
 
-INSERT INTO `navbar` (name) VALUES ('public'), ('user'), ('admin');
+INSERT IGNORE INTO `navbar` (name) VALUES ('public'), ('user'), ('admin');
 
+-- R11: navbar_pin has NO natural UNIQUE key — two pins in one navbar can
+-- legitimately share a (navbar_id, sort_order) position (the admin editor's
+-- addPin takes a caller-supplied sort_order, default 0), so a UNIQUE would
+-- regress navbar editing. Instead seed the six pins ONLY when the table is
+-- empty, so re-running tables.sql (setup re-entry) can't duplicate them while
+-- fresh installs still get ids 1..6 in order (navbar_entry FKs depend on that).
 INSERT INTO `navbar_pin` (navbar_id, sort_order, sort_mode)
-VALUES
-    (1, 0, 1),  -- id=1  public — custom
-    (2, 0, 1),  -- id=2  user first pin (custom: User Home)
-    (2, 1, 0),  -- id=3  user middle pin (alpha: Profile, Settings, Webmail)
-    (2, 2, 1),  -- id=4  user last pin (custom: Logout)
-    (3, 0, 1),  -- id=5  admin: Dashboard (custom, single entry)
-    (3, 1, 0);  -- id=6  admin: everything else (alpha-sorted, one group)
+SELECT `navbar_id`, `sort_order`, `sort_mode` FROM (
+              SELECT 1 AS `navbar_id`, 0 AS `sort_order`, 1 AS `sort_mode`  -- id=1 public — custom
+    UNION ALL SELECT 2, 0, 1                                               -- id=2 user first pin (custom: User Home)
+    UNION ALL SELECT 2, 1, 0                                               -- id=3 user middle pin (alpha)
+    UNION ALL SELECT 2, 2, 1                                               -- id=4 user last pin (custom: Logout)
+    UNION ALL SELECT 3, 0, 1                                               -- id=5 admin: Dashboard
+    UNION ALL SELECT 3, 1, 0                                               -- id=6 admin: everything else
+) AS `seed`
+WHERE NOT EXISTS (SELECT 1 FROM `navbar_pin`);
 
 -- 24 navbar entries total
 INSERT INTO `navbar_entry_ids` ()
@@ -1536,6 +1552,19 @@ ALTER TABLE `page`
     ADD COLUMN IF NOT EXISTS `api_enabled` TINYINT NOT NULL DEFAULT 0
     AFTER `comments`;
 
+-- R10-01 (HIGH): the canonical view MUST expose `module`. tables.sql is re-run
+-- in full on every setup re-entry (runSQL in public/setup.php, NOT a
+-- checksum-tracked migration), so this final rebuild is the LAST word on the
+-- view's shape. migrate_module_page_ownership.sql adds `module` to the view on
+-- first install, but is checksum-skipped on every re-run — so without carrying
+-- `module` HERE, a re-run (the normal upgrade path) drops `module` from the
+-- view and every DISABLED module's public pages silently fail OPEN
+-- (PageHandler reads no module column -> '' -> ModulePageGuard treats it as
+-- core/always-on -> shown). Guarantee the column exists, then carry it below.
+ALTER TABLE `page`
+    ADD COLUMN IF NOT EXISTS `module` VARCHAR(32) NOT NULL DEFAULT ''
+    AFTER `api_enabled`;
+
 DROP VIEW IF EXISTS `resolved_page`;
 CREATE VIEW `resolved_page` AS
 SELECT p.id,
@@ -1547,6 +1576,7 @@ SELECT p.id,
        p.hidden,
        p.comments,
        p.api_enabled,
+       p.module,
        COALESCE(pr.`index`, 1) AS `index`,
        COALESCE(pr.follow, 1) AS follow,
        COALESCE(pm.title, '') AS title,
@@ -1559,7 +1589,7 @@ FROM `page` p
          LEFT JOIN `template`      t  ON t.id          = pt.template_id;
 
 SELECT `id`, `url_id`, `i18n`, `file_name`, `template`, `controller`,
-       `hidden`, `comments`, `api_enabled`, `index`, `follow`, `title`,
+       `hidden`, `comments`, `api_enabled`, `module`, `index`, `follow`, `title`,
        `description`, `template_file_name`
   FROM `resolved_page`
  LIMIT 1;

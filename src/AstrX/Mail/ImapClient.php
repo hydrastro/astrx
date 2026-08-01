@@ -500,7 +500,12 @@ final class ImapClient
             // this the client would silently continue and LOGIN over an
             // unencrypted / unauthenticated channel.
             $this->applyTlsContext($proxy);
-            if (stream_socket_enable_crypto($proxy, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
+            // @-suppress: a TLS-handshake failure raises E_WARNING, which the
+            // ErrorHandler turns into a forced 500 that no try/catch can rescue —
+            // defeating the intended graceful "re-login" degradation on the onion
+            // IMAPS path. The !== true check still fails closed (R7-02, matching
+            // Mailer). R10.
+            if (@stream_socket_enable_crypto($proxy, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
                 throw new \RuntimeException('IMAP TLS handshake over SOCKS5 proxy failed');
             }
         }
@@ -519,7 +524,10 @@ final class ImapClient
         // H7: pin the certificate to the configured host and honour
         // imap_verify_ssl before upgrading the plaintext IMAP stream to TLS.
         $this->applyTlsContext($socket);
-        if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+        // @-suppress the handshake warning (else the ErrorHandler forces a 500
+        // that defeats the graceful re-login path); the boolean check still fails
+        // closed before any cleartext LOGIN (R7-02, matching Mailer). R10.
+        if (!@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             return $this->err('starttls', 'TLS negotiation failed');
         }
         return Result::ok(true);
@@ -714,7 +722,10 @@ final class ImapClient
         if ($this->socket === null) {
             throw new \RuntimeException("Not connected");
         }
-        fwrite($this->socket, $data);
+        // R11: '@' so a broken-pipe write (peer RST) can't emit an E_WARNING →
+        // forced HTTP 500 (the ErrorHandler cannot be try/caught). Connection loss
+        // still surfaces through the Result flow / the 'Not connected' guard.
+        @fwrite($this->socket, $data);
     }
 
     /**
@@ -859,6 +870,12 @@ final class ImapClient
         $len    = strlen($s);
         while ($i < $len) {
             if ($s[$i] === ' ') { $i++; continue; }
+            // R10 Mail-MED: a ')' at top level is unbalanced — a well-formed
+            // "(...)" group is consumed whole by the '(' branch (which advances
+            // past its own close). A stray ')' would otherwise fall to the atom
+            // branch, whose scan stops ON ')' without advancing $i → an infinite
+            // loop on a hostile/malformed ENVELOPE from the IMAP server. Skip it.
+            if ($s[$i] === ')') { $i++; continue; }
             if ($s[$i] === '"') {
                 // Quoted string
                 $j = $i + 1;

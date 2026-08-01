@@ -256,7 +256,12 @@ final class AdminCommentsController extends AbstractController
             if ($k <= 0) { continue; }
             $regexRaw = $regexes[$i] ?? '';
             $pattern = trim(is_scalar($regexRaw) ? (string)$regexRaw : '');
-            if ($pattern === '') { continue; }
+            // R11 (MED): reject an uncompilable pattern at save so it never reaches
+            // disk — a stored bad pattern (e.g. a bare phrase with no delimiters)
+            // would 500 every subsequent public comment POST when checkAntispam
+            // runs it. Mirrors the R9 username/password_regex save-time check;
+            // checkAntispam is additionally '@'-guarded at runtime.
+            if ($pattern === '' || @preg_match($pattern, '') === false) { continue; }
             $antispam[$k] = [
                 'regex'   => $pattern,
                 'enabled' => isset($enabled[$i]),

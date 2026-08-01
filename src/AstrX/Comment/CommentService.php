@@ -156,7 +156,11 @@ final class CommentService
             /** @var array<string,mixed> $parent */
             $parent = $parentResult->unwrap();
             $ppid = $parent['page_id'] ?? 0;
-            $parentPageId = is_int($ppid) ? $ppid : 0;
+            // R10 LOW: mirror the item_id coercion below — under emulate_prepares
+            // =true PDO returns integer columns as numeric strings, so a bare
+            // is_int() check would collapse a valid page_id to 0 and reject every
+            // reply with 'reply_wrong_page'. Accept a numeric string too.
+            $parentPageId = is_int($ppid) ? $ppid : (is_numeric($ppid) ? (int) $ppid : 0);
             if ($parentPageId !== $pageId) {
                 return $this->opErr('reply_wrong_page');
             }
@@ -395,7 +399,14 @@ final class CommentService
             if (empty($rule['enabled'])) {
                 continue;
             }
-            if (preg_match((string) $rule['regex'], $content)) {
+            // R11 (MED): '@' + '=== 1' so a malformed/uncompilable stored pattern
+            // (e.g. an admin typing a bare banned phrase with no regex delimiters,
+            // or any bad pattern) cannot emit an E_WARNING → forced HTTP 500 on
+            // EVERY public comment POST. preg_match returns false on error, which
+            // '=== 1' treats as "no match", so a broken rule is skipped, not fatal.
+            // (Save-time validation in AdminCommentsController also rejects these;
+            // this mirrors the R9 username/password_regex hardening.)
+            if (@preg_match((string) $rule['regex'], $content) === 1) {
                 return (string) $rule['message'];
             }
         }

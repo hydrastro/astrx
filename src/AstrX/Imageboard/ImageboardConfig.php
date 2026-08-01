@@ -83,6 +83,9 @@ final class ImageboardConfig
     #[InjectConfig('video_max_kb')]        public function setVideoMaxKb(int $v): void         { $this->videoMaxKb = max(1, $v); }
 
     public function uploadDir(): string      { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'board_uploads'); }
+    /** Raw stored value (unresolved) — for config round-trips that must preserve
+     *  it verbatim without rewriting to a resolved absolute path (R11 storage-dir gate). */
+    public function uploadDirRaw(): string   { return $this->uploadDir; }
     public function uploadMaxKb(): int       { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int    { return $this->uploadMaxKb * 1024; }
     public function uploadMaxPixels(): int   { return $this->uploadMaxPixels; }

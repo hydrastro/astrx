@@ -83,6 +83,12 @@ final class SiteSearchService
             // Layer 1: the FULLTEXT index (may be empty/unavailable).
             [$indexHits, $indexAvailable] = $this->fromIndex($query, $type, $limit);
 
+            // R11 / R10-deferred (MED): the index stores title/body/url as they
+            // were at crawl time, so content HIDDEN/DELETED/BANNED/DEACTIVATED
+            // since indexing would keep surfacing until the next crawl. Re-check
+            // each index hit against live visibility and drop the suppressed ones.
+            $indexHits = $this->sources->revalidate($indexHits);
+
             // Layer 2: live fallback. When the index is unavailable or empty we
             // run a FULL live search (cutoff 0, pages included); otherwise only
             // rows created at/after the crawl start (oldest indexed_at) are

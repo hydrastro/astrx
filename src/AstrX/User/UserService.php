@@ -539,7 +539,7 @@ final class UserService
             if (
                 (is_int($row['token_type']) ? $row['token_type'] : 0)  === $tokenType &&
                 (is_int($row['token_used']) ? $row['token_used'] : 0)  === 0 &&
-                (is_int($row['token_expires_at']) ? $row['token_expires_at'] : 0) > time()
+                (is_numeric($row['token_expires_at']) ? (int) $row['token_expires_at'] : 0) > time()
             ) {
                 return $this->opErr('token_already_sent');
             }
@@ -590,7 +590,7 @@ final class UserService
             return $this->opErr('token_not_found');
         }
 
-        if ((is_int($row['token_expires_at']) ? $row['token_expires_at'] : 0) < time()) {
+        if ((is_numeric($row['token_expires_at']) ? (int) $row['token_expires_at'] : 0) < time()) {
             return $this->opErr('token_expired');
         }
 

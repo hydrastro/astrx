@@ -232,9 +232,14 @@ final class AdminConfigCaptchaController extends AbstractController
     private function saveContextDifficulty(array $p): Result
     {
         $full = $this->loadFullCaptchaConfig();
-        $full['CaptchaRenderer']['login_captcha_difficulty']    = self::mInt($p, 'login_captcha_difficulty', CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['register_captcha_difficulty'] = self::mInt($p, 'register_captcha_difficulty', CaptchaType::MEDIUM->value);
-        $full['CaptchaRenderer']['recover_captcha_difficulty']  = self::mInt($p, 'recover_captcha_difficulty', CaptchaType::MEDIUM->value);
+        // R11 (MED): clamp on write like comment_captcha_difficulty below. The
+        // login/register/recover consumers resolve this via CaptchaType::from(),
+        // which THROWS a ValueError (→ forced 500) on an out-of-range int. Left
+        // unclamped, a MOD (holds admin.config.captcha) could POST difficulty=99
+        // and 500 the login page site-wide — an authentication DoS.
+        $full['CaptchaRenderer']['login_captcha_difficulty']    = max(0, min(2, self::mInt($p, 'login_captcha_difficulty', CaptchaType::MEDIUM->value)));
+        $full['CaptchaRenderer']['register_captcha_difficulty'] = max(0, min(2, self::mInt($p, 'register_captcha_difficulty', CaptchaType::MEDIUM->value)));
+        $full['CaptchaRenderer']['recover_captcha_difficulty']  = max(0, min(2, self::mInt($p, 'recover_captcha_difficulty', CaptchaType::MEDIUM->value)));
         // Clamp to the CaptchaType range (0..2) at the point of storage: the
         // consumer (CommentController, guest comment form) resolves this via
         // CaptchaType::from()/tryFrom(), and an out-of-range value would

@@ -199,9 +199,11 @@ final class UserController extends AbstractController
 
         $captchaId = ''; $captchaB64 = '';
         if ($showCaptcha) {
-            $loginDifficulty = CaptchaType::from(
+            // R11: tryFrom()+fallback (not from(), which throws a ValueError → 500)
+            // so a bad persisted difficulty degrades to MEDIUM instead of 500ing login.
+            $loginDifficulty = CaptchaType::tryFrom(
                 $this->config->getConfigInt('CaptchaRenderer', 'login_captcha_difficulty', CaptchaType::MEDIUM->value)
-            );
+            ) ?? CaptchaType::MEDIUM;
             $gen = $this->captchaService->generateWithType($loginDifficulty);
             $gen->drainTo($this->collector);
             if ($gen->isOk()) {

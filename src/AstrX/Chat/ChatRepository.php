@@ -286,7 +286,11 @@ final class ChatRepository
     public function addMute(?string $hexUserId, ?string $packedIp, int $durationSecs): Result
     {
         try {
-            $expires = date('Y-m-d H:i:s', time() + $durationSecs);
+            // R10 LOW: clamp the horizon so an absurd duration can't crash the
+            // mute. A mod entering a huge number → (int) saturates near
+            // PHP_INT_MAX → time()+dur overflows to float → date() TypeError under
+            // strict_types → 500. Cap at 10 years (effectively permanent).
+            $expires = date('Y-m-d H:i:s', time() + min(max(0, $durationSecs), 315360000));
             $this->pdo->prepare(
                 'INSERT INTO mute (user_id, ip, page_id, expires_at) VALUES (UNHEX(:uid), :ip, NULL, :exp)'
             )->execute([':uid' => $hexUserId, ':ip' => $packedIp, ':exp' => $expires]);

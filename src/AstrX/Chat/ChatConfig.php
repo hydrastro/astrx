@@ -248,6 +248,9 @@ final class ChatConfig
     public function uploadMaxBytes(): int       { return $this->uploadMaxKb * 1024; }
     public function uploadMaxDimension(): int   { return $this->uploadMaxDimension; }
     public function uploadDir(): string         { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'chat_uploads'); }
+    /** Raw stored value (unresolved) — for config round-trips that must preserve
+     *  it verbatim without rewriting to a resolved absolute path (R11 storage-dir gate). */
+    public function uploadDirRaw(): string      { return $this->uploadDir; }
     public function uploadTypesRaw(): string    { return $this->uploadTypesRaw; }
 
     /** @return list<string> */

@@ -260,11 +260,23 @@ final class AdminUsersController extends AbstractController
      */
     private function saveUserService(array $p): Result
     {
+        // R10 RBAC-F2 (MED): captcha enforcement (login/register/recover), the
+        // unverified-login bypass, and the username/password strength regexes are
+        // SECURITY policy, not routine user management. admin.config.users (a MOD
+        // may hold it) scopes user management; weakening these anti-abuse controls
+        // is a system decision. For a non-system actor, PRESERVE the current
+        // on-disk values so a MOD's save can neither disable a captcha (which would
+        // open login brute-force / registration spam), permit unverified logins,
+        // nor relax the password policy. Same fail-safe-preserve pattern the
+        // login_lockout_* keys already use, and the site_url gate (R9-02).
+        $maySetAuthPolicy = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
         $sections = [
             'UserService' => [
                 'token_expiration_time'          => max(60, self::mInt($p, 'token_expiration_time', 21600)),
                 'allow_register'                 => self::mBool($p, 'allow_register'),
-                'allow_login_non_verified_users' => self::mBool($p, 'allow_login_non_verified_users'),
+                'allow_login_non_verified_users' => $maySetAuthPolicy
+                    ? self::mBool($p, 'allow_login_non_verified_users')
+                    : $this->config->getConfigBool('UserService', 'allow_login_non_verified_users', false),
                 'require_email'                  => self::mBool($p, 'require_email'),
                 'require_recovery_email'         => self::mBool($p, 'require_recovery_email'),
                 'send_verification_email'        => self::mBool($p, 'send_verification_email'),
@@ -274,17 +286,27 @@ final class AdminUsersController extends AbstractController
                 'case_sensitive_usernames'       => self::mBool($p, 'case_sensitive_usernames'),
                 'minimum_age'                    => max(0, self::mInt($p, 'minimum_age', 0)),
                 'maximum_age'                    => max(0, self::mInt($p, 'maximum_age', 0)),
-                'login_captcha_type'             => self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED),
+                'login_captcha_type'             => $maySetAuthPolicy
+                    ? self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED)
+                    : $this->config->getConfigInt('UserService', 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED),
                 'login_captcha_attempts'         => max(1, self::mInt($p, 'login_captcha_attempts', 3)),
                 // Brute-force lockout (fix M4) has no form field yet; preserve the
                 // current on-disk values so saving this page never silently drops them.
                 'login_lockout_threshold'        => max(0, $this->config->getConfigInt('UserService', 'login_lockout_threshold', 10)),
                 'login_lockout_cooldown'         => max(1, $this->config->getConfigInt('UserService', 'login_lockout_cooldown', 900)),
-                'register_captcha_type'          => self::mInt($p, 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
-                'recover_captcha_type'           => self::mInt($p, 'recover_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
+                'register_captcha_type'          => $maySetAuthPolicy
+                    ? self::mInt($p, 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS)
+                    : $this->config->getConfigInt('UserService', 'register_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
+                'recover_captcha_type'           => $maySetAuthPolicy
+                    ? self::mInt($p, 'recover_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS)
+                    : $this->config->getConfigInt('UserService', 'recover_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
                 'remember_me_time'               => max(0, self::mInt($p, 'remember_me_time', 2592000)),
-                'username_regex'                 => $this->parseRegexTable($p, 'username'),
-                'password_regex'                 => $this->parseRegexTable($p, 'password'),
+                'username_regex'                 => $maySetAuthPolicy
+                    ? $this->parseRegexTable($p, 'username')
+                    : $this->config->getConfigArray('UserService', 'username_regex', []),
+                'password_regex'                 => $maySetAuthPolicy
+                    ? $this->parseRegexTable($p, 'password')
+                    : $this->config->getConfigArray('UserService', 'password_regex', []),
             ],
         ];
         // site_url/site_name (EmailService section) are the base of every emailed
@@ -311,7 +333,12 @@ final class AdminUsersController extends AbstractController
         return $this->writer->write('User', array_merge(
             $this->loadUserConfig(),
             ['AvatarService' => [
-                'avatar_dir'       => trim(self::mStr($p, 'avatar_dir', '')),
+                // R11 (MED): avatar_dir is system-level (repoints where avatars are
+                // written/served); a MOD (admin.config.users) must not relocate it,
+                // so preserve the on-disk value for a non-system actor.
+                'avatar_dir'       => $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM)
+                    ? trim(self::mStr($p, 'avatar_dir', ''))
+                    : $this->config->getConfigString('AvatarService', 'avatar_dir', ''),
                 'avatar_file_size' => max(1024, self::mInt($p, 'avatar_file_size', 1048576)),
                 'use_identicons'   => self::mBool($p, 'use_identicons'),
             ]]

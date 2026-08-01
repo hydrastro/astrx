@@ -105,7 +105,10 @@ final class ChatModerationService
         $ipStr     = is_scalar($p['ip_str'] ?? null) ? (string) $p['ip_str'] : '';
         $isMember  = $this->isMemberFlag($p);
         $hexUserId = $isMember && is_scalar($p['user_id'] ?? null) ? (string) $p['user_id'] : '';
-        $end       = $durationSecs > 0 ? date('Y-m-d H:i:s', time() + $durationSecs) : null;
+        // R10 LOW: cap a finite ban horizon at 10 years so a saturated duration
+        // can't overflow time()+dur into a float and 500 date() (strict_types).
+        // durationSecs <= 0 still means a permanent ban (null end).
+        $end       = $durationSecs > 0 ? date('Y-m-d H:i:s', time() + min($durationSecs, 315360000)) : null;
         $route     = BanlistRepository::ROUTE_CHAT;
 
         if ($nick !== '') {

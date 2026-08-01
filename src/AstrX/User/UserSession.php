@@ -268,6 +268,21 @@ final class UserSession
         $this->clearImapPassword();
     }
 
+    /**
+     * Re-sync the cached group from the DB (R11 per-request re-validation). The
+     * Gate resolves a request's role from this cached `type`, so refreshing it
+     * makes an admin's role change take effect on the target's very NEXT request
+     * instead of only after they re-login.
+     */
+    public function refreshType(int $type): void
+    {
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['type'] = $type;
+        $_SESSION[self::KEY] = $sess;
+    }
+
     /** Called after a successful username change. */
     public function updateUsername(string $username): void
     {
