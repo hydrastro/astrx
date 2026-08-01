@@ -91,4 +91,7 @@ enum Permission: string
 
     // ---- Audit log ----------------------------------------------------------
     case ADMIN_AUDIT_LOG = 'admin.audit_log';  // view the admin audit log
+
+    // ---- Warrant canary -----------------------------------------------------
+    case ADMIN_CANARY = 'admin.canary';   // edit / publish the warrant canary
 }

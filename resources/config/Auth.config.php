@@ -61,13 +61,17 @@ return [
                 'user.delete.own',
                 'admin.access',
                 'admin.comments',
-                'admin.config.captcha',
-                'admin.config.users',
-                // R9: 'admin.config.mail' removed from MOD. The mail page configures
-                // the SMTP relay host/credentials — i.e. WHERE password-reset tokens
-                // are delivered — so a MOD holding it could repoint the relay to a
-                // host they control, trigger an ADMIN password reset, and harvest the
-                // token (full ADMIN takeover). Mail relay config is ADMIN-only now.
+                // R12 (tightened MOD grant set): the four admin.config.* grants a
+                // MOD used to hold were removed at the ROOT here. Every round found
+                // one more system-level lever a MOD could reach through them
+                // (R9 mail relay, R10 imageboard EXIF/IP + auth policy, R11 chat
+                // image_embed + captcha DoS + storage dirs). The R9–R11 controller
+                // gates still defend each lever individually (defense in depth);
+                // removing the grants closes the whole class. A MOD keeps every
+                // MODERATION power (comment.*, chat.moderate, board.moderate,
+                // admin.comments) — only CONFIG of those subsystems is now
+                // ADMIN-only. Removed: admin.config.captcha, admin.config.users,
+                // admin.config.chat, admin.config.imageboard (mail was removed in R9).
                 'api.key.create',
                 'api.key.revoke',
                 // Chat
@@ -76,13 +80,11 @@ return [
                 'chat.delete.own',
                 'chat.delete.any',
                 'chat.moderate',
-                'admin.config.chat',
                 // Imageboard
                 'board.view',
                 'board.post',
                 'board.delete.own',
                 'board.moderate',
-                'admin.config.imageboard',
             ],
         ],
     ],

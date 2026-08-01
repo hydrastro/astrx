@@ -207,9 +207,18 @@ final class EmailService
     {
         // Internally, urlGen produces relative paths. Prefix with the
         // configured site URL so the link is absolute in the email body.
-        $relative = $this->urlGen->toPage($this->t->t('WORDING_USER')) .
-                    '?_token=' . rawurlencode($token) .
-                    '&_uid='   . rawurlencode($userHexId);
+        // R12: build sid-free and pass the token/uid THROUGH toPage as query
+        // params. In cookieless mode toPage would otherwise inject the live
+        // session id into this link — which is emailed to an external (clearnet)
+        // inbox and, for the change-recovery-email flow, would be a currently
+        // VALID authenticated sid → account takeover by anyone who observes the
+        // mail. Passing the params through toPage also fixes a double-'?' that the
+        // old manual concatenation produced in query-routing mode.
+        $relative = $this->urlGen->toPage(
+            $this->t->t('WORDING_USER'),
+            ['_token' => $token, '_uid' => $userHexId],
+            includeSid: false,
+        );
         return $this->siteUrl !== ''
             ? $this->siteUrl . $relative
             : $relative;

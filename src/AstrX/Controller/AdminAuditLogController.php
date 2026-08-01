@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Controller;
 
+use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
@@ -36,6 +37,7 @@ final class AdminAuditLogController extends AbstractController
         private readonly PDO                   $pdo,
         private readonly Translator            $t,
         private readonly Config                $config,
+        private readonly AuditLogger           $audit,
     ) {
         parent::__construct($collector);
     }
@@ -48,6 +50,14 @@ final class AdminAuditLogController extends AbstractController
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
             return $this->ok();
         }
+
+        // R12: verify the tamper-evident hash chain on every load and surface a
+        // banner. A deleted/edited past entry breaks the chain and is flagged here.
+        $chain = $this->audit->verifyChain();
+        $this->ctx->set('chain_intact',    $chain['status'] === 'intact');
+        $this->ctx->set('chain_broken',    $chain['status'] === 'broken');
+        $this->ctx->set('chain_checked',   $chain['checked']);
+        $this->ctx->set('chain_broken_id', $chain['broken_id']);
 
         $page       = max(1, self::queryInt($this->request, 'page', 1));
         $filterUser = trim((is_scalar($vuser = $this->request->query()->get('user') ?? '') ? (string)$vuser : ''));
@@ -154,5 +164,7 @@ final class AdminAuditLogController extends AbstractController
         $this->ctx->set('label_prev',       $this->t->t('admin.btn.prev'));
         $this->ctx->set('label_next',       $this->t->t('admin.btn.next'));
         $this->ctx->set('label_no_entries', $this->t->t('admin.audit.no_entries'));
+        $this->ctx->set('chain_label_intact', $this->t->t('admin.audit.chain_intact'));
+        $this->ctx->set('chain_label_broken', $this->t->t('admin.audit.chain_broken'));
     }
 }

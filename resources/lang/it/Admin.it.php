@@ -187,6 +187,21 @@ return [
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',
     'admin.notes.saved' => 'Note salvate.',
 
+    // ---- Editor warrant canary ----------------------------------------------
+    'admin.canary.heading'       => 'Warrant canary',
+    'admin.canary.intro'         => 'Incolla la tua attestazione firmata (firmala offline — nessuna chiave è salvata sul server). "Salva e attesta" registra il momento su cui si basa il controllo di scadenza della pagina pubblica.',
+    'admin.canary.statement'     => 'Dichiarazione firmata',
+    'admin.canary.interval'      => 'Scade dopo (giorni)',
+    'admin.canary.enabled'       => 'Pubblica il canary',
+    'admin.canary.last_attested' => 'Ultima attestazione',
+    'admin.canary.save'          => 'Salva e attesta',
+    'admin.canary.saved'         => 'Canary salvato e attestato.',
+    'admin.canary.cleared'       => 'Canary cancellato.',
+
+    // Catena hash del registro di audit (R12)
+    'admin.audit.chain_intact'   => 'Catena di audit integra — voci verificate:',
+    'admin.audit.chain_broken'   => 'CATENA DI AUDIT COMPROMESSA — manomissione rilevata alla voce',
+
     'admin.comments.mutes'       => 'Silenziamenti attivi',
     'admin.comments.mute_expires'=> 'Scade il',
     'admin.comments.lift_mute'   => 'Rimuovi silenziamento',

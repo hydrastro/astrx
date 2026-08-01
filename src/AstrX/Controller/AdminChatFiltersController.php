@@ -54,7 +54,11 @@ final class AdminChatFiltersController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Chat');
 
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_CHAT)) {
+        // R12: chat word/nick/link FILTERS are a moderation tool, so this page is
+        // scoped to CHAT_MODERATE (a MOD keeps it) — distinct from the chat CONFIG
+        // page (image_embed, upload_dir, …) which stays ADMIN-only. This restores
+        // the proactive-filter surface the R12 MOD-grant tightening removed.
+        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
             http_response_code(403);
             $this->ctx->set('forbidden',         true);
             $this->ctx->set('forbidden_message', $this->t->t('chat.filter.forbidden'));

@@ -55,10 +55,16 @@ final class UrlGenerator
      *
      * @param array<string, scalar> $queryParams Always appended as ?key=val.
      */
-    public function toPage(string $resolvedUrlId, array $queryParams = []): string
+    public function toPage(string $resolvedUrlId, array $queryParams = [], bool $includeSid = true): string
     {
         [$urlRewrite, $basePath, $localeKey, $pageKey, $entryPoint, $locale, $sessionKey, $sid] =
             $this->routingConfig();
+
+        // R12: callers that build a URL destined to leave the origin (e.g. a link
+        // emailed to a clearnet inbox) pass includeSid:false so the cookieless
+        // session id is never serialized into it (a hijack vector — see
+        // EmailService::buildTokenLink and the sitemap/feed sid-free policy).
+        if (!$includeSid) { $sid = ''; }
 
         $extra = $queryParams !== [] ? '?' . http_build_query($queryParams) : '';
 

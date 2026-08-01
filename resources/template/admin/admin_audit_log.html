@@ -1,5 +1,9 @@
 <h2>{{heading}}</h2>
 
+{{! ── R12: tamper-evident hash-chain status ────────────────────────────── }}
+{{#chain_broken}}<p class="warning"><strong>{{chain_label_broken}} #{{chain_broken_id}}</strong></p>{{/chain_broken}}
+{{#chain_intact}}<p><small>{{chain_label_intact}} ({{chain_checked}})</small></p>{{/chain_intact}}
+
 {{! ── Filter form ──────────────────────────────────────────────────────── }}
 <form method="GET" action="{{filter_url}}">
   {{&sid_input}}

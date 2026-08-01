@@ -70,7 +70,7 @@ final class DiagnosticLevelOverrideRepository
                 $stmt = $this->pdo->prepare(
                     'INSERT INTO `diagnostic_level_override` (`code`, `level`)
                      VALUES (:code, :level)
-                     ON DUPLICATE KEY UPDATE `level` = :level'
+                     ON DUPLICATE KEY UPDATE `level` = VALUES(`level`)'
                 );
                 $stmt->execute([':code' => $code, ':level' => $level->value]);
             }

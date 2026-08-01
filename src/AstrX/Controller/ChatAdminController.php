@@ -193,6 +193,9 @@ final class ChatAdminController extends AbstractController
         $this->ctx->set('session_count', count($sessions));
         $this->ctx->set('room_topic',    $this->chat->effectiveTopic());
         $this->ctx->set('config_url',    $this->urlGen->toPage($this->t->t('WORDING_ADMIN_CONFIG_CHAT')));
+        // R12: only ADMIN reaches the chat CONFIG page now (MOD lost admin.config.chat),
+        // so hide the link for a MOD rather than show one that 403s.
+        $this->ctx->set('can_config_chat', $this->gate->can(Permission::ADMIN_CONFIG_CHAT));
 
         // #132 report queue.
         $reportsResult = $this->reports->pending();

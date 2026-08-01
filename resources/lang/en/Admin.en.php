@@ -447,6 +447,21 @@ return [
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
 
+    // ---- Warrant canary editor ----------------------------------------------
+    'admin.canary.heading'       => 'Warrant canary',
+    'admin.canary.intro'         => 'Paste your signed attestation (sign it offline — no key is stored on the server). "Save & attest" stamps the time the public page stale check measures against.',
+    'admin.canary.statement'     => 'Signed statement',
+    'admin.canary.interval'      => 'Stale after (days)',
+    'admin.canary.enabled'       => 'Publish the canary',
+    'admin.canary.last_attested' => 'Last attested',
+    'admin.canary.save'          => 'Save & attest',
+    'admin.canary.saved'         => 'Canary saved and attested.',
+    'admin.canary.cleared'       => 'Canary cleared.',
+
+    // Audit-log hash chain (R12)
+    'admin.audit.chain_intact'   => 'Audit chain intact — entries verified:',
+    'admin.audit.chain_broken'   => 'AUDIT CHAIN BROKEN — tampering detected at entry',
+
     // ---- Config — Webmail IMAP settings --------------------------------
     'admin.nav.config_webmail'              => 'Webmail / IMAP',
     'admin.nav.config_webmail.desc'         => 'IMAP server and webmail settings.',

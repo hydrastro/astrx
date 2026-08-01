@@ -121,6 +121,6 @@
         <input type="submit" class="input" value="{{chat_admin_broadcast}}">
     </form>
 
-    <p><a href="{{config_url}}">{{chat_admin_config_link}}</a></p>
+    {{#can_config_chat}}<p><a href="{{config_url}}">{{chat_admin_config_link}}</a></p>{{/can_config_chat}}
 </div>
 {{/chat_admin_forbidden}}
