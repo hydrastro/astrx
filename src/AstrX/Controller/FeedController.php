@@ -137,23 +137,25 @@ final class FeedController extends AbstractController
     /** Escape a string for XML text content. */
     private function xmlText(string $s): string
     {
-        return htmlspecialchars(self::stripXmlControlChars($s), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        return self::stripXmlControlChars(htmlspecialchars($s, ENT_XML1 | ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
     }
 
     /** Escape a string for XML attribute value. */
     private function xmlAttr(string $s): string
     {
-        return htmlspecialchars(self::stripXmlControlChars($s), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        return self::stripXmlControlChars(htmlspecialchars($s, ENT_XML1 | ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
     }
 
     /**
-     * Remove characters that are illegal in XML 1.0 even when escaped (C0 controls
-     * except TAB/LF/CR). htmlspecialchars entity-escapes markup but cannot make a
-     * raw 0x0C form-feed legal, so a copy-pasted control char in a news title/body
-     * would otherwise produce a document strict readers reject wholesale.
+     * Remove characters illegal in XML 1.0 even when escaped: the C0 controls
+     * (except TAB/LF/CR) and the U+FFFE/FFFF noncharacters. htmlspecialchars
+     * entity-escapes markup but cannot make a raw form-feed or noncharacter legal,
+     * so one pasted into a news title/body would make a strict reader reject the
+     * whole feed. Called AFTER htmlspecialchars(ENT_SUBSTITUTE), so the input is
+     * guaranteed valid UTF-8 and the /u match can't null on a malformed byte.
      */
     private static function stripXmlControlChars(string $s): string
     {
-        return (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $s);
+        return (string) preg_replace('/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}\x{FFFE}\x{FFFF}]/u', '', $s);
     }
 }

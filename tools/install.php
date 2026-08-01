@@ -155,6 +155,22 @@ function tryConn(string $h, string $d, string $u, string $p, int $port): PDO|str
     }
 }
 
+/**
+ * Write $content to $path atomically (temp file + rename). rename() replaces the
+ * target needing only the DIRECTORY writable — so a config file shipped read-only
+ * (0644 owned by a different user than whoever runs the installer) doesn't block
+ * the write. Mirrors the web installer (public/setup.php).
+ */
+function atomicWrite(string $path, string $content): bool
+{
+    $tmp = $path . '.tmp.' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $content, LOCK_EX) === false || !@rename($tmp, $path)) {
+        @unlink($tmp);
+        return false;
+    }
+    return true;
+}
+
 function writePDO(string $configDir, string $h, string $d, string $u, string $p, int $port): string
 {
     $path = $configDir . 'PDO.config.php';
@@ -162,9 +178,9 @@ function writePDO(string $configDir, string $h, string $d, string $u, string $p,
     // in single-quoted PHP string literals.
     [$h2, $d2, $u2, $p2] = array_map('addslashes', [$h, $d, $u, $p]);
     $content = "<?php\ndeclare(strict_types=1);\nreturn [\n    'PDO' => [\n        'db_type'             => 'mysql',\n        'db_host'             => '{$h2}',\n        'db_name'             => '{$d2}',\n        'db_port'             => {$port},\n        'db_username'         => '{$u2}',\n        'db_password'         => '{$p2}',\n        'emulate_prepares'    => false,\n        'errmode_exception'   => true,\n        'default_fetch_assoc' => true,\n    ],\n];\n";
-    return @file_put_contents($path, $content) === false
-        ? "Cannot write {$path}. Check directory permissions."
-        : '';
+    return atomicWrite($path, $content)
+        ? ''
+        : "Cannot write {$path}. Ensure the resources/config/ directory is writable by whoever runs the installer.";
 }
 
 function writeServerSecret(string $configDir, string $secret): string
@@ -184,7 +200,7 @@ function writeServerSecret(string $configDir, string $secret): string
     if ($new === null || $count === 0) {
         return "Could not locate server_secret in {$path}.";
     }
-    return @file_put_contents($path, $new) === false ? "Cannot write {$path}." : '';
+    return atomicWrite($path, $new) ? '' : "Cannot write {$path}.";
 }
 
 function writeEnvironment(string $configDir, int $envInt): string
@@ -216,7 +232,7 @@ function writeEnvironment(string $configDir, int $envInt): string
             return "Could not locate environment in {$path}.";
         }
     }
-    return @file_put_contents($path, $new) === false ? "Cannot write {$path}." : '';
+    return atomicWrite($path, $new) ? '' : "Cannot write {$path}.";
 }
 
 /**

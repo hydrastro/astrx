@@ -113,9 +113,17 @@ final class BoardFeedController extends AbstractController
         exit;
     }
 
-    /** XML-escape a value for inclusion in an Atom document (ENT_XML1). */
+    /**
+     * XML-escape a value for an Atom document. htmlspecialchars (with
+     * ENT_SUBSTITUTE, so malformed UTF-8 becomes U+FFFD rather than blanking the
+     * field) escapes markup but cannot make a raw C0 control char or a U+FFFE/FFFF
+     * noncharacter legal in XML 1.0 — a single one (e.g. a form-feed pasted into a
+     * board post) would make a strict reader reject the whole feed. Strip them AFTER
+     * escaping, when the string is guaranteed valid UTF-8 so the /u match is safe.
+     */
     private function x(string $s): string
     {
-        return htmlspecialchars($s, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
+        $s = htmlspecialchars($s, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
+        return (string) preg_replace('/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}\x{FFFE}\x{FFFF}]/u', '', $s);
     }
 }

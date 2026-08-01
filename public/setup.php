@@ -145,11 +145,17 @@ function writePDO(string $h, string $d, string $u, string $p, int $port): string
     $path = __DIR__ . '/../resources/config/PDO.config.php';
     [$h2,$d2,$u2,$p2] = array_map('addslashes', [$h,$d,$u,$p]);
     $content = "<?php\ndeclare(strict_types=1);\nreturn [\n    'PDO' => [\n        'db_type'             => 'mysql',\n        'db_host'             => '$h2',\n        'db_name'             => '$d2',\n        'db_port'             => $port,\n        'db_username'         => '$u2',\n        'db_password'         => '$p2',\n        'emulate_prepares'    => false,\n        'errmode_exception'   => true,\n        'default_fetch_assoc' => true,\n    ],\n];\n";
-    // Fix: check the return value so permission errors surface as flash messages
-    // instead of silently falling through to step 3 with no config written.
-    $bytes = @file_put_contents($path, $content);
-    if ($bytes === false) {
-        return "Cannot write {$path}. Check directory permissions: this directory must be writable by the web server user.";
+    // Write atomically via a temp file + rename (mirrors writeSecurity): a direct
+    // file_put_contents on $path needs the EXISTING PDO.config.php to be writable,
+    // which fails when it ships 0644 owned by a different user than the web server
+    // — the exact "Cannot write … must be writable by the web server user" the
+    // wizard reported at this step. rename() only needs the config DIRECTORY to be
+    // writable, which the step-1 requirements check already verifies.
+    $tmp = $path . '.tmp.' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $content, LOCK_EX) === false || !@rename($tmp, $path)) {
+        @unlink($tmp);
+        return "Cannot write {$path}. Make sure the resources/config/ directory is "
+             . "writable by the web-server user (chown/chmod so PHP can write into it).";
     }
     return '';
 }
