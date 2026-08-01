@@ -96,7 +96,11 @@ final class JsController extends AbstractController
     public function handle(): Result
     {
         $tail = $this->currentUrl->tail();
-        $first = $tail[0];
+        // `?? null` guards the bare /js shell route (empty tail): reading $tail[0]
+        // when it is absent raises an E_WARNING, which the production error mask
+        // escalates to a forced HTTP 500 at shutdown. null falls to the shell
+        // (match default) — the intended behaviour for the shell entry point.
+        $first = $tail[0] ?? null;
 
         match ($first) {
             self::ASSET_RUNTIME  => $this->emitRuntimeJs(),

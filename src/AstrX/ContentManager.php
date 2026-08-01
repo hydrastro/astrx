@@ -16,6 +16,7 @@ use AstrX\Module\ModuleLoader;
 use AstrX\Module\ModuleRegistry;
 use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
+use AstrX\Page\Diagnostic\ControllerMissingDiagnostic;
 use AstrX\Page\Diagnostic\PageHiddenNoticeDiagnostic;
 use AstrX\Page\PageHandler;
 use AstrX\Result\DiagnosticLevel;
@@ -668,7 +669,17 @@ final class ContentManager
                     }
                 }
             } else {
-                http_response_code(HttpStatus::INTERNAL_SERVER_ERROR->value);
+                // The page declares controller=1 but no such controller class
+                // exists — a seed/code mismatch (e.g. a config section seeded in
+                // tables.sql whose controller was never implemented). Serve a clean
+                // themed 404 rather than a raw 500, and return so we don't fall
+                // through to a template render that also has no file. The diagnostic
+                // keeps the misconfiguration visible in the logs.
+                $this->collector->emit(new ControllerMissingDiagnostic(
+                    'astrx.content/controller_missing', DiagnosticLevel::WARNING
+                ));
+                $this->renderError(HttpStatus::NOT_FOUND);
+                return;
             }
         }
 
