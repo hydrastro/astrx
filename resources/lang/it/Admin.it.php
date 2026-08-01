@@ -104,6 +104,9 @@ return [
     'admin.users.edit_heading'     => 'Modifica utente',
     'admin.users.updated'          => 'Utente aggiornato.',
     'admin.users.deleted'          => 'Utente eliminato.',
+    'admin.users.force_logout'      => 'Forza logout',
+    'admin.users.force_logout_help' => 'Termina immediatamente tutte le sessioni browser (cookie) attive di questo utente. Non elimina l\'account né revoca le chiavi API — revocale separatamente.',
+    'admin.users.force_logout_done' => 'Tutte le sessioni dell\'utente sono state terminate.',
     'admin.users.permission_denied'=> 'Non puoi modificare questo account.',
     'admin.users.promote_denied'   => 'Non sei autorizzato a modificare il ruolo di questo utente.',
     'admin.users.display_name'     => 'Nome visualizzato',
@@ -197,6 +200,16 @@ return [
     'admin.canary.save'          => 'Salva e attesta',
     'admin.canary.saved'         => 'Canary salvato e attestato.',
     'admin.canary.cleared'       => 'Canary cancellato.',
+
+    // Mirror onion
+    'admin.mirrors.heading'     => 'Mirror onion / anti-phishing',
+    'admin.mirrors.intro'       => 'Dichiara il tuo .onion canonico (emesso come header Onion-Location) e la lista dei mirror mostrata sulla pagina pubblica /mirrors. Incolla una dichiarazione firmata offline degli indirizzi affinché i visitatori possano verificarli fuori banda.',
+    'admin.mirrors.primary'     => 'URL .onion canonico (per Onion-Location)',
+    'admin.mirrors.list'        => 'Lista mirror (un URL per riga)',
+    'admin.mirrors.signed'      => 'Dichiarazione firmata degli indirizzi canonici',
+    'admin.mirrors.save'        => 'Salva',
+    'admin.mirrors.saved'       => 'Impostazioni mirror salvate.',
+    'admin.mirrors.bad_primary' => 'L URL canonico deve essere un indirizzo .onion http(s).',
 
     // Catena hash del registro di audit (R12)
     'admin.audit.chain_intact'   => 'Catena di audit integra — voci verificate:',

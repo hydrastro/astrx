@@ -250,6 +250,19 @@ final class AdminUsersController extends AbstractController
                     $this->audit->log('user.delete', "user:{$hexId}")->drainTo($this->collector);
                 }
                 break;
+
+            case 'force_logout':
+                // R13: evict ALL of the target's live sessions immediately by
+                // bumping their session epoch — the per-request re-validation then
+                // drops each session on its next request. USER_EDIT_ANY (required
+                // above) gates this; it does not delete or alter the account.
+                $r = $this->userRepo->bumpSessionEpoch($hexId);
+                $r->drainTo($this->collector);
+                if ($r->isOk()) {
+                    $this->flash->set('success', $this->t->t('admin.users.force_logout_done'));
+                    $this->audit->log('user.force_logout', "user:{$hexId}")->drainTo($this->collector);
+                }
+                break;
         }
     }
 
@@ -563,6 +576,8 @@ final class AdminUsersController extends AbstractController
             $this->ctx->set('btn_update',           $this->t->t('admin.btn.update'));
             $this->ctx->set('btn_delete',           $this->t->t('admin.btn.delete'));
             $this->ctx->set('btn_edit',             $this->t->t('admin.btn.edit'));
+            $this->ctx->set('btn_force_logout',     $this->t->t('admin.users.force_logout'));
+            $this->ctx->set('force_logout_help',    $this->t->t('admin.users.force_logout_help'));
             $this->ctx->set('btn_cancel',           $this->t->t('admin.btn.cancel'));
         }
 

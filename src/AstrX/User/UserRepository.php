@@ -161,11 +161,26 @@ final class UserRepository
     {
         return $this->fetchOne(
             'SELECT LOWER(HEX(`id`)) AS id, `username`, `mailbox`, `display_name`, `type`,
-                    `verified`, `avatar`, `deleted`, `deletion_mode`, `theme`,
+                    `verified`, `avatar`, `deleted`, `deletion_mode`, `theme`, `session_epoch`,
                     `token_hash`, `token_type`, `token_used`,
                     UNIX_TIMESTAMP(`token_expires_at`) AS token_expires_at
                FROM `user`
               WHERE `id` = UNHEX(:id)',
+            [':id' => $hexId],
+        );
+    }
+
+    /**
+     * Invalidate ALL of a user's live sessions (R13 force-logout / evict-
+     * everywhere): bumping the epoch makes the per-request re-validation drop
+     * every session that adopted the old value.
+     *
+     * @return Result<bool>
+     */
+    public function bumpSessionEpoch(string $hexId): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `session_epoch` = `session_epoch` + 1 WHERE `id` = UNHEX(:id)',
             [':id' => $hexId],
         );
     }

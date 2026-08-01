@@ -1,0 +1,12 @@
+<h2>{{canary_heading}}</h2>
+{{#published}}
+{{#stale}}
+<p class="warning"><strong>{{canary_stale_warning}}</strong></p>
+{{/stale}}
+<p>{{canary_intro}}</p>
+<p><small>{{canary_last_attested_label}}: {{attested_date}}</small></p>
+<pre class="canary_statement">{{statement}}</pre>
+{{/published}}
+{{^published}}
+<p>{{canary_not_published}}</p>
+{{/published}}

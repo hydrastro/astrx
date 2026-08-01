@@ -363,6 +363,9 @@ return [
     'admin.users.edit_heading'      => 'Edit user',
     'admin.users.updated'           => 'User updated.',
     'admin.users.deleted'              => 'User action applied.',
+    'admin.users.force_logout'         => 'Force logout',
+    'admin.users.force_logout_help'    => 'End all of this user\'s active browser (cookie) sessions immediately. Does not delete the account or revoke API keys — revoke those separately.',
+    'admin.users.force_logout_done'    => 'All of the user\'s sessions have been ended.',
     'admin.users.deletion_mode'        => 'Deletion mode',
     'admin.users.deletion_mode.full_delete'    => 'Full delete (nuclear — removes all data and comments)',
     'admin.users.deletion_mode.hard_redact'    => 'Hard redact (wipe PII, reassign comments to ghost)',
@@ -457,6 +460,16 @@ return [
     'admin.canary.save'          => 'Save & attest',
     'admin.canary.saved'         => 'Canary saved and attested.',
     'admin.canary.cleared'       => 'Canary cleared.',
+
+    // Onion mirrors
+    'admin.mirrors.heading'     => 'Onion mirrors / anti-phishing',
+    'admin.mirrors.intro'       => 'Declare your canonical .onion (emitted as an Onion-Location header) and the mirror list shown on the public /mirrors page. Paste an offline-signed statement of the addresses so visitors can verify them out of band.',
+    'admin.mirrors.primary'     => 'Canonical .onion URL (for Onion-Location)',
+    'admin.mirrors.list'        => 'Mirror list (one URL per line)',
+    'admin.mirrors.signed'      => 'Signed statement of the canonical addresses',
+    'admin.mirrors.save'        => 'Save',
+    'admin.mirrors.saved'       => 'Mirror settings saved.',
+    'admin.mirrors.bad_primary' => 'The canonical URL must be an http(s) .onion address.',
 
     // Audit-log hash chain (R12)
     'admin.audit.chain_intact'   => 'Audit chain intact — entries verified:',

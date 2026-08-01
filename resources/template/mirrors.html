@@ -1,0 +1,19 @@
+<h2>{{mirrors_heading}}</h2>
+{{#has_mirrors}}
+<p>{{mirrors_intro}}</p>
+<p class="warning"><strong>{{mirrors_verify}}</strong></p>
+{{#has_list}}
+<ul>
+{{#mirrors}}
+    <li><code>{{url}}</code></li>
+{{/mirrors}}
+</ul>
+{{/has_list}}
+{{#has_signed}}
+<p>{{mirrors_signed_label}}:</p>
+<pre>{{signed}}</pre>
+{{/has_signed}}
+{{/has_mirrors}}
+{{^has_mirrors}}
+<p>{{mirrors_none}}</p>
+{{/has_mirrors}}

@@ -42,6 +42,14 @@
             </select>
             <input type="submit" value="{{btn_delete}}" class="input">
         </form>
+        <form method="POST" style="display:inline">
+            <input type="hidden" name="prg_id"   value="{{prg_id}}">
+            <input type="hidden" name="_csrf"     value="{{csrf_token}}">
+            <input type="hidden" name="section"   value="manage">
+            <input type="hidden" name="action"    value="force_logout">
+            <input type="hidden" name="user_id"   value="{{id}}">
+            <input type="submit" value="{{btn_force_logout}}" class="input" title="{{force_logout_help}}">
+        </form>
     </td>
     </tr>
     {{/editing}}

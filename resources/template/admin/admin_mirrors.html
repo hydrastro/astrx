@@ -1,0 +1,22 @@
+<h2>{{mirrors_heading}}</h2>
+<p>{{mirrors_intro}}</p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="primary">{{label_primary}}:</label><br>
+        <input type="text" name="primary" id="primary" class="input" size="60" value="{{primary}}">
+    </p>
+    <p>
+        <label for="mirror_list">{{label_list}}:</label><br>
+        <textarea name="mirror_list" id="mirror_list" rows="6" class="input">{{mirror_list}}</textarea>
+    </p>
+    <p>
+        <label for="signed">{{label_signed}}:</label><br>
+        <textarea name="signed" id="signed" rows="10" class="input">{{signed}}</textarea>
+    </p>
+    <p>
+        <input type="hidden" name="action" value="save">
+        <input type="submit" value="{{btn_save}}" class="input">
+    </p>
+</form>

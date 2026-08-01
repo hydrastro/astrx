@@ -336,8 +336,27 @@ final class ContentManager
                             $accountOpen = ($delMode === '' || $delMode === 'none');
                             if (!empty($row['deleted']) || !$accountOpen) {
                                 $revSess->logout();
-                            } elseif (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
-                                $revSess->refreshType((int) $row['type']);
+                            } else {
+                                if (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
+                                    $revSess->refreshType((int) $row['type']);
+                                }
+                                // R13: session-epoch force-logout. Adopt the DB
+                                // epoch on the first re-validation after login; a
+                                // later admin bump (evict-everywhere) then no longer
+                                // matches, so the session is dropped on its next
+                                // request — instant eviction of a compromised account.
+                                // Known narrow window: a bump landing between login
+                                // and this FIRST check is absorbed (adopted). An
+                                // actively-used stolen session has already adopted
+                                // and is evicted correctly; deleting/banning the
+                                // account evicts regardless via the check above.
+                                $dbEpoch   = is_scalar($row['session_epoch'] ?? null) ? (int) $row['session_epoch'] : 0;
+                                $sessEpoch = $revSess->sessionEpoch();
+                                if ($sessEpoch === null) {
+                                    $revSess->setSessionEpoch($dbEpoch);
+                                } elseif ($sessEpoch !== $dbEpoch) {
+                                    $revSess->logout();
+                                }
                             }
                         }
                     }
@@ -698,6 +717,12 @@ final class ContentManager
                     // anonymity headers on the fragment response and never clip it.
                     header('Referrer-Policy: no-referrer');
                     header('X-Content-Type-Options: nosniff');
+                    // R13: advertise the canonical .onion (anti-phishing) so a Tor
+                    // Browser on any mirror auto-upgrades to the real hidden service.
+                    // Emitted only when the operator has configured a canonical
+                    // onion; the /mirrors page carries the signed list to verify it.
+                    $onion = $this->onionPrimary();
+                    if ($onion !== '') { header('Onion-Location: ' . $onion); }
                     $this->emitServerTiming('astrx_fragment', $astrxRequestStarted);
                 }
 
@@ -995,6 +1020,13 @@ final class ContentManager
         header('Referrer-Policy: no-referrer');
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: DENY');
+        // R13: advertise the canonical .onion on the PRIMARY (no-JS) HTML
+        // response. Tor Browser reads Onion-Location from the ordinary page, and
+        // AstrX's audience is no-JS — so this path (not only the JS-fragment copy)
+        // is where the anti-phishing auto-upgrade must be emitted. Validated to a
+        // real .onion URL in onionPrimary(); '' (unset/invalid) emits nothing.
+        $onion = $this->onionPrimary();
+        if ($onion !== '') { header('Onion-Location: ' . $onion); }
     }
 
     // =========================================================================
@@ -1011,6 +1043,30 @@ final class ContentManager
      * Falls back to a minimal inline HTML page if the full error page machinery
      * is itself unavailable (e.g. DB down, template missing).
      */
+    /**
+     * R13: the operator-configured canonical .onion base URL for the
+     * Onion-Location header, or '' when unset. Read from the `site_config` KV.
+     * A single indexed lookup; returns '' (no header) on any error.
+     */
+    private function onionPrimary(): string
+    {
+        try {
+            $pdoRes = $this->injector->getClass(\PDO::class);
+            if (!$pdoRes->isOk()) { return ''; }
+            $pdo = $pdoRes->unwrap();
+            if (!$pdo instanceof \PDO) { return ''; }
+            $stmt = $pdo->prepare("SELECT `value` FROM `site_config` WHERE `key` = 'onion_primary' LIMIT 1");
+            $stmt->execute();
+            $v = $stmt->fetchColumn();
+            $s = is_string($v) ? trim($v) : '';
+            // Only ever emit a plausible .onion http(s) URL — never reflect junk
+            // into a response header.
+            return preg_match('#^https?://[a-z2-7]{16,90}\.onion(/\S*)?$#i', $s) === 1 ? $s : '';
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
     private function renderError(HttpStatus $status): void
     {
         http_response_code($status->value);

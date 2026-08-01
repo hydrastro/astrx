@@ -94,4 +94,7 @@ enum Permission: string
 
     // ---- Warrant canary -----------------------------------------------------
     case ADMIN_CANARY = 'admin.canary';   // edit / publish the warrant canary
+
+    // ---- Onion mirrors ------------------------------------------------------
+    case ADMIN_MIRRORS = 'admin.mirrors'; // edit the onion / mirror anti-phishing data
 }

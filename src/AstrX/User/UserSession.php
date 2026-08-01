@@ -283,6 +283,23 @@ final class UserSession
         $_SESSION[self::KEY] = $sess;
     }
 
+    /** Current session's adopted epoch, or null if not yet adopted (R13). */
+    public function sessionEpoch(): ?int
+    {
+        $v = $this->sessionData()['epoch'] ?? null;
+        return is_int($v) ? $v : (is_numeric($v) ? (int) $v : null);
+    }
+
+    /** Adopt/refresh the session epoch (R13 force-logout re-validation). */
+    public function setSessionEpoch(int $epoch): void
+    {
+        $sess = $_SESSION[self::KEY] ?? null;
+        if (!is_array($sess)) { return; }
+        /** @var array<string,mixed> $sess */
+        $sess['epoch'] = $epoch;
+        $_SESSION[self::KEY] = $sess;
+    }
+
     /** Called after a successful username change. */
     public function updateUsername(string $username): void
     {

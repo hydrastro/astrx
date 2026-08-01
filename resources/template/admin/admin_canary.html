@@ -1,0 +1,28 @@
+<h2>{{canary_heading}}</h2>
+<p>{{canary_intro}}</p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <p>
+        <label for="statement">{{label_statement}}:</label><br>
+        <textarea name="statement" id="statement" rows="16" class="input">{{statement}}</textarea>
+    </p>
+    <p>
+        <label for="interval_days">{{label_interval}}:</label>
+        <input type="text" name="interval_days" id="interval_days" size="5" class="input" value="{{interval_days}}">
+    </p>
+    <p>
+        <label><input type="checkbox" name="enabled" value="1"{{#enabled_checked}} checked{{/enabled_checked}}> {{label_enabled}}</label>
+    </p>
+    <p><small>{{label_last_attested}}: {{last_attested}}</small></p>
+    <p>
+        <input type="hidden" name="action" value="save">
+        <input type="submit" value="{{btn_save}}" class="input">
+    </p>
+</form>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="clear">
+    <p><input type="submit" value="{{btn_clear}}" class="input"></p>
+</form>
