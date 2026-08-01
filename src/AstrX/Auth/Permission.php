@@ -98,9 +98,6 @@ enum Permission: string
     // ---- Onion mirrors ------------------------------------------------------
     case ADMIN_MIRRORS = 'admin.mirrors'; // edit the onion / mirror anti-phishing data
 
-    // ---- Roles viewer -------------------------------------------------------
-    case ADMIN_ROLES = 'admin.roles';     // view the roles / sensitive-levers audit
-
     // ---- Signed downloads ---------------------------------------------------
     case ADMIN_DOWNLOADS = 'admin.downloads'; // edit / publish the signed release manifest
 

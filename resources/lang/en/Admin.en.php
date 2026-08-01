@@ -471,14 +471,6 @@ return [
     'admin.mirrors.saved'       => 'Mirror settings saved.',
     'admin.mirrors.bad_primary' => 'The canonical URL must be an http(s) .onion address.',
 
-    // Roles / sensitive-levers viewer
-    'admin.roles.heading'   => 'Roles & sensitive levers',
-    'admin.roles.intro'     => 'A read-only view of which permissions each role grants. Editing role grants is done out of band in Auth.config.php.',
-    'admin.roles.legend'    => 'Bold entries are sensitive — system-level or cross-user levers (the wildcard, admin.*, api.*, any .any scope, user.promote).',
-    'admin.roles.count'     => 'permissions',
-    'admin.roles.wildcard'  => 'full access — the wildcard grants everything',
-    'admin.roles.sensitive' => 'sensitive',
-
     // Signed downloads / release manifest editor
     'admin.downloads.heading'    => 'Signed release manifest',
     'admin.downloads.intro'      => 'Publish a signed list of your released files. The public /downloads page verifies the signature server-side against the key below and shows visitors whether it is valid.',

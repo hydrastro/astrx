@@ -16,6 +16,14 @@ VALUES
     ('WORDING_CANARY',       1, 'canary',       1, 1, 0, 0),
     ('WORDING_ADMIN_CANARY', 1, 'admin_canary', 1, 1, 0, 0);
 
+-- Both pages belong to the independently-toggleable 'canary' module. Tagged here
+-- (not in migrate_module_page_ownership_ext.sql) because that file sorts BEFORE
+-- this one under glob(), so the pages don't exist yet when it runs. UPDATE (not
+-- the INSERT's column list) so it also retrofits an already-installed row that
+-- INSERT IGNORE leaves untouched. Only tags still-untagged rows — idempotent.
+UPDATE `page` SET `module` = 'canary'
+ WHERE `module` = '' AND `file_name` IN ('canary', 'admin_canary');
+
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
 SELECT id, id FROM `page` WHERE url_id IN ('WORDING_CANARY', 'WORDING_ADMIN_CANARY');
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)

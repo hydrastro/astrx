@@ -47,4 +47,21 @@ return [
     'WORDING_ADMIN_INVITES.label'         => 'Inviti',
     'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
+
+    // Navbar pubblica — pagine di trasparenza (ciascuna un modulo opzionale)
+    'WORDING_CANARY.label'                => 'Canary',
+    'WORDING_DOWNLOADS.label'             => 'Download',
+    'WORDING_MIRRORS.label'               => 'Mirror',
+    'WORDING_TIPLINE.label'               => 'Segnalazioni',
+
+    // Navbar utente — sicurezza account
+    'WORDING_TWOFACTOR.label'             => 'Due Fattori',
+
+    // Navbar admin — editor trasparenza + strumenti di sicurezza/conservazione
+    'WORDING_ADMIN_CANARY.label'          => 'Canary',
+    'WORDING_ADMIN_DOWNLOADS.label'       => 'Download',
+    'WORDING_ADMIN_MIRRORS.label'         => 'Mirror',
+    'WORDING_ADMIN_TIPLINE.label'         => 'Segnalazioni',
+    'WORDING_ADMIN_RETENTION.label'       => 'Conservazione',
+    'WORDING_ADMIN_PANIC.label'           => 'Panico',
 ];

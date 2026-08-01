@@ -122,6 +122,18 @@ final class Translator
     }
 
     /**
+     * Whether a key exists in the loaded catalog, WITHOUT emitting a
+     * missing-translation diagnostic. For call sites that legitimately probe for
+     * an OPTIONAL key and fall back when it's absent (e.g. a navbar entry's
+     * '{name}.label') — using t()-with-fallback there logs a spurious NOTICE for
+     * every label-less entry, which is by-design behaviour, not an error.
+     */
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->catalog);
+    }
+
+    /**
      * @param array<string, scalar|\Stringable|null> $vars
      */
     private function interpolate(string $template, array $vars): string

@@ -196,10 +196,17 @@ final class NavbarHandler
         if (!(bool) $row['i18n']) {
             return $name;
         }
-        // Try {name}.label first (display text, from Navbar lang file).
-        // Fall back to the plain key so existing setups without .label keys still work.
-        $label = $this->translator->t($name . '.label', fallback: '');
-        return $label !== '' ? $label : $this->translator->t($name, fallback: $name);
+        // Try {name}.label first (display text, from the Navbar lang file). Probe
+        // with has() rather than t()-with-fallback: a navbar entry that ships no
+        // .label key is a supported setup (the plain key is used instead), so it
+        // must NOT emit a missing-translation NOTICE on every render.
+        if ($this->translator->has($name . '.label')) {
+            $label = $this->translator->t($name . '.label');
+            if ($label !== '') {
+                return $label;
+            }
+        }
+        return $this->translator->t($name, fallback: $name);
     }
 
     /**

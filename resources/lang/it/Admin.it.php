@@ -211,14 +211,6 @@ return [
     'admin.mirrors.saved'       => 'Impostazioni mirror salvate.',
     'admin.mirrors.bad_primary' => 'L URL canonico deve essere un indirizzo .onion http(s).',
 
-    // Ruoli / leve sensibili
-    'admin.roles.heading'   => 'Ruoli e leve sensibili',
-    'admin.roles.intro'     => 'Una vista in sola lettura dei permessi concessi da ciascun ruolo. La modifica dei permessi si fa fuori banda in Auth.config.php.',
-    'admin.roles.legend'    => 'Le voci in grassetto sono sensibili — leve a livello di sistema o cross-utente (il wildcard, admin.*, api.*, qualsiasi ambito .any, user.promote).',
-    'admin.roles.count'     => 'permessi',
-    'admin.roles.wildcard'  => 'accesso completo — il wildcard concede tutto',
-    'admin.roles.sensitive' => 'sensibile',
-
     // Editor manifest di rilascio firmato
     'admin.downloads.heading'    => 'Manifest di rilascio firmato',
     'admin.downloads.intro'      => 'Pubblica una lista firmata dei tuoi file rilasciati. La pagina pubblica /downloads verifica la firma lato server con la chiave qui sotto e mostra ai visitatori se è valida.',

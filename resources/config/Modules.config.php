@@ -27,5 +27,12 @@ return [
         'webmail'    => true,
         'content'    => true,
         'media'      => true,
+
+        // Transparency / trust pages — each independently toggleable. Flip any to
+        // false to 404 that page + its admin editor and drop both nav entries.
+        'canary'     => true,
+        'downloads'  => true,
+        'mirrors'    => true,
+        'tipline'    => true,
     ],
 ];

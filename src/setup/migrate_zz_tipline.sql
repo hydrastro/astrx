@@ -25,6 +25,13 @@ VALUES
     ('WORDING_TIPLINE',       1, 'tipline',       1, 1, 0, 0),
     ('WORDING_ADMIN_TIPLINE', 1, 'admin_tipline', 1, 1, 0, 0);
 
+-- Both pages belong to the independently-toggleable 'tipline' module. Tagged here
+-- (not in the ext ownership migration, which sorts before this file) so a single-
+-- pass fresh install tags them; UPDATE retrofits already-installed rows that
+-- INSERT IGNORE skips. Only touches still-untagged rows — idempotent.
+UPDATE `page` SET `module` = 'tipline'
+ WHERE `module` = '' AND `file_name` IN ('tipline', 'admin_tipline');
+
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
 SELECT id, id FROM `page` WHERE url_id IN ('WORDING_TIPLINE', 'WORDING_ADMIN_TIPLINE');
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)

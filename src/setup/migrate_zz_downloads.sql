@@ -17,6 +17,13 @@ VALUES
     ('WORDING_DOWNLOADS',       1, 'downloads',       1, 1, 0, 0),
     ('WORDING_ADMIN_DOWNLOADS', 1, 'admin_downloads', 1, 1, 0, 0);
 
+-- Both pages belong to the independently-toggleable 'downloads' module. Tagged
+-- here (not in the ext ownership migration, which sorts before this file) so a
+-- single-pass fresh install tags them; UPDATE retrofits already-installed rows
+-- that INSERT IGNORE skips. Only touches still-untagged rows — idempotent.
+UPDATE `page` SET `module` = 'downloads'
+ WHERE `module` = '' AND `file_name` IN ('downloads', 'admin_downloads');
+
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
 SELECT id, id FROM `page` WHERE url_id IN ('WORDING_DOWNLOADS', 'WORDING_ADMIN_DOWNLOADS');
 INSERT IGNORE INTO `page_closure` (ancestor, descendant)
