@@ -62,15 +62,26 @@ SELECT id, 0, 0 FROM `page` WHERE url_id IN ('WORDING_ADMIN_MEDIA', 'WORDING_MED
 -- Copied verbatim from migrate_zz_content_module.sql's admin-navbar block.
 SET @media_admin_page_id := (SELECT id FROM `page` WHERE url_id = 'WORDING_ADMIN_MEDIA' LIMIT 1);
 SET @media_admin_navbar_id := (SELECT id FROM `navbar` WHERE name = 'admin' LIMIT 1);
+-- Attach to the ALPHA group pin (sort_mode = 0) — where every other admin tool
+-- lives — so "Media" sorts in alphabetically instead of landing in the custom
+-- Dashboard pin (the first pin). Fall back to the first pin only if none exists.
 SET @media_admin_pin_id := (
+    SELECT id FROM `navbar_pin`
+     WHERE navbar_id = @media_admin_navbar_id AND sort_mode = 0
+     ORDER BY sort_order ASC, id ASC LIMIT 1
+);
+SET @media_admin_pin_id := COALESCE(@media_admin_pin_id, (
     SELECT id FROM `navbar_pin`
      WHERE navbar_id = @media_admin_navbar_id
      ORDER BY sort_order ASC, id ASC LIMIT 1
-);
+));
+-- Dedup across the WHOLE admin navbar (any pin), not just the target pin, so a row
+-- already seeded into the old pin is reused rather than duplicated on replay.
 SET @existing_media_admin_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @media_admin_page_id AND e.pin_id = @media_admin_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @media_admin_page_id AND np.navbar_id = @media_admin_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL

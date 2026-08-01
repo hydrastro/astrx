@@ -48,9 +48,17 @@ SELECT id, 0, 0 FROM `page` WHERE url_id IN ('WORDING_TWOFA', 'WORDING_TWOFACTOR
 -- ── User navbar entry ("Two-factor authentication") ──────────────────────────
 SET @tf_page_id     := (SELECT id FROM `page` WHERE url_id = 'WORDING_TWOFACTOR' LIMIT 1);
 SET @user_navbar_id := (SELECT id FROM `navbar` WHERE name = 'user' LIMIT 1);
+-- Attach to the user navbar's ALPHA group pin (sort_mode = 0) — the same pin that
+-- holds Profile / Settings / Webmail — so "Two-Factor Auth" sorts in alphabetically
+-- with the other account pages instead of landing in the Home pin (the first pin).
+-- Fall back to the first pin only if no alpha pin exists (older/custom layouts).
 SET @user_pin_id    := (
-    SELECT id FROM `navbar_pin` WHERE navbar_id = @user_navbar_id ORDER BY sort_order ASC, id ASC LIMIT 1
+    SELECT id FROM `navbar_pin` WHERE navbar_id = @user_navbar_id AND sort_mode = 0
+     ORDER BY sort_order ASC, id ASC LIMIT 1
 );
+SET @user_pin_id    := COALESCE(@user_pin_id, (
+    SELECT id FROM `navbar_pin` WHERE navbar_id = @user_navbar_id ORDER BY sort_order ASC, id ASC LIMIT 1
+));
 SET @existing_tf_nav := (
     SELECT ni.id FROM `navbar_internal` ni
       JOIN `navbar_entry` e  ON e.id = ni.id

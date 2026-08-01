@@ -63,7 +63,7 @@ INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL WHERE @tip_page_id IS NOT NULL AND @public_pin_id IS NOT NULL AND @existing_tip_nav IS NULL;
 SET @tip_nav_id := COALESCE(@existing_tip_nav, LAST_INSERT_ID());
 INSERT IGNORE INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
-SELECT @tip_nav_id, @public_pin_id, 1, 'WORDING_TIPLINE', 1, 1, 60
+SELECT @tip_nav_id, @public_pin_id, 1, 'WORDING_TIPLINE', 1, 1, 65
  WHERE @tip_page_id IS NOT NULL AND @public_pin_id IS NOT NULL AND @tip_nav_id IS NOT NULL;
 INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @tip_nav_id, @tip_page_id

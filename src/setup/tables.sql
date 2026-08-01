@@ -622,7 +622,7 @@ INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order
 VALUES
     -- Public navbar
     (1,  1, 1, 'WORDING_HOME',                   1, 1, 0),
-    (2,  1, 1, 'WORDING_USER',                   1, 1, 1),
+    (2,  1, 1, 'WORDING_USER',                   1, 1, 100),  -- "User Area" sorts LAST in the public pin (endcap), so content + transparency links group ahead of it
     (3,  1, 0, 'Test',                            0, 0, 2),
     (4,  1, 0, 'Ext',                             0, 0, 3),
     -- User navbar
