@@ -35,10 +35,15 @@ SET @lang_admin_pin_id := (
      WHERE navbar_id = @lang_admin_navbar_id
      ORDER BY sort_order ASC, id ASC LIMIT 1
 );
+-- Dedup across the WHOLE admin navbar (any pin), not just the target pin: the
+-- later migrate_zzz_admin_nav_pin_fix relocates this entry to the alphabetical
+-- pin, so a per-pin check would miss the moved row on replay and re-insert a
+-- duplicate. Keying on navbar_id makes the guard survive the move.
 SET @existing_lang_admin_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @lang_admin_page_id AND e.pin_id = @lang_admin_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @lang_admin_page_id AND np.navbar_id = @lang_admin_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL

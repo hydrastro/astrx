@@ -132,12 +132,18 @@ final class TwofaController extends AbstractController
         if (!$ok && $info['recovery'] !== []) {
             $idx = $this->totp->verifyRecovery($code, $info['recovery']);
             if ($idx !== null) {
-                $ok = true;
                 $remaining = $info['recovery'];
                 unset($remaining[$idx]);
-                // Consume the used recovery code (persist the rest).
-                $this->userService->enableTotp($uid, $info['secret'], array_values($remaining))
+                // Grant ONLY once the used recovery code is durably removed —
+                // mirroring the TOTP-step path above. If the persist fails, treat
+                // it as a bad code (throttled below) rather than granting a session
+                // while the just-used code stays replayable.
+                $consumed = $this->userService
+                    ->enableTotp($uid, $info['secret'], array_values($remaining))
                     ->drainTo($this->collector);
+                if ($consumed->isOk()) {
+                    $ok = true;
+                }
             }
         }
 

@@ -870,8 +870,9 @@ SET @public_pin_id := (
 );
 SET @existing_chat_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @chat_page_id AND e.pin_id = @public_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @chat_page_id AND np.navbar_id = @public_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL
@@ -2078,8 +2079,9 @@ SET @board_pub_pin_id := (
 );
 SET @existing_board_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @board_page_id AND e.pin_id = @board_pub_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @board_page_id AND np.navbar_id = @board_pub_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL
@@ -2137,8 +2139,9 @@ SET @search_pub_pin_id := (
 );
 SET @existing_search_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @search_page_id AND e.pin_id = @search_pub_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @search_page_id AND np.navbar_id = @search_pub_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL

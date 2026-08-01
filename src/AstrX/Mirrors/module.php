@@ -9,8 +9,9 @@ declare(strict_types=1);
  *
  * No nav contributor or guard needed: its navbar entries are DB rows NavbarHandler
  * drops via page.module when the module is off, and the core ModulePageGuard 404s
- * its pages. Storage is the shared site_config KV (onion_mirrors), which the
- * teardown clears on purge. See docs/MODULES.md.
+ * its pages. Storage is the shared site_config KV (onion_mirrors, onion_signed,
+ * and onion_primary — the latter drives the site-wide Onion-Location header), all
+ * of which the teardown clears on purge. See docs/MODULES.md.
  */
 return [
     'key'          => 'mirrors',

@@ -104,8 +104,12 @@ final class PostRenderer
 
     private function linkify(string $html): string
     {
+        // Exclude the NUL byte from the URL class: [code] blocks are extracted to
+        // \x00CODEn\x00 placeholders BEFORE linkify and re-expanded after, so a URL
+        // glued to a code block must not absorb the placeholder into its href (which
+        // re-expansion would then corrupt with the <code class="post-code"> markup).
         return preg_replace_callback(
-            '~(?<![">])\bhttps?://[^\s<>"\']+~i',
+            '~(?<![">])\bhttps?://[^\s<>"\'\x00]+~i',
             function (array $m): string {
                 $url = rtrim($m[0], '.,;:!?)');
                 return '<a class="postlink" rel="noopener noreferrer nofollow" href="' . $url . '">' . $url . '</a>';

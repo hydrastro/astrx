@@ -63,10 +63,14 @@ SET @content_pub_pin_id := (
      WHERE navbar_id = @content_pub_navbar_id
      ORDER BY sort_order ASC, id ASC LIMIT 1
 );
+-- Dedup across the WHOLE public navbar (any pin), not just the target pin, so the
+-- later navbar-layout normalizer (which moves this entry into the alphabetical pin)
+-- can't cause a replay to re-insert a duplicate in the first pin.
 SET @existing_content_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @content_page_id AND e.pin_id = @content_pub_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @content_page_id AND np.navbar_id = @content_pub_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL
@@ -87,10 +91,14 @@ SET @content_admin_pin_id := (
      WHERE navbar_id = @content_admin_navbar_id
      ORDER BY sort_order ASC, id ASC LIMIT 1
 );
+-- Dedup across the WHOLE admin navbar (any pin): migrate_zzz_admin_nav_pin_fix
+-- later relocates this entry to the alphabetical pin, so a per-pin check would
+-- miss the moved row on replay and re-insert a duplicate. Key on navbar_id.
 SET @existing_content_admin_nav := (
     SELECT ni.id FROM `navbar_internal` ni
-      JOIN `navbar_entry` e ON e.id = ni.id
-     WHERE ni.page_id = @content_admin_page_id AND e.pin_id = @content_admin_pin_id LIMIT 1
+      JOIN `navbar_entry` e  ON e.id = ni.id
+      JOIN `navbar_pin`   np ON np.id = e.pin_id
+     WHERE ni.page_id = @content_admin_page_id AND np.navbar_id = @content_admin_navbar_id LIMIT 1
 );
 INSERT INTO `navbar_entry_ids` (id)
 SELECT NULL

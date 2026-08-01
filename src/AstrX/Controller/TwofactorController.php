@@ -169,15 +169,26 @@ final class TwofactorController extends AbstractController
                 if (!$info['enabled']) {
                     return;
                 }
+                // Throttle online guessing of the current code with the same
+                // per-account lockout the login-2fa challenge uses: a hijacked
+                // authenticated session must not be able to brute-force the 6-digit
+                // code to strip 2FA off the account. A locked account is refused
+                // here too (shown as a bad code, not leaking the lockout state).
+                if ($this->userService->isLockedOut($uid)) {
+                    $this->flash->set('error', $this->t->t('twofactor.bad_code'));
+                    return;
+                }
                 $code = self::mStr($posted, 'code', '');
                 $ok = $info['secret'] !== '' && $this->totp->verifyCode($info['secret'], $code);
                 if (!$ok && $info['recovery'] !== []) {
                     $ok = $this->totp->verifyRecovery($code, $info['recovery']) !== null;
                 }
                 if (!$ok) {
+                    $this->userService->registerAuthFailure($uid);
                     $this->flash->set('error', $this->t->t('twofactor.bad_code'));
                     return;
                 }
+                $this->userService->clearAuthFailure($uid);
                 $this->userService->disableTotp($uid)->drainTo($this->collector);
                 $this->flash->set('success', $this->t->t('twofactor.disabled'));
                 return;
