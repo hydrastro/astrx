@@ -240,7 +240,11 @@ final class UserService
         if ($hexId === '') {
             return false;
         }
-        return $this->repo->setTotpLastStep($hexId, $step)->isOk();
+        // Grant ONLY when the atomic advance actually moved last_step (rowCount === 1)
+        // — not merely when the UPDATE executed. A concurrent replay of the same step
+        // matches 0 rows and must be refused, so return the unwrapped result, not isOk().
+        $r = $this->repo->setTotpLastStep($hexId, $step);
+        return $r->isOk() && $r->unwrap() === true;
     }
 
     /** Is TOTP active for this user? */
@@ -288,10 +292,19 @@ final class UserService
         if ($hexId === '' || $this->loginLockoutThreshold <= 0) {
             return false;
         }
-        $fails = $this->repo->totpFailCountFor($hexId);
+        // Bump first, THEN arm atomically against the COMMITTED counter — same
+        // concurrency fix as the password path. Reading totp_fail_count before the
+        // bump and deciding on the stale value let a concurrent burst slip past the
+        // 2FA-challenge lockout too.
         $this->repo->bumpTotpFail($hexId);
-        if (($fails + 1) >= $this->loginLockoutThreshold) {
-            $this->repo->setLockout($hexId, time() + $this->loginLockoutCooldown);
+        $now    = time();
+        $armRes = $this->repo->armTotpLockoutIfReached(
+            $hexId,
+            $this->loginLockoutThreshold,
+            $now + $this->loginLockoutCooldown,
+            $now
+        );
+        if ($armRes->isOk() && $armRes->unwrap() === true) {
             $this->repo->resetTotpFail($hexId);
             return true;
         }
@@ -462,11 +475,22 @@ final class UserService
             // Only touch the DB / count attempts when the user actually exists
             // (never leak existence for unknown usernames).
             if ($row !== null) {
-                $hexId    = is_scalar($row['id']) ? (string) $row['id'] : '';
-                $attempts = $this->intVal($row['login_attempts'] ?? null);
+                $hexId = is_scalar($row['id']) ? (string) $row['id'] : '';
+                // Increment first, THEN arm the lock atomically against the
+                // COMMITTED counter. Deciding the lock on the pre-increment value
+                // (read at findByUsername, BEFORE the ~50-100ms argon2 verify above)
+                // let a concurrent burst all observe the same stale count and slip
+                // through without ever tripping the lockout — the account's sole
+                // per-account brute-force throttle.
                 $this->repo->updateLoginAttempts($hexId, +1);
-                if ($this->loginLockoutThreshold > 0 && ($attempts + 1) >= $this->loginLockoutThreshold) {
-                    $this->repo->setLockout($hexId, time() + $this->loginLockoutCooldown);
+                if ($this->loginLockoutThreshold > 0) {
+                    $now = time();
+                    $this->repo->armLockoutIfReached(
+                        $hexId,
+                        $this->loginLockoutThreshold,
+                        $now + $this->loginLockoutCooldown,
+                        $now
+                    );
                 }
             }
             return $this->opErr('login_failed');

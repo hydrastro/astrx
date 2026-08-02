@@ -306,10 +306,23 @@ final class UserRepository
      */
     public function setTotpLastStep(string $hexId, int $step): Result
     {
-        return $this->exec(
-            'UPDATE `user` SET `totp_last_step` = :s WHERE `id` = UNHEX(:id)',
-            [':s' => $step, ':id' => $hexId],
-        );
+        // Atomic monotonic advance: succeeds (rowCount === 1) ONLY when :step is
+        // strictly greater than the stored last_step. Two concurrent submissions of
+        // the SAME code race here — the first advances last_step, the second's
+        // `< :s2` guard then matches 0 rows and is refused. Closes the RFC-6238
+        // §5.2 single-use race that a blind SET + the caller's stale read left open.
+        // (:s and :s2 are distinct placeholders bound to the same value; native
+        // prepares forbid reusing one name twice.)
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE `user` SET `totp_last_step` = :s
+                  WHERE `id` = UNHEX(:id) AND `totp_last_step` < :s2'
+            );
+            $stmt->execute([':s' => $step, ':id' => $hexId, ':s2' => $step]);
+            return Result::ok($stmt->rowCount() === 1);
+        } catch (PDOException $e) {
+            return $this->dbErr($e);
+        }
     }
 
     /** @return Result<bool> */
@@ -407,6 +420,51 @@ final class UserRepository
             'UPDATE `user` SET `login_locked_until` = :u WHERE `id` = UNHEX(:id)',
             [':u' => $until, ':id' => $hexId],
         );
+    }
+
+    /**
+     * Arm the brute-force lockout IFF the (already-incremented) `login_attempts`
+     * counter has reached the threshold — decided atomically against the COMMITTED
+     * counter. This replaces a check-then-act that read the counter BEFORE the
+     * (~50-100ms argon2) password verify: a concurrent burst of failures all read
+     * the same stale pre-increment value and none tripped the lock. The
+     * `login_locked_until IS NULL OR < :now` guard stops piled-up requests from
+     * pushing an already-armed window further out. (:th/:now are distinct from the
+     * value bindings; native prepares forbid placeholder reuse.)
+     *
+     * @return Result<bool>
+     */
+    public function armLockoutIfReached(string $hexId, int $threshold, int $until, int $now): Result
+    {
+        return $this->exec(
+            'UPDATE `user` SET `login_locked_until` = :u
+              WHERE `id` = UNHEX(:id) AND `login_attempts` >= :th
+                AND (`login_locked_until` IS NULL OR `login_locked_until` < :now)',
+            [':u' => $until, ':id' => $hexId, ':th' => $threshold, ':now' => $now],
+        );
+    }
+
+    /**
+     * The 2FA-challenge twin of armLockoutIfReached, gated on the committed
+     * `totp_fail_count`. Returns Result<bool> that is true only when THIS call
+     * armed the lock (rowCount === 1) — the `login_locked_until` guard makes exactly
+     * one concurrent caller win, so exactly one reports the lockout to the user.
+     *
+     * @return Result<bool>
+     */
+    public function armTotpLockoutIfReached(string $hexId, int $threshold, int $until, int $now): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE `user` SET `login_locked_until` = :u
+                  WHERE `id` = UNHEX(:id) AND `totp_fail_count` >= :th
+                    AND (`login_locked_until` IS NULL OR `login_locked_until` < :now)'
+            );
+            $stmt->execute([':u' => $until, ':id' => $hexId, ':th' => $threshold, ':now' => $now]);
+            return Result::ok($stmt->rowCount() === 1);
+        } catch (PDOException $e) {
+            return $this->dbErr($e);
+        }
     }
 
     /** The account's brute-force lockout expiry (unix ts), or 0 if not locked / unreadable. */
