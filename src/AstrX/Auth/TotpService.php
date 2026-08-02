@@ -95,10 +95,14 @@ final class TotpService
         $plain = [];
         $hashes = [];
         for ($i = 0; $i < max(1, $n); $i++) {
-            // 10 base32 chars grouped 5-5, e.g. "A3F9K-2PQR7". The dash is cosmetic:
-            // hashing is done on the normalized form so input with/without it matches.
-            $raw  = self::base32Encode(random_bytes(8));
-            $code = substr($raw, 0, 5) . '-' . substr($raw, 5, 5);
+            // 16 base32 chars (80 bits) grouped 8-8, e.g. "A3F9K2PQ-R7X4M8T2". The
+            // dash is cosmetic: hashing is on the normalized form so input with or
+            // without it matches. random_bytes(10) encodes to EXACTLY 16 base32
+            // chars and ALL are kept. (An earlier version used random_bytes(8) →
+            // 13 chars but kept only the first 10 = 50 bits, brute-forceable from a
+            // stolen hash table since the codes are single fast-SHA-256 hashes.)
+            $raw  = self::base32Encode(random_bytes(10));
+            $code = substr($raw, 0, 8) . '-' . substr($raw, 8, 8);
             $plain[]  = $code;
             $hashes[] = hash('sha256', self::normalizeRecovery($code));
         }

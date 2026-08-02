@@ -18,6 +18,13 @@ final class Prelude
 {
     public function __construct()
     {
+        // Force UTC for every date()/timestamp render, independent of the host's
+        // php.ini date.timezone / TZ. On a Tor hidden service the ambient server
+        // timezone is a deanonymising signal (it stamps the operator's region onto
+        // every post/comment/chat time); pinning UTC here removes that leak the
+        // same way the feeds already use gmdate().
+        date_default_timezone_set('UTC');
+
         $collector = new DiagnosticsCollector();
 
         $errorHandler = new ErrorHandler($collector);

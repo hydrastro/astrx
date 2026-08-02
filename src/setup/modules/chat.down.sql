@@ -13,7 +13,10 @@ DROP TABLE IF EXISTS `chat_message`;
 DROP TABLE IF EXISTS `chat_presence`;
 DROP TABLE IF EXISTS `chat_settings`;
 DROP TABLE IF EXISTS `chat_room`;
-DROP TABLE IF EXISTS `banlist_nick`;
+-- NOTE: `banlist_nick` is CORE (defined in tables.sql, an FK-child of the core
+-- `banlist`), not a chat table — the core Admin → Banlist page reads it on every
+-- render. Dropping it here made that page unable to list ANY bans after a chat
+-- purge. It is intentionally NOT dropped by this teardown.
 SET FOREIGN_KEY_CHECKS = 1;
 
 DELETE ne FROM `navbar_entry` ne

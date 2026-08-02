@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Search;
 
+use AstrX\Module\ModuleRegistry;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
@@ -50,9 +51,18 @@ final class SiteSearchService
     /** Hard ceiling on the per-source and merged result count. */
     private const int MAX_LIMIT = 200;
 
+    /**
+     * Content doc_type → the optional module that owns it. When that module is
+     * disabled, its content must NOT be served through search (the interactive
+     * pages 404 via ModulePageGuard, but search is a sibling aggregator that would
+     * otherwise leak a disabled imageboard's/content's posts to anonymous users).
+     */
+    private const array TYPE_MODULE = ['board' => 'imageboard', 'pages' => 'content'];
+
     public function __construct(
-        private readonly PDO           $pdo,
-        private readonly SearchSources $sources,
+        private readonly PDO            $pdo,
+        private readonly SearchSources  $sources,
+        private readonly ModuleRegistry $registry,
     ) {}
 
     /**
@@ -102,6 +112,18 @@ final class SiteSearchService
 
         // Index hits first so a boundary duplicate keeps its ranked index row.
         $merged = $this->dedupe(array_merge($indexHits, $liveHits));
+
+        // Drop content whose owning module is disabled — the single choke point
+        // that covers BOTH the live query and the (possibly stale) FULLTEXT index,
+        // so disabling e.g. the imageboard immediately stops search surfacing its
+        // posts even though the crawler may still hold indexed board rows.
+        $disabled = $this->registry->disabledModules();
+        if ($disabled !== []) {
+            $merged = array_values(array_filter($merged, static function (array $hit) use ($disabled): bool {
+                $module = self::TYPE_MODULE[$hit['type']] ?? null;
+                return $module === null || !in_array($module, $disabled, true);
+            }));
+        }
 
         // Merge newest-first (pages carry time 0 and sink to the bottom), cap.
         usort($merged, static fn(array $a, array $b): int => $b['time'] <=> $a['time']);

@@ -47,7 +47,6 @@ final class ErrorController implements Controller
         $message   = $this->t->t('http.status.' . $status . '.message', fallback: 'An error occurred.');
 
         $isClientError = $status >= 400 && $status < 500;
-        $isServerError = $status >= 500;
 
         $this->ctx->set('title',          $errorWord . " " . $status . ' — ' . $name);
         $this->ctx->set('description',    $message);
@@ -63,10 +62,15 @@ final class ErrorController implements Controller
         // Show "Go back" only for client errors where going back makes sense
         $this->ctx->set('error_show_back', $isClientError);
 
-        // Show diagnostics panel to admins (always) or in dev mode (always).
-        // In production non-admins never see internal details.
+        // Show the diagnostics panel to ADMINS ONLY. Diagnostic text can carry
+        // internal details (raw PDO driver messages, absolute filesystem paths +
+        // line numbers, uncaught-exception class/message, upload temp paths — see
+        // the core/mail/captcha lang catalogs), so a non-admin must never see it.
+        // Previously `|| $isServerError` leaked all of that to any anonymous
+        // visitor who could force a 5xx (a DB error, an upload error, or any
+        // in-mask PHP warning — recon a Tor hidden service specifically must deny).
         $isAdmin   = $this->gate->can(Permission::ADMIN_ACCESS);
-        $showDiag  = $isAdmin || $isServerError;
+        $showDiag  = $isAdmin;
 
         if ($showDiag) {
             $diags = $this->collector->diagnostics();

@@ -149,10 +149,20 @@ final class JsonRenderer
             header('Content-Type: application/json; charset=utf-8');
             header('Cache-Control: private, no-store');
         }
-        echo json_encode(
+        // Do NOT use JSON_THROW_ON_ERROR: a thrown JsonException on the output path
+        // (malformed UTF-8 in a reflected value, or NAN/INF from a computed one) is
+        // uncaught in ContentManager::init(), so the shutdown handler forces an
+        // HTTP 500 — an attacker-triggerable DoS on any api-enabled page that
+        // surfaces a raw request value. JSON_INVALID_UTF8_SUBSTITUTE replaces bad
+        // bytes; a false return (NAN/INF, unencodable) degrades to a clean error
+        // envelope instead of a 500.
+        $json = json_encode(
             $envelope,
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
         );
+        echo $json !== false
+            ? $json
+            : '{"ok":false,"data":null,"error":"encoding_error","meta":[],"diagnostics":[]}';
     }
 
     // -------------------------------------------------------------------------

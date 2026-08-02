@@ -1,4 +1,8 @@
-USE content_manager;
+-- NOTE: no `USE <db>;` here on purpose. The installers connect with a DSN already
+-- scoped to the configured database (mysql:...;dbname=...), and a hardcoded `USE
+-- content_manager` would OVERRIDE that — silently writing into `content_manager`
+-- (or aborting if it doesn't exist) whenever the operator chose a different DB name.
+-- If you run this file by hand, select the target DB first: `mysql <db> < tables.sql`.
 
 
 -- ============================================================
@@ -614,9 +618,20 @@ SELECT `navbar_id`, `sort_order`, `sort_mode` FROM (
 ) AS `seed`
 WHERE NOT EXISTS (SELECT 1 FROM `navbar_pin`);
 
--- 24 navbar entries total
-INSERT INTO `navbar_entry_ids` ()
-VALUES (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),(),();
+-- 24 navbar entries total. GUARDED with WHERE NOT EXISTS (like the navbar_pin seed
+-- above) so re-applying tables.sql on an installer re-run can't leak 24 fresh orphan
+-- allocator rows each time. On a fresh (empty) table this inserts ids 1..24 exactly
+-- as the old bare VALUES did; on re-apply it inserts nothing.
+INSERT INTO `navbar_entry_ids` (id)
+SELECT NULL FROM (
+              SELECT 1 UNION ALL SELECT 2  UNION ALL SELECT 3  UNION ALL SELECT 4
+    UNION ALL SELECT 5  UNION ALL SELECT 6  UNION ALL SELECT 7  UNION ALL SELECT 8
+    UNION ALL SELECT 9  UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12
+    UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL SELECT 16
+    UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20
+    UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23 UNION ALL SELECT 24
+) AS `seq`
+WHERE NOT EXISTS (SELECT 1 FROM `navbar_entry_ids`);
 
 INSERT INTO `navbar_entry` (id, pin_id, internal, name, i18n, active, sort_order)
 VALUES

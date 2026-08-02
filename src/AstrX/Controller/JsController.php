@@ -1270,11 +1270,23 @@ JS;
     /** @return list<array<string,mixed>> */
     private function manifestPages(): array
     {
+        // The /js bundle is a GUEST artifact (served un-authenticated, is_admin
+        // hardcoded false). Exclude the entire admin subtree (the 'admin' page and
+        // every closure-descendant) so the manifest can't enumerate the admin
+        // surface — slugs, titles, and API URLs of banlist/users/config/audit-log —
+        // to anonymous Tor visitors. Those pages are ADMIN_ACCESS-gated at dispatch
+        // regardless; this closes the RECON leak that bypassed the app's own
+        // admin-hiding (page_robots index=0 / robots.txt Disallow /*/admin).
         $stmt = $this->pdo->query(
             "SELECT id, url_id, i18n, file_name, template, controller, hidden, api_enabled, title
                FROM resolved_page
               WHERE hidden = 0
                 AND template = 1
+                AND id NOT IN (
+                    SELECT c.descendant FROM `page_closure` c
+                      JOIN `page` a ON a.id = c.ancestor
+                     WHERE a.file_name = 'admin'
+                )
               ORDER BY id ASC"
         );
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -1323,11 +1335,19 @@ JS;
     /** @return list<array<string,mixed>> */
     private function apiManifestPages(): array
     {
+        // Same guest-artifact reasoning as manifestPages(): never enumerate the
+        // admin subtree in the public API index, even if an admin page were ever
+        // marked api_enabled.
         $stmt = $this->pdo->query(
             "SELECT id, url_id, i18n, file_name, template, controller, hidden, api_enabled, title
                FROM resolved_page
               WHERE hidden = 0
                 AND api_enabled = 1
+                AND id NOT IN (
+                    SELECT c.descendant FROM `page_closure` c
+                      JOIN `page` a ON a.id = c.ancestor
+                     WHERE a.file_name = 'admin'
+                )
               ORDER BY id ASC"
         );
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];

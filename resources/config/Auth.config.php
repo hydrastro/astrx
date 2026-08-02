@@ -22,8 +22,6 @@ return [
             ],
             'USER' => [
                 'news.view',
-                'news.create',
-                'news.edit.any',
                 'comment.post',
                 'comment.hide.own',
                 'comment.delete.own',
@@ -45,11 +43,9 @@ return [
                 // Imageboard
                 'board.view',
                 'board.post',
-                'board.delete.own',
             ],
             'MOD' => [
                 'news.view',
-                'news.create',
                 'comment.post',
                 'comment.hide.own',
                 'comment.hide.any',
@@ -83,7 +79,6 @@ return [
                 // Imageboard
                 'board.view',
                 'board.post',
-                'board.delete.own',
                 'board.moderate',
             ],
         ],
