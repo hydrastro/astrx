@@ -336,6 +336,36 @@ final class UserRepository
         );
     }
 
+    /**
+     * Atomically consume ONE TOTP recovery code via compare-and-swap: rewrite the
+     * stored recovery JSON from :old to :new ONLY while it still equals :old, and
+     * report whether THIS call won the swap (rowCount === 1). The /login-2fa
+     * challenge reads the list, removes the matched code in PHP, then calls this —
+     * two concurrent challenges that each matched a code race HERE: the first swap
+     * sees :old and wins; the second's :old no longer matches (0 rows) and is
+     * refused, so a code can't be double-spent, nor can an already-removed one be
+     * resurrected by a lost update. This is the atomic single-use idiom already
+     * used by markTokenUsed()/setTotpLastStep(); the blind SET in setTotp() left the
+     * consume path (the one single-use consumer NOT hardened in R22) racy.
+     * (`totp_recovery` is TEXT, written only by json_encode here and in setTotp(),
+     * so the :old string compare is byte-exact.)
+     *
+     * @return Result<bool>
+     */
+    public function consumeRecoveryCode(string $hexId, string $oldJson, string $newJson): Result
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE `user` SET `totp_recovery` = :new
+                  WHERE `id` = UNHEX(:id) AND `totp_recovery` = :old'
+            );
+            $stmt->execute([':new' => $newJson, ':id' => $hexId, ':old' => $oldJson]);
+            return Result::ok($stmt->rowCount() === 1);
+        } catch (PDOException $e) {
+            return $this->dbErr($e);
+        }
+    }
+
     /** The dedicated 2FA-challenge failure counter for an account (0 if unreadable). */
     public function totpFailCountFor(string $hexId): int
     {

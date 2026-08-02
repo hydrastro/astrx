@@ -194,11 +194,11 @@ final class UserService
     /**
      * Read a user's TOTP state (safe: any error → disabled/empty).
      *
-     * @return array{enabled:bool,secret:string,recovery:list<string>,last_step:int}
+     * @return array{enabled:bool,secret:string,recovery:list<string>,recovery_raw:string,last_step:int}
      */
     public function totpInfo(string $hexId): array
     {
-        $off = ['enabled' => false, 'secret' => '', 'recovery' => [], 'last_step' => 0];
+        $off = ['enabled' => false, 'secret' => '', 'recovery' => [], 'recovery_raw' => '', 'last_step' => 0];
         $r = $this->repo->getTotp($hexId);
         if (!$r->isOk()) {
             return $off;
@@ -222,10 +222,12 @@ final class UserService
             }
         }
         return [
-            'enabled'   => $enabled,
-            'secret'    => $secret,
-            'recovery'  => $recovery,
-            'last_step' => $this->intVal($row['totp_last_step'] ?? null),
+            'enabled'      => $enabled,
+            'secret'       => $secret,
+            'recovery'     => $recovery,
+            // Exact stored blob, for the compare-and-swap in consumeRecoveryCode().
+            'recovery_raw' => is_string($rawRec) ? $rawRec : '',
+            'last_step'    => $this->intVal($row['totp_last_step'] ?? null),
         ];
     }
 
@@ -263,6 +265,26 @@ final class UserService
     {
         $json = json_encode(array_values($recoveryHashes));
         return $this->repo->setTotp($hexId, $secret, true, $json === false ? '[]' : $json);
+    }
+
+    /**
+     * Atomically consume ONE recovery code at the /login-2fa challenge. $oldJson is
+     * the exact stored blob the caller read (totpInfo()['recovery_raw']); $newList
+     * is that list with the matched code removed. Delegates to the repository's
+     * compare-and-swap so a concurrent second challenge can neither double-spend a
+     * code nor resurrect a removed one through a lost update. Returns Result<bool>
+     * that is true ONLY when this call performed the removal — the challenge grants
+     * the session only then (mirroring setTotpLastStep()); a lost swap returns
+     * ok(false) and must be treated as a bad code. Unlike enableTotp() this touches
+     * only totp_recovery, leaving the secret and enabled flag untouched.
+     *
+     * @param list<string> $newList
+     * @return Result<bool>
+     */
+    public function consumeRecoveryCode(string $hexId, string $oldJson, array $newList): Result
+    {
+        $json = json_encode(array_values($newList));
+        return $this->repo->consumeRecoveryCode($hexId, $oldJson, $json === false ? '[]' : $json);
     }
 
     /**

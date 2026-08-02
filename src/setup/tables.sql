@@ -4,6 +4,14 @@
 -- (or aborting if it doesn't exist) whenever the operator chose a different DB name.
 -- If you run this file by hand, select the target DB first: `mysql <db> < tables.sql`.
 
+-- Force the (connection-default) database to utf8mb4 BEFORE any CREATE TABLE, so
+-- every table below inherits it without needing an explicit per-table charset.
+-- The `--create-db` installer path already creates the database as utf8mb4, but a
+-- hand-created database left on the server's default (e.g. latin1) would otherwise
+-- silently reject 4-byte input (emoji, many CJK/scripts) — a data-loss/█-mojibake
+-- bug on exactly the international content a Tor CMS carries. Idempotent.
+ALTER DATABASE CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 
 -- ============================================================
 -- SETUP / MIGRATIONS

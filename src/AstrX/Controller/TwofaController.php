@@ -135,13 +135,17 @@ final class TwofaController extends AbstractController
                 $remaining = $info['recovery'];
                 unset($remaining[$idx]);
                 // Grant ONLY once the used recovery code is durably removed —
-                // mirroring the TOTP-step path above. If the persist fails, treat
-                // it as a bad code (throttled below) rather than granting a session
-                // while the just-used code stays replayable.
+                // mirroring the TOTP-step path above. Consume via an atomic
+                // compare-and-swap against the exact blob we read (recovery_raw):
+                // a concurrent second challenge that also matched a code writes 0
+                // rows and is refused here, so a code can't be double-spent nor an
+                // already-removed one resurrected by a lost update. A lost/failed
+                // swap yields ok(false)/err — treated as a bad code (throttled
+                // below), never a grant (hence unwrap() === true, not just isOk()).
                 $consumed = $this->userService
-                    ->enableTotp($uid, $info['secret'], array_values($remaining))
+                    ->consumeRecoveryCode($uid, $info['recovery_raw'], array_values($remaining))
                     ->drainTo($this->collector);
-                if ($consumed->isOk()) {
+                if ($consumed->isOk() && $consumed->unwrap() === true) {
                     $ok = true;
                 }
             }
