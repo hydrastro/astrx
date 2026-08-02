@@ -7,7 +7,7 @@ return [
         'db_name'             => 'content_manager',
         'db_port'             => 3306,
         'db_username'         => 'root',
-        'db_password'         => 'password',
+        'db_password'         => '',
         'emulate_prepares'    => false,
         'errmode_exception'   => true,
         'default_fetch_assoc' => true,
