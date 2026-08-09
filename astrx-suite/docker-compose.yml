@@ -76,7 +76,8 @@ services:
   onioncrawler-search:
     <<: *app-published
     build:
-      context: ./onioncrawler
+      context: .
+      dockerfile: onioncrawler/Dockerfile
     image: astrx/onioncrawler:${IMAGE_TAG:-latest}
     command: ["search", "--db", "/data/crawl.db", "--host", "0.0.0.0", "--port", "8802"]
     volumes:
@@ -98,7 +99,8 @@ services:
   onioncrawler-crawl:
     profiles: ["crawl"]
     build:
-      context: ./onioncrawler
+      context: .
+      dockerfile: onioncrawler/Dockerfile
     image: astrx/onioncrawler:${IMAGE_TAG:-latest}
     command: ["crawl", "--db", "/data/crawl.db", "--seeds", "/data/seeds.txt",
               "--fetcher", "tor", "--tor-host", "tor", "--tor-port", "9050", "-v"]
@@ -116,7 +118,8 @@ services:
   websearch-serve:
     <<: *app-published
     build:
-      context: ./websearch
+      context: .
+      dockerfile: websearch/Dockerfile
     image: astrx/websearch:${IMAGE_TAG:-latest}
     command: ["serve", "--db", "/var/lib/websearch/web.db", "--host", "0.0.0.0", "--port", "8803"]
     volumes:
@@ -137,7 +140,8 @@ services:
   websearch-crawl:
     profiles: ["crawl"]
     build:
-      context: ./websearch
+      context: .
+      dockerfile: websearch/Dockerfile
     image: astrx/websearch:${IMAGE_TAG:-latest}
     command: ["crawl", "--seeds", "/var/lib/websearch/seeds", "--db", "/var/lib/websearch/web.db"]
     volumes:
@@ -151,7 +155,8 @@ services:
   torrentds-search:
     <<: *app-published
     build:
-      context: ./torrentds
+      context: .
+      dockerfile: torrentds/Dockerfile
     image: astrx/torrentds:${IMAGE_TAG:-latest}
     command: ["search", "--db", "/data/torrentds.db", "--host", "0.0.0.0", "--port", "8804"]
     volumes:
@@ -172,7 +177,8 @@ services:
   torrentds-tracker:
     <<: *app-published
     build:
-      context: ./torrentds
+      context: .
+      dockerfile: torrentds/Dockerfile
     image: astrx/torrentds:${IMAGE_TAG:-latest}
     command: ["tracker", "--db", "/data/torrentds.db", "--host", "0.0.0.0",
               "--http-port", "8805", "--udp-port", "6969", "--peers-db", "/data/peers.json"]
@@ -193,7 +199,8 @@ services:
   torrentds-index:
     profiles: ["index"]
     build:
-      context: ./torrentds
+      context: .
+      dockerfile: torrentds/Dockerfile
     image: astrx/torrentds:${IMAGE_TAG:-latest}
     command: ["index", "--db", "/data/torrentds.db", "--host", "0.0.0.0", "--port", "6881"]
     volumes:

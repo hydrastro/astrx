@@ -1,7 +1,10 @@
 # onioncrawler container: bundles the crawler + no-JS search server and a Tor
 # daemon so the whole thing can run as (and reach) v3 hidden services.
 #
-# Build:  docker build -t onioncrawler .
+# IMPORTANT: build from the SUITE ROOT so the bundled `crawlcore` sibling
+# package is in the build context:
+#     docker build -f onioncrawler/Dockerfile -t onioncrawler .
+# (docker-compose sets context:. and dockerfile:onioncrawler/Dockerfile.)
 # Crawl:  docker run --rm -v oc-data:/data onioncrawler \
 #             crawl --db /data/crawl.db --seeds /data/seeds.txt -v
 # Search: docker run --rm -p 8802:8802 -v oc-data:/data onioncrawler \
@@ -18,10 +21,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . /app
+# The shared crawlcore library is a sibling package; install it into the image
+# so `import crawlcore` resolves directly (the source-tree sibling shim finds it
+# only in the unpacked zip, not in a per-tool container).
+COPY crawlcore /app/crawlcore
+COPY onioncrawler /app/onioncrawler
 
-# stdlib-only package; this just installs the console entry point.
-RUN pip install --no-cache-dir .
+# stdlib-only packages; this installs crawlcore then the console entry point.
+RUN pip install --no-cache-dir /app/crawlcore /app/onioncrawler
 
 # Run unprivileged with a dedicated data volume.
 RUN useradd --create-home --uid 10001 crawler \

@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: crawlcore
+Version: 1.0.0
+Summary: Shared zero-dependency crawler mechanics for the astrx crawlers
+Requires-Python: >=3.11

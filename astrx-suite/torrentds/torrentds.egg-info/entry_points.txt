@@ -1,0 +1,2 @@
+[console_scripts]
+torrentds = torrentds.cli:main

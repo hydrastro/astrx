@@ -1,5 +1,9 @@
 # torrentds -- zero-dependency DHT metadata indexer + tracker.
-# No pip install step is needed: the whole thing is Python 3.11 stdlib.
+# Stdlib-only, plus the bundled crawlcore shared library.
+#
+# Build from the SUITE ROOT so the crawlcore sibling is in context:
+#   docker build -f torrentds/Dockerfile -t torrentds .
+# (docker-compose sets context:. and dockerfile:torrentds/Dockerfile.)
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="torrentds" \
@@ -7,9 +11,10 @@ LABEL org.opencontainers.image.title="torrentds" \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
-COPY torrentds ./torrentds
-RUN pip install --no-cache-dir . && \
+# crawlcore (shared sibling) installed first so `import crawlcore` resolves.
+COPY crawlcore /app/crawlcore
+COPY torrentds /app/torrentds
+RUN pip install --no-cache-dir /app/crawlcore /app/torrentds && \
     useradd --system --create-home --uid 10001 torrentds && \
     mkdir -p /data && chown torrentds:torrentds /data
 USER torrentds

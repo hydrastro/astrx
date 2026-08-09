@@ -1,0 +1,26 @@
+# Python build / cache artifacts (never commit these)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# Test / type tooling
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local runtime state — an index/tracker DB is machine-local, never committed
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+peers.json
+
+# Environments / secrets
+.venv/
+venv/
+.env
