@@ -1,0 +1,40 @@
+<h2>{{blk_heading}}</h2>
+<p>{{blk_intro}}</p>
+
+<h3>{{onion_heading}}</h3>
+<p>{{onion_intro}}</p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="block_onion">
+    <p>
+        <label for="onion_kind">{{lbl_kind}}:</label>
+        <select name="kind" id="onion_kind" class="input">
+            {{#onion_kinds}}<option value="{{value}}">{{label}}</option>{{/onion_kinds}}
+        </select>
+    </p>
+    <p>
+        <label for="onion_value">{{lbl_value}}:</label><br>
+        <input type="text" name="value" id="onion_value" class="input" size="60" autocomplete="off">
+    </p>
+    <p><input type="submit" value="{{lbl_submit}}" class="input"></p>
+</form>
+
+<h3>{{torrent_heading}}</h3>
+<p>{{torrent_intro}}</p>
+<form method="POST">
+    <input type="hidden" name="prg_id" value="{{prg_id}}">
+    <input type="hidden" name="_csrf"  value="{{csrf_token}}">
+    <input type="hidden" name="action" value="block_torrent">
+    <p>
+        <label for="torrent_kind">{{lbl_kind}}:</label>
+        <select name="kind" id="torrent_kind" class="input">
+            {{#torrent_kinds}}<option value="{{value}}">{{label}}</option>{{/torrent_kinds}}
+        </select>
+    </p>
+    <p>
+        <label for="torrent_value">{{lbl_value}}:</label><br>
+        <input type="text" name="value" id="torrent_value" class="input" size="60" autocomplete="off">
+    </p>
+    <p><input type="submit" value="{{lbl_submit}}" class="input"></p>
+</form>

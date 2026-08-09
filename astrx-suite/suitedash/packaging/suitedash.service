@@ -1,0 +1,32 @@
+[Unit]
+Description=suitedash — astrx-suite status dashboard (no-JS, loopback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Poll the suite and serve the dashboard on loopback. Point --config at your
+# deployment's service hosts/ports; the default config targets 127.0.0.1:8801-4.
+ExecStart=/usr/local/bin/suitedash --config /etc/suitedash/suitedash.toml --host 127.0.0.1 --port 8805 --quiet
+Restart=on-failure
+RestartSec=2
+
+# Hardening: this process only needs outbound loopback HTTP and a listening
+# socket. No writable paths, no privileges.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+# onioncrawler seed list - one URL per line, '#' starts a comment.
+# ONLY .onion URLs are accepted (or .i2p when the crawler runs with --enable-i2p);
+# every other host is refused (no clearnet leak). Replace these with real v3
+# onion seeds before a real crawl.
+#
+# This same file works as the CURATED seed list for scheduled re-seeding:
+#   onioncrawler reseed --db crawl.db --seed-list seeds.txt
+#   onioncrawler crawl  --db crawl.db --seed-list seeds.txt --reseed-interval 21600
+# Re-seeding validates + dedups + blocklist-checks these roots and re-enqueues
+# them so the index keeps rediscovering them (respecting caps + recrawl).
+#
+# http://<56-char-base32>.onion/
+# http://exampleexampleexampleexampleexampleexampleexampleexampl.onion/

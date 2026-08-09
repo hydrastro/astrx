@@ -1,0 +1,6 @@
+# Keep the tor build context to just what the image needs.
+README.md
+Makefile
+run.sh
+.env.example
+.env

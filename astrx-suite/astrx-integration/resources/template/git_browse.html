@@ -1,0 +1,26 @@
+<div id="git_browse">
+    <style>
+    /* Self-contained, mirroring web_search.html: transparent fills,
+       currentColor borders, px spacing, no rem/em, no border-radius. */
+    #git_browse{--gb-border:currentColor;background:transparent;color:inherit;}
+    #git_browse a{text-decoration:none;color:inherit;}
+    #git_browse a:hover{text-decoration:underline;}
+    .search-header{border-bottom:1px solid var(--gb-border);margin-bottom:8px;padding-bottom:5px;}
+    .search-header h1{margin:3px 0;}
+    .search-intro{font-style:italic;margin:4px 0 8px;}
+    .gb-card{border:1px solid var(--gb-border);background:transparent;padding:12px;margin:8px 0;}
+    .gb-card .gb-open{display:inline-block;border:1px solid var(--gb-border);padding:3px 14px;margin:4px 0;}
+    .gb-card .gb-url{display:block;font-size:12px;opacity:.8;word-wrap:break-word;margin-top:4px;}
+    .gb-note{font-size:12px;opacity:.7;margin:8px 0;}
+    </style>
+
+    <div class="search-header"><h1>{{lbl_heading}}</h1></div>
+    <p class="search-intro">{{lbl_intro}}</p>
+
+    <div class="gb-card">
+        <a class="gb-open" href="{{service_url}}" rel="noopener noreferrer nofollow" target="_blank">{{lbl_open}}</a>
+        <cite class="gb-url">{{service_url}}</cite>
+    </div>
+
+    <p class="gb-note">{{lbl_note}}</p>
+</div>
