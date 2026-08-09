@@ -12,5 +12,5 @@ workspace = true
 # auditable on its own. Networking needs an async runtime + a CSPRNG; tokio and
 # getrandom are the two vetted, minimal dependencies the live node uses.
 [dependencies]
-tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"] }
 getrandom = "0.2"

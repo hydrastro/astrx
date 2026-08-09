@@ -13,6 +13,7 @@ pub mod classify;
 pub mod dht;
 pub mod infohash;
 pub mod krpc;
+pub mod metadata;
 pub mod routing;
 pub mod transport;
 
@@ -20,4 +21,5 @@ pub use bencode::{decode, decode_lenient, decode_prefix, encode, Ben, BencodeErr
 pub use dht::{make_neighbor_id, DhtConfig, DhtNode, InfohashSink};
 pub use infohash::{infohash, sha1};
 pub use krpc::{encode_error, encode_query, encode_response, parse_message, KrpcMessage};
+pub use metadata::{fetch_metadata, serve_metadata, MetadataError, TorrentMeta};
 pub use transport::{KrpcNode, QueryError, QueryHandler, Stats};
