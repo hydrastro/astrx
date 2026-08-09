@@ -43,11 +43,11 @@ final class WebSearchClient
      *   results: list<array{title:string,url:string,href:string,host:string,snippet:string}>
      * }
      */
-    public function search(string $query, int $page): array
+    public function search(string $query, int $page, string $type = '', string $sort = '', int $perPage = 0): array
     {
         $page = max(1, $page);
 
-        $raw = $this->fetch($query, $page);
+        $raw = $this->fetch($query, $page, $type, $sort, $perPage);
         if ($raw === null) {
             return $this->unavailable($page);
         }
@@ -72,11 +72,23 @@ final class WebSearchClient
      * timeout. `@` suppression is deliberate: a connection-refused warning is
      * in AstrX's error mask and would be promoted to a 500 otherwise.
      */
-    private function fetch(string $query, int $page): ?string
+    private function fetch(string $query, int $page, string $type = '', string $sort = '', int $perPage = 0): ?string
     {
         $url = $this->config->baseUrl()
             . '/api/search?q=' . rawurlencode($query)
             . '&page=' . $page;
+        // Whitelisted, code-controlled extras. The controller only ever passes
+        // known-safe tokens; rawurlencode is belt-and-braces so nothing here can
+        // alter the host/scheme (no SSRF surface).
+        if ($type !== '') {
+            $url .= '&type=' . rawurlencode($type);
+        }
+        if ($sort !== '') {
+            $url .= '&sort=' . rawurlencode($sort);
+        }
+        if ($perPage > 0) {
+            $url .= '&page_size=' . $perPage;
+        }
 
         $context = stream_context_create(['http' => [
             'method'          => 'GET',

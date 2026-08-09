@@ -1,36 +1,60 @@
 <div id="web_search">
     <style>
     /* Self-contained, mirroring site_search.html: transparent fills,
-       currentColor borders, px spacing, no rem/em, no border-radius. */
-    #web_search{--ws-border:currentColor;background:transparent;color:inherit;}
+       currentColor borders, px spacing, no rem/em, no border-radius. A single
+       accent + a URL colour are layered on the RESULT CONTENT only — never on
+       the shell navbar — so the page still reads as part of the site. */
+    #web_search{--ws-border:currentColor;--ws-accent:#5b9bff;--ws-url:#54b054;background:transparent;color:inherit;}
     #web_search a{text-decoration:none;color:inherit;}
     #web_search a:hover{text-decoration:underline;}
     .search-header{border-bottom:1px solid var(--ws-border);margin-bottom:8px;padding-bottom:5px;}
     .search-header h1{margin:3px 0;}
     .search-intro{font-style:italic;margin:4px 0 8px;}
+    .search-verticals{margin:8px 0;padding:0;list-style:none;display:flex;gap:6px;flex-wrap:wrap;}
+    .search-verticals a{border:1px solid var(--ws-border);padding:2px 12px;display:inline-block;}
+    #web_search .search-verticals a.active{border-color:var(--ws-accent);color:var(--ws-accent);font-weight:bold;}
     .search-form{border:1px solid var(--ws-border);background:transparent;padding:8px;margin:8px 0;}
     .search-form p{margin:4px 0;}
     .search-form input[type=text]{background:transparent;color:inherit;border:1px solid var(--ws-border);padding:2px 4px;min-width:20em;}
+    .search-form input[type=number]{background:transparent;color:inherit;border:1px solid var(--ws-border);padding:2px 4px;}
+    .search-form select{background:transparent;color:inherit;border:1px solid var(--ws-border);padding:2px 4px;}
     .search-form button{background:transparent;color:inherit;border:1px solid var(--ws-border);padding:2px 12px;cursor:pointer;}
     .search-form button:hover{text-decoration:underline;}
+    .search-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
     .search-count{font-style:italic;margin:8px 0;}
     .search-empty,.search-unavailable{font-style:italic;margin:8px 0;}
     .search-result{padding:6px 0;border-bottom:1px dashed var(--ws-border);}
-    .search-result .search-url{display:block;font-size:12px;opacity:.8;word-wrap:break-word;}
+    .search-result .search-url{display:block;font-size:12px;color:var(--ws-url);word-wrap:break-word;}
     .search-result .search-title{margin:1px 0;}
+    #web_search .search-result .search-title a{color:var(--ws-accent);}
     .search-result .search-snippet{display:block;margin:2px 0 0;white-space:pre-wrap;word-wrap:break-word;}
-    .search-result .search-meta{font-size:12px;opacity:.7;}
+    .search-result .search-meta{font-size:12px;color:var(--ws-url);}
     .search-pager{margin:10px 0;display:flex;gap:14px;}
-    .search-pager a{border:1px solid var(--ws-border);padding:2px 10px;}
+    #web_search .search-pager a{border:1px solid var(--ws-accent);color:var(--ws-accent);padding:2px 10px;}
     </style>
 
     <div class="search-header"><h1>{{lbl_heading}}</h1></div>
     <p class="search-intro">{{lbl_intro}}</p>
 
+    <nav class="search-verticals">
+        {{#verticals}}<a href="{{url}}"{{#active}} class="active"{{/active}}>{{label}}</a>{{/verticals}}
+    </nav>
+
     <form class="search-form" method="get" action="{{form_action}}">
         {{&sid_input}}
+        <input type="hidden" name="type" value="{{cur_type}}">
         <p><label>{{lbl_query}} <input type="text" name="q" value="{{query}}" autocomplete="off"></label>
            <button type="submit">{{lbl_submit}}</button></p>
+        <p class="search-controls">
+            <label>{{lbl_order}}
+                <select name="order">
+                    {{#order_options}}<option value="{{value}}"{{#selected}} selected{{/selected}}>{{label}}</option>{{/order_options}}
+                </select>
+            </label>
+            <label>{{lbl_per_page}}
+                <input type="number" name="per_page" min="1" max="100" value="{{cur_per_page}}" style="width:5em">
+            </label>
+        </p>
     </form>
 
     {{#searched}}

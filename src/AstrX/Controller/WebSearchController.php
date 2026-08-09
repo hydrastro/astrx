@@ -46,6 +46,17 @@ final class WebSearchController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** Vertical tabs offered on the page; the first is the default. */
+    private const array VERTICALS = ['web', 'news', 'files'];
+
+    /** Order-by choices (mapped to the engine's relevance|fresh sort). */
+    private const array ORDERS = ['relevance', 'newest'];
+
+    /** Results-per-page: a free integer input, clamped to this range. */
+    private const int PER_PAGE_DEFAULT = 10;
+    private const int PER_PAGE_MIN = 1;
+    private const int PER_PAGE_MAX = 100;
+
     /** @return Result<mixed> */
     public function handle(): Result
     {
@@ -59,8 +70,28 @@ final class WebSearchController extends AbstractController
         $q    = self::queryStr($this->request, 'q');
         $page = max(1, self::queryInt($this->request, 'page', 1));
 
+        // Whitelisted controls — anything else falls back to the default.
+        $type = self::queryStr($this->request, 'type');
+        if (!in_array($type, self::VERTICALS, true)) {
+            $type = 'web';
+        }
+        $order = self::queryStr($this->request, 'order');
+        if (!in_array($order, self::ORDERS, true)) {
+            $order = 'relevance';
+        }
+        // Results per page: a free number input, clamped to a sane range.
+        $perPage = self::queryInt($this->request, 'per_page', self::PER_PAGE_DEFAULT);
+        $perPage = max(self::PER_PAGE_MIN, min(self::PER_PAGE_MAX, $perPage));
+        // Map UI tokens → engine params (type=web is the engine default; order
+        // "newest" → sort=fresh).
+        $engineType = $type === 'web' ? '' : $type;
+        $engineSort = $order === 'newest' ? 'fresh' : 'relevance';
+
         $slug       = $this->t->t('WORDING_WEBSEARCH');
         $formAction = $this->urlGen->toPage($slug);
+        // Carried on every tab / pager / form link so the vertical, order and
+        // page size survive navigation.
+        $state = ['type' => $type, 'order' => $order, 'per_page' => $perPage];
 
         $searched    = $q !== '';
         $unavailable = false;
@@ -72,7 +103,7 @@ final class WebSearchController extends AbstractController
         $nextUrl     = '';
 
         if ($searched) {
-            $resp = $this->client->search($q, $page);
+            $resp = $this->client->search($q, $page, $engineType, $engineSort, $perPage);
             if ($resp['ok']) {
                 $total    = $resp['total'];
                 $page     = $resp['page'];
@@ -91,11 +122,11 @@ final class WebSearchController extends AbstractController
                 $last = max(1, intdiv($total + $pageSize - 1, $pageSize));
                 if ($page > 1) {
                     $hasPrev = true;
-                    $prevUrl = $this->urlGen->toPage($slug, ['q' => $q, 'page' => $page - 1]);
+                    $prevUrl = $this->urlGen->toPage($slug, ['q' => $q, 'page' => $page - 1] + $state);
                 }
                 if ($page < $last) {
                     $hasNext = true;
-                    $nextUrl = $this->urlGen->toPage($slug, ['q' => $q, 'page' => $page + 1]);
+                    $nextUrl = $this->urlGen->toPage($slug, ['q' => $q, 'page' => $page + 1] + $state);
                 }
             } else {
                 $unavailable = true;
@@ -115,6 +146,14 @@ final class WebSearchController extends AbstractController
         $this->ctx->setShared('result_count',        $this->t->t('websearch.result_count', ['count' => $total]));
         $this->ctx->setShared('page_num',            $page);
 
+        // Controls: current values (hidden fields keep them on query submit),
+        // the vertical tabs, and the per-page + order <select> option lists.
+        $this->ctx->set('cur_type',         $type);
+        $this->ctx->set('cur_order',        $order);
+        $this->ctx->set('cur_per_page',     $perPage);
+        $this->ctx->set('verticals',        $this->buildVerticals($slug, $q, $type, $order, $perPage));
+        $this->ctx->set('order_options',    $this->buildOrderOptions($order));
+
         $this->ctx->set('has_prev', $hasPrev);
         $this->ctx->set('prev_url', $prevUrl);
         $this->ctx->set('has_next', $hasNext);
@@ -123,6 +162,44 @@ final class WebSearchController extends AbstractController
         $this->setLabels();
 
         return $this->ok();
+    }
+
+    /**
+     * Vertical tabs (Web / News / Files). Each link preserves the query, order
+     * and page size; the engine treats an absent/"web" type as the default.
+     *
+     * @return list<array{key:string,label:string,url:string,active:bool}>
+     */
+    private function buildVerticals(string $slug, string $q, string $type, string $order, int $perPage): array
+    {
+        $out = [];
+        foreach (self::VERTICALS as $v) {
+            $params = ['type' => $v, 'order' => $order, 'per_page' => $perPage];
+            if ($q !== '') {
+                $params['q'] = $q;
+            }
+            $out[] = [
+                'key'    => $v,
+                'label'  => $this->t->t('websearch.vertical.' . $v),
+                'url'    => $this->urlGen->toPage($slug, $params),
+                'active' => $v === $type,
+            ];
+        }
+        return $out;
+    }
+
+    /** @return list<array{value:string,label:string,selected:bool}> */
+    private function buildOrderOptions(string $cur): array
+    {
+        $out = [];
+        foreach (self::ORDERS as $o) {
+            $out[] = [
+                'value'    => $o,
+                'label'    => $this->t->t('websearch.order.' . $o),
+                'selected' => $o === $cur,
+            ];
+        }
+        return $out;
     }
 
     private function setLabels(): void
@@ -136,6 +213,8 @@ final class WebSearchController extends AbstractController
             'lbl_unavailable' => 'websearch.unavailable',
             'lbl_prev'        => 'websearch.prev',
             'lbl_next'        => 'websearch.next',
+            'lbl_per_page'    => 'websearch.per_page',
+            'lbl_order'       => 'websearch.order_label',
         ] as $ctxKey => $tKey) {
             $this->ctx->set($ctxKey, $this->t->t($tKey), ContextScope::SHARED);
         }

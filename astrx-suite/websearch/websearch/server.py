@@ -757,6 +757,15 @@ class Handler(BaseHTTPRequestHandler):
         # request -- used by the federation aggregator to pull a shard's best
         # candidates for a global merge without paging.  Absent -> normal paging.
         page_size = PAGE_SIZE
+        # ``page_size`` (optional, capped) lets a paging client pick how many
+        # results per page -- distinct from ``limit`` below, which forces page 1
+        # (federation top-N).  Paging is preserved.
+        try:
+            reqps = int(self._str_param("page_size", "") or 0)
+        except (ValueError, TypeError):
+            reqps = 0
+        if reqps > 0:
+            page_size = min(API_MAX_LIMIT, reqps)
         try:
             lim = int(self._str_param("limit", "") or 0)
         except (ValueError, TypeError):
@@ -767,6 +776,11 @@ class Handler(BaseHTTPRequestHandler):
         # Vertical parity with the HTML UI: type=news (fresh) / type=files.
         vtype = self._str_param("type")
         sort = "fresh" if vtype == "news" else "relevance"
+        # Explicit ``sort`` override (relevance|fresh) so a client can offer an
+        # "order by" control independent of the vertical.  Unknown -> ignored.
+        reqsort = self._str_param("sort", "")
+        if reqsort in ("relevance", "fresh"):
+            sort = reqsort
         only_files = (vtype == "files")
         conn = self._conn()
         try:

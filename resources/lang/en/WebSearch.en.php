@@ -17,4 +17,11 @@ return [
     'websearch.result_count' => 'About {count} result(s)',
     'websearch.prev'         => 'Previous',
     'websearch.next'         => 'Next',
+    'websearch.vertical.web'   => 'Web',
+    'websearch.vertical.news'  => 'News',
+    'websearch.vertical.files' => 'Files',
+    'websearch.order_label'    => 'Order',
+    'websearch.order.relevance' => 'Relevance',
+    'websearch.order.newest'    => 'Newest',
+    'websearch.per_page'        => 'Per page',
 ];
