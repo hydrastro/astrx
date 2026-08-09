@@ -17,7 +17,7 @@ throughout the migration. Zero third-party dependencies by default;
 | Component        | State        | Done | Remaining |
 |------------------|--------------|------|-----------|
 | **crawlcore**    | ✅ complete   | globmatch, dedup (SimHash), scheduler, traps — 14 tests, SimHash byte-identical to Python | — |
-| **torrentds**    | 🚧 indexer   | bencode (+ `decode_prefix`/`decode_lenient`) + infohash + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51 `sample_infohashes`; harvest; announce-token guard + **served peer store**; **iterative `get_peers` lookup**; Sybil crawl) + **metadata fetch** (BEP-3/10/9 peer wire + ut_metadata: handshake → extended handshake → piece request/assembly → SHA-1 verify → info-dict `TorrentMeta`, loopback round-trip) + **BEP-33 scrape** (swarm size from bloom filters) + **release classifier** (resolution/source/codec/HDR/year/SxxExx/group/lang → tag string, regex-free) — 52 tests; node datagrams, ut_metadata wire, SimHash, BEP-33 filters & the classifier all cross-checked byte-identical to Python | HTTP+UDP trackers (BEP-3/15/23); BEP-52 v2/hybrid metadata; store (SQLite); no-JS search + JSON API; blocklist; Torznab |
+| **torrentds**    | 🚧 indexer   | bencode (+ `decode_prefix`/`decode_lenient`) + infohash + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata → `TorrentMeta`) + **magnet parsing** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free) — 67 tests; DHT datagrams, ut_metadata wire, tracker wire (HTTP + UDP), magnet, SimHash, BEP-33 & the classifier all cross-checked byte-identical to Python | BEP-52 v2/hybrid metadata; persistent index store (harvested infohashes + fetched metadata); no-JS search + JSON API; blocklist; Torznab |
 | **onioncrawler** | ⏳ not started | — | SOCKS5 fetcher + **darknet gate as a type** (clearnet leak = compile error); resumable frontier (lease/resume); robots + trap wiring (uses crawlcore); FTS search; abuse blocklist; entity index; Tor fetch-pool |
 | **websearch**    | ⏳ not started | — | polite resumable crawler; SSRF denylist (as a type); FTS index; BM25 + PageRank ranking; verticals; no-JS UI + JSON API; federation (sharding + scatter-gather) |
 | **gitweb**       | ⏳ not started | — | argv-only git exec (confined); repo/log/diff/tree/blob/blame/refs; releases; patch/mail archive; no-JS UI |
@@ -54,12 +54,19 @@ peer-wire client that connects to a peer, negotiates the extension protocol,
 pulls each 16 KiB `ut_metadata` piece, verifies `sha1(metadata) == info_hash`, and
 parses the info-dict into a `TorrentMeta` (name, files, sizes). Its builders are
 pinned byte-identical to Python and a loopback peer proves the full round-trip
-(single-piece, multi-piece, and corrupt-rejection). Next: the HTTP/UDP trackers,
-BEP-52 v2 metadata, the SQLite store, and the search/JSON API. The pure wire core
-(bencode/infohash/krpc/bep33/classify)
-stays dependency-free; only the live node adds two vetted deps — `tokio` (async
-runtime) and `getrandom` (CSPRNG for the unguessable transaction ids). This is the
-crate with the strongest safety argument, so it goes first.
+(single-piece, multi-piece, and corrupt-rejection). `parse_magnet` turns a
+`magnet:` link (btih hex/base32 or btmh v2 multihash) into that infohash.
+
+torrentds now also **serves** as a tracker: a shared, LRU-bounded, TTL-reaped
+**swarm peer store** (with bencode snapshot/restore for restart survival — no
+database needed) backs both a **BEP-15 UDP tracker** (stateless keyed
+connection-ids, source-address-only peers) and a **BEP-3/23 HTTP tracker**
+(binary query parsing, compact + dict peer lists). Both wire formats are pinned
+byte-identical to Python and round-trip over loopback. Next: BEP-52 v2 metadata,
+a persistent index store, then the no-JS search UI + JSON API. The pure wire core
+(bencode/infohash/krpc/bep33/classify/peerstore) stays dependency-free; only the
+live networking adds two vetted deps — `tokio` (async runtime) and `getrandom`
+(CSPRNG). This is the crate with the strongest safety argument, so it goes first.
 
 **Phase 2 — onioncrawler.** The crown-jewel safety win: model the darknet-only
 gate as an `OnionHost` newtype the fetcher *requires*, so "never fetch clearnet
