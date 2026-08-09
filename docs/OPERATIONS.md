@@ -9,7 +9,7 @@ loopback and is happy behind Tor; nothing here needs JavaScript.
 One command builds and starts every service behind Tor (one v3 onion per surface):
 
 ```
-cd astrx-suite
+cd astrx-suite/legacy-python
 cp deploy/.env.example .env      # optional: image tag / profiles
 docker compose up -d
 docker compose exec tor sh -c 'cat /var/lib/tor/*/hostname'   # your .onion addresses
@@ -98,4 +98,4 @@ health-checks and links every service.
 
 For multi-node / Hetzner deployments (sharded websearch with a scatter-gather
 aggregator, a Tor fetch pool for onioncrawler, single-box DHT for torrentds, and
-capacity tiers), see `astrx-suite/deploy/FLEET.md`.
+capacity tiers), see `astrx-suite/legacy-python/deploy/FLEET.md`.

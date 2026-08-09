@@ -9,11 +9,11 @@ field, and renders it through its own templates and escaping.
 
 | Module          | Page slug          | Kind                       | Backend engine (localhost)           | Default base URL        |
 |-----------------|--------------------|----------------------------|--------------------------------------|-------------------------|
-| `websearch`     | `/websearch`       | search bridge              | `astrx-suite/websearch`              | `http://127.0.0.1:8803` |
-| `onionsearch`   | `/onionsearch`     | search bridge              | `astrx-suite/onioncrawler`           | `http://127.0.0.1:8802` |
-| `torrentsearch` | `/torrentsearch`   | search bridge              | `astrx-suite/torrentds`              | `http://127.0.0.1:8804` |
+| `websearch`     | `/websearch`       | search bridge              | `astrx-suite/legacy-python/websearch`              | `http://127.0.0.1:8803` |
+| `onionsearch`   | `/onionsearch`     | search bridge              | `astrx-suite/legacy-python/onioncrawler`           | `http://127.0.0.1:8802` |
+| `torrentsearch` | `/torrentsearch`   | search bridge              | `astrx-suite/legacy-python/torrentds`              | `http://127.0.0.1:8804` |
 | `fedsearch`     | `/fedsearch`       | unified `?source=` tabs    | all four engines                     | (per-source)            |
-| `gitbrowse`     | `/gitbrowse`       | link-through to gitweb     | `astrx-suite/gitweb`                 | `http://127.0.0.1:8801` |
+| `gitbrowse`     | `/gitbrowse`       | link-through to gitweb     | `astrx-suite/legacy-python/gitweb`                 | `http://127.0.0.1:8801` |
 | `suiteadmin`    | `/admin/suite`     | admin status/control panel | every engine's health/metrics        | (per-service)           |
 | `blocklist`     | `/admin/blocklist` | admin blocklist editor     | onioncrawler + torrentds block APIs  | (per-service)           |
 
@@ -276,7 +276,7 @@ themselves — AstrX just consumes their `/api/search` JSON.
 
 ### Clear-web (`websearch`, port 8803)
 ```
-cd astrx-suite/websearch
+cd astrx-suite/legacy-python/websearch
 python3 -m websearch crawl --seeds seeds.example --db web.db --scope-domain example.com
 python3 -m websearch serve --db web.db --port 8803
 ```
@@ -285,7 +285,7 @@ python3 -m websearch serve --db web.db --port 8803
 Requires a running Tor SOCKS proxy for crawling (default `127.0.0.1:9050`); the
 `search` server itself only needs the built DB.
 ```
-cd astrx-suite/onioncrawler
+cd astrx-suite/legacy-python/onioncrawler
 python3 -m onioncrawler crawl  --seeds seeds.example --db crawl.db --tor-port 9050
 python3 -m onioncrawler search --db crawl.db --port 8802
 ```
@@ -591,9 +591,9 @@ SELECT @gb_nav_id, @gb_page_id WHERE @gb_page_id IS NOT NULL AND @gb_nav_id IS N
 
 ### Running the engines behind the pages
 ```
-cd astrx-suite/torrentds    && python3 -m torrentds search --port 8804      # torrentsearch
-cd astrx-suite/onioncrawler && python3 -m onioncrawler search --port 8802   # suiteadmin control (/add)
-cd astrx-suite/gitweb       && python3 -m gitweb --root /srv/git --port 8801 # gitbrowse link target
+cd astrx-suite/legacy-python/torrentds    && python3 -m torrentds search --port 8804      # torrentsearch
+cd astrx-suite/legacy-python/onioncrawler && python3 -m onioncrawler search --port 8802   # suiteadmin control (/add)
+cd astrx-suite/legacy-python/gitweb       && python3 -m gitweb --root /srv/git --port 8801 # gitbrowse link target
 ```
 onioncrawler's `/add` accepts a submission only if it was started with
 `allow_public_submit` (or admin credentials); otherwise the suiteadmin form
