@@ -34,9 +34,9 @@ KINDS = (KIND_PGP, KIND_BTC, KIND_XMR, KIND_ETH)
 _MAX_TEXT = 2_000_000        # scan at most ~2 MB of page text
 _MAX_PER_KIND = 100          # cap entities of each kind per page
 
-_PGP = re.compile(
-    r"-----BEGIN PGP PUBLIC KEY BLOCK-----(.{0,200000}?)"
-    r"-----END PGP PUBLIC KEY BLOCK-----", re.DOTALL)
+_PGP_BEGIN = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
+_PGP_END = "-----END PGP PUBLIC KEY BLOCK-----"
+_PGP_BODY_CAP = 100_000     # a real armored key is a few KB; cap crafted giants
 # Bitcoin: legacy/P2SH base58 (1/3 + 25-34 base58 chars) OR bech32 (bc1 + body).
 _BTC = re.compile(
     r"\b(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{11,71})\b")
@@ -72,12 +72,23 @@ def extract(text):
             seen.add(key)
             out.append((kind, value))
 
+    # PGP blocks are matched with a LINEAR str.find scan (not a lazy regex): a
+    # hostile page with many BEGIN markers and no END would make a regex rescan
+    # quadratically and pin the crawl worker.  str.find is C-level substring
+    # search; a missing END simply ends the scan.
     n = 0
-    for m in _PGP.finditer(t):
-        add(KIND_PGP, _pgp_fingerprint(m.group(1)))
-        n += 1
-        if n >= _MAX_PER_KIND:
+    pos = 0
+    while n < _MAX_PER_KIND:
+        b = t.find(_PGP_BEGIN, pos)
+        if b == -1:
             break
+        e = t.find(_PGP_END, b + len(_PGP_BEGIN))
+        if e == -1:
+            break                 # no closing marker -> no more complete blocks
+        body = t[b + len(_PGP_BEGIN):e][:_PGP_BODY_CAP]
+        add(KIND_PGP, _pgp_fingerprint(body))
+        pos = e + len(_PGP_END)
+        n += 1
 
     for rx, kind in ((_BTC, KIND_BTC), (_XMR, KIND_XMR), (_ETH, KIND_ETH)):
         n = 0

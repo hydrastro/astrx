@@ -764,10 +764,15 @@ class Handler(BaseHTTPRequestHandler):
         if lim > 0:
             page_size = min(API_MAX_LIMIT, lim)
             page = 1
+        # Vertical parity with the HTML UI: type=news (fresh) / type=files.
+        vtype = self._str_param("type")
+        sort = "fresh" if vtype == "news" else "relevance"
+        only_files = (vtype == "files")
         conn = self._conn()
         try:
             results, total, elapsed, parsed = ranking.search(
-                conn, q, page=page, page_size=page_size)
+                conn, q, page=page, page_size=page_size, sort=sort,
+                only_files=only_files)
         finally:
             conn.close()
         payload = {

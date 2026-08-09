@@ -61,6 +61,23 @@ class TestEntities(unittest.TestCase):
         eth = [v for k, v in got if k == "eth"]
         self.assertLessEqual(len(eth), 100)      # per-kind cap enforced
 
+    def test_pgp_no_end_marker_is_linear(self):
+        # Regression: many BEGIN markers with NO END must not rescan
+        # quadratically (a lazy regex did; the str.find scan is linear).
+        body = ("-----BEGIN PGP PUBLIC KEY BLOCK-----\n" * 55000)[:2_000_000]
+        t = time.monotonic()
+        got = entities.extract(body)
+        dt = time.monotonic() - t
+        self.assertLess(dt, 2.0, "PGP scan not linear: %.2fs" % dt)
+        self.assertEqual([v for k, v in got if k == "pgp"], [])  # no complete block
+
+    def test_pgp_block_still_extracted(self):
+        block = ("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmQINBFxyz\nabc==\n"
+                 "-----END PGP PUBLIC KEY BLOCK-----")
+        pgp = [v for k, v in entities.extract("hi " + block + " bye")
+               if k == "pgp"]
+        self.assertEqual(len(pgp), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
