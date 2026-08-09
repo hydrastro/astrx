@@ -1,0 +1,25 @@
+[Unit]
+Description=astrx-websearch periodic recrawl (freshness / conditional GET)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=websearch
+Group=websearch
+WorkingDirectory=/var/lib/websearch
+# Re-queue indexed URLs older than the interval and refetch them with a
+# conditional GET (304 -> revalidate, 200 -> re-index). Seed hosts stay scoped.
+ExecStart=/usr/local/bin/websearch crawl \
+    --db /var/lib/websearch/web.db \
+    --seeds /var/lib/websearch/seeds \
+    --recrawl --recrawl-interval 604800 \
+    --workers 4 --keep-alive
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/websearch
+
+[Install]
+WantedBy=multi-user.target

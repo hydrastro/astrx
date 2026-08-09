@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astrx-websearch"
+version = "1.0.0"
+description = "Zero-dependency clearnet search engine: crawler + FTS5 inverted index + BM25 ranking + no-JS search UI."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "astrx" }]
+keywords = ["search-engine", "crawler", "fts5", "bm25", "sqlite", "no-javascript"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Environment :: Console",
+]
+# Zero third-party dependencies -- Python 3.11 standard library only.
+dependencies = []
+
+[project.urls]
+Homepage = "https://example.invalid/astrx-websearch"
+
+[project.scripts]
+websearch = "websearch.__main__:main"
+
+[tool.setuptools]
+packages = ["websearch"]

@@ -1,0 +1,73 @@
+## astrx-suite Tor configuration — the single ingress for the whole suite.
+##
+## Every published surface is a v3 hidden service; NO clearnet or host port is
+## exposed.  The HiddenServiceDir keys live under /var/lib/tor, which the
+## compose file persists in the `tor-keys` named volume, so every .onion
+## address below is STABLE across restarts.
+##
+## Validate (once the image is built and Docker DNS is available):
+##   docker compose run --rm tor --verify-config
+
+# The container starts as root only to fix the key-volume permissions; Tor then
+# drops to the unprivileged Debian tor user.  (Requires starting as root.)
+User debian-tor
+
+# Persisted key/state directory (the tor-keys volume mounts here).
+DataDirectory /var/lib/tor
+
+# This node only originates and serves onions — never a relay or an exit.
+ExitPolicy reject *:*
+
+# --- SOCKS egress for the onion crawler ------------------------------------
+# Bound to all of Tor's interfaces *inside the container*: Tor's IP on each
+# Docker network is assigned dynamically, so we cannot pin the bind to the
+# internal interface by address.  It is NOT published to the host.
+# IsolateSOCKSAuth gives each .onion host its own circuit (the crawler sends a
+# per-host SOCKS username); KeepAliveIsolateSOCKSAuth keeps it warm for reuse.
+SocksPort 0.0.0.0:9050 IsolateSOCKSAuth KeepAliveIsolateSOCKSAuth
+# Because the bind spans every interface, access is restricted by POLICY, not by
+# address: only the `internal` network's fixed subnet (where onioncrawler-crawl
+# lives) may use SOCKS.  The egress bridge — home to the opt-in clearnet crawlers
+# — and the Docker host are rejected, so a compromised clearnet crawler cannot
+# use Tor as an open proxy.  Keep this CIDR in sync with the `internal` network's
+# ipam subnet in docker-compose.yml.
+SocksPolicy accept 10.63.0.0/24
+SocksPolicy reject *
+
+# --- Published v3 hidden services ------------------------------------------
+# Each maps  <onion>:80  ->  <service-container>:<port>  on the internal
+# network.  The target hostnames are resolved at connection time via Docker's
+# embedded DNS.
+
+# gitweb — read-only, no-JS git web viewer
+HiddenServiceDir /var/lib/tor/gitweb/
+HiddenServiceVersion 3
+HiddenServicePort 80 gitweb:8801
+
+# onioncrawler — no-JS .onion search UI
+HiddenServiceDir /var/lib/tor/onioncrawler_search/
+HiddenServiceVersion 3
+HiddenServicePort 80 onioncrawler-search:8802
+
+# websearch — no-JS clear-web search UI
+HiddenServiceDir /var/lib/tor/websearch/
+HiddenServiceVersion 3
+HiddenServicePort 80 websearch-serve:8803
+
+# torrentds — no-JS DHT torrent-metadata search UI
+HiddenServiceDir /var/lib/tor/torrentds_search/
+HiddenServiceVersion 3
+HiddenServicePort 80 torrentds-search:8804
+
+# torrentds — HTTP BitTorrent tracker (GET /announce, /scrape).
+# Its own HTTP port (8805) is mapped behind the standard onion port 80, so
+# clients announce to http://<onion>/announce.  (v3 onions are TCP-only, so the
+# UDP tracker is intentionally not published here.)
+HiddenServiceDir /var/lib/tor/torrentds_tracker/
+HiddenServiceVersion 3
+HiddenServicePort 80 torrentds-tracker:8805
+
+# suitedash — suite status dashboard
+HiddenServiceDir /var/lib/tor/suitedash/
+HiddenServiceVersion 3
+HiddenServicePort 80 suitedash:8805

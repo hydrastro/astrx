@@ -1,0 +1,16 @@
+[package]
+name = "torrentds"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "DHT torrent-metadata indexer + tracker: bencode wire codec, byte-exact infohash, KRPC (BEP-5)."
+
+[lints]
+workspace = true
+
+# The pure wire core (bencode, infohash, krpc codec) is dependency-free and
+# auditable on its own. Networking needs an async runtime + a CSPRNG; tokio and
+# getrandom are the two vetted, minimal dependencies the live node uses.
+[dependencies]
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
+getrandom = "0.2"

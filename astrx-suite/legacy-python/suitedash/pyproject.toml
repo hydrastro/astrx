@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "suitedash"
+version = "1.0.0"
+description = "Zero-dependency, no-JavaScript ops/status dashboard for the astrx-suite (Python standard library only)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "astrx" }]
+keywords = ["status", "dashboard", "monitoring", "ops", "tor", "no-javascript"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Monitoring",
+]
+# Zero runtime dependencies: the whole dashboard runs on the standard library.
+dependencies = []
+
+[project.scripts]
+suitedash = "suitedash.cli:main"
+
+[tool.setuptools]
+packages = ["suitedash"]
+
+[tool.setuptools.package-data]
+suitedash = ["py.typed"]

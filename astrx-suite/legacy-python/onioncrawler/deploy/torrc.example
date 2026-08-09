@@ -1,0 +1,31 @@
+# Example torrc for onioncrawler.
+#
+#   tor -f /path/to/torrc
+#
+# Two things:
+#  1) A SOCKS port with stream isolation, so onioncrawler's per-host SOCKS
+#     username produces a separate Tor circuit per .onion host (circuit reuse
+#     per host, isolation across hosts).
+#  2) A v3 hidden service that publishes the local no-JS search UI as an .onion,
+#     so the index is itself reachable over Tor without exposing any clearnet
+#     port.
+
+# --- crawling: isolating SOCKS proxy ---
+SocksPort 127.0.0.1:9050 IsolateSOCKSAuth KeepAliveIsolateSOCKSAuth
+
+# Optional: a second, dedicated isolating SOCKS port.
+# SocksPort 127.0.0.1:9052 IsolateSOCKSAuth
+
+# --- publishing the search UI as a hidden service ---
+# Run:  onioncrawler search --db /var/lib/onioncrawler/crawl.db \
+#           --host 127.0.0.1 --port 8802
+# Tor will map <your-address>.onion:80 -> 127.0.0.1:8802.
+HiddenServiceDir /var/lib/tor/onioncrawler_search/
+HiddenServiceVersion 3
+HiddenServicePort 80 127.0.0.1:8802
+
+# After first start, the onion address is in:
+#   /var/lib/tor/onioncrawler_search/hostname
+
+# Hardening: do not run as an exit or relay.
+ExitPolicy reject *:*

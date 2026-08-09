@@ -1,0 +1,9 @@
+# onioncrawler ABUSE KEYWORD BLOCKLIST  (operator-maintained, REQUIRED)
+# --------------------------------------------------------------------
+# One keyword/phrase per line (case-insensitive, whole-token match). Any page
+# whose title or visible text matches is DROPPED from the index.
+#
+# Operators MUST maintain this to keep abusive content - especially CSAM -
+# out of the index. This file ships EMPTY on purpose.
+#
+# Lines starting with '#' and blank lines are ignored.

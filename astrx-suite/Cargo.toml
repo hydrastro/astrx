@@ -1,0 +1,22 @@
+# astrx-suite — Rust engine workspace. One language for the whole suite.
+# Each engine is a crate; crawlcore is the shared library. Zero third-party
+# dependencies by default (stdlib only), matching the suite's austere ethos.
+# The Python engines being retired live under legacy-python/ during migration.
+[workspace]
+resolver = "2"
+members = ["crates/crawlcore", "crates/torrentds"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+repository = "https://github.com/hydrastro/astrx"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

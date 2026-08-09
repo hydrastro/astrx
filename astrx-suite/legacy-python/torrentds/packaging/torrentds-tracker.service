@@ -1,0 +1,24 @@
+[Unit]
+Description=torrentds BitTorrent tracker (HTTP + UDP)
+Documentation=https://example.invalid/torrentds
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=torrentds
+ExecStart=/usr/bin/torrentds tracker --host 0.0.0.0 --http-port 8805 --udp-port 6969 --peers-db /var/lib/torrentds/swarms.bencode
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
