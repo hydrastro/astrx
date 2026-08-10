@@ -22,10 +22,11 @@ pub mod transport;
 
 pub use bencode::{decode, decode_lenient, decode_prefix, encode, Ben, BencodeError};
 pub use dht::{make_neighbor_id, DhtConfig, DhtNode, InfohashSink};
-pub use infohash::{infohash, sha1};
+pub use infohash::{infohash, infohash_v2, sha1, sha256};
 pub use krpc::{encode_error, encode_query, encode_response, parse_message, KrpcMessage};
 pub use metadata::{
-    fetch_metadata, parse_magnet, serve_metadata, Magnet, MetadataError, TorrentMeta,
+    fetch_metadata, is_v2_info, parse_info, parse_magnet, parse_v2_info, serve_metadata,
+    truncate_v2, verify_v2, Magnet, MetadataError, TorrentMeta,
 };
 pub use peerstore::{Event, Family, PeerStore};
 pub use tracker_http::serve_http_tracker;

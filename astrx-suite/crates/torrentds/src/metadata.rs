@@ -19,7 +19,7 @@
 //! the advertised (and bounded) metadata size before the final hash check.
 
 use crate::bencode::{decode, decode_lenient, decode_prefix, encode, Ben};
-use crate::infohash::sha1;
+use crate::infohash::{sha1, sha256};
 use crate::krpc::Dict;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -45,6 +45,12 @@ pub const MAX_MESSAGE_LEN: usize = 1024 * 1024;
 pub const UT_REQUEST: i64 = 0;
 pub const UT_DATA: i64 = 1;
 pub const UT_REJECT: i64 = 2;
+
+/// BEP-52 bounds: the `file tree` is attacker-controlled recursive bencode, so the
+/// walk is bounded on nesting and total node count independently of bencode's
+/// generic depth cap.
+pub const MAX_TREE_DEPTH: usize = 60;
+pub const MAX_TREE_NODES: usize = 100_000;
 
 /// Any metadata-fetch failure (bad handshake, hostile bytes, hash mismatch, I/O).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,18 +197,27 @@ pub fn assemble_and_verify(pieces: &[Vec<u8>], info_hash: &[u8; 20]) -> Option<V
     }
 }
 
-/// A parsed torrent info-dict (v1).
+/// A parsed torrent info-dict (v1, v2, or hybrid).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TorrentMeta {
+    /// The 20-byte DHT/peer-wire infohash: v1 SHA-1 for v1/hybrid, truncated
+    /// SHA-256 for v2-only.
     pub info_hash: [u8; 20],
     pub name: String,
     pub total_size: u64,
     pub piece_length: u64,
     pub piece_count: usize,
     pub files: Vec<(String, u64)>,
-    /// The raw, SHA-1-verified info-dict bytes (kept so a byte-exact `.torrent`
-    /// can be rebuilt whose info section still hashes to `info_hash`).
+    /// The raw, verified info-dict bytes (kept so a byte-exact `.torrent` can be
+    /// rebuilt whose info section still hashes to the infohash).
     pub info_bytes: Option<Vec<u8>>,
+    /// The full 32-byte SHA-256 infohash (BEP-52); `None` for pure v1.
+    pub info_hash_v2: Option<[u8; 32]>,
+    /// `"v1"`, `"v2"`, or `"hybrid"`.
+    pub version: &'static str,
+    /// A name-independent content fingerprint: SHA-256 of the v1 `pieces` blob or
+    /// the v2 `file tree`; `None` when no piece data exists.
+    pub content_id: Option<[u8; 32]>,
 }
 
 /// Decode a SHA-1-verified info-dict, tolerating mildly non-canonical real data
@@ -227,22 +242,31 @@ fn ben_int(d: &Dict, key: &[u8]) -> i64 {
     }
 }
 
-/// Parse a v1 info-dict into a [`TorrentMeta`]. `info_hash` is used verbatim when
-/// supplied, else recomputed as `sha1(encode(info))`.
+/// Parse an info-dict into a [`TorrentMeta`], routing BEP-52 v2/hybrid dicts to
+/// [`parse_v2_info`] and everything else through the classic v1 layout.
+/// `info_hash` is used verbatim when supplied, else recomputed.
 pub fn parse_info(
     info: &Dict,
     info_hash: Option<[u8; 20]>,
     info_bytes: Option<Vec<u8>>,
-) -> TorrentMeta {
+) -> Result<TorrentMeta, MetadataError> {
+    if is_v2_info(info) {
+        return parse_v2_info(
+            info,
+            info_bytes.as_deref(),
+            info_hash.as_ref().map(<[u8; 20]>::as_slice),
+        );
+    }
     let name = match info.get(b"name".as_slice()) {
         Some(Ben::Bytes(b)) => String::from_utf8_lossy(b).into_owned(),
         _ => String::new(),
     };
     let piece_length = ben_int(info, b"piece length").max(0) as u64;
-    let piece_count = match info.get(b"pieces".as_slice()) {
-        Some(Ben::Bytes(b)) => b.len() / 20,
-        _ => 0,
+    let pieces_blob = match info.get(b"pieces".as_slice()) {
+        Some(Ben::Bytes(b)) => Some(b),
+        _ => None,
     };
+    let piece_count = pieces_blob.map_or(0, |b| b.len() / 20);
 
     let mut files: Vec<(String, u64)> = Vec::new();
     let total_size;
@@ -277,8 +301,10 @@ pub fn parse_info(
         total_size = length;
     }
 
+    // Name-independent content fingerprint: the v1 piece-hash blob.
+    let content_id = pieces_blob.filter(|b| !b.is_empty()).map(|b| sha256(b));
     let info_hash = info_hash.unwrap_or_else(|| sha1(&encode(&Ben::Dict(info.clone()))));
-    TorrentMeta {
+    Ok(TorrentMeta {
         info_hash,
         name,
         total_size,
@@ -286,12 +312,173 @@ pub fn parse_info(
         piece_count,
         files,
         info_bytes,
-    }
+        info_hash_v2: None,
+        version: "v1",
+        content_id,
+    })
 }
 
 /// `sha1(encode(info))` — the v1 infohash of an info-dict.
 pub fn infohash_of(info: &Dict) -> [u8; 20] {
     sha1(&encode(&Ben::Dict(info.clone())))
+}
+
+// --- BEP-52 v2 / hybrid ----------------------------------------------------
+
+/// True if `info` is a BEP-52 v2 (or hybrid) info-dict.
+pub fn is_v2_info(info: &Dict) -> bool {
+    matches!(info.get(b"meta version".as_slice()), Some(Ben::Int(2)))
+        && matches!(info.get(b"file tree".as_slice()), Some(Ben::Dict(_)))
+}
+
+/// True if `info` carries BOTH v2 and v1 (`pieces`) structures.
+pub fn is_hybrid_info(info: &Dict) -> bool {
+    is_v2_info(info) && matches!(info.get(b"pieces".as_slice()), Some(Ben::Bytes(_)))
+}
+
+/// The 20-byte truncated v2 infohash used where the DHT/peer wire needs 20 bytes.
+pub fn truncate_v2(info_hash_v2: &[u8; 32]) -> [u8; 20] {
+    let mut t = [0u8; 20];
+    t.copy_from_slice(&info_hash_v2[..20]);
+    t
+}
+
+/// Byte-exact v2 verification: recompute SHA-256 over `info_bytes` and compare to
+/// `expected` (32-byte full, or 20-byte truncated DHT form). Any other length is
+/// rejected.
+pub fn verify_v2(info_bytes: &[u8], expected: &[u8]) -> bool {
+    let digest = sha256(info_bytes);
+    match expected.len() {
+        32 => digest == expected,
+        20 => digest[..20] == *expected,
+        _ => false,
+    }
+}
+
+/// v2 analogue of [`assemble_and_verify`] (SHA-256 instead of SHA-1).
+pub fn assemble_and_verify_v2(pieces: &[Vec<u8>], info_hash_v2: &[u8]) -> Option<Vec<u8>> {
+    let metadata = pieces.concat();
+    verify_v2(&metadata, info_hash_v2).then_some(metadata)
+}
+
+/// Flatten a BEP-52 `file tree` into `[(path, length), …]`. Each leaf is a
+/// `{"": {"length": N, …}}` node whose accumulated key path is the file path. The
+/// recursion is bounded on both depth and total node count — the tree is hostile
+/// network data.
+pub fn walk_file_tree(file_tree: &Dict) -> Result<Vec<(String, u64)>, MetadataError> {
+    let mut out = Vec::new();
+    let mut nodes = 0usize;
+    let mut prefix: Vec<String> = Vec::new();
+    walk_tree_rec(file_tree, &mut prefix, 0, &mut nodes, &mut out)?;
+    Ok(out)
+}
+
+fn walk_tree_rec(
+    node: &Dict,
+    prefix: &mut Vec<String>,
+    depth: usize,
+    nodes: &mut usize,
+    out: &mut Vec<(String, u64)>,
+) -> Result<(), MetadataError> {
+    if depth > MAX_TREE_DEPTH {
+        return merr(format!("file tree nested too deeply (>{MAX_TREE_DEPTH})"));
+    }
+    // A file leaf: the empty-string key holds the length / pieces-root.
+    if let Some(Ben::Dict(leaf)) = node.get(b"".as_slice()) {
+        if leaf.contains_key(b"length".as_slice()) {
+            let length = ben_int(leaf, b"length").max(0) as u64;
+            out.push((prefix.join("/"), length));
+            return Ok(());
+        }
+    }
+    for (name, child) in node {
+        *nodes += 1;
+        if *nodes > MAX_TREE_NODES {
+            return merr(format!("file tree too large (>{MAX_TREE_NODES} nodes)"));
+        }
+        if name.is_empty() {
+            continue; // the leaf key, handled above
+        }
+        let Ben::Dict(child_dict) = child else {
+            continue;
+        };
+        prefix.push(String::from_utf8_lossy(name).into_owned());
+        walk_tree_rec(child_dict, prefix, depth + 1, nodes, out)?;
+        prefix.pop();
+    }
+    Ok(())
+}
+
+/// Parse a BEP-52 v2 (or hybrid) info-dict. The v2 infohash is SHA-256 over the
+/// raw verified bytes when supplied (so a non-canonical dict still hashes right),
+/// else over a re-encode. When `dht_info_hash` is given the recomputed hash is
+/// verified against it (full 32-byte, 20-byte primary, or truncated SHA-256); a
+/// mismatch is rejected so a substitute dict is never silently accepted.
+pub fn parse_v2_info(
+    info: &Dict,
+    info_bytes: Option<&[u8]>,
+    dht_info_hash: Option<&[u8]>,
+) -> Result<TorrentMeta, MetadataError> {
+    let Some(Ben::Dict(file_tree)) = info.get(b"file tree".as_slice()) else {
+        return merr("v2 info-dict has no file tree");
+    };
+    let name = match info.get(b"name".as_slice()) {
+        Some(Ben::Bytes(b)) => String::from_utf8_lossy(b).into_owned(),
+        _ => String::new(),
+    };
+    let piece_length = ben_int(info, b"piece length").max(0) as u64;
+    let files = walk_file_tree(file_tree)?;
+    let total_size = files
+        .iter()
+        .fold(0u64, |acc, (_, l)| acc.saturating_add(*l));
+
+    let raw = match info_bytes {
+        Some(b) => b.to_vec(),
+        None => encode(&Ben::Dict(info.clone())),
+    };
+    let v2_full = sha256(&raw);
+    let truncated = truncate_v2(&v2_full);
+
+    let (piece_count, version, primary) = if is_hybrid_info(info) {
+        let pc = match info.get(b"pieces".as_slice()) {
+            Some(Ben::Bytes(b)) => b.len() / 20,
+            _ => 0,
+        };
+        (pc, "hybrid", sha1(&raw)) // hybrid: the DHT key is the v1 SHA-1
+    } else {
+        let pc = if piece_length > 0 {
+            total_size.div_ceil(piece_length) as usize
+        } else {
+            0
+        };
+        (pc, "v2", truncated) // v2-only: the DHT key is the truncated SHA-256
+    };
+
+    if let Some(dht) = dht_info_hash {
+        let ok = match dht.len() {
+            32 => dht == v2_full.as_slice(),
+            20 => dht == primary.as_slice() || dht == truncated.as_slice(),
+            _ => false,
+        };
+        if !ok {
+            return merr("v2 info-dict does not match requested infohash");
+        }
+    }
+
+    // Content fingerprint: the file-tree digest (paths + lengths + pieces roots).
+    let content_id = Some(sha256(&encode(&Ben::Dict(file_tree.clone()))));
+    Ok(TorrentMeta {
+        info_hash: primary,
+        name,
+        total_size,
+        piece_length,
+        piece_count,
+        files,
+        info_bytes: info_bytes.map(<[u8]>::to_vec),
+        info_hash_v2: Some(v2_full),
+        version,
+        content_id,
+    })
 }
 
 // --- magnet URIs -----------------------------------------------------------
@@ -519,17 +706,21 @@ async fn read_ext_handshake(
 /// trickles keep-alives (or data for already-filled pieces) one-per-read-window
 /// can never make `received` advance, so a per-read timer alone would let it pin
 /// the connection open forever. The overall deadline here closes that off.
+/// The 20-byte `info_hash` is always what goes on the BEP-3 handshake. When
+/// `info_hash_v2` (20-byte truncated or 32-byte full SHA-256) is given, the
+/// assembled metadata is verified with SHA-256 (BEP-52) instead of SHA-1.
 pub async fn fetch_metadata(
     info_hash: &[u8; 20],
     host: &str,
     port: u16,
     timeout: Duration,
     peer_id: Option<[u8; 20]>,
+    info_hash_v2: Option<&[u8]>,
 ) -> Result<TorrentMeta, MetadataError> {
     let peer_id = peer_id.unwrap_or_else(random_peer_id);
     match tokio::time::timeout(
         timeout,
-        fetch_inner(info_hash, host, port, timeout, peer_id),
+        fetch_inner(info_hash, host, port, timeout, peer_id, info_hash_v2),
     )
     .await
     {
@@ -544,6 +735,7 @@ async fn fetch_inner(
     port: u16,
     timeout: Duration,
     peer_id: [u8; 20],
+    info_hash_v2: Option<&[u8]>,
 ) -> Result<TorrentMeta, MetadataError> {
     let mut stream = match tokio::time::timeout(timeout, TcpStream::connect((host, port))).await {
         Ok(Ok(s)) => s,
@@ -621,10 +813,15 @@ async fn fetch_inner(
     }
 
     let collected: Vec<Vec<u8>> = pieces.into_iter().flatten().collect();
-    let metadata = assemble_and_verify(&collected, info_hash)
-        .ok_or_else(|| MetadataError("assembled metadata failed SHA-1 verification".into()))?;
+    let metadata = match info_hash_v2 {
+        Some(v2) => assemble_and_verify_v2(&collected, v2).ok_or_else(|| {
+            MetadataError("assembled metadata failed SHA-256 verification".into())
+        })?,
+        None => assemble_and_verify(&collected, info_hash)
+            .ok_or_else(|| MetadataError("assembled metadata failed SHA-1 verification".into()))?,
+    };
     let info = decode_info_dict(&metadata)?;
-    Ok(parse_info(&info, Some(*info_hash), Some(metadata)))
+    parse_info(&info, Some(*info_hash), Some(metadata))
 }
 
 // --- loopback peer that serves an info-dict (tests / demo) -----------------
@@ -775,7 +972,7 @@ mod tests {
             b"files".to_vec(),
             Ben::List(vec![mkfile(i64::MAX), mkfile(i64::MAX), mkfile(i64::MAX)]),
         );
-        let m = parse_info(&d, Some([0u8; 20]), None);
+        let m = parse_info(&d, Some([0u8; 20]), None).unwrap();
         assert_eq!(m.total_size, u64::MAX);
     }
 
@@ -797,7 +994,7 @@ mod tests {
         let Ben::Dict(info) = decode(&meta).unwrap() else {
             panic!()
         };
-        let m = parse_info(&info, None, None);
+        let m = parse_info(&info, None, None).unwrap();
         assert_eq!(m.name, "hello.txt");
         assert_eq!(m.total_size, 1234);
         assert_eq!(m.piece_length, PIECE_SIZE as u64);
@@ -824,7 +1021,7 @@ mod tests {
                 mkfile(&[b"b.bin"], 50),
             ]),
         );
-        let m2 = parse_info(&d, None, None);
+        let m2 = parse_info(&d, None, None).unwrap();
         assert_eq!(m2.total_size, 150);
         assert_eq!(
             m2.files,
@@ -842,6 +1039,7 @@ mod tests {
             &addr.ip().to_string(),
             addr.port(),
             Duration::from_secs(5),
+            None,
             None,
         )
         .await
@@ -866,6 +1064,7 @@ mod tests {
             addr.port(),
             Duration::from_secs(5),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -886,9 +1085,90 @@ mod tests {
             addr.port(),
             Duration::from_secs(5),
             None,
+            None,
         )
         .await;
         assert!(r.is_err(), "corrupt metadata must fail verification");
+        handle.abort();
+    }
+
+    fn v2_metadata() -> Vec<u8> {
+        let leaf = |len: i64| {
+            let mut inner = Dict::new();
+            inner.insert(b"length".to_vec(), Ben::Int(len));
+            inner.insert(b"pieces root".to_vec(), Ben::Bytes(vec![0u8; 32]));
+            let mut l = Dict::new();
+            l.insert(b"".to_vec(), Ben::Dict(inner));
+            Ben::Dict(l)
+        };
+        let mut ft = Dict::new();
+        ft.insert(b"file.bin".to_vec(), leaf(500));
+        let mut info = Dict::new();
+        info.insert(b"file tree".to_vec(), Ben::Dict(ft));
+        info.insert(b"meta version".to_vec(), Ben::Int(2));
+        info.insert(b"name".to_vec(), Ben::Bytes(b"v2dir".to_vec()));
+        info.insert(b"piece length".to_vec(), Ben::Int(PIECE_SIZE as i64));
+        encode(&Ben::Dict(info))
+    }
+
+    #[test]
+    fn v2_parse_and_verify() {
+        let meta = v2_metadata();
+        let Ben::Dict(info) = decode(&meta).unwrap() else {
+            panic!()
+        };
+        assert!(is_v2_info(&info));
+        assert!(!is_hybrid_info(&info));
+        let v2_full = sha256(&meta);
+        let m = parse_v2_info(&info, Some(&meta), Some(&truncate_v2(&v2_full))).unwrap();
+        assert_eq!(m.version, "v2");
+        assert_eq!(m.info_hash_v2, Some(v2_full));
+        assert_eq!(m.info_hash, truncate_v2(&v2_full));
+        assert_eq!(m.files, vec![("file.bin".to_string(), 500)]);
+        // verify_v2 accepts both the 32- and 20-byte forms, rejects a wrong hash
+        assert!(verify_v2(&meta, &v2_full));
+        assert!(verify_v2(&meta, &truncate_v2(&v2_full)));
+        assert!(!verify_v2(&meta, &[0u8; 32]));
+        // a mismatched requested infohash is rejected (no silent substitute)
+        assert!(parse_v2_info(&info, Some(&meta), Some(&[9u8; 20])).is_err());
+    }
+
+    #[test]
+    fn walk_file_tree_bounds_depth() {
+        // A pathologically deep file tree is rejected, not stack-overflowed.
+        let mut leaf_inner = Dict::new();
+        leaf_inner.insert(b"length".to_vec(), Ben::Int(1));
+        let mut leaf = Dict::new();
+        leaf.insert(b"".to_vec(), Ben::Dict(leaf_inner));
+        let mut cur = Ben::Dict(leaf);
+        for _ in 0..(MAX_TREE_DEPTH + 5) {
+            let mut d = Dict::new();
+            d.insert(b"x".to_vec(), cur);
+            cur = Ben::Dict(d);
+        }
+        let Ben::Dict(tree) = cur else { panic!() };
+        assert!(walk_file_tree(&tree).is_err());
+    }
+
+    #[tokio::test]
+    async fn fetch_v2_round_trip() {
+        let meta = v2_metadata();
+        let v2_full = sha256(&meta);
+        let dht20 = truncate_v2(&v2_full); // 20-byte truncated SHA-256 on the wire
+        let (addr, handle) = serve_metadata(meta.clone(), false).await.unwrap();
+        let got = fetch_metadata(
+            &dht20,
+            &addr.ip().to_string(),
+            addr.port(),
+            Duration::from_secs(5),
+            None,
+            Some(&v2_full),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.version, "v2");
+        assert_eq!(got.info_hash_v2, Some(v2_full));
+        assert_eq!(got.files, vec![("file.bin".to_string(), 500)]);
         handle.abort();
     }
 

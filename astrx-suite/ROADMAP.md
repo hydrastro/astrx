@@ -17,7 +17,7 @@ throughout the migration. Zero third-party dependencies by default;
 | Component        | State        | Done | Remaining |
 |------------------|--------------|------|-----------|
 | **crawlcore**    | ✅ complete   | globmatch, dedup (SimHash), scheduler, traps — 14 tests, SimHash byte-identical to Python | — |
-| **torrentds**    | 🚧 indexer   | bencode (+ `decode_prefix`/`decode_lenient`) + infohash + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata → `TorrentMeta`) + **magnet parsing** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free) — 67 tests; DHT datagrams, ut_metadata wire, tracker wire (HTTP + UDP), magnet, SimHash, BEP-33 & the classifier all cross-checked byte-identical to Python | BEP-52 v2/hybrid metadata; persistent index store (harvested infohashes + fetched metadata); no-JS search + JSON API; blocklist; Torznab |
+| **torrentds**    | 🚧 indexer   | SHA-1 + **SHA-256** + bencode (+ `decode_prefix`/`decode_lenient`) + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata + **BEP-52 v2/hybrid**: SHA-256 infohash, bounded file-tree walk → `TorrentMeta`) + **magnet** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free, Unicode `\b`) — 87 tests; DHT datagrams, ut_metadata wire, v1/v2/hybrid infohashes, tracker wire (HTTP + UDP), magnet, SimHash, BEP-33 & the classifier all cross-checked byte-identical to Python | persistent index store (harvested infohashes + fetched metadata); no-JS search + JSON API; blocklist; Torznab |
 | **onioncrawler** | ⏳ not started | — | SOCKS5 fetcher + **darknet gate as a type** (clearnet leak = compile error); resumable frontier (lease/resume); robots + trap wiring (uses crawlcore); FTS search; abuse blocklist; entity index; Tor fetch-pool |
 | **websearch**    | ⏳ not started | — | polite resumable crawler; SSRF denylist (as a type); FTS index; BM25 + PageRank ranking; verticals; no-JS UI + JSON API; federation (sharding + scatter-gather) |
 | **gitweb**       | ⏳ not started | — | argv-only git exec (confined); repo/log/diff/tree/blob/blame/refs; releases; patch/mail archive; no-JS UI |
@@ -62,10 +62,17 @@ torrentds now also **serves** as a tracker: a shared, LRU-bounded, TTL-reaped
 database needed) backs both a **BEP-15 UDP tracker** (stateless keyed
 connection-ids, source-address-only peers) and a **BEP-3/23 HTTP tracker**
 (binary query parsing, compact + dict peer lists). Both wire formats are pinned
-byte-identical to Python and round-trip over loopback. Next: BEP-52 v2 metadata,
-a persistent index store, then the no-JS search UI + JSON API. The pure wire core
-(bencode/infohash/krpc/bep33/classify/peerstore) stays dependency-free; only the
-live networking adds two vetted deps — `tokio` (async runtime) and `getrandom`
+byte-identical to Python and round-trip over loopback.
+
+The metadata path now also handles **BEP-52 v2 and hybrid** torrents: a
+hand-rolled SHA-256 (FIPS-vector-tested) gives the v2 infohash, a depth- and
+node-bounded `file tree` walk yields the file list, and `fetch_metadata` verifies
+the assembled bytes with SHA-256 (truncated or full) instead of SHA-1 when a v2
+hash is supplied. v2, hybrid and the content fingerprints are all cross-checked
+byte-identical to Python. Next: a persistent index store, then the no-JS search UI
++ JSON API. The pure wire core (bencode/infohash/krpc/bep33/classify/peerstore)
+stays dependency-free; only the live networking adds two vetted deps — `tokio`
+(async runtime) and `getrandom`
 (CSPRNG). This is the crate with the strongest safety argument, so it goes first.
 
 **Phase 2 — onioncrawler.** The crown-jewel safety win: model the darknet-only
