@@ -1,0 +1,217 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Rust CI for the astrx-suite Cargo workspace (crawlcore + torrentds).
+#
+# ⚠️  ACTIVATION NOTE — PLEASE READ
+# GitHub Actions only executes workflow files that live in the *repository root*
+# `.github/workflows/` directory. This file sits at
+#
+#     astrx-suite/.github/workflows/rust.yml
+#
+# i.e. inside the suite subdirectory, so GitHub will NOT pick it up from here.
+# This copy is the version-controlled *source of truth* that travels with the
+# suite (so the CI bar the docs promise is committed next to the code it gates).
+# To actually enable it, copy it to the repo root once:
+#
+#     cp astrx-suite/.github/workflows/rust.yml .github/workflows/rust.yml
+#
+# Because the suite is a subdirectory of the repo, every job below `cd`s into
+# `astrx-suite` (via `defaults.run.working-directory`) and the push/PR path
+# filters are written relative to the repo root.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Rust CI
+
+on:
+  push:
+    paths:
+      - 'astrx-suite/**'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'astrx-suite/**'
+      - '.github/workflows/rust.yml'
+
+# Least privilege: CI only needs to read the checked-out source.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every `run:` step executes from the suite subdirectory. This does NOT affect
+# `uses:` action steps (checkout / toolchain / cache), which operate against the
+# repo root — exactly what we want, since the suite is nested in the repo.
+defaults:
+  run:
+    working-directory: astrx-suite
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── 1. Formatting ──────────────────────────────────────────────────────────
+  fmt:
+    name: rustfmt (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain (+ rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --all --check
+        run: cargo fmt --all --check
+
+  # ── 2. Clippy — full feature surface, warnings are hard errors ────────────
+  clippy:
+    name: clippy (stable, --all-features -D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain (+ clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: cargo clippy --all-targets --workspace --all-features -- -D warnings
+        run: cargo clippy --all-targets --workspace --all-features -- -D warnings
+
+  # ── 3. Tests — full feature surface, on stable ────────────────────────────
+  test:
+    name: test (stable, --all-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features
+
+  # ── 4. MSRV — the workspace must build & test on Rust 1.80 ────────────────
+  msrv:
+    name: MSRV 1.80 (build + test, --all-features)
+    runs-on: ubuntu-latest
+    # The repo ships a `rust-toolchain.toml` pinned to `stable`. That file would
+    # otherwise override whatever toolchain the action installs and silently run
+    # this job on stable. `RUSTUP_TOOLCHAIN` takes precedence over the toolchain
+    # file, so setting it here makes the MSRV job genuinely exercise 1.80.0 —
+    # the `rust-version` declared in `[workspace.package]`.
+    env:
+      RUSTUP_TOOLCHAIN: 1.80.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.80.0 (declared MSRV)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.80.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: cargo build --workspace --all-features (on MSRV)
+        run: cargo build --workspace --all-features
+      - name: cargo test --workspace --all-features (on MSRV)
+        run: cargo test --workspace --all-features
+
+  # ── 5. Pure core — prove the default build has ZERO third-party deps ──────
+  # The suite's austere invariant: `torrentds` with its default (empty) feature
+  # set is the pure wire core and must depend on nothing but the standard
+  # library. This job builds it feature-less and then fails if `cargo tree`
+  # reports any crate other than torrentds itself.
+  pure-core:
+    name: pure core (torrentds --no-default-features, zero deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: Build the default (feature-less) wire core
+        run: cargo build -p torrentds --no-default-features
+      - name: Assert the pure core has ZERO third-party dependencies
+        run: |
+          set -euo pipefail
+          # Print the *normal* dependency graph flat (no tree glyphs, no prefix).
+          # With no features enabled the only line permitted is torrentds' own
+          # entry; anything else means a third-party dependency has leaked into
+          # what is supposed to be a stdlib-only, independently-auditable core.
+          echo "normal dependency graph of 'torrentds --no-default-features':"
+          tree_out="$(cargo tree -p torrentds --no-default-features -e normal --prefix none)"
+          echo "$tree_out"
+          extra="$(printf '%s\n' "$tree_out" | awk 'NF && $1 != "torrentds" { print }')"
+          if [ -n "$extra" ]; then
+            echo "::error::pure core is no longer dependency-free — offending crate(s):"
+            printf '%s\n' "$extra"
+            exit 1
+          fi
+          echo "OK: 'torrentds --no-default-features' pulls in zero third-party crates."
+
+  # ── 6. Feature powerset — every feature combination must at least `check` ─
+  # torrentds' tiers are default={} / rand / net(=>rand). cargo-hack enumerates
+  # {}, {rand}, {net}, {rand,net} and checks each, catching feature-gating slips
+  # (e.g. an item used behind the wrong `#[cfg]`).
+  features:
+    name: feature powerset (cargo-hack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --locked
+      - name: cargo hack --feature-powerset check
+        # Explicit fallback if you ever drop the cargo-hack dependency — the same
+        # coverage by hand:
+        #   cargo check -p torrentds --no-default-features
+        #   cargo check -p torrentds --features rand
+        #   cargo check -p torrentds --features net
+        run: cargo hack --feature-powerset --workspace check
+
+  # ── 7. Fuzz smoke — best-effort; never blocks the merge ───────────────────
+  # The wire parsers (bencode / KRPC / metadata) are the crate's raison d'être
+  # for Rust, so they get fuzz harnesses. This job only *builds* them as a smoke
+  # check (no long campaign). The whole job is advisory: the fuzz setup is still
+  # being introduced alongside the parsers, so a missing or experimental `fuzz/`
+  # directory must not fail the pipeline.
+  fuzz-smoke:
+    name: fuzz smoke (nightly + cargo-fuzz, best-effort)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly toolchain (cargo-fuzz requires nightly)
+        uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: astrx-suite
+      - name: Install cargo-fuzz
+        continue-on-error: true
+        run: cargo install cargo-fuzz --locked
+      - name: Build fuzz targets if a fuzz/ directory exists
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          # cargo-fuzz needs an explicit `+nightly`: the repo's rust-toolchain.toml
+          # pins stable in this working directory, which would otherwise win.
+          # cargo-fuzz's conventional home is a `fuzz/` dir inside the crate, but
+          # tolerate a workspace-level `fuzz/` too. Absence is expected for now.
+          if [ -d crates/torrentds/fuzz ]; then
+            echo "found crates/torrentds/fuzz — building fuzz targets"
+            ( cd crates/torrentds && cargo +nightly fuzz build )
+          elif [ -d fuzz ]; then
+            echo "found fuzz/ — building fuzz targets"
+            cargo +nightly fuzz build
+          else
+            echo "no fuzz/ directory present yet — skipping fuzz smoke."
+            echo "Harnesses for the bencode / KRPC / metadata parsers land here later."
+          fi

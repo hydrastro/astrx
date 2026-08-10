@@ -26,6 +26,14 @@ pub enum Ben {
 #[derive(Debug, PartialEq, Eq)]
 pub struct BencodeError(pub String);
 
+impl BencodeError {
+    /// The human-readable failure message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for BencodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "bencode: {}", self.0)

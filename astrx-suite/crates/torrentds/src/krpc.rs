@@ -48,9 +48,24 @@ pub struct KrpcError {
     pub message: String,
 }
 
+impl std::fmt::Display for KrpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "krpc error {}: {}", self.code, self.message)
+    }
+}
+impl std::error::Error for KrpcError {}
+
 /// A failure to parse a datagram as a structurally valid KRPC message.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseError(pub String);
+
+impl ParseError {
+    /// The human-readable failure message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -60,7 +75,7 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 impl From<BencodeError> for ParseError {
     fn from(e: BencodeError) -> Self {
-        ParseError(format!("bencode: {}", e.0))
+        ParseError(format!("bencode: {}", e.message()))
     }
 }
 

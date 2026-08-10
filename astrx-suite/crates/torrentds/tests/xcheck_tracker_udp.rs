@@ -1,3 +1,5 @@
+// Exercises `tracker_udp`, which lives behind the `net` feature.
+#![cfg(feature = "net")]
 //! Cross-check: the Rust BEP-15 UDP tracker wire codec is byte-identical to the
 //! Python reference's `struct.pack` layouts (`legacy-python/torrentds/tracker_udp.py`).
 

@@ -1,16 +1,30 @@
 # astrx-suite — Rust engine workspace. One language for the whole suite.
 # Each engine is a crate; crawlcore is the shared library. Zero third-party
-# dependencies by default (stdlib only), matching the suite's austere ethos.
+# dependencies by default (stdlib only), matching the suite's austere ethos:
+# `crawlcore` is stdlib-only, and `torrentds` with its default (empty) feature
+# set is too — the live node's two vetted deps (tokio, getrandom) are pulled in
+# only by the opt-in `net`/`rand` features. `cargo tree --no-default-features`
+# over torrentds is asserted empty in CI, so the claim stays true, not aspirational.
 # The Python engines being retired live under legacy-python/ during migration.
 [workspace]
 resolver = "2"
 members = ["crates/crawlcore", "crates/torrentds"]
+# `fuzz/` is a cargo-fuzz project with its own manifest; it is not a workspace
+# member and is built only via `cargo +nightly fuzz`.
+exclude = ["fuzz"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
 rust-version = "1.80"
 repository = "https://github.com/hydrastro/astrx"
+
+# Versions for the two optional live-networking deps are centralised here so a
+# single line governs them workspace-wide; the crates reference them with
+# `{ workspace = true, optional = true }`.
+[workspace.dependencies]
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"] }
+getrandom = "0.2"
 
 [workspace.lints.clippy]
 all = "warn"

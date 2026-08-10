@@ -1,7 +1,7 @@
 # astrx-suite (Rust) — roadmap & status
 
 One language: **Rust**, for the whole suite. This tracks what is implemented and
-what remains. Updated 2026-08-09.
+what remains. Updated 2026-08-10.
 
 ## The shape of the work
 
@@ -9,15 +9,18 @@ Six engines + one shared library, ported from the Python suite (now in
 `legacy-python/`, retired one engine at a time). Each engine is a crate that
 stands up behind the **identical JSON/loopback API** the AstrX CMS already speaks,
 so the PHP bridge (and its 145 tests) never change and the suite keeps running
-throughout the migration. Zero third-party dependencies by default;
-`#![forbid(unsafe_code)]`; every parser gets `cargo fuzz`.
+throughout the migration. Zero third-party dependencies by default — literally,
+and asserted in CI: each crate's default build pulls no third-party crates, and
+live networking is opt-in behind feature flags (`net`/`rand` → `tokio`,
+`getrandom`). `#![forbid(unsafe_code)]` across the tree; the hostile-input
+parsers have `cargo fuzz` harnesses (`fuzz/`).
 
 ## Status at a glance
 
 | Component        | State        | Done | Remaining |
 |------------------|--------------|------|-----------|
 | **crawlcore**    | ✅ complete   | globmatch, dedup (SimHash), scheduler, traps — 14 tests, SimHash byte-identical to Python | — |
-| **torrentds**    | 🚧 indexer   | SHA-1 + **SHA-256** + bencode (+ `decode_prefix`/`decode_lenient`) + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata + **BEP-52 v2/hybrid**: SHA-256 infohash, bounded file-tree walk → `TorrentMeta`) + **magnet** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free, Unicode `\b`) — 87 tests; DHT datagrams, ut_metadata wire, v1/v2/hybrid infohashes, tracker wire (HTTP + UDP), magnet, SimHash, BEP-33 & the classifier all cross-checked byte-identical to Python | persistent index store (harvested infohashes + fetched metadata); no-JS search + JSON API; blocklist; Torznab |
+| **torrentds**    | 🚧 indexer   | SHA-1 + **SHA-256** + bencode (+ `decode_prefix`/`decode_lenient`) + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata + **BEP-52 v2/hybrid**: SHA-256 infohash, bounded file-tree walk → `TorrentMeta`) + **magnet** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free, Unicode `\b`) + **spam heuristics** + **persistent index store** (records + ingest, categorize, content-sig dedup, discovered queue, blocklist, retention, stats, **dependency-free FTS inverted index + BM25 search**, bencode snapshot/restore) — 88 tests (workspace: 102); DHT/ut_metadata/tracker wire, v1/v2/hybrid infohashes, magnet, SimHash, BEP-33, the classifier, **spam scores & the store's categorize/content-signature/magnet helpers** all cross-checked byte-identical to Python. Layered into `default`/`rand`/`net` feature tiers so the pure wire core is dependency-free | no-JS search UI + JSON API; Torznab/RSS; indexer wiring (harvest→store→fetch) |
 | **onioncrawler** | ⏳ not started | — | SOCKS5 fetcher + **darknet gate as a type** (clearnet leak = compile error); resumable frontier (lease/resume); robots + trap wiring (uses crawlcore); FTS search; abuse blocklist; entity index; Tor fetch-pool |
 | **websearch**    | ⏳ not started | — | polite resumable crawler; SSRF denylist (as a type); FTS index; BM25 + PageRank ranking; verticals; no-JS UI + JSON API; federation (sharding + scatter-gather) |
 | **gitweb**       | ⏳ not started | — | argv-only git exec (confined); repo/log/diff/tree/blob/blame/refs; releases; patch/mail archive; no-JS UI |
@@ -152,7 +155,35 @@ and the strict decoder never over-accepts. Fixes applied:
   eviction is deterministic. **bep33** — round-half-to-even to match Python's
   `round()` at the exact-`.5` (single-set-bit) case.
 
+## Structure & professionalization (2026-08-10)
+
+A structure pass hardened the crate for the long haul, before the index store and
+the remaining engines land on top:
+
+- **Feature tiers make the austere claim real.** `torrentds` was pulling `tokio`
+  + `getrandom` unconditionally (13 crates) even for a pure-bencode consumer. It
+  now layers into `default` (pure wire core, **zero** third-party deps), `rand`
+  (+`getrandom` for the routing table / swarm store) and `net` (+`tokio` for the
+  live node, trackers and metadata fetch). CI asserts `cargo tree
+  --no-default-features` is empty, so the dependency-free core can't silently rot.
+- **`metadata.rs` (1227 lines) split** into `metadata/{wire,info,magnet,fetch}` —
+  the byte-exact, fuzzable framing/parsing (pure) is now cleanly separated from
+  the async I/O (`fetch`, behind `net`).
+- **Error hygiene**: `KrpcError` now implements `Display`/`Error`; the string
+  error newtypes gained `message()` accessors; `#[must_use]` was added across the
+  pure builders/hashers — notably on `verify_v2`, so a dropped verification result
+  can't silently accept unverified data. The crate-root re-export surface was
+  completed so `use torrentds::*` can name every type the public APIs hand back.
+- **CI is now real, not just claimed** (`.github/workflows/rust.yml`): fmt +
+  clippy `-D warnings` + `--all-features` test + an MSRV (1.80) job + a
+  feature-powerset check + the zero-dep assertion + a best-effort fuzz smoke.
+- **`cargo fuzz` harnesses added** (`fuzz/`) for bencode, KRPC, info-dict and
+  magnet parsing; plus `deny.toml` (supply-chain policy), `SECURITY.md` (threat
+  model) and `crates/torrentds/tests/README.md` (the cross-check methodology).
+
 ## The CI bar (enforced on every crate)
 
-`cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test`
-· `cargo fuzz` smoke for parsers. All green today.
+`cargo fmt --check` · `cargo clippy --all-targets --all-features -- -D warnings` ·
+`cargo test --workspace --all-features` · `cargo build --no-default-features`
+(+ empty-dependency-tree assertion) · MSRV 1.80 · `cargo fuzz` smoke for parsers.
+Wired in `.github/workflows/rust.yml`; all green today.

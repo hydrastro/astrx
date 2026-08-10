@@ -1,0 +1,66 @@
+# cargo-fuzz manifest for `torrentds`.
+#
+# This crate is DELIBERATELY detached from the parent workspace (see the empty
+# `[workspace]` table below) so it builds standalone under a nightly toolchain
+# without perturbing the stable-pinned engine workspace. It depends on
+# `torrentds` with DEFAULT features only — the pure, dependency-free wire core —
+# so fuzzing never pulls in tokio/getrandom and stays fast and deterministic.
+#
+# The parent `../Cargo.toml` uses explicit `members`, so it does not sweep this
+# directory in; the `[workspace]` table here is the belt-and-suspenders that
+# keeps `cargo fuzz` from ascending into the engine workspace regardless.
+
+[package]
+name = "torrentds-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Default features = the pure wire core (bencode / krpc codec / metadata parsing).
+# No `net` or `rand`, so no tokio/getrandom in the fuzz build.
+[dependencies.torrentds]
+path = "../crates/torrentds"
+
+# Detach from the parent engine workspace: this makes the fuzz crate its own
+# workspace root so `cargo fuzz` never climbs up to `../Cargo.toml`.
+[workspace]
+
+# libFuzzer needs some debug info for symbolized crash reports, but full debug
+# would bloat the instrumented binaries; `debug = 1` (line tables) is the
+# cargo-fuzz default and the right balance.
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "bencode_decode"
+path = "fuzz_targets/bencode_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "krpc_parse"
+path = "fuzz_targets/krpc_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata_info"
+path = "fuzz_targets/metadata_info.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "magnet_parse"
+path = "fuzz_targets/magnet_parse.rs"
+test = false
+doc = false
+bench = false

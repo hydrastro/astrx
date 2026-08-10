@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# cargo-deny configuration for the astrx-suite Rust workspace.
+#
+#   cargo deny check                 # run all checks below
+#   cargo deny check advisories      # just the RustSec audit
+#   cargo deny check bans licenses   # just the supply-chain / licence gates
+#
+# This is the supply-chain complement to the CI in .github/workflows/rust.yml:
+# CI proves the *default* build is dependency-free, while cargo-deny governs the
+# handful of vetted crates the opt-in `rand` / `net` features are allowed to add
+# (tokio + getrandom and their small transitive closure). Run it on the full
+# feature surface so those deps are actually in the graph being audited.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[graph]
+# Audit the whole dependency surface, not just the (empty) default build —
+# otherwise there would be nothing to check, since `default = []` is stdlib-only.
+all-features = true
+
+# ── Security advisories (RustSec) ────────────────────────────────────────────
+# Vulnerabilities and unsound advisories are always errors under `version = 2`
+# (silence a specific one, with justification, by adding its RUSTSEC id to
+# `ignore`). We additionally treat unmaintained crates and yanked releases as
+# hard failures — a tiny dependency set is only worth it if every crate in it is
+# alive and pinned to a published, non-withdrawn version.
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+  # "RUSTSEC-0000-0000",  # <justification, owner, review date>
+]
+
+# ── Licences ─────────────────────────────────────────────────────────────────
+# Permissive-only allowlist, sized for the actual closure of tokio + getrandom
+# (MIT / Apache-2.0 dual-licensed crates, plus Unicode-3.0 for `unicode-ident`
+# and the LLVM-exception Apache variant for `wasi`). ISC / BSD / Zlib / 0BSD are
+# included as they are the other permissive licences common in this ecosystem, so
+# a future vetted dep under one of them does not require a config change to a
+# *stricter* set. Anything copyleft (GPL/LGPL/MPL/AGPL) is intentionally absent
+# and will fail the check — surfacing it for a deliberate human decision.
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "Unicode-3.0",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "0BSD",
+]
+exceptions = [
+  # { name = "some-crate", allow = ["SomeOtherLicense"] },
+]
+
+# ── Bans — keep the dependency set tiny and single-versioned ─────────────────
+# The design intent: the pure wire core has ZERO third-party deps, and the live
+# node adds only two vetted crates. As of today the *entire* allowed runtime
+# closure (under --all-features) is:
+#
+#     tokio            — async runtime          (net feature)
+#     getrandom        — CSPRNG                 (rand feature)
+#     └─ transitively:  libc, mio, socket2, bytes, pin-project-lite, cfg-if,
+#                       wasi, windows-sys/windows-link (platform shims), and the
+#                       build-time proc-macro trio proc-macro2 / quote / syn
+#                       (+ tokio-macros, unicode-ident).
+#
+# `multiple-versions` + `wildcards` keep that closure lean and honest; the
+# `deny` list below pre-empts the heavy crates we never intend to pull in, so
+# any attempt to add TLS/crypto stacks or an in-process libgit2 (gitweb is
+# argv-only git by design) fails loudly in review rather than silently bloating
+# the tree.
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Prefer the workspace-declared version of any crate that also appears deeper.
+highlight = "all"
+
+deny = [
+  # Heavy TLS / crypto stacks — the suite runs behind Tor and needs none of them.
+  { name = "openssl" },
+  { name = "openssl-sys" },
+  { name = "native-tls" },
+  { name = "ring" },
+  # In-process git — gitweb shells out to the git binary (argv-only) by design.
+  { name = "git2" },
+  { name = "libgit2-sys" },
+]
+
+# A hard allowlist is intentionally NOT enabled: turning `allow` on would make it
+# exhaustive, so it would also have to enumerate every build-time proc-macro and
+# per-platform shim above, and would churn on each toolchain bump. The intent is
+# documented here and enforced structurally instead — the pure-core zero-dep gate
+# in CI, plus `multiple-versions`/`wildcards`/`deny` — which together keep the set
+# tiny without the maintenance cost. Uncomment and complete to make it strict:
+# allow = [
+#   { name = "tokio" },
+#   { name = "getrandom" },
+#   { name = "libc" },
+#   { name = "mio" },
+#   { name = "socket2" },
+#   { name = "bytes" },
+#   { name = "pin-project-lite" },
+#   { name = "cfg-if" },
+#   # ...plus wasi, windows-sys, windows-link, proc-macro2, quote, syn,
+#   #    tokio-macros, unicode-ident.
+# ]
+
+# ── Sources — only the official crates.io registry ───────────────────────────
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

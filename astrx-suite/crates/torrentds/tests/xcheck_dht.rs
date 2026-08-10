@@ -1,3 +1,5 @@
+// Exercises `routing` (encode_nodes/Node), which lives behind the `rand` feature.
+#![cfg(feature = "rand")]
 //! Cross-check: the KRPC datagrams the Rust DHT node assembles are byte-identical
 //! to the reference Python implementation (`legacy-python/torrentds`).
 //!

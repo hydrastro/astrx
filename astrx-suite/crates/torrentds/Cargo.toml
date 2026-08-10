@@ -9,9 +9,22 @@ description = "DHT torrent-metadata indexer + tracker: bencode wire codec, byte-
 [lints]
 workspace = true
 
-# The pure wire core (bencode, infohash, krpc codec) is dependency-free and
-# auditable on its own. Networking needs an async runtime + a CSPRNG; tokio and
-# getrandom are the two vetted, minimal dependencies the live node uses.
+# The pure wire core (bencode, infohash, krpc codec, bep33, classify, and all
+# metadata *parsing*) is dependency-free and auditable on its own — it is what
+# builds under the default (empty) feature set. Networking needs an async runtime
+# + a CSPRNG; tokio and getrandom are the two vetted, minimal deps the live node
+# uses, and they are pulled in ONLY by the opt-in features below.
 [dependencies]
-tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"] }
-getrandom = "0.2"
+tokio = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
+
+# Feature tiers (each a strict superset of the one above):
+#   default : nothing — the pure wire core, zero third-party deps.
+#   rand    : + getrandom, for the sync CSPRNG-backed structures (routing table,
+#             swarm peer store).
+#   net     : + tokio (implies rand), for the live async node, trackers and the
+#             metadata fetch client/server.
+[features]
+default = []
+rand = ["dep:getrandom"]
+net = ["dep:tokio", "rand"]

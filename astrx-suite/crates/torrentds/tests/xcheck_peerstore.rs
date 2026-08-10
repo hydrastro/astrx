@@ -1,3 +1,5 @@
+// Exercises `peerstore`, which lives behind the `rand` feature.
+#![cfg(feature = "rand")]
 //! Cross-check: the Rust `PeerStore` restores a snapshot produced by the Python
 //! reference (`legacy-python/torrentds/peerstore.py`) — proving the bencode
 //! snapshot format is interoperable (a running Python tracker's state can be

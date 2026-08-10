@@ -6,4 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 description = "Shared crawl library: robots glob, SimHash dedup, recrawl scheduling, trap predicates."
 
+[lints]
+workspace = true
+
 [dependencies]

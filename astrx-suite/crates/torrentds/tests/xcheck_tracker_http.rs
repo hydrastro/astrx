@@ -1,3 +1,5 @@
+// Exercises `tracker_http`, which lives behind the `net` feature.
+#![cfg(feature = "net")]
 //! Cross-check: the Rust HTTP tracker's bencoded responses are byte-identical to
 //! the Python reference (`legacy-python/torrentds/tracker_http.py`).
 
