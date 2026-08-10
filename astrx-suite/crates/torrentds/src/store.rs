@@ -328,6 +328,7 @@ pub struct SearchResult {
     pub file_count: usize,
     pub piece_count: usize,
     pub seen_count: u64,
+    pub last_seen: u64,
     pub category: String,
     pub version: String,
     pub infohash_v2: Option<String>,
@@ -350,6 +351,8 @@ pub struct Store {
     discovered: BTreeMap<String, Discovered>,
     block_infohash: BTreeSet<String>,
     block_keyword: BTreeSet<String>,
+    /// Persisted DHT routing contacts (node id → host, port) for warm restart.
+    dht_nodes: BTreeMap<[u8; 20], (String, u16)>,
     spam_threshold: f64,
 }
 
@@ -377,8 +380,28 @@ impl Store {
             discovered: BTreeMap::new(),
             block_infohash: BTreeSet::new(),
             block_keyword: BTreeSet::new(),
+            dht_nodes: BTreeMap::new(),
             spam_threshold,
         }
+    }
+
+    // -- DHT routing persistence (warm restart) -----------------------------
+
+    /// Persist routing contacts (`node_id`, host, port); existing ids are updated.
+    pub fn save_nodes(&mut self, nodes: &[([u8; 20], String, u16)]) {
+        for (id, host, port) in nodes {
+            self.dht_nodes.insert(*id, (host.clone(), *port));
+        }
+    }
+
+    /// Up to `limit` persisted routing contacts.
+    #[must_use]
+    pub fn load_nodes(&self, limit: usize) -> Vec<([u8; 20], String, u16)> {
+        self.dht_nodes
+            .iter()
+            .take(limit)
+            .map(|(id, (h, p))| (*id, h.clone(), *p))
+            .collect()
     }
 
     /// Number of indexed torrents.
@@ -894,6 +917,7 @@ impl Store {
             file_count: r.file_count,
             piece_count: r.piece_count,
             seen_count: r.seen_count,
+            last_seen: r.last_seen,
             category: r.category.clone(),
             version: r.version.clone(),
             infohash_v2: r.infohash_v2.clone(),
@@ -961,6 +985,21 @@ impl Store {
                 self.block_keyword
                     .iter()
                     .map(|s| Ben::Bytes(s.clone().into_bytes()))
+                    .collect(),
+            ),
+        );
+        root.insert(
+            b"nodes".to_vec(),
+            Ben::List(
+                self.dht_nodes
+                    .iter()
+                    .map(|(id, (h, p))| {
+                        Ben::List(vec![
+                            Ben::Bytes(id.to_vec()),
+                            Ben::Bytes(h.clone().into_bytes()),
+                            Ben::Int(i64::from(*p)),
+                        ])
+                    })
                     .collect(),
             ),
         );
@@ -1051,6 +1090,20 @@ impl Store {
                 for it in items {
                     if let Ben::Bytes(b) = it {
                         set.insert(String::from_utf8_lossy(b).into_owned());
+                    }
+                }
+            }
+        }
+        if let Some(Ben::List(nodes)) = root.get(b"nodes".as_slice()) {
+            for n in nodes {
+                if let Ben::List(t) = n {
+                    if let [Ben::Bytes(id), Ben::Bytes(h), Ben::Int(p)] = t.as_slice() {
+                        if let Ok(id) = <[u8; 20]>::try_from(id.as_slice()) {
+                            let port = (*p).clamp(0, i64::from(u16::MAX)) as u16;
+                            store
+                                .dht_nodes
+                                .insert(id, (String::from_utf8_lossy(h).into_owned(), port));
+                        }
                     }
                 }
             }
@@ -1278,12 +1331,18 @@ mod tests {
         );
         s.add_discovered(&[9u8; 20], Some(("1.2.3.4".to_string(), 6881)), 500);
         s.add_block_keyword("banned");
+        s.save_nodes(&[([0xaau8; 20], "9.9.9.9".to_string(), 6881)]);
         let blob = s.snapshot();
         let s2 = Store::restore(&blob, DEFAULT_SPAM_THRESHOLD).unwrap();
         assert_eq!(s2.len(), 1);
         assert_eq!(s2.get(&hex(&[7u8; 20])).unwrap().name, "Movie 1080p");
         assert_eq!(s2.discovered_counts(), (1, 1));
         assert!(s2.is_blocked("deadbeef", "this is banned content"));
+        // DHT routing contacts survive the snapshot (warm restart).
+        assert_eq!(
+            s2.load_nodes(10),
+            vec![([0xaau8; 20], "9.9.9.9".to_string(), 6881)]
+        );
         // search still works after restore (terms reindexed)
         let f = Filters {
             include_spam: true,

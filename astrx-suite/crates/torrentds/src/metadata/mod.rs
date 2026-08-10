@@ -81,8 +81,9 @@ mod magnet;
 mod wire;
 
 pub use info::{
-    assemble_and_verify, assemble_and_verify_v2, decode_info_dict, is_hybrid_info, is_v2_info,
-    parse_info, parse_v2_info, truncate_v2, verify_v2, walk_file_tree, TorrentMeta,
+    assemble_and_verify, assemble_and_verify_v2, build_torrent_file, decode_info_dict,
+    is_hybrid_info, is_v2_info, parse_info, parse_v2_info, truncate_v2, verify_v2, walk_file_tree,
+    TorrentMeta,
 };
 pub use magnet::{parse_magnet, Magnet};
 pub use wire::{

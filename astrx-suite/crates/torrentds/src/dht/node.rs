@@ -511,6 +511,29 @@ impl DhtNode {
         self.state.routing.lock().unwrap().all_nodes()
     }
 
+    /// The `count` routing contacts closest to `target` (for BEP-51 sampling and
+    /// resolving a harvested infohash to a fetchable swarm).
+    #[must_use]
+    pub fn closest_contacts(&self, target: &NodeId, count: usize) -> Vec<Node> {
+        self.state
+            .routing
+            .lock()
+            .unwrap()
+            .find_closest(target, count)
+    }
+
+    /// Insert a contact (used to warm-start the table from persisted nodes). Our
+    /// own ID is never stored; returns whether it was added.
+    pub fn add_contact(&self, node: Node) -> bool {
+        self.state.routing.lock().unwrap().add_node(node)
+    }
+
+    /// The bucket size / query fan-out (`k`).
+    #[must_use]
+    pub fn k(&self) -> usize {
+        self.state.k
+    }
+
     /// Transport counters (tx/rx/timeouts/spoofed …).
     pub fn stats(&self) -> &Stats {
         &self.node.stats

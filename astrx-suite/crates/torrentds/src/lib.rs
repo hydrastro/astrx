@@ -38,6 +38,10 @@ mod wire;
 
 #[cfg(feature = "rand")]
 mod dht;
+#[cfg(feature = "net")]
+pub mod indexer;
+#[cfg(feature = "net")]
+pub mod search;
 #[cfg(feature = "rand")]
 mod tracker;
 
@@ -62,8 +66,8 @@ pub use krpc::{
     encode_error, encode_query, encode_response, parse_message, KrpcError, KrpcMessage, ParseError,
 };
 pub use metadata::{
-    is_v2_info, parse_info, parse_magnet, parse_v2_info, truncate_v2, verify_v2, Magnet,
-    MetadataError, TorrentMeta,
+    build_torrent_file, is_v2_info, parse_info, parse_magnet, parse_v2_info, truncate_v2,
+    verify_v2, Magnet, MetadataError, TorrentMeta,
 };
 
 // --- Re-exports: `rand` tier ---
@@ -78,7 +82,11 @@ pub use dht::node::{
     make_neighbor_id, DhtConfig, DhtNode, GetPeersOutcome, InfohashSink, SampleOutcome,
 };
 #[cfg(feature = "net")]
+pub use indexer::{Indexer, IndexerConfig, IndexerStats};
+#[cfg(feature = "net")]
 pub use metadata::{fetch_metadata, serve_metadata};
+#[cfg(feature = "net")]
+pub use search::{serve_search, SearchServer};
 #[cfg(feature = "net")]
 pub use tracker_http::serve_http_tracker;
 #[cfg(feature = "net")]

@@ -26,6 +26,48 @@ pub fn assemble_and_verify_v2(pieces: &[Vec<u8>], info_hash_v2: &[u8]) -> Option
     verify_v2(&metadata, info_hash_v2).then_some(metadata)
 }
 
+/// Rebuild a valid `.torrent` around pre-verified `info_bytes`. The `info` value
+/// is spliced in **verbatim** (never re-encoded), so its SHA-1 still equals the
+/// original infohash even when the info-dict was itself non-canonical. Other
+/// top-level keys (`announce`, `announce-list`, `creation date`) are emitted in
+/// canonical byte order.
+#[must_use]
+pub fn build_torrent_file(
+    info_bytes: &[u8],
+    announce: Option<&str>,
+    announce_list: &[String],
+    creation_date: Option<i64>,
+) -> Vec<u8> {
+    let mut entries: Vec<(&[u8], Vec<u8>)> = Vec::new();
+    if let Some(a) = announce {
+        if !a.is_empty() {
+            entries.push((b"announce", encode(&Ben::Bytes(a.as_bytes().to_vec()))));
+        }
+    }
+    if !announce_list.is_empty() {
+        let list = Ben::List(
+            announce_list
+                .iter()
+                .map(|a| Ben::List(vec![Ben::Bytes(a.as_bytes().to_vec())]))
+                .collect(),
+        );
+        entries.push((b"announce-list", encode(&list)));
+    }
+    if let Some(cd) = creation_date {
+        entries.push((b"creation date", encode(&Ben::Int(cd))));
+    }
+    entries.push((b"info", info_bytes.to_vec()));
+    entries.sort_by(|a, b| a.0.cmp(b.0)); // canonical top-level key order
+    let mut out = vec![b'd'];
+    for (key, value) in &entries {
+        out.extend_from_slice(format!("{}:", key.len()).as_bytes());
+        out.extend_from_slice(key);
+        out.extend_from_slice(value);
+    }
+    out.push(b'e');
+    out
+}
+
 /// A parsed torrent info-dict (v1, v2, or hybrid).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TorrentMeta {
