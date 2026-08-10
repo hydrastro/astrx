@@ -65,6 +65,23 @@ const CORPUS: &[(&str, &str)] = &[
     ("Nothing.Here.At.All", ""),
     ("Movie.2160p.WEB.x265", "kind:movie resolution:2160p source:web vcodec:x265"),
     ("Show.S03E04.PROPER.1080p.AMZN.WEB-DL.DDP5.1.x264-NTb", "kind:tv season:3 episode:4 resolution:1080p source:web-dl vcodec:x264 edition:proper group:ntb"),
+    // Punctuation-adjacent tokens (`,` `&` `!` `:` `/` `;` `~` `'`): `\b` must
+    // treat any non-word char as a boundary, not just space.
+    ("Movie,2019,1080p,BluRay", "kind:movie year:2019 resolution:1080p source:bluray"),
+    ("Show.WEB&DL.1080p.x264", "kind:movie resolution:1080p source:web vcodec:x264"),
+    ("Film.2019.x265!HDR", "kind:movie year:2019 vcodec:x265 hdr:hdr"),
+    ("Fast&Furious.2019.1080p.BluRay.x264", "kind:movie year:2019 resolution:1080p source:bluray vcodec:x264"),
+    ("Marvel's.Movie.2019.1080p.x264-GRP", "kind:movie year:2019 resolution:1080p vcodec:x264 group:grp"),
+    ("Movie:Subtitle.2019.1080p.WEB-DL.x264", "kind:movie year:2019 resolution:1080p source:web-dl vcodec:x264"),
+    ("Show/Name.S01E02.720p.HDTV.x264", "kind:tv season:1 episode:2 resolution:720p source:hdtv vcodec:x264"),
+    ("x264,x265.2020.1080p", "kind:movie year:2020 resolution:1080p vcodec:x265"),
+    ("Album,2019,FLAC", "kind:movie year:2019 acodec:flac"),
+    ("Movie;2018;720p;x264", "kind:movie year:2018 resolution:720p vcodec:x264"),
+    ("Concert~2019~1080p~x265", "kind:movie year:2019 resolution:1080p vcodec:x265"),
+    ("Show.Season~3.1080p", "kind:movie resolution:1080p"),
+    ("Doc.2019.web,dl.x264", "kind:movie year:2019 source:web vcodec:x264"),
+    ("Movie'2020'1080p'BluRay", "kind:movie year:2020 resolution:1080p source:bluray"),
+    ("Anime.S02!1080p.x265", "kind:tv season:2 resolution:1080p vcodec:x265"),
 ];
 
 #[test]

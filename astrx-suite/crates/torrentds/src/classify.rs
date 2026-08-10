@@ -232,32 +232,47 @@ fn normalize(name: &str) -> String {
     out
 }
 
-/// True if `needle` occurs in the normalised bytes at word boundaries on both
-/// sides (`\b…\b` over a space-delimited, single-spaced string).
-fn has_word(nb: &[u8], needle: &[u8]) -> bool {
-    let nl = needle.len();
-    if nl == 0 || nl > nb.len() {
+/// A "word" char for `\b` purposes — Unicode alphanumeric, matching Python's `\w`
+/// on the normalised name (which contains no `_`; those became spaces).
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric()
+}
+
+/// Is there a `\b` boundary immediately before byte `i`? Callers only ask at ASCII
+/// lead bytes, so `i` is always a char boundary (`n[..i]` never splits a char).
+fn boundary_before(n: &str, i: usize) -> bool {
+    i == 0 || n[..i].chars().next_back().map_or(true, |c| !is_word(c))
+}
+
+/// Is there a `\b` boundary immediately after byte `i`?
+fn boundary_after(n: &str, i: usize) -> bool {
+    i == n.len() || n[i..].chars().next().map_or(true, |c| !is_word(c))
+}
+
+/// `\b<needle>\b` over the normalised name. `needle` is ASCII (lowercase, may hold
+/// single interior spaces); a boundary is any word/non-word transition, so a facet
+/// token adjacent to punctuation (`,`/`&`/`:`…) or Unicode still matches exactly
+/// like Python's `\b` — the normaliser only folds `SEP`+whitespace to spaces, so
+/// other separators survive and must still bound a match.
+fn has_word(n: &str, needle: &str) -> bool {
+    if needle.is_empty() {
         return false;
     }
-    let mut i = 0;
-    while i + nl <= nb.len() {
-        if &nb[i..i + nl] == needle {
-            let before_ok = i == 0 || nb[i - 1] == b' ';
-            let after = i + nl;
-            let after_ok = after == nb.len() || nb[after] == b' ';
-            if before_ok && after_ok {
-                return true;
-            }
+    let mut start = 0;
+    while let Some(rel) = n[start..].find(needle) {
+        let at = start + rel;
+        if boundary_before(n, at) && boundary_after(n, at + needle.len()) {
+            return true;
         }
-        i += 1;
+        start = at + 1; // needle is ASCII, so `at` is a char boundary and +1 is too
     }
     false
 }
 
 /// First table value with any matching alternative (Python's `_first`).
-fn first(table: Table, nb: &[u8]) -> Option<&'static str> {
+fn first(table: Table, n: &str) -> Option<&'static str> {
     for (val, needles) in table {
-        if needles.iter().any(|w| has_word(nb, w.as_bytes())) {
+        if needles.iter().any(|w| has_word(n, w)) {
             return Some(val);
         }
     }
@@ -272,12 +287,13 @@ fn parse_u32(bytes: &[u8]) -> u32 {
     v
 }
 
-/// `\bs(\d{1,2})[ ]?e(\d{1,3})\b` — leftmost season/episode.
-fn find_sxxexx(nb: &[u8]) -> Option<(u32, u32)> {
+/// `\bs(\d{1,2})[ ]?e(\d{1,3})\b` — leftmost season/episode. The `[ ]?` stays a
+/// literal optional space (not a general boundary), matching Python.
+fn find_sxxexx(n: &str) -> Option<(u32, u32)> {
+    let nb = n.as_bytes();
     let mut i = 0;
     while i < nb.len() {
-        let boundary_before = i == 0 || nb[i - 1] == b' ';
-        if boundary_before && nb[i] == b's' {
+        if nb[i] == b's' && boundary_before(n, i) {
             let ds = i + 1;
             let mut j = ds;
             while j < nb.len() && nb[j].is_ascii_digit() && j - ds < 2 {
@@ -294,7 +310,7 @@ fn find_sxxexx(nb: &[u8]) -> Option<(u32, u32)> {
                     while m < nb.len() && nb[m].is_ascii_digit() && m - de < 3 {
                         m += 1;
                     }
-                    if m > de && (m == nb.len() || nb[m] == b' ') {
+                    if m > de && boundary_after(n, m) {
                         return Some((parse_u32(&nb[ds..j]), parse_u32(&nb[de..m])));
                     }
                 }
@@ -306,11 +322,11 @@ fn find_sxxexx(nb: &[u8]) -> Option<(u32, u32)> {
 }
 
 /// `\b(?:season|series)[ ]?(\d{1,2})\b | \bs(\d{2})\b` — leftmost season.
-fn find_season(nb: &[u8]) -> Option<u32> {
+fn find_season(n: &str) -> Option<u32> {
+    let nb = n.as_bytes();
     let mut i = 0;
     while i < nb.len() {
-        let boundary_before = i == 0 || nb[i - 1] == b' ';
-        if boundary_before {
+        if nb[i] == b's' && boundary_before(n, i) {
             for kw in [b"season".as_slice(), b"series".as_slice()] {
                 if nb[i..].starts_with(kw) {
                     let mut k = i + kw.len();
@@ -321,17 +337,16 @@ fn find_season(nb: &[u8]) -> Option<u32> {
                     while k < nb.len() && nb[k].is_ascii_digit() && k - ds < 2 {
                         k += 1;
                     }
-                    if k > ds && (k == nb.len() || nb[k] == b' ') {
+                    if k > ds && boundary_after(n, k) {
                         return Some(parse_u32(&nb[ds..k]));
                     }
                 }
             }
             // alt2: s + exactly two digits + boundary
-            if nb[i] == b's'
-                && i + 3 <= nb.len()
+            if i + 3 <= nb.len()
                 && nb[i + 1].is_ascii_digit()
                 && nb[i + 2].is_ascii_digit()
-                && (i + 3 == nb.len() || nb[i + 3] == b' ')
+                && boundary_after(n, i + 3)
             {
                 return Some(parse_u32(&nb[i + 1..i + 3]));
             }
@@ -342,18 +357,14 @@ fn find_season(nb: &[u8]) -> Option<u32> {
 }
 
 /// `\b(19\d{2}|20\d{2})\b` — leftmost 4-digit 19xx/20xx token.
-fn find_year(nb: &[u8]) -> Option<u32> {
+fn find_year(n: &str) -> Option<u32> {
+    let nb = n.as_bytes();
     let mut i = 0;
     while i + 4 <= nb.len() {
-        let boundary_before = i == 0 || nb[i - 1] == b' ';
-        if boundary_before {
+        if (nb[i] == b'1' || nb[i] == b'2') && boundary_before(n, i) {
             let w = &nb[i..i + 4];
             let century = (w[0] == b'1' && w[1] == b'9') || (w[0] == b'2' && w[1] == b'0');
-            let after = i + 4;
-            if century
-                && w[2].is_ascii_digit()
-                && w[3].is_ascii_digit()
-                && (after == nb.len() || nb[after] == b' ')
+            if century && w[2].is_ascii_digit() && w[3].is_ascii_digit() && boundary_after(n, i + 4)
             {
                 return Some(parse_u32(w));
             }
@@ -401,32 +412,31 @@ fn dominant_ext(files: &[(&str, u64)]) -> String {
 pub fn classify(name: &str, files: &[(&str, u64)]) -> Facets {
     let raw: String = name.chars().take(MAX_NAME).collect();
     let n = normalize(name);
-    let nb = n.as_bytes();
 
     let mut f = Facets {
-        resolution: first(RES, nb),
-        source: first(SOURCE, nb),
-        vcodec: first(VCODEC, nb),
-        acodec: first(ACODEC, nb),
-        hdr: first(HDR, nb),
-        edition: first(EDITION, nb),
-        lang: first(LANG, nb),
+        resolution: first(RES, &n),
+        source: first(SOURCE, &n),
+        vcodec: first(VCODEC, &n),
+        acodec: first(ACODEC, &n),
+        hdr: first(HDR, &n),
+        edition: first(EDITION, &n),
+        lang: first(LANG, &n),
         ..Facets::default()
     };
 
-    if let Some((s, e)) = find_sxxexx(nb) {
+    if let Some((s, e)) = find_sxxexx(&n) {
         f.season = Some(s);
         f.episode = Some(e);
-    } else if let Some(s) = find_season(nb) {
+    } else if let Some(s) = find_season(&n) {
         f.season = Some(s);
     }
-    f.year = find_year(nb);
+    f.year = find_year(&n);
     f.group = find_group(&raw);
 
     // media kind: TV if season/episode, else extension + name hints.
     let ext = dominant_ext(files);
     let has_res = f.resolution.is_some();
-    let game_hint = GAME_HINTS.iter().any(|w| has_word(nb, w.as_bytes()));
+    let game_hint = GAME_HINTS.iter().any(|w| has_word(&n, w));
     f.kind = if f.season.is_some() || f.episode.is_some() {
         Some("tv")
     } else if MUSIC_EXT.contains(&ext.as_str()) {

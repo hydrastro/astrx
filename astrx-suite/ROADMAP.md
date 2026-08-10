@@ -117,6 +117,34 @@ Known-minor, deferred (in the PHP CMS, not the rewrite): an out-of-range `?page=
 hides the "Prev" link (UX), and a config/controller per-page ceiling mismatch
 that can't fire with the current engine. Both low; tracked, not blocking.
 
+## Review results — torrentds networking + enrichment (2026-08-10)
+
+The metadata fetcher, the tracker stack (peer store + UDP + HTTP), the release
+classifier, BEP-33 and the bencode strict/lenient refactor were adversarially
+reviewed (three independent passes, incl. fuzzing). Cores confirmed sound: no
+memory-unsafety, no verification bypass (`sha1(metadata)==info_hash` runs on the
+raw bytes before any lenient decode), the DHT iterative lookup can't loop forever,
+and the strict decoder never over-accepts. Fixes applied:
+
+- **metadata/fetch** — enforce an overall deadline on `fetch_metadata` (not just
+  per-read), so a peer trickling keep-alives can't pin the fetch open forever.
+- **metadata/parse_info** — `total_size` sums with `saturating_add` (hostile
+  `i64::MAX` file lengths no longer overflow-panic); `expected_piece_len` guards
+  `total_pieces == 0`; `serve_one` uses `saturating_mul` on the piece index.
+- **metadata/magnet** — `parse_magnet` fails closed on a recognised-but-malformed
+  `xt` (matching Python) instead of silently dropping it.
+- **classify** — word-boundary matching now honours *any* non-word char as a `\b`
+  boundary (Unicode-aware), not just ASCII space, so tokens adjacent to `,`/`&`/
+  `:`/`!` etc. are extracted exactly like Python's `\b`. 15 punctuation cases
+  added to the corpus cross-check.
+- **tracker_http** — the accept loop survives a transient `accept()` error
+  instead of dying; the request-head read has a timeout (slowloris) + size cap.
+- **tracker_udp / tracker_http** — scrape/announce integer fields saturate rather
+  than wrap to negative; out-of-`i64` `left` clamps (stays a leecher) not defaults.
+- **peerstore** — restored swarms get increasing recency so post-restore LRU
+  eviction is deterministic. **bep33** — round-half-to-even to match Python's
+  `round()` at the exact-`.5` (single-set-bit) case.
+
 ## The CI bar (enforced on every crate)
 
 `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test`

@@ -81,11 +81,28 @@ pub fn estimate(bloom: &[u8]) -> u64 {
     }
     let m_f = m as f64;
     let size = (zeros as f64 / m_f).ln() / (2.0 * (1.0 - 1.0 / m_f).ln());
-    let rounded = size.round();
+    let rounded = round_half_even(size);
     if rounded < 0.0 {
         0
     } else {
         rounded as u64
+    }
+}
+
+/// Round half-to-even (banker's rounding), matching Python's `round()` — the two
+/// differ only at an exact `.5`, which `estimate` hits for a 1-set-bit filter
+/// (`size == 0.5` exactly): Python yields 0, `f64::round` would yield 1.
+fn round_half_even(x: f64) -> f64 {
+    let floor = x.floor();
+    let diff = x - floor;
+    if diff < 0.5 {
+        floor
+    } else if diff > 0.5 {
+        floor + 1.0
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
     }
 }
 
@@ -166,6 +183,11 @@ mod tests {
         assert_eq!(estimate(&[0u8; BLOOM_BYTES]), 0);
         assert_eq!(estimate(&[0xFFu8; BLOOM_BYTES]), BLOOM_BITS as u64); // 2048
         assert_eq!(estimate(&[]), 0);
+        // Exactly one set bit -> size == 0.5 exactly; Python's round() gives 0
+        // (round-half-to-even), which our round_half_even matches (f64::round → 1).
+        let mut one = [0u8; BLOOM_BYTES];
+        one[0] = 1;
+        assert_eq!(estimate(&one), 0);
     }
 
     #[test]

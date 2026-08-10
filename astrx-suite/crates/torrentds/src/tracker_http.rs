@@ -17,6 +17,7 @@ use crate::peerstore::{Event, Family, PeerStore};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -166,10 +167,18 @@ fn first_value<'a>(params: &'a Query, name: &str) -> Option<&'a Vec<u8>> {
 
 fn param_int(params: &Query, name: &str, default: i64) -> i64 {
     match first_value(params, name) {
-        Some(v) => std::str::from_utf8(v)
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(default),
+        Some(v) => match std::str::from_utf8(v).map(str::trim) {
+            Ok(s) => match s.parse::<i64>() {
+                Ok(n) => n,
+                // An out-of-i64-range magnitude clamps (Python's big int keeps it),
+                // so e.g. an absurd `left` still reads non-zero (a leecher), not the
+                // `0` default (which would misclassify the peer as a seeder).
+                Err(e) if *e.kind() == std::num::IntErrorKind::PosOverflow => i64::MAX,
+                Err(e) if *e.kind() == std::num::IntErrorKind::NegOverflow => i64::MIN,
+                Err(_) => default,
+            },
+            Err(_) => default,
+        },
         None => default,
     }
 }
@@ -276,18 +285,27 @@ async fn handle_conn(
     src: SocketAddr,
     store: Arc<Mutex<PeerStore>>,
 ) -> std::io::Result<()> {
-    // Read the request head (until CRLFCRLF), bounded.
+    // Read the request head (until CRLFCRLF), bounded in size AND time — a client
+    // that connects and never sends the terminator (slowloris) must not park a
+    // task/fd forever.
     let mut buf = Vec::new();
     let mut tmp = [0u8; 1024];
-    loop {
-        let n = stream.read(&mut tmp).await?;
-        if n == 0 {
-            break;
+    let read_head = async {
+        loop {
+            let n = stream.read(&mut tmp).await?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&tmp[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 8192 {
+                break;
+            }
         }
-        buf.extend_from_slice(&tmp[..n]);
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 8192 {
-            break;
-        }
+        Ok::<(), std::io::Error>(())
+    };
+    match tokio::time::timeout(Duration::from_secs(15), read_head).await {
+        Ok(Ok(())) => {}
+        _ => return Ok(()), // read error or slow client -> drop the connection
     }
     let head = String::from_utf8_lossy(&buf);
     let target = head
@@ -314,11 +332,18 @@ pub async fn serve_http_tracker(
     let listener = TcpListener::bind(addr).await?;
     let bound = listener.local_addr()?;
     let handle = tokio::spawn(async move {
-        while let Ok((stream, peer)) = listener.accept().await {
-            let store = store.clone();
-            tokio::spawn(async move {
-                let _ = handle_conn(stream, peer, store).await;
-            });
+        loop {
+            match listener.accept().await {
+                Ok((stream, peer)) => {
+                    let store = store.clone();
+                    tokio::spawn(async move {
+                        let _ = handle_conn(stream, peer, store).await;
+                    });
+                }
+                // A transient accept error (e.g. fd exhaustion) must not kill the
+                // listener; back off briefly and keep serving.
+                Err(_) => tokio::time::sleep(Duration::from_millis(5)).await,
+            }
         }
     });
     Ok((bound, handle))

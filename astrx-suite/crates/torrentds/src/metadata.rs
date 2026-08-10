@@ -171,7 +171,9 @@ pub fn num_pieces(metadata_size: usize) -> usize {
 /// piece but the last, which is the remainder. Enforcing this bounds retained
 /// memory to the advertised (bounded) total instead of `pieces * MAX_MESSAGE_LEN`.
 pub fn expected_piece_len(idx: usize, metadata_size: usize, total_pieces: usize) -> usize {
-    if idx + 1 < total_pieces {
+    if total_pieces == 0 {
+        0
+    } else if idx + 1 < total_pieces {
         PIECE_SIZE
     } else {
         metadata_size - (total_pieces - 1) * PIECE_SIZE
@@ -263,7 +265,12 @@ pub fn parse_info(
                 files.push((path, length));
             }
         }
-        total_size = files.iter().map(|(_, l)| *l).sum();
+        // Saturating: an attacker crafts the info-dict (its SHA-1 is the infohash),
+        // so file lengths are hostile; summing i64::MAX-sized entries must not
+        // overflow-panic (debug) or wrap (release).
+        total_size = files
+            .iter()
+            .fold(0u64, |acc, (_, l)| acc.saturating_add(*l));
     } else {
         let length = ben_int(info, b"length").max(0) as u64;
         files.push((name.clone(), length));
@@ -408,11 +415,15 @@ pub fn parse_magnet(uri: &str) -> Result<Magnet, MetadataError> {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         match key {
             "xt" => {
+                // Fail closed, like Python: an `xt` carrying a recognised urn that
+                // fails to decode aborts the parse rather than silently dropping it.
                 let value = pct_decode(value);
                 if let Some(rest) = value.strip_prefix("urn:btih:") {
-                    m.v1_infohash = decode_btih(rest);
+                    m.v1_infohash =
+                        Some(decode_btih(rest).ok_or_else(|| MetadataError("bad btih".into()))?);
                 } else if let Some(rest) = value.strip_prefix("urn:btmh:") {
-                    m.v2_infohash = decode_btmh(rest);
+                    m.v2_infohash =
+                        Some(decode_btmh(rest).ok_or_else(|| MetadataError("bad btmh".into()))?);
                 }
             }
             "dn" => m.name = Some(pct_decode(value)),
@@ -503,6 +514,11 @@ async fn read_ext_handshake(
 }
 
 /// Connect to a peer and fetch + verify the info-dict for `info_hash` (BEP-9).
+///
+/// `timeout` bounds the **entire** fetch, not just each read: a hostile peer that
+/// trickles keep-alives (or data for already-filled pieces) one-per-read-window
+/// can never make `received` advance, so a per-read timer alone would let it pin
+/// the connection open forever. The overall deadline here closes that off.
 pub async fn fetch_metadata(
     info_hash: &[u8; 20],
     host: &str,
@@ -511,6 +527,24 @@ pub async fn fetch_metadata(
     peer_id: Option<[u8; 20]>,
 ) -> Result<TorrentMeta, MetadataError> {
     let peer_id = peer_id.unwrap_or_else(random_peer_id);
+    match tokio::time::timeout(
+        timeout,
+        fetch_inner(info_hash, host, port, timeout, peer_id),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => merr("metadata fetch exceeded deadline"),
+    }
+}
+
+async fn fetch_inner(
+    info_hash: &[u8; 20],
+    host: &str,
+    port: u16,
+    timeout: Duration,
+    peer_id: [u8; 20],
+) -> Result<TorrentMeta, MetadataError> {
     let mut stream = match tokio::time::timeout(timeout, TcpStream::connect((host, port))).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => return merr(format!("peer connection failed: {e}")),
@@ -637,8 +671,13 @@ async fn serve_one(
             Some(Ben::Int(p)) if *p >= 0 => *p as usize,
             _ => 0,
         };
-        let start = (piece * PIECE_SIZE).min(metadata.len());
-        let end = ((piece + 1) * PIECE_SIZE).min(metadata.len());
+        // Saturating so a hostile `piece` index can't overflow into a `start > end`
+        // slice panic; an out-of-range piece just yields an empty chunk.
+        let start = piece.saturating_mul(PIECE_SIZE).min(metadata.len());
+        let end = piece
+            .saturating_add(1)
+            .saturating_mul(PIECE_SIZE)
+            .min(metadata.len());
         let mut chunk = metadata[start..end].to_vec();
         if corrupt {
             for b in chunk.iter_mut() {
@@ -717,6 +756,27 @@ mod tests {
         // last piece is the remainder
         assert_eq!(expected_piece_len(0, PIECE_SIZE + 5, 2), PIECE_SIZE);
         assert_eq!(expected_piece_len(1, PIECE_SIZE + 5, 2), 5);
+        assert_eq!(expected_piece_len(0, 0, 0), 0); // guard: no underflow panic
+    }
+
+    #[test]
+    fn total_size_saturates_on_hostile_lengths() {
+        // Attacker controls the info-dict; summing i64::MAX file lengths must
+        // saturate, not overflow-panic (debug) or wrap (release).
+        let mkfile = |len: i64| {
+            let mut e = Dict::new();
+            e.insert(b"length".to_vec(), Ben::Int(len));
+            e.insert(b"path".to_vec(), Ben::List(vec![Ben::Bytes(b"f".to_vec())]));
+            Ben::Dict(e)
+        };
+        let mut d = Dict::new();
+        d.insert(b"name".to_vec(), Ben::Bytes(b"x".to_vec()));
+        d.insert(
+            b"files".to_vec(),
+            Ben::List(vec![mkfile(i64::MAX), mkfile(i64::MAX), mkfile(i64::MAX)]),
+        );
+        let m = parse_info(&d, Some([0u8; 20]), None);
+        assert_eq!(m.total_size, u64::MAX);
     }
 
     #[test]
@@ -877,5 +937,11 @@ mod tests {
         // not a magnet / no usable xt -> error
         assert!(parse_magnet("http://example/x").is_err());
         assert!(parse_magnet("magnet:?dn=nothing").is_err());
+        // fail closed (like Python): a recognised urn that fails to decode aborts
+        assert!(parse_magnet("magnet:?xt=urn:btih:ZZZZ").is_err());
+        assert!(parse_magnet(
+            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&xt=urn:btmh:GARBAGE"
+        )
+        .is_err());
     }
 }

@@ -188,7 +188,8 @@ impl RecentRing {
 
 /// Peers announced to us per infohash, so we can answer `get_peers` with
 /// `values`. Bounded two ways: peers-per-infohash and total infohashes (both
-/// LRU-evicted), so a flood of announces can't grow it without bound.
+/// FIFO-evicted by insertion order), so a flood of announces can't grow it
+/// without bound.
 #[derive(Default)]
 struct PeerStore {
     order: VecDeque<NodeId>, // infohash insertion order, for eviction

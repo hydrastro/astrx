@@ -365,6 +365,10 @@ impl PeerStore {
                     self.swarms.insert(ih, Swarm::default());
                 }
                 let sw = self.swarms.get_mut(&ih).expect("present");
+                // Give each restored swarm an increasing recency, else they all tie
+                // at 0 and post-restore LRU eviction picks an arbitrary victim.
+                order += 1;
+                sw.order = order;
                 if let Some(Ben::Int(dl)) = sr.get(b"downloaded".as_slice()) {
                     if *dl >= 0 {
                         sw.downloaded = sw.downloaded.max(*dl as u64);

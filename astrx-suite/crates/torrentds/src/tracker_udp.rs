@@ -282,7 +282,11 @@ impl UdpTracker {
                     .iter()
                     .map(|h| {
                         let (complete, incomplete, downloaded) = store.counts(h, now);
-                        (complete as i32, downloaded as i32, incomplete as i32)
+                        // Saturate so a huge `downloaded` counter can't wrap to a
+                        // negative i32 on the wire (Python raises struct.error and
+                        // drops the reply; a saturated max is the safer analogue).
+                        let clamp = |v: u64| v.min(i32::MAX as u64) as i32;
+                        (clamp(complete), clamp(downloaded), clamp(incomplete))
                     })
                     .collect();
                 drop(store);
