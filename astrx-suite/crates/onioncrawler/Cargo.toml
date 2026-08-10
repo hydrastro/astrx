@@ -18,6 +18,10 @@ workspace = true
 # the suite already uses (`tokio`, `getrandom`); they are declared here so those
 # modules slot in without a manifest churn.
 [dependencies]
+# First-party shared crawl library (globmatch, dedup/SimHash, scheduler, traps,
+# hashing). Not a third-party dependency — the zero-dep-by-default guarantee is
+# about crates.io deps; crawlcore is itself stdlib-only.
+crawlcore = { path = "../crawlcore" }
 tokio = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }
 

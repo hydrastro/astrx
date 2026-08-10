@@ -136,6 +136,7 @@ jobs:
       - name: Build the default (feature-less) cores
         run: |
           set -euo pipefail
+          cargo build -p crawlcore    --no-default-features
           cargo build -p torrentds    --no-default-features
           cargo build -p onioncrawler --no-default-features
       - name: Assert the pure cores have ZERO third-party dependencies
@@ -165,7 +166,9 @@ jobs:
             fi
             echo "OK: '$crate --no-default-features' pulls in zero third-party crates."
           }
-          # torrentds is fully standalone; onioncrawler may use first-party crawlcore.
+          # crawlcore + torrentds are fully standalone; onioncrawler may use
+          # first-party crawlcore.
+          check crawlcore    'crawlcore'
           check torrentds    'torrentds'
           check onioncrawler 'onioncrawler|crawlcore'
 

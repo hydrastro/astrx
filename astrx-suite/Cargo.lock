@@ -50,6 +50,7 @@ dependencies = [
 name = "onioncrawler"
 version = "0.1.0"
 dependencies = [
+ "crawlcore",
  "getrandom",
  "tokio",
 ]

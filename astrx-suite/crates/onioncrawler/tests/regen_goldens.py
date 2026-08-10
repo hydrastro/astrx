@@ -30,7 +30,7 @@ _PYREF = os.path.join(_SUITE, "legacy-python", "onioncrawler")
 if _PYREF not in sys.path:
     sys.path.insert(0, _PYREF)
 
-from onioncrawler import lang, onion  # noqa: E402
+from onioncrawler import canonical, entities, lang, onion  # noqa: E402
 
 V3 = "a" * 56
 V3B = "abcdefghijklmnopqrstuvwxyz234567" + "a" * 24  # 32 + 24 = 56
@@ -121,7 +121,89 @@ def gen_lang() -> None:
     show("known_languages", lang.known_languages())
 
 
-SECTIONS = [gen_onion, gen_lang]
+def gen_canonical() -> None:
+    """xcheck_canonical.rs: canonicalize + template/skeleton/query keys."""
+    v3 = "a" * 56
+    ot = "b" * 56
+    c16 = "c" * 16
+    d52 = "d" * 52
+    cases = [
+        (f"http://{v3}.onion/", None, False, False),
+        (f"http://{v3}.onion", None, False, False),
+        (f"HTTP://{v3.upper()}.ONION/Path/To", None, False, False),
+        (f"http://{v3}.onion:80/x", None, False, False),
+        (f"https://{v3}.onion:443/x", None, False, False),
+        (f"http://{v3}.onion:8080/x", None, False, False),
+        (f"http://{v3}.onion/a/./b/../c", None, False, False),
+        (f"http://{v3}.onion//a///b", None, False, False),
+        (f"http://{v3}.onion/a/b/", None, False, False),
+        (f"http://{v3}.onion/../../etc", None, False, False),
+        (f"http://{v3}.onion/%7Euser/%2e/x", None, False, False),
+        (f"http://{v3}.onion/a b/c", None, False, False),
+        (f"http://{v3}.onion/café/menü", None, False, False),
+        (f"http://{v3}.onion/s?utm_source=x&q=1&ref=y", None, False, False),
+        (f"http://{v3}.onion/s?a=&b=2&c", None, False, False),
+        (f"http://{v3}.onion/s?b=2&a=1", None, False, False),
+        (f"http://{v3}.onion/s?a=2&a=1", None, False, False),
+        (f"http://{v3}.onion/s?q=hello world&r=a+b", None, False, False),
+        (f"http://{v3}.onion/s?a=1;b=2", None, False, False),
+        (f"http://{v3}.onion/s?path=/x/y&eq=a%3Db", None, False, False),
+        (f"http://{v3}.onion/x?y=1#frag", None, False, False),
+        ("http://example.com/", None, False, False),
+        (f"ftp://{v3}.onion/", None, False, False),
+        (f"http://{c16}.onion/", None, False, False),
+        (f"http://{c16}.onion/x", None, True, False),
+        ("http://stats.i2p/x", None, False, False),
+        ("http://stats.i2p/x", None, False, True),
+        (f"http://{d52}.b32.i2p/x", None, False, True),
+        ("/b/c", f"http://{v3}.onion/a/x", False, False),
+        ("sub/page", f"http://{v3}.onion/a/b", False, False),
+        ("../c", f"http://{v3}.onion/a/b/c", False, False),
+        ("?q=1", f"http://{v3}.onion/a/b", False, False),
+        (f"//{ot}.onion/x", f"http://{v3}.onion/a", False, False),
+        ("#top", f"http://{v3}.onion/a/b?q=1", False, False),
+        ("", f"http://{v3}.onion/a/b?q=1", False, False),
+        (f"http://{v3}.onion/post/12345/comments", None, False, False),
+        (f"http://{v3}.onion/x/abcdef0123456789/y", None, False, False),
+        (f"http://{v3}.onion/2020/01/02/title", None, False, False),
+        (f"http://{v3}.onion/Foo/BarBaz", None, False, False),
+        (f"http://{v3}.onion/cal?year=2020&month=1&day=2", None, False, False),
+    ]
+    print("== canonical.canonicalize ==")
+    for (url, base, v2, i2p) in cases:
+        c = canonical.canonicalize(url, base=base, allow_v2=v2, allow_i2p=i2p)
+        val = None if c is None else {
+            "url": c.url, "tmpl": c.template_key(),
+            "skel": c.skeleton_key(), "qk": list(c.query_keys()),
+        }
+        show(f"canon {url!r} base={base!r} v2={v2} i2p={i2p}", val)
+
+
+def gen_entities() -> None:
+    """xcheck_entities.rs: extract (pgp/btc/xmr/eth)."""
+    lines = [
+        "Contact our PGP key below:",
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----",
+        "Version: OnionMail",
+        "",
+        "mQENBFabc123DEF456ghiJKLmno789PQRstu",
+        "wxyz0123456789ABCDEFabcdef+/=ZZZZ",
+        "=Ab9",
+        "-----END PGP PUBLIC KEY BLOCK-----",
+        "Donations: BTC 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+        "bech32 bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        "XMR 44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A",
+        "ETH 0x52908400098527886E0F7030069857D2E4169EE7",
+        "duplicate BTC again 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+        "toolong 0x52908400098527886E0F7030069857D2E4169EE7abcd should not match",
+        "adjacency xxxx1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2xxxx blocked",
+        "second eth 0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe end",
+    ]
+    print("== entities.extract ==")
+    show("entities", [[k, v] for (k, v) in entities.extract("\n".join(lines))])
+
+
+SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities]
 
 if __name__ == "__main__":
     for section in SECTIONS:

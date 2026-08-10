@@ -28,7 +28,7 @@ astrx-suite/
 ├── crates/
 │   ├── crawlcore/        shared crawl library  ✅
 │   ├── torrentds/        DHT indexer + tracker (node, trackers, metadata) ✅
-│   └── onioncrawler/     darknet (.onion/.i2p) crawler — host gate + lang 🚧
+│   └── onioncrawler/     darknet (.onion/.i2p) crawler — gate, canon, entities 🚧
 ├── fuzz/                 cargo-fuzz harnesses for the wire parsers
 └── legacy-python/        the Python engines being retired, one at a time
 ```
@@ -66,9 +66,9 @@ last engine is swapped, and the CMS never notices.
 
 | Crate          | Status | What's done / next |
 |----------------|:------:|--------------------|
-| `crawlcore`    | ✅ done | globmatch, dedup, scheduler, traps — 14 tests; SimHash byte-identical to Python |
+| `crawlcore`    | ✅ done | globmatch, dedup, scheduler, traps, **hashing (SHA-1/SHA-256/MD5)** — 16 tests; SimHash + hashes byte-identical to Python |
 | `torrentds`    | ✅ parity | bencode + SHA-1/SHA-256 infohash + KRPC (BEP-5) + live DHT node + metadata fetch (BEP-9/10, incl. BEP-52 v2/hybrid) + HTTP/UDP trackers (BEP-3/15/23) on a shared swarm store + BEP-33 scrape + release classifier + spam heuristics + **dependency-free index store** (records, dedup, FTS + BM25 search, bencode snapshot) + **no-JS search UI + JSON API + RSS + Torznab** + **indexer** (harvest → queue → concurrent fetch pool → store, BEP-51 sampler, warm-restart node persistence) — **100 tests**; wire formats, infohashes, classifier, BEP-33, spam, store + serving helpers all cross-checked byte-identical to Python + loopback round-trips of the HTTP server and the harvest→store→fetch path. Python `torrentds/` is ready to retire (kept as the golden reference). |
-| `onioncrawler` | 🚧 | **darknet host gate as a type** — `OnionHost` / `I2pHost` / `DarknetHost` are constructible only through a validating parser, so the (forthcoming) fetcher taking an `&OnionHost` makes a clearnet/localhost/IP leak a *compile* error, not a runtime check — plus the in-text `.onion` discovery scanner (v3/v2, look-behind, port clamp) and the stdlib language-guess. **17 tests**, `onion` + `lang` cross-checked byte-identical to Python; zero third-party deps by default. Next: URL canonicalizer + abuse blocklist, then the `net` tier (SOCKS5 fetcher, robots/sitemap, no-JS search) |
+| `onioncrawler` | 🚧 | **darknet host gate as a type** — `OnionHost` / `I2pHost` / `DarknetHost` are constructible only through a validating parser, so the (forthcoming) fetcher taking an `&OnionHost` makes a clearnet/localhost/IP leak a *compile* error, not a runtime check — plus the in-text `.onion` discovery scanner (v3/v2, look-behind, port clamp), the stdlib language-guess, a full **URL canonicalizer** (a dependency-free port of the `urllib.parse`/`posixpath` surface: `urljoin`, percent quote/unquote, `normpath`, query clean/sort, template + skeleton trap keys) and the **entity extractor** (PGP-armor SHA-1 fingerprint + btc/xmr/eth address recognition). **30 tests**, `onion`/`lang`/`canonical`/`entities` all cross-checked byte-identical to Python; zero third-party deps by default (reuses first-party `crawlcore`). Next: abuse blocklist + robots/sitemap, then the `net` tier (SOCKS5 fetcher, no-JS search) |
 | `websearch`    | ⏳ | crawler + FTS + BM25/PageRank ranking + verticals |
 | `gitweb`       | ⏳ | read-only git viewer |
 | `suitedash`    | ⏳ | no-JS ops dashboard |

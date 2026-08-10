@@ -8,5 +8,6 @@
 
 pub mod dedup;
 pub mod globmatch;
+pub mod hash;
 pub mod scheduler;
 pub mod traps;
