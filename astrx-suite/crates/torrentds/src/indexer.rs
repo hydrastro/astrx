@@ -90,6 +90,26 @@ pub struct Indexer {
     sem: Arc<Semaphore>,
     inflight: Arc<Mutex<HashSet<InfoHash>>>,
     stats: Arc<IndexerStats>,
+    /// Handles for the background loops + crawler(s), so [`Indexer::stop`] can
+    /// abort them (the crawler is an infinite loop with no `running` check).
+    tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+/// Removes an infohash from the `inflight` set on drop — so it is cleared even if
+/// the fetch task panics (a plain post-`await` statement would be skipped on
+/// unwind, stranding the hash forever and growing the set without bound).
+struct InflightGuard {
+    set: Arc<Mutex<HashSet<InfoHash>>>,
+    ih: InfoHash,
+}
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.set
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.ih);
+    }
 }
 
 impl std::fmt::Debug for Indexer {
@@ -105,8 +125,11 @@ impl Indexer {
     /// A harvester over `store` with the given config. Call [`Indexer::start`]
     /// to bind the DHT node(s) before running.
     #[must_use]
-    pub fn new(store: Arc<Mutex<Store>>, cfg: IndexerConfig) -> Self {
-        let concurrency = cfg.fetch_concurrency.max(1);
+    pub fn new(store: Arc<Mutex<Store>>, mut cfg: IndexerConfig) -> Self {
+        cfg.fetch_concurrency = cfg.fetch_concurrency.max(1);
+        cfg.num_nodes = cfg.num_nodes.max(1);
+        cfg.resolve_max_peers = cfg.resolve_max_peers.max(1);
+        let concurrency = cfg.fetch_concurrency;
         Self {
             store,
             cfg,
@@ -115,6 +138,7 @@ impl Indexer {
             sem: Arc::new(Semaphore::new(concurrency)),
             inflight: Arc::new(Mutex::new(HashSet::new())),
             stats: Arc::new(IndexerStats::default()),
+            tasks: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -136,8 +160,14 @@ impl Indexer {
         let stats = self.stats.clone();
         let sink: InfohashSink = Arc::new(move |ih: &InfoHash, peer: Option<SocketAddrV4>| {
             let peer = peer.map(|a| (a.ip().to_string(), a.port()));
-            // A panic here would unwind the receive task; add_discovered can't panic.
-            store.lock().unwrap().add_discovered(ih, peer, now_secs());
+            // This runs synchronously inside the DHT receive task; a panic would
+            // unwind it and silently stop that node's inbound harvest. `add_discovered`
+            // itself can't panic, and the lock is taken poison-tolerantly so a panic
+            // elsewhere while holding the store lock can't cascade to kill harvesting.
+            store
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .add_discovered(ih, peer, now_secs());
             stats.discovered.fetch_add(1, Ordering::Relaxed);
         });
 
@@ -294,10 +324,16 @@ impl Indexer {
                 }
                 self.inflight.lock().unwrap().insert(ih);
                 let me = self.clone();
+                let guard = InflightGuard {
+                    set: self.inflight.clone(),
+                    ih,
+                };
                 tokio::spawn(async move {
+                    // `_guard` clears `inflight` and `_permit` releases the slot on
+                    // completion OR panic (both drop during unwind).
+                    let _guard = guard;
+                    let _permit = permit;
                     me.fetch_one(ih, peer).await;
-                    me.inflight.lock().unwrap().remove(&ih);
-                    drop(permit); // release the slot
                 });
                 scheduled += 1;
             }
@@ -356,24 +392,39 @@ impl Indexer {
         if self.nodes.is_empty() {
             self.start().await?;
         }
+        let mut handles = Vec::new();
         for node in &self.nodes {
             let n = node.clone();
             let boot = self.cfg.bootstrap.clone();
-            tokio::spawn(async move { n.run_crawler(crawl_interval, boot).await });
+            // The crawler is an infinite loop with no `running` check, so its
+            // handle MUST be kept and aborted in `stop()` — otherwise it (and the
+            // node it clones) would keep crawling and harvesting after shutdown.
+            handles.push(tokio::spawn(async move {
+                n.run_crawler(crawl_interval, boot).await
+            }));
         }
-        tokio::spawn(self.clone().fetch_dispatcher());
-        tokio::spawn(self.clone().sampler(sample_interval));
-        tokio::spawn(
-            self.clone()
-                .maintenance(maintenance_interval, max_torrents, max_age),
-        );
-        tokio::spawn(self.clone().node_saver(Duration::from_secs(30)));
+        handles.push(tokio::spawn(self.clone().fetch_dispatcher()));
+        handles.push(tokio::spawn(self.clone().sampler(sample_interval)));
+        handles.push(tokio::spawn(self.clone().maintenance(
+            maintenance_interval,
+            max_torrents,
+            max_age,
+        )));
+        handles.push(tokio::spawn(
+            self.clone().node_saver(Duration::from_secs(30)),
+        ));
+        self.tasks.lock().unwrap().extend(handles);
         Ok(())
     }
 
-    /// Signal every background loop to stop and persist the routing tables.
+    /// Signal every background loop to stop, abort the crawler(s), and persist the
+    /// routing tables. The `running`-gated loops exit on their own; the crawler
+    /// (no `running` check) is aborted here so harvesting actually stops.
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
+        for h in self.tasks.lock().unwrap().drain(..) {
+            h.abort();
+        }
         self.persist_nodes();
     }
 }

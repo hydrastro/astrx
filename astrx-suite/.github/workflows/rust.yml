@@ -119,12 +119,12 @@ jobs:
         run: cargo test --workspace --all-features
 
   # ── 5. Pure core — prove the default build has ZERO third-party deps ──────
-  # The suite's austere invariant: `torrentds` with its default (empty) feature
-  # set is the pure wire core and must depend on nothing but the standard
-  # library. This job builds it feature-less and then fails if `cargo tree`
-  # reports any crate other than torrentds itself.
+  # The suite's austere invariant: each engine's default (empty) feature set is a
+  # pure, stdlib-only core that must depend on nothing but the standard library
+  # (and, for onioncrawler, the first-party crawlcore). This job builds each
+  # feature-less and fails if `cargo tree` reports any third-party crate.
   pure-core:
-    name: pure core (torrentds --no-default-features, zero deps)
+    name: pure core (--no-default-features, zero third-party deps)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -133,25 +133,41 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: astrx-suite
-      - name: Build the default (feature-less) wire core
-        run: cargo build -p torrentds --no-default-features
-      - name: Assert the pure core has ZERO third-party dependencies
+      - name: Build the default (feature-less) cores
+        run: |
+          set -euo pipefail
+          cargo build -p torrentds    --no-default-features
+          cargo build -p onioncrawler --no-default-features
+      - name: Assert the pure cores have ZERO third-party dependencies
         run: |
           set -euo pipefail
           # Print the *normal* dependency graph flat (no tree glyphs, no prefix).
-          # With no features enabled the only line permitted is torrentds' own
-          # entry; anything else means a third-party dependency has leaked into
-          # what is supposed to be a stdlib-only, independently-auditable core.
-          echo "normal dependency graph of 'torrentds --no-default-features':"
-          tree_out="$(cargo tree -p torrentds --no-default-features -e normal --prefix none)"
-          echo "$tree_out"
-          extra="$(printf '%s\n' "$tree_out" | awk 'NF && $1 != "torrentds" { print }')"
-          if [ -n "$extra" ]; then
-            echo "::error::pure core is no longer dependency-free — offending crate(s):"
-            printf '%s\n' "$extra"
-            exit 1
-          fi
-          echo "OK: 'torrentds --no-default-features' pulls in zero third-party crates."
+          # The only lines permitted are the crate itself and other first-party
+          # workspace crates (path deps); anything else means a third-party
+          # dependency has leaked into a stdlib-only, independently-auditable core.
+          #   $1 = crate name, $NF = source (a "(/…)" path for first-party crates,
+          #   absent for the root). A crates.io dep shows a version + registry, so
+          #   its source field is not a local path — that is what we reject.
+          check() {
+            local crate="$1"; shift
+            local allow_re="$1"  # regex of permitted crate names
+            echo "normal dependency graph of '$crate --no-default-features':"
+            local tree_out
+            tree_out="$(cargo tree -p "$crate" --no-default-features -e normal --prefix none)"
+            echo "$tree_out"
+            # Reject any line whose crate name is not in the first-party allowlist.
+            local extra
+            extra="$(printf '%s\n' "$tree_out" | awk 'NF' | grep -vE "^($allow_re) " || true)"
+            if [ -n "$extra" ]; then
+              echo "::error::pure core '$crate' is no longer dependency-free — offending crate(s):"
+              printf '%s\n' "$extra"
+              exit 1
+            fi
+            echo "OK: '$crate --no-default-features' pulls in zero third-party crates."
+          }
+          # torrentds is fully standalone; onioncrawler may use first-party crawlcore.
+          check torrentds    'torrentds'
+          check onioncrawler 'onioncrawler|crawlcore'
 
   # ── 6. Feature powerset — every feature combination must at least `check` ─
   # torrentds' tiers are default={} / rand / net(=>rand). cargo-hack enumerates

@@ -284,8 +284,11 @@ pub fn render_browse(counts: &[(&str, usize)], recent: &[SearchResult], stats: &
         human_size(stats.total_size)
     ));
     for (cat, n) in counts {
+        // `cat` is a fixed lowercase-ASCII vocabulary today, but escape it in the
+        // href too so this never becomes a reflected-XSS sink if it turns dynamic.
         p.push_str(&format!(
-            "<a class=cat href='/browse?category={cat}'>{} ({n})</a> ",
+            "<a class=cat href='/browse?category={}'>{} ({n})</a> ",
+            esc(cat),
             esc(&title_case(cat))
         ));
     }
@@ -577,9 +580,26 @@ fn url_decode(s: &str) -> String {
 }
 
 fn clamp_int(v: Option<&String>, default: usize, lo: usize, hi: usize) -> usize {
-    match v.and_then(|s| s.parse::<i64>().ok()) {
-        Some(n) => (n.max(lo as i64).min(hi as i64)) as usize,
-        None => default,
+    let Some(s) = v else {
+        return default;
+    };
+    match s.parse::<i64>() {
+        Ok(n) => n.clamp(lo as i64, hi as i64) as usize,
+        // Python parses arbitrary precision then clamps, so an out-of-i64
+        // magnitude (`?offset=99999999999999999999`) clamps to the bound by sign
+        // rather than silently falling back to the default (page 0).
+        Err(_) => {
+            let t = s.trim();
+            let digits = |x: &str| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit());
+            if let Some(rest) = t.strip_prefix('-') {
+                if digits(rest) {
+                    return lo;
+                }
+            } else if digits(t) {
+                return hi;
+            }
+            default
+        }
     }
 }
 
@@ -1157,15 +1177,22 @@ async fn handle_conn(mut stream: TcpStream, server: SearchServer) -> std::io::Re
         }
     }
 
-    // Read the POST body up to Content-Length (bounded).
+    // Read the POST body up to Content-Length, bounded in size (Content-Length is
+    // capped at 1 MB above) AND by one OVERALL deadline — a per-read timeout alone
+    // lets a client drip one byte per window and hold the connection open forever
+    // (slowloris); the whole body read gets a single 15s budget, like the head.
     let mut body = rest.to_vec();
-    while body.len() < content_length {
-        let n = match tokio::time::timeout(Duration::from_secs(15), stream.read(&mut tmp)).await {
-            Ok(Ok(n)) if n > 0 => n,
-            _ => break,
-        };
-        body.extend_from_slice(&tmp[..n]);
-    }
+    let read_body = async {
+        while body.len() < content_length {
+            let n = stream.read(&mut tmp).await?;
+            if n == 0 {
+                break;
+            }
+            body.extend_from_slice(&tmp[..n]);
+        }
+        Ok::<(), std::io::Error>(())
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(15), read_body).await;
     body.truncate(content_length.max(rest.len().min(content_length)));
     let body_str = String::from_utf8_lossy(&body[..content_length.min(body.len())]).into_owned();
 

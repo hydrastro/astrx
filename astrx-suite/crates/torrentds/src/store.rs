@@ -494,9 +494,12 @@ impl Store {
             .insert(infohash_hex.to_ascii_lowercase());
     }
 
-    /// Add a keyword (matched case-insensitively as a name substring).
+    /// Add a keyword (matched case-insensitively as a name substring). Uses full
+    /// Unicode lowercasing to match `is_blocked` (which lowercases the torrent
+    /// name the same way) — an ASCII-only fold would let a non-ASCII-cased keyword
+    /// (e.g. `MÜNCHEN`) slip past the name check.
     pub fn add_block_keyword(&mut self, keyword: &str) {
-        self.block_keyword.insert(keyword.to_ascii_lowercase());
+        self.block_keyword.insert(keyword.to_lowercase());
     }
 
     /// Is this infohash/name blocked?
@@ -791,23 +794,28 @@ impl Store {
 
     /// The BM25 relevance blend for a matching doc (lower = better), mirroring the
     /// Python `bm - 2·ln(1+seen) - 0.5·ln(1+size/1e6)`.
-    fn relevance(&self, ih: &str, qtokens: &[String], matches: &[&String], avgdl: f64) -> f64 {
+    /// Document frequency per query token, over the WHOLE corpus (not just the
+    /// matched candidates) — so a rarer term earns a larger idf, as BM25 intends.
+    fn doc_freqs(&self, qtokens: &[String]) -> Vec<f64> {
+        qtokens
+            .iter()
+            .map(|q| {
+                self.doc_terms
+                    .values()
+                    .filter(|terms| terms.iter().any(|t| t.starts_with(q.as_str())))
+                    .count() as f64
+            })
+            .collect()
+    }
+
+    fn relevance(&self, ih: &str, qtokens: &[String], dfs: &[f64], avgdl: f64) -> f64 {
         const K1: f64 = 1.2;
         const B: f64 = 0.75;
         let n = self.torrents.len().max(1) as f64;
         let terms = &self.doc_terms[ih];
         let doc_len = terms.len().max(1) as f64;
         let mut bm25 = 0.0;
-        for q in qtokens {
-            // df = docs having some term with this prefix.
-            let df = matches
-                .iter()
-                .filter(|m| {
-                    self.doc_terms[**m]
-                        .iter()
-                        .any(|t| t.starts_with(q.as_str()))
-                })
-                .count() as f64;
+        for (q, &df) in qtokens.iter().zip(dfs) {
             let tf = terms.iter().filter(|t| t.starts_with(q.as_str())).count() as f64;
             if tf == 0.0 {
                 continue;
@@ -836,6 +844,12 @@ impl Store {
         collapse: bool,
     ) -> Vec<SearchResult> {
         let qtokens = query_tokens(query);
+        // A non-empty query that tokenises to nothing (all punctuation) matches
+        // nothing — it must not fall through to "browse everything" the way
+        // `qtokens.is_empty()` alone would. Mirrors Python's `if not match: []`.
+        if !query.trim().is_empty() && qtokens.is_empty() {
+            return Vec::new();
+        }
         let avgdl = {
             let total: usize = self.doc_terms.values().map(Vec::len).sum();
             (total as f64 / self.torrents.len().max(1) as f64).max(1.0)
@@ -861,10 +875,10 @@ impl Store {
         };
         match effective_order {
             Order::Relevance => {
-                let matches = cands.clone();
+                let dfs = self.doc_freqs(&qtokens);
                 let mut scored: Vec<(f64, &String)> = cands
                     .iter()
-                    .map(|ih| (self.relevance(ih, &qtokens, &matches, avgdl), *ih))
+                    .map(|ih| (self.relevance(ih, &qtokens, &dfs, avgdl), *ih))
                     .collect();
                 scored.sort_by(|a, b| {
                     a.0.partial_cmp(&b.0)
@@ -932,6 +946,9 @@ impl Store {
     #[must_use]
     pub fn count(&self, query: &str, filters: &Filters) -> usize {
         let qtokens = query_tokens(query);
+        if !query.trim().is_empty() && qtokens.is_empty() {
+            return 0;
+        }
         self.torrents
             .values()
             .filter(|r| {
@@ -1386,5 +1403,43 @@ mod tests {
         }
         assert_eq!(s.enforce_retention(Some(3), None, 200), 2);
         assert_eq!(s.len(), 3);
+    }
+
+    /// Regression: a non-empty query that tokenises to nothing (all
+    /// punctuation) must match NOTHING. The bug was that `qtokens.is_empty()`
+    /// alone conflated "no query → browse everything" with "query matched no
+    /// terms", so `search("!!!")` returned the entire index. Both `search` and
+    /// `count` must early-return empty/0, while an empty query still browses.
+    #[test]
+    fn punctuation_only_query_matches_nothing() {
+        let mut s = Store::new();
+        s.store_metadata(
+            &meta("Ubuntu 22.04 ISO", &[("u.iso", 4_000_000_000)], [1u8; 20]),
+            100,
+        );
+        s.store_metadata(
+            &meta("Debian netinst", &[("d.iso", 700_000_000)], [2u8; 20]),
+            101,
+        );
+        let f = Filters {
+            include_spam: true,
+            ..Default::default()
+        };
+        // Sanity: an empty query browses the whole index.
+        assert_eq!(s.search("", 25, 0, Order::Latest, &f, true).len(), 2);
+        assert_eq!(s.count("", &f), 2);
+        // Punctuation-only queries tokenise to nothing → match nothing.
+        for q in ["!!!", "()", "@#$%", "---", "   .  "] {
+            assert!(
+                s.search(q, 25, 0, Order::Relevance, &f, true).is_empty(),
+                "search({q:?}) should be empty",
+            );
+            assert_eq!(s.count(q, &f), 0, "count({q:?}) should be 0");
+        }
+        // A real term still matches, so the guard didn't over-reach.
+        assert_eq!(
+            s.search("ubuntu", 25, 0, Order::Relevance, &f, true).len(),
+            1
+        );
     }
 }

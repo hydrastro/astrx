@@ -223,7 +223,11 @@ pub fn score(
     // -- size vs piece mismatch --
     if piece_length > 0 && piece_count > 0 && total_size > 0 {
         let expected = total_size.div_ceil(piece_length);
-        if expected >= 1 && (piece_count as i64 - expected as i64).unsigned_abs() > 2 {
+        // abs_diff over u64 (both operands non-negative): a hostile `total_size`
+        // near u64::MAX with `piece_length == 1` makes `expected` exceed i64::MAX,
+        // where the old `as i64` subtraction overflow-panicked (debug) / wrapped to
+        // a false-negative (release). The info-dict is attacker-crafted.
+        if expected >= 1 && (piece_count as u64).abs_diff(expected) > 2 {
             let ratio = piece_count as f64 / expected as f64;
             if ratio > config.mismatch_factor || ratio < 1.0 / config.mismatch_factor {
                 total += config.piece_mismatch;
@@ -362,5 +366,32 @@ mod tests {
         assert!(!dom(".com")); // no label before the dot
         assert!(!dom("a.comic")); // "com" not at a word boundary (comic)
         assert!(dom("my-tracker.org"));
+    }
+
+    /// Regression: a hostile info-dict with a colossal `total_size` and
+    /// `piece_length == 1` drives `expected` past `i64::MAX`. The old
+    /// `(piece_count as i64 - expected as i64)` subtraction overflow-panicked in
+    /// debug and wrapped to a false-negative in release; the `abs_diff` over
+    /// `u64` must neither panic nor miss the mismatch. Tests run in debug, so a
+    /// regression here surfaces as a panic (test failure), not a silent pass.
+    #[test]
+    fn piece_mismatch_hostile_size_no_overflow() {
+        let cfg = SpamConfig::default();
+        // `expected == u64::MAX`; wildly inconsistent with a single piece.
+        let (s, r) = score("x", &[], u64::MAX, 1, 1, "other", &cfg);
+        assert_eq!(s, cfg.piece_mismatch);
+        assert!(r.iter().any(|m| m.contains("piece_count")));
+
+        // `expected == 2^63`, the exact value whose `as i64` cast lands on
+        // `i64::MIN` and made `piece_count - expected` overflow in debug.
+        let (s2, r2) = score("x", &[], 1u64 << 63, 1, 1, "other", &cfg);
+        assert_eq!(s2, cfg.piece_mismatch);
+        assert!(r2.iter().any(|m| m.contains("piece_count")));
+
+        // Consistent counts (expected ~ piece_count) must still NOT flag, even
+        // at extreme magnitudes: 2^40 pieces of length 2 covering 2^41 bytes.
+        let big = 1u64 << 41;
+        let (s3, _) = score("x", &[], big, 2, (big / 2) as usize, "other", &cfg);
+        assert_eq!(s3, 0.0);
     }
 }

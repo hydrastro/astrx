@@ -27,7 +27,8 @@ astrx-suite/
 ├── SECURITY.md           threat model + hardening notes
 ├── crates/
 │   ├── crawlcore/        shared crawl library  ✅
-│   └── torrentds/        DHT indexer + tracker (node, trackers, metadata) 🚧
+│   ├── torrentds/        DHT indexer + tracker (node, trackers, metadata) ✅
+│   └── onioncrawler/     darknet (.onion/.i2p) crawler — host gate + lang 🚧
 ├── fuzz/                 cargo-fuzz harnesses for the wire parsers
 └── legacy-python/        the Python engines being retired, one at a time
 ```
@@ -48,8 +49,9 @@ migration is done.
 These are security-critical services that parse hostile input (bencode/KRPC from
 anonymous DHT peers, untrusted HTML/HTTP) behind Tor. Rust gives memory safety
 with no GC and lets the crown-jewel invariants become **types** — e.g. the
-darknet-only gate will be an `OnionHost` the fetcher requires, so a clearnet leak
-becomes a *compile* error, and the infohash a verified 20/32-byte newtype.
+darknet-only gate is now an `OnionHost` / `DarknetHost` newtype the fetcher will
+require, so a clearnet leak becomes a *compile* error, and the infohash a
+verified 20/32-byte newtype.
 The hostile-input parsers (bencode, KRPC, info-dict, magnet) have `cargo fuzz`
 harnesses under `fuzz/`.
 
@@ -65,8 +67,8 @@ last engine is swapped, and the CMS never notices.
 | Crate          | Status | What's done / next |
 |----------------|:------:|--------------------|
 | `crawlcore`    | ✅ done | globmatch, dedup, scheduler, traps — 14 tests; SimHash byte-identical to Python |
-| `torrentds`    | ✅ parity | bencode + SHA-1/SHA-256 infohash + KRPC (BEP-5) + live DHT node + metadata fetch (BEP-9/10, incl. BEP-52 v2/hybrid) + HTTP/UDP trackers (BEP-3/15/23) on a shared swarm store + BEP-33 scrape + release classifier + spam heuristics + **dependency-free index store** (records, dedup, FTS + BM25 search, bencode snapshot) + **no-JS search UI + JSON API + RSS + Torznab** + **indexer** (harvest → queue → concurrent fetch pool → store, BEP-51 sampler, warm-restart node persistence) — **98 tests**; wire formats, infohashes, classifier, BEP-33, spam, store + serving helpers all cross-checked byte-identical to Python + loopback round-trips of the HTTP server and the harvest→store→fetch path. Python `torrentds/` is ready to retire (kept as the golden reference). |
-| `onioncrawler` | ⏳ | SOCKS5 + darknet gate as a type, resumable frontier, no-JS search |
+| `torrentds`    | ✅ parity | bencode + SHA-1/SHA-256 infohash + KRPC (BEP-5) + live DHT node + metadata fetch (BEP-9/10, incl. BEP-52 v2/hybrid) + HTTP/UDP trackers (BEP-3/15/23) on a shared swarm store + BEP-33 scrape + release classifier + spam heuristics + **dependency-free index store** (records, dedup, FTS + BM25 search, bencode snapshot) + **no-JS search UI + JSON API + RSS + Torznab** + **indexer** (harvest → queue → concurrent fetch pool → store, BEP-51 sampler, warm-restart node persistence) — **100 tests**; wire formats, infohashes, classifier, BEP-33, spam, store + serving helpers all cross-checked byte-identical to Python + loopback round-trips of the HTTP server and the harvest→store→fetch path. Python `torrentds/` is ready to retire (kept as the golden reference). |
+| `onioncrawler` | 🚧 | **darknet host gate as a type** — `OnionHost` / `I2pHost` / `DarknetHost` are constructible only through a validating parser, so the (forthcoming) fetcher taking an `&OnionHost` makes a clearnet/localhost/IP leak a *compile* error, not a runtime check — plus the in-text `.onion` discovery scanner (v3/v2, look-behind, port clamp) and the stdlib language-guess. **17 tests**, `onion` + `lang` cross-checked byte-identical to Python; zero third-party deps by default. Next: URL canonicalizer + abuse blocklist, then the `net` tier (SOCKS5 fetcher, robots/sitemap, no-JS search) |
 | `websearch`    | ⏳ | crawler + FTS + BM25/PageRank ranking + verticals |
 | `gitweb`       | ⏳ | read-only git viewer |
 | `suitedash`    | ⏳ | no-JS ops dashboard |

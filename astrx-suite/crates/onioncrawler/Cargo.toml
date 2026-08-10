@@ -1,0 +1,27 @@
+[package]
+name = "onioncrawler"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Darknet (.onion/.i2p) crawler: the anti-leak host gate expressed as a type, URL canonicalizer, language guess, SOCKS5 fetch, no-JS search."
+
+[lints]
+workspace = true
+
+# Like `torrentds`, this crate is organised in feature tiers so the auditable
+# core stays dependency-free. The pure modules ported so far — `onion` (the
+# darknet host gate) and `lang` (language guess) — need nothing but `std`, so the
+# default (empty) feature set pulls in ZERO third-party crates. The networking
+# tier (SOCKS5 client, HTTP fetcher, no-JS search server) will live behind the
+# opt-in `net`/`rand` features and pull in only the two vetted deps the rest of
+# the suite already uses (`tokio`, `getrandom`); they are declared here so those
+# modules slot in without a manifest churn.
+[dependencies]
+tokio = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
+
+[features]
+default = []
+rand = ["dep:getrandom"]
+net = ["dep:tokio", "rand"]
