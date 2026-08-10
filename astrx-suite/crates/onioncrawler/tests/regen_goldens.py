@@ -30,7 +30,7 @@ _PYREF = os.path.join(_SUITE, "legacy-python", "onioncrawler")
 if _PYREF not in sys.path:
     sys.path.insert(0, _PYREF)
 
-from onioncrawler import canonical, entities, lang, onion  # noqa: E402
+from onioncrawler import abuse, canonical, entities, lang, onion, robots  # noqa: E402
 
 V3 = "a" * 56
 V3B = "abcdefghijklmnopqrstuvwxyz234567" + "a" * 24  # 32 + 24 = 56
@@ -203,7 +203,52 @@ def gen_entities() -> None:
     show("entities", [[k, v] for (k, v) in entities.extract("\n".join(lines))])
 
 
-SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities]
+def gen_abuse() -> None:
+    """xcheck_abuse.rs: host/keyword/media blocklists + Ahmia md5 bans."""
+    a = "a" * 56 + ".onion"
+    b = "b" * 56 + ".onion"
+    c = "c" * 56 + ".onion"
+    print("== abuse ==")
+    show(f"host_md5 {a}", abuse.AbuseFilter.host_md5(a))
+    f = abuse.AbuseFilter(
+        hosts=[a, f"{b}:9050"],
+        keywords=["scam", "bad phrase", "xxx"],
+        media_hashes=["ABC123", "deadbeef"],
+        host_md5s=[abuse.AbuseFilter.host_md5(c)],
+    )
+    for h in [a, f"{a}:80", b, c, "clearnet.com"]:
+        show(f"host_blocked {h!r}", f.host_blocked(h))
+    show("banned_host_md5s", f.banned_host_md5s())
+    for texts in [["This is a SCAM offer"], ["nothing here"], ["a Bad Phrase indeed"],
+                  ["scamper"], ["x_scam_y"], ["title xxx", "body"], ["", ""]]:
+        show(f"content_hit {texts!r}", f.content_hit(*texts))
+    show("hash_media abc", abuse.AbuseFilter.hash_media(b"abc"))
+
+
+def gen_robots() -> None:
+    """xcheck_robots.rs: parse_robots + allowed/crawl_delay/sitemaps."""
+    doc = "\n".join([
+        "# a robots file", "User-agent: *", "Disallow: /private/", "Allow: /private/ok",
+        "Crawl-delay: 1.5", "", "User-agent: onioncrawler", "User-agent: goodbot",
+        "Disallow: /secret", "Allow: /secret/pub$", "Crawl-delay: 5", "",
+        "User-agent: evil", "Disallow: /", "", "Sitemap: http://x.onion/sitemap.xml",
+        "Sitemap: http://y.onion/sm2.xml", "Disallow: /*.php$",
+    ])
+    r = robots.parse_robots(doc)
+    print("== robots ==")
+    show("sitemaps", r.sitemaps)
+    for (path, agent) in [
+        ("/private/secret", "anybot"), ("/private/ok", "anybot"), ("/secret", "onioncrawler"),
+        ("/secret/pub", "onioncrawler"), ("/secret/pub/x", "onioncrawler"), ("/x.php", "anybot"),
+        ("private/nolead", "anybot"), ("/priv%61te/secret", "anybot"),
+        ("/anything", "GoodBot/1.0"), ("/secret", "unknownbot"),
+    ]:
+        show(f"allowed {path!r} {agent!r}", r.allowed(path, agent))
+    for agent in ["anybot", "onioncrawler", "goodbot", "evil", "unknownbot"]:
+        show(f"crawl_delay {agent!r}", r.crawl_delay(agent))
+
+
+SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities, gen_abuse, gen_robots]
 
 if __name__ == "__main__":
     for section in SECTIONS:

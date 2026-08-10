@@ -25,21 +25,25 @@
 //! behind `net`/`rand`.
 #![forbid(unsafe_code)]
 
+pub mod abuse;
 pub mod canonical;
 pub mod entities;
 pub mod lang;
 pub mod onion;
+pub mod robots;
 // Internal port of the `urllib.parse` / `posixpath` subset the canonicalizer and
-// (forthcoming) robots parser share. Crate-private: not part of the public API.
+// robots parser share. Crate-private: not part of the public API.
 mod urlparse;
 
 // Flat facade: re-export the darknet gate + canonicalizer at the crate root so
 // call sites read `onioncrawler::OnionHost` / `onioncrawler::canonicalize`
 // regardless of internal module grouping (which will grow as the net/store/
 // search tiers land).
+pub use abuse::{load_abuse_filter, AbuseFilter};
 pub use canonical::{canonicalize, CanonicalUrl};
 pub use entities::{extract as extract_entities, Kind as EntityKind};
 pub use onion::{
     find_onion_urls, is_darknet_host, is_i2p_host, is_onion_host, normalize_host, onion_version,
     DarknetHost, I2pHost, I2pKind, OnionHost, Refusal, RefusedHost,
 };
+pub use robots::{parse_robots, RobotsRules};
