@@ -6,53 +6,60 @@
 //! canonical info-dict). The DHT node (BEP-5), HTTP/UDP trackers (BEP-3/15/23)
 //! and metadata fetch (BEP-9/10) build on top of these.
 //!
+//! # Source layout
+//!
+//! On disk the modules are grouped by subsystem — `wire/` (bencode, krpc,
+//! infohash), `enrich/` (classify, bep33, spam), `dht/` (routing, node,
+//! transport), `tracker/` (peerstore, http, udp), plus `metadata/` and `store`.
+//! Each is re-exported flat at the crate root, so the public path is stable and
+//! grouping-agnostic (`torrentds::bencode`, `torrentds::routing`, …).
+//!
 //! # Feature tiers
 //!
 //! The crate is layered so its pure, auditable core carries **no third-party
 //! dependencies** — that is the default build. Live networking is opt-in:
 //!
 //! * *(default, no features)* — the pure wire core: [`bencode`], [`infohash`],
-//!   [`krpc`], [`bep33`], [`classify`], and all of [`metadata`]'s parsing/builders.
-//!   Zero third-party dependencies.
+//!   [`krpc`], [`bep33`], [`classify`], [`spam`], [`store`], and all of
+//!   [`metadata`]'s parsing/builders. Zero third-party dependencies.
 //! * **`rand`** — adds the sync CSPRNG-backed structures ([`routing`] table,
 //!   [`peerstore`] swarm store); pulls in `getrandom`.
-//! * **`net`** — adds the live async node ([`dht`]), the [`tracker_http`] /
+//! * **`net`** — adds the live async DHT node, the [`tracker_http`] /
 //!   [`tracker_udp`] servers, the [`transport`] layer, and [`metadata`]'s
 //!   `fetch_metadata`/`serve_metadata`; pulls in `tokio` (and implies `rand`).
 #![forbid(unsafe_code)]
+#![warn(missing_debug_implementations)]
 
-// --- Pure wire core: zero third-party deps, always compiled ---
-pub mod bencode;
-pub mod bep33;
-pub mod classify;
-pub mod infohash;
-pub mod krpc;
+// --- Subsystem groupings (private on-disk parents; re-exported flat below) ---
+mod enrich;
 pub mod metadata;
-pub mod spam;
 pub mod store;
+mod wire;
 
-// --- Sync, CSPRNG-backed structures: require `rand` ---
 #[cfg(feature = "rand")]
-pub mod peerstore;
+mod dht;
 #[cfg(feature = "rand")]
-pub mod routing;
+mod tracker;
 
-// --- Live networking: require `net` (implies `rand`) ---
+// --- Flat module facade: stable public paths regardless of the on-disk grouping.
+#[cfg(feature = "rand")]
+pub use dht::routing;
 #[cfg(feature = "net")]
-pub mod dht;
+pub use dht::transport;
+pub use enrich::{bep33, classify, spam};
 #[cfg(feature = "net")]
-pub mod tracker_http;
+pub use tracker::http as tracker_http;
+#[cfg(feature = "rand")]
+pub use tracker::peerstore;
 #[cfg(feature = "net")]
-pub mod tracker_udp;
-#[cfg(feature = "net")]
-pub mod transport;
+pub use tracker::udp as tracker_udp;
+pub use wire::{bencode, infohash, krpc};
 
 // --- Re-exports: pure core (always available) ---
-pub use bencode::{decode, decode_lenient, decode_prefix, encode, Ben, BencodeError};
+pub use bencode::{decode, decode_lenient, decode_prefix, encode, Ben, BencodeError, Dict};
 pub use infohash::{infohash, infohash_v2, sha1, sha256};
 pub use krpc::{
-    encode_error, encode_query, encode_response, parse_message, Dict, KrpcError, KrpcMessage,
-    ParseError,
+    encode_error, encode_query, encode_response, parse_message, KrpcError, KrpcMessage, ParseError,
 };
 pub use metadata::{
     is_v2_info, parse_info, parse_magnet, parse_v2_info, truncate_v2, verify_v2, Magnet,
@@ -61,13 +68,15 @@ pub use metadata::{
 
 // --- Re-exports: `rand` tier ---
 #[cfg(feature = "rand")]
-pub use peerstore::{Event, Family, PeerStore};
+pub use peerstore::{Event, Family, PeerStore, ScrapeCounts};
 #[cfg(feature = "rand")]
-pub use routing::{Node, NodeId};
+pub use routing::{InfoHash, Node, NodeId};
 
 // --- Re-exports: `net` tier ---
 #[cfg(feature = "net")]
-pub use dht::{make_neighbor_id, DhtConfig, DhtNode, GetPeersOutcome, InfohashSink, SampleOutcome};
+pub use dht::node::{
+    make_neighbor_id, DhtConfig, DhtNode, GetPeersOutcome, InfohashSink, SampleOutcome,
+};
 #[cfg(feature = "net")]
 pub use metadata::{fetch_metadata, serve_metadata};
 #[cfg(feature = "net")]

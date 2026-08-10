@@ -7,8 +7,8 @@ use super::{
     merr, MetadataError, BT_PROTOCOL, EXT_MSG_ID, HANDSHAKE_LEN, PIECE_SIZE, UT_DATA, UT_REJECT,
     UT_REQUEST,
 };
+use crate::bencode::Dict;
 use crate::bencode::{encode, Ben};
-use crate::krpc::Dict;
 
 // --- BEP-3 handshake -------------------------------------------------------
 

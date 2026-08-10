@@ -5,6 +5,7 @@
 
 use std::net::SocketAddr;
 use torrentds::tracker_http::{announce_response_bytes, failure_bytes, scrape_response_bytes};
+use torrentds::ScrapeCounts;
 
 fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -21,7 +22,14 @@ fn http_tracker_responses_match_python() {
     // scrape: infohash 0x42… -> (complete=5, downloaded=2, incomplete=3)
     let ih = [0x42u8; 20];
     assert_eq!(
-        to_hex(&scrape_response_bytes(&[(ih, (5, 2, 3))])),
+        to_hex(&scrape_response_bytes(&[(
+            ih,
+            ScrapeCounts {
+                complete: 5,
+                downloaded: 2,
+                incomplete: 3
+            }
+        )])),
         "64353a66696c65736432303a424242424242424242424242424242424242424264383a636f6d706c65746569356531303a646f776e6c6f6164656469326531303a696e636f6d706c657465693365656565"
     );
     assert_eq!(

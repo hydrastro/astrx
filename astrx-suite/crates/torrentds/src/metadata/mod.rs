@@ -99,9 +99,9 @@ pub use fetch::{fetch_metadata, read_message, serve_metadata};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bencode::Dict;
     use crate::bencode::{decode, encode, Ben};
     use crate::infohash::{sha1, sha256};
-    use crate::krpc::Dict;
 
     fn v1_single_file(name: &[u8], length: i64, piece_hashes: usize) -> Vec<u8> {
         let mut info = Dict::new();

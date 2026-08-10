@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use torrentds::tracker_udp::{
     encode_announce_response, encode_connect_response, encode_error, encode_scrape_response,
 };
+use torrentds::ScrapeCounts;
 
 fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -32,7 +33,14 @@ fn udp_tracker_wire_matches_python() {
     );
     // scrape: (complete=5, downloaded=2, incomplete=3)
     assert_eq!(
-        to_hex(&encode_scrape_response(txn, &[(5, 2, 3)])),
+        to_hex(&encode_scrape_response(
+            txn,
+            &[ScrapeCounts {
+                complete: 5,
+                downloaded: 2,
+                incomplete: 3
+            }]
+        )),
         "0000000211223344000000050000000200000003"
     );
 }

@@ -181,6 +181,29 @@ the remaining engines land on top:
   magnet parsing; plus `deny.toml` (supply-chain policy), `SECURITY.md` (threat
   model) and `crates/torrentds/tests/README.md` (the cross-check methodology).
 
+A second pass finished the deferred structural items — behavior-neutral, all wire
+cross-checks stay byte-identical:
+
+- **Modules grouped into subsystem directories** — `wire/` (bencode, krpc,
+  infohash), `enrich/` (classify, bep33, spam), `dht/` (routing, node, transport),
+  `tracker/` (peerstore, http, udp). Parents are private with a flat facade
+  re-export, so every public path (`torrentds::bencode`, …) is unchanged.
+- **`Dict` moved to its real home** (`bencode`, re-exported from `krpc`), removing
+  four false module edges; the DHT's private served-peer store renamed
+  `ServedPeers` to end the clash with the tracker `PeerStore`.
+- **Positional tuples replaced by named structs** — `ScrapeCounts`,
+  `GetPeersOutcome`, `SampleOutcome`. The scrape triple was a real footgun (the
+  wire order differs from the count order); the wire encoders now read fields by
+  name, so a reshuffle can't silently mislabel seeders/leechers.
+- **Encapsulation + `Debug`**: `KBucket`/`RoutingTable` internals are private
+  behind accessors (the k-bound can't be bypassed); every public handle type has a
+  hand-written `Debug`, enforced by `#![warn(missing_debug_implementations)]`.
+- **`InfoHash` type alias** distinguishes a torrent identity from a `NodeId` in
+  intent (e.g. the harvest sink, the served store, BEP-51 samples) — deliberately
+  an alias, not a newtype, so the byte-exact wire paths stay noise-free.
+- **`regen_goldens.py`** re-derives the cross-check goldens from the Python
+  reference, so the byte-identical guarantee is reproducible/CI-checkable.
+
 ## The CI bar (enforced on every crate)
 
 `cargo fmt --check` · `cargo clippy --all-targets --all-features -- -D warnings` ·

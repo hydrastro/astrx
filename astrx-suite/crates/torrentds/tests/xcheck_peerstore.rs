@@ -6,7 +6,15 @@
 //! migrated into the Rust one). The blob was emitted by the Python `snapshot()`
 //! with the clock pinned so peer ages are 0.
 
-use torrentds::peerstore::PeerStore;
+use torrentds::peerstore::{PeerStore, ScrapeCounts};
+
+fn sc(complete: u64, incomplete: u64, downloaded: u64) -> ScrapeCounts {
+    ScrapeCounts {
+        complete,
+        incomplete,
+        downloaded,
+    }
+}
 
 fn unhex(s: &str) -> Vec<u8> {
     (0..s.len())
@@ -24,6 +32,6 @@ fn restores_python_snapshot() {
     let mut ps = PeerStore::new(1800);
     let restored = ps.restore(&blob, 1000);
     assert_eq!(restored, 3);
-    assert_eq!(ps.counts(&[0xABu8; 20], 1000), (1, 1, 0)); // 1 seeder, 1 leecher
-    assert_eq!(ps.counts(&[0xCDu8; 20], 1000), (1, 0, 1)); // 1 seeder, downloaded=1
+    assert_eq!(ps.counts(&[0xABu8; 20], 1000), sc(1, 1, 0)); // 1 seeder, 1 leecher
+    assert_eq!(ps.counts(&[0xCDu8; 20], 1000), sc(1, 0, 1)); // 1 seeder, downloaded=1
 }

@@ -3,9 +3,9 @@
 //! the SHA-1 / SHA-256 assembly-and-verify checks. No I/O, no third-party deps.
 
 use super::{merr, MetadataError, MAX_TREE_DEPTH, MAX_TREE_NODES};
+use crate::bencode::Dict;
 use crate::bencode::{decode, decode_lenient, encode, Ben};
 use crate::infohash::{sha1, sha256};
-use crate::krpc::Dict;
 
 /// Concatenate ordered pieces and check `sha1(metadata) == info_hash`. Returns
 /// the metadata on success, `None` on mismatch.
