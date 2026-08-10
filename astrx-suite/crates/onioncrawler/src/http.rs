@@ -1,15 +1,17 @@
 //! A minimal HTTP/1.1 client that runs over any already-connected (SOCKS-tunnelled)
 //! stream.
 //!
-//! This module currently holds the **pure** wire helpers — request building and
-//! response-head / chunked-body parsing — which are cross-checked byte-identical
-//! to the Python `http_client.py` in `tests/xcheck_http.rs`. The async
-//! `perform_request` (streaming reader with a raw byte budget + gzip/deflate
-//! decompression) lands with the net tier, on top of these helpers.
+//! This module holds the **pure** wire helpers — request building, response-head
+//! / chunked-body parsing, and `Content-Encoding` decompression (via the
+//! dependency-free [`crawlcore::inflate`]) — cross-checked byte-identical to the
+//! Python `http_client.py` in `tests/xcheck_http.rs`. The async `perform_request`
+//! (streaming reader with a raw byte budget, tying these together) lands with the
+//! net tier, on top of these helpers.
 //!
 //! Redirects are handled one hop at a time by the caller (the fetcher), because a
 //! redirect to a new host needs a fresh tunnel.
 
+use crawlcore::inflate::{inflate_gzip, inflate_raw, inflate_zlib};
 use std::fmt;
 
 /// An HTTP protocol / framing error.
@@ -184,6 +186,37 @@ pub fn decode_chunked(buf: &[u8], max_bytes: usize) -> Result<(Vec<u8>, bool), H
         }
     }
     Ok((out, truncated))
+}
+
+/// Decompress a response body per its `Content-Encoding`, hard-capping the
+/// decompressed size at `max_bytes` (a decompression bomb is stopped at the cap
+/// with `truncated == true`). `identity`/empty/unknown encodings pass through
+/// unchanged. `deflate` tries raw DEFLATE first, then a zlib wrapper (servers
+/// send both). Mirrors the Python `_decompress`.
+///
+/// # Errors
+/// [`HttpError`] if a declared `gzip`/`deflate` body fails to decode.
+pub fn decompress(
+    body: &[u8],
+    encoding: &str,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, bool), HttpError> {
+    let enc = encoding.trim().to_lowercase();
+    if enc.is_empty() || enc == "identity" {
+        return Ok((body.to_vec(), false));
+    }
+    let fail = |e: crawlcore::inflate::InflateError| {
+        HttpError(format!("failed to decompress {enc:?}: {e}"))
+    };
+    match enc.as_str() {
+        "gzip" | "x-gzip" => inflate_gzip(body, max_bytes).map_err(fail),
+        "deflate" => match inflate_raw(body, max_bytes) {
+            Ok(out) => Ok(out),
+            Err(_) => inflate_zlib(body, max_bytes).map_err(fail),
+        },
+        // unknown encoding: return as-is rather than crash
+        _ => Ok((body.to_vec(), false)),
+    }
 }
 
 #[cfg(test)]

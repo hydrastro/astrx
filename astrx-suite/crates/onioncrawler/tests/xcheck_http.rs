@@ -5,10 +5,19 @@
 //! and chunked-body decoding (incl. chunk extensions). Expected values were
 //! emitted by driving the Python module.
 
-use onioncrawler::http::{build_request, decode_chunked, parse_headers, parse_status_line};
+use onioncrawler::http::{
+    build_request, decode_chunked, decompress, parse_headers, parse_status_line,
+};
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 #[test]
@@ -69,6 +78,52 @@ fn parse_headers_xcheck() {
             ("set-cookie".to_string(), "a=1, b=2".to_string()),
             ("x-empty".to_string(), String::new()),
         ]
+    );
+}
+
+#[test]
+fn decompress_xcheck() {
+    // "hello world" compressed by Python zlib as gzip / raw-deflate / zlib-deflate.
+    let plain = b"hello world".to_vec();
+    let gzip = unhex("1f8b0800000000000203cb48cdc9c95728cf2fca49010085114a0d0b000000");
+    let raw = unhex("cb48cdc9c95728cf2fca490100");
+    let zlib = unhex("78dacb48cdc9c95728cf2fca4901001a0b045d");
+    let m = 1_000_000;
+
+    assert_eq!(
+        decompress(&gzip, "gzip", m).unwrap(),
+        (plain.clone(), false)
+    );
+    assert_eq!(
+        decompress(&gzip, "x-gzip", m).unwrap(),
+        (plain.clone(), false)
+    );
+    // deflate: raw form decodes directly; zlib-wrapped falls back to the zlib path
+    assert_eq!(
+        decompress(&raw, "deflate", m).unwrap(),
+        (plain.clone(), false)
+    );
+    assert_eq!(
+        decompress(&zlib, "deflate", m).unwrap(),
+        (plain.clone(), false)
+    );
+    // identity / empty / unknown encodings pass through unchanged
+    assert_eq!(
+        decompress(b"raw bytes", "identity", m).unwrap(),
+        (b"raw bytes".to_vec(), false)
+    );
+    assert_eq!(
+        decompress(b"raw bytes", "", m).unwrap(),
+        (b"raw bytes".to_vec(), false)
+    );
+    assert_eq!(
+        decompress(b"raw bytes", "br", m).unwrap(),
+        (b"raw bytes".to_vec(), false)
+    );
+    // decompression-bomb cap
+    assert_eq!(
+        decompress(&gzip, "gzip", 5).unwrap(),
+        (b"hello".to_vec(), true)
     );
 }
 
