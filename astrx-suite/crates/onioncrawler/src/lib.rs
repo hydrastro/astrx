@@ -28,9 +28,13 @@
 pub mod abuse;
 pub mod canonical;
 pub mod entities;
+pub mod http;
 pub mod lang;
 pub mod onion;
+pub mod ratelimit;
 pub mod robots;
+pub mod sitemap;
+pub mod socks;
 // Internal port of the `urllib.parse` / `posixpath` subset the canonicalizer and
 // robots parser share. Crate-private: not part of the public API.
 mod urlparse;
@@ -46,4 +50,6 @@ pub use onion::{
     find_onion_urls, is_darknet_host, is_i2p_host, is_onion_host, normalize_host, onion_version,
     DarknetHost, I2pHost, I2pKind, OnionHost, Refusal, RefusedHost,
 };
+pub use ratelimit::TokenBucket;
 pub use robots::{parse_robots, RobotsRules};
+pub use sitemap::{parse_sitemap, SitemapDoc, SitemapKind};

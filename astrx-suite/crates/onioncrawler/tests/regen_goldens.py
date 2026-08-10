@@ -30,7 +30,9 @@ _PYREF = os.path.join(_SUITE, "legacy-python", "onioncrawler")
 if _PYREF not in sys.path:
     sys.path.insert(0, _PYREF)
 
-from onioncrawler import abuse, canonical, entities, lang, onion, robots  # noqa: E402
+from onioncrawler import (  # noqa: E402
+    abuse, canonical, entities, http_client, lang, onion, ratelimit, robots, sitemap, socks,
+)
 
 V3 = "a" * 56
 V3B = "abcdefghijklmnopqrstuvwxyz234567" + "a" * 24  # 32 + 24 = 56
@@ -248,7 +250,100 @@ def gen_robots() -> None:
         show(f"crawl_delay {agent!r}", r.crawl_delay(agent))
 
 
-SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities, gen_abuse, gen_robots]
+def gen_sitemap() -> None:
+    """xcheck_sitemap.rs: parse_sitemap over valid/rejected/capped XML."""
+    ns = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
+    cases = {
+        "urlset_plain": b"<urlset><url><loc>http://a.onion/</loc></url><url><loc>http://b.onion/x</loc></url></urlset>",
+        "urlset_ns": ('<urlset %s><url><loc>http://a.onion/</loc></url></urlset>' % ns).encode(),
+        "index_plain": b"<sitemapindex><sitemap><loc>http://a.onion/sm1.xml</loc></sitemap></sitemapindex>",
+        "prefixed_ns": b'<sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:url><sm:loc>http://a.onion/p</sm:loc></sm:url></sm:urlset>',
+        "entity_amp": b"<urlset><url><loc>http://a.onion/?x=1&amp;y=2</loc></url></urlset>",
+        "entity_numeric": b"<urlset><url><loc>http://a.onion/?a=1&#38;b=2&#x26;c=3</loc></url></urlset>",
+        "cdata": b"<urlset><url><loc><![CDATA[http://a.onion/a&b<c]]></loc></url></urlset>",
+        "nested_child": b"<urlset><url><loc>before<extra/>after</loc></url></urlset>",
+        "unknown_root": b"<html><body><loc>http://a.onion/x</loc></body></html>",
+        "uppercase": b"<URLSET><URL><LOC>http://a.onion/up</LOC></URL></URLSET>",
+        "doctype": b'<!DOCTYPE urlset><urlset><url><loc>http://a.onion/</loc></url></urlset>',
+        "undefined_entity": b"<urlset><url><loc>http://a.onion/&foo;</loc></url></urlset>",
+        "mismatched": b"<urlset><url><loc>http://a.onion/</wrong></url></urlset>",
+        "two_roots": b"<urlset></urlset><urlset></urlset>",
+    }
+    print("== sitemap.parse_sitemap ==")
+    for name, body in cases.items():
+        d = sitemap.parse_sitemap(body)
+        show(name, {"kind": d.kind, "locs": d.locs})
+    many = b"<urlset>" + b"".join(b"<url><loc>http://a.onion/%d</loc></url>" % i for i in range(10)) + b"</urlset>"
+    d = sitemap.parse_sitemap(many, max_locs=3)
+    show("maxlocs", {"kind": d.kind, "locs": d.locs})
+
+
+def gen_ratelimit() -> None:
+    """xcheck_ratelimit.rs: token-bucket refill + LRU eviction (injected clock)."""
+    class Clock:
+        def __init__(self, times):
+            self.times = list(times)
+            self.i = 0
+
+        def __call__(self):
+            v = self.times[self.i]
+            self.i += 1
+            return v
+
+    print("== ratelimit ==")
+    tb = ratelimit.TokenBucket(rate=2.0, capacity=5.0,
+                               now=Clock([0, 0, 0, 0, 0, 0, 1, 1, 3]))
+    show("burst_refill", [tb.allow("a") for _ in range(9)])
+    tb3 = ratelimit.TokenBucket(rate=0.0, capacity=1.0, now=Clock([0] * 10), max_keys=1)
+    show("lru_discriminate", [tb3.allow("a"), tb3.allow("b"), tb3.allow("a")])
+
+
+def gen_socks() -> None:
+    """xcheck_socks.rs: RFC-1928/1929 encoder byte layout."""
+    print("== socks ==")
+    show("greeting_noauth", socks.build_greeting(False).hex())
+    show("greeting_userpass", socks.build_greeting(True).hex())
+    show("userpass_auth", socks.build_userpass_auth("user", "pass").hex())
+    show("connect_onion_80", socks.build_connect_request("a" * 56 + ".onion", 80).hex())
+    show("connect_short_8080", socks.build_connect_request("abc.onion", 8080).hex())
+    show("connect_i2p_443", socks.build_connect_request("stats.i2p", 443).hex())
+
+
+def gen_http() -> None:
+    """xcheck_http.rs: request build + status/header parse + chunked decode."""
+    print("== http ==")
+    show("req_get_root", http_client.build_request("GET", "/", "h.onion", {}).hex())
+    show("req_get_headers", http_client.build_request(
+        "GET", "/p?q=1", "h.onion", {"User-Agent": "oc/1", "Accept": "*/*"}).hex())
+    for line in [b"HTTP/1.1 200 OK", b"HTTP/1.0 404 Not Found", b"HTTP/1.1 301 ",
+                 b"HTTP/1.1 500 Internal Server Error"]:
+        v, s, r = http_client._parse_status_line(line)
+        show(f"status {line!r}", [v, s, r])
+    show("headers", http_client._parse_headers(
+        b"Content-Type: text/html; charset=utf-8\r\nSet-Cookie: a=1\r\n"
+        b"Set-Cookie: b=2\r\n  \r\nX-Empty:\r\nNoColonLine"))
+
+    class FakeSock:
+        def __init__(self, data):
+            self.data = data
+            self.pos = 0
+
+        def recv(self, n):
+            chunk = self.data[self.pos:self.pos + n]
+            self.pos += len(chunk)
+            return chunk
+
+    def dechunk(buf, mx=1_000_000):
+        rd = http_client._SockReader(FakeSock(buf), mx)
+        body, trunc = http_client._read_chunked(rd, mx)
+        return [body.decode(), trunc]
+
+    show("chunked_basic", dechunk(b"4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"))
+    show("chunked_ext", dechunk(b"4;ext=1\r\nWiki\r\n0\r\n\r\n"))
+
+
+SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities, gen_abuse, gen_robots,
+            gen_sitemap, gen_ratelimit, gen_socks, gen_http]
 
 if __name__ == "__main__":
     for section in SECTIONS:
