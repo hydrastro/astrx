@@ -13,6 +13,7 @@ pub mod dedup;
 pub mod globmatch;
 pub mod hash;
 pub mod inflate;
+pub mod json;
 pub mod scheduler;
 pub mod traps;
 pub mod urlparse;

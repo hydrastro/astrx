@@ -65,7 +65,46 @@ def gen_blake2b() -> None:
         show(f"blake2b:{n}:{msg.hex()}", hashlib.blake2b(msg, digest_size=n).hexdigest())
 
 
-SECTIONS = [gen_inflate, gen_blake2b]
+def gen_json() -> None:
+    import json
+    corpus = [
+        '{"@type": "VideoObject", "name": "Cats", "desc": "funny", "tags": ["a", "b"]}',
+        '{"a": {"b": {"c": "deep"}}, "list": [1, "two", true, null, {"k": "v"}]}',
+        '["caf\\u00e9", "emoji \\ud83d\\ude00", "tab\\tend"]',
+        '{"dup": "first", "dup": "last", "n": 42, "f": 3.14}',
+        '{"@graph": [{"headline": "H1"}, {"headline": "H2"}]}',
+    ]
+
+    def cs(v, out):
+        if isinstance(v, str):
+            out.append(v)
+        elif isinstance(v, list):
+            for x in v:
+                cs(x, out)
+        elif isinstance(v, dict):
+            for _k, val in v.items():
+                cs(val, out)
+
+    def ck(v, out):
+        if isinstance(v, list):
+            for x in v:
+                ck(x, out)
+        elif isinstance(v, dict):
+            for k, val in v.items():
+                out.append(k)
+                ck(val, out)
+
+    print("== json (input -> string-leaves, keys via json.loads) ==")
+    for s in corpus:
+        v = json.loads(s)
+        a = []
+        cs(v, a)
+        b = []
+        ck(v, b)
+        print("json:%r\tstrs=%r\tkeys=%r" % (s, a, b))
+
+
+SECTIONS = [gen_inflate, gen_blake2b, gen_json]
 
 if __name__ == "__main__":
     for section in SECTIONS:

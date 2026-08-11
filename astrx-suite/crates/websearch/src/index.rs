@@ -7,8 +7,9 @@
 //! the recrawl due-list, the `(src → dst)` link graph with incoming-link counts,
 //! index statistics, and the offline ranking signals — [`Index::compute_pagerank`]
 //! (internal-graph PageRank-lite → `doc.rank`) and
-//! [`Index::compute_host_authority`] (cross-domain host PageRank → `host_authority`
-//! + `doc.host_rank`), driven together by [`Index::finalize`]. `content_hash`
+//! [`Index::compute_host_authority`] (cross-domain host PageRank →
+//! `host_authority` and `doc.host_rank`), driven together by [`Index::finalize`].
+//! `content_hash`
 //! (SHA-256 over crawlcore), the store behaviour, and the PageRank/host-authority
 //! scores are cross-checked byte-identical to Python (`tests/xcheck_index.rs`,
 //! `tests/xcheck_pagerank.rs`).
