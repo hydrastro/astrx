@@ -29,6 +29,9 @@ pub mod abuse;
 pub mod canonical;
 pub mod entities;
 pub mod extract;
+// The crawl orchestration loop (net tier): lease → fetch → extract → store.
+#[cfg(feature = "net")]
+pub mod crawler;
 // The darknet fetcher — the `&OnionHost`-gated socket orchestration (net tier).
 #[cfg(feature = "net")]
 pub mod fetcher;
@@ -54,6 +57,8 @@ mod urlparse;
 // search tiers land).
 pub use abuse::{load_abuse_filter, AbuseFilter};
 pub use canonical::{canonicalize, CanonicalUrl};
+#[cfg(feature = "net")]
+pub use crawler::{content_hash, CrawlConfig, Crawler, RunStats};
 pub use entities::{extract as extract_entities, Kind as EntityKind};
 #[cfg(feature = "net")]
 pub use fetcher::{FetchResult, Fetcher};
