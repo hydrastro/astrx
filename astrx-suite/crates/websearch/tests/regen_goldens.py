@@ -147,7 +147,42 @@ def gen_httpclient() -> None:
         print("body:%s\t%r\t%r" % (body.hex(), cs, decode_body(body, cs)))
 
 
-SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient]
+def gen_htmlparse() -> None:
+    from websearch.htmlparse import extract, guess_lang
+    print("== htmlparse: core extraction (fixtures f1..f5) ==")
+    # The fixtures live verbatim in tests/xcheck_htmlparse.rs; each has a
+    # >=200-char body (or no recover-triggering structured data) so the Python
+    # `_recover` backfill is a no-op and stage-1 core output is byte-identical.
+    fixtures = {
+        "f1": (
+            '<html lang="en-US"><head><title>News &amp; Notes &#8212; Today</title>\n'
+            '<meta name="description" content="  A concise   summary. ">\n'
+            '<link rel="canonical" href="http://ex/a"><base href="http://ex/">\n'
+            '<meta name="robots" content="INDEX, NoFollow"></head>\n'
+            '<body><nav><a href="/home">Home</a> menu items that are boilerplate</nav>\n'
+            "<h1>Main Heading</h1>\n"
+            "<p>The quick brown fox jumps over the lazy dog and then the fox runs "
+            "away to the woods for a while.</p>\n"
+            "<script>var x = a < b ? 1 : 2;</script>\n"
+            '<p>Read <a href="/more">more here</a> and also <a href="/x" '
+            'rel="nofollow">this</a> for details today.</p>\n'
+            "<footer>copyright boilerplate footer text here</footer></body></html>"
+        ),
+    }
+    for name, html in fixtures.items():
+        e = extract(html)
+        print("%s\ttitle=%r\tdesc=%r\tlinks=%r\tcanon=%r\tbase=%r\tlang=%r\trobots=%r"
+              % (name, e.title, e.description, e.links, e.canonical, e.base_href,
+                 e.lang, e.meta_robots))
+        print("%s.text\t%r" % (name, e.text))
+    print("== htmlparse: guess_lang ==")
+    for text, hint in [("the and of to in a is", None), ("le la de et les des", None),
+                       ("xxxxx", "DE-de"), ("", None)]:
+        print("gl:%r|%r\t%s" % (text, hint, guess_lang(text, hint)))
+
+
+SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
+            gen_htmlparse]
 
 if __name__ == "__main__":
     for section in SECTIONS:

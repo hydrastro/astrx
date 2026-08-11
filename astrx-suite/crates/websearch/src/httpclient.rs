@@ -445,6 +445,246 @@ impl FetchResult {
     }
 }
 
+/// A single parsed HTTP response (one hop, before redirect handling).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpResponse {
+    /// Status code.
+    pub status: u16,
+    /// Reason phrase.
+    pub reason: String,
+    /// Response headers.
+    pub headers: Headers,
+    /// Decompressed body (bounded, possibly truncated).
+    pub body: Vec<u8>,
+    /// Whether the body (or a compressed body's output) was capped.
+    pub truncated: bool,
+    /// Whether the connection can be safely reused (HTTP/1.1, framed, drained).
+    pub reusable: bool,
+}
+
+impl HttpResponse {
+    /// A header value by name (case-insensitive).
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name)
+    }
+}
+
+/// Cap on the response head (status line + headers) size. Used by the async
+/// reader in `perform_request` (net tier).
+#[cfg(feature = "net")]
+const MAX_HEAD: usize = 256 * 1024;
+
+#[cfg(feature = "net")]
+mod net_io {
+    use super::{
+        build_request, decompress, find_sub, parse_headers, parse_status_line, trim_ascii, Headers,
+        HttpError, HttpResponse, MAX_HEAD,
+    };
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+    const READ_CHUNK: usize = 65536;
+
+    /// A buffered reader over an async stream.
+    struct Reader<'a, S> {
+        stream: &'a mut S,
+        buf: Vec<u8>,
+        eof: bool,
+    }
+
+    impl<'a, S: AsyncRead + Unpin> Reader<'a, S> {
+        fn new(stream: &'a mut S) -> Self {
+            Reader {
+                stream,
+                buf: Vec::new(),
+                eof: false,
+            }
+        }
+
+        async fn fill(&mut self) -> Result<usize, HttpError> {
+            if self.eof {
+                return Ok(0);
+            }
+            let mut tmp = [0u8; READ_CHUNK];
+            let n = self
+                .stream
+                .read(&mut tmp)
+                .await
+                .map_err(|e| HttpError(format!("read: {e}")))?;
+            if n == 0 {
+                self.eof = true;
+                return Ok(0);
+            }
+            self.buf.extend_from_slice(&tmp[..n]);
+            Ok(n)
+        }
+
+        async fn read_until(&mut self, sep: &[u8], cap: usize) -> Result<Vec<u8>, HttpError> {
+            loop {
+                if let Some(i) = find_sub(&self.buf, 0, sep) {
+                    return Ok(self.buf.drain(..i + sep.len()).collect());
+                }
+                if self.buf.len() > cap {
+                    return Err(HttpError("delimiter not found within cap".to_string()));
+                }
+                if self.fill().await? == 0 {
+                    return Err(HttpError("connection closed before delimiter".to_string()));
+                }
+            }
+        }
+
+        async fn read_n(&mut self, n: usize) -> Result<Vec<u8>, HttpError> {
+            while self.buf.len() < n {
+                if self.fill().await? == 0 {
+                    return Err(HttpError(format!("connection closed before {n} bytes")));
+                }
+            }
+            Ok(self.buf.drain(..n).collect())
+        }
+
+        async fn read_all(&mut self, cap: usize) -> Vec<u8> {
+            while !self.eof && self.buf.len() <= cap {
+                if self.fill().await.unwrap_or(0) == 0 {
+                    break;
+                }
+            }
+            let take = self.buf.len().min(cap);
+            self.buf.drain(..take).collect()
+        }
+    }
+
+    /// Read a `Transfer-Encoding: chunked` body, capping decoded output at
+    /// `max_bytes`.
+    async fn read_chunked<S: AsyncRead + Unpin>(
+        r: &mut Reader<'_, S>,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool), HttpError> {
+        let mut out: Vec<u8> = Vec::new();
+        let mut truncated = false;
+        loop {
+            let line = r.read_until(b"\r\n", 16 * 1024).await?;
+            let stripped = trim_ascii(&line[..line.len().saturating_sub(2)]);
+            let size_hex = trim_ascii(stripped.split(|&b| b == b';').next().unwrap_or(&[]));
+            let size = std::str::from_utf8(size_hex)
+                .ok()
+                .and_then(|s| usize::from_str_radix(s, 16).ok())
+                .ok_or_else(|| HttpError(format!("bad chunk size: {stripped:?}")))?;
+            if size == 0 {
+                let _ = r.read_until(b"\r\n", 16 * 1024).await; // trailers / final CRLF
+                break;
+            }
+            if out.len() + size > max_bytes {
+                let want = max_bytes.saturating_sub(out.len());
+                out.extend_from_slice(&r.read_n(want).await?);
+                truncated = true;
+                break;
+            }
+            let data = r.read_n(size).await?;
+            r.read_n(2).await?; // trailing CRLF
+            out.extend_from_slice(&data);
+        }
+        Ok((out, truncated))
+    }
+
+    /// Send one request on `stream` and read one response. The caller owns the
+    /// stream lifecycle (and has already vetted + connected it through the SSRF
+    /// gate). Body reads are bounded by `max_bytes`.
+    ///
+    /// # Errors
+    /// [`HttpError`] on I/O failure or a malformed response.
+    pub async fn perform_request<S: AsyncRead + AsyncWrite + Unpin>(
+        stream: &mut S,
+        method: &str,
+        host: &str,
+        path: &str,
+        headers: &[(String, String)],
+        max_bytes: usize,
+    ) -> Result<HttpResponse, HttpError> {
+        let req = build_request(method, path, host, headers);
+        stream
+            .write_all(&req)
+            .await
+            .map_err(|e| HttpError(format!("write: {e}")))?;
+
+        let mut reader = Reader::new(stream);
+        let head = reader.read_until(b"\r\n\r\n", MAX_HEAD).await?;
+        let head = &head[..head.len().saturating_sub(4)];
+        let (status_line, header_block) = match find_sub(head, 0, b"\r\n") {
+            Some(i) => (&head[..i], &head[i + 2..]),
+            None => (head, &head[head.len()..]),
+        };
+        let (version, status, reason) = parse_status_line(status_line)?;
+        let hdrs: Headers = parse_headers(header_block);
+
+        let conn = hdrs.get("connection").unwrap_or("").to_lowercase();
+        let keep_alive = version.eq_ignore_ascii_case("HTTP/1.1") && !conn.contains("close");
+
+        if method.eq_ignore_ascii_case("HEAD")
+            || status == 204
+            || status == 304
+            || (100..200).contains(&status)
+        {
+            return Ok(HttpResponse {
+                status,
+                reason,
+                headers: hdrs,
+                body: Vec::new(),
+                truncated: false,
+                reusable: keep_alive,
+            });
+        }
+
+        let te = hdrs.get("transfer-encoding").unwrap_or("").to_lowercase();
+        let (raw_body, mut truncated, framed) = if te.contains("chunked") {
+            let (b, t) = read_chunked(&mut reader, max_bytes).await?;
+            (b, t, true)
+        } else if let Some(cl) = hdrs.get("content-length") {
+            let length: usize = cl
+                .trim()
+                .parse()
+                .map_err(|_| HttpError("invalid content-length".to_string()))?;
+            let (want, trunc) = if length > max_bytes {
+                (max_bytes, true)
+            } else {
+                (length, false)
+            };
+            (reader.read_n(want).await?, trunc, true)
+        } else {
+            let b = reader.read_all(max_bytes).await;
+            let trunc = !reader.eof;
+            (b, trunc, false)
+        };
+
+        // Decompress per Content-Encoding (bounded); a body over `max_bytes` after
+        // decompression is truncated, matching the Python `_one`.
+        let enc = hdrs
+            .get("content-encoding")
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        let body = decompress(&raw_body, &enc, max_bytes);
+        let body = if body.len() > max_bytes {
+            truncated = true;
+            body[..max_bytes].to_vec()
+        } else {
+            body
+        };
+        let reusable = keep_alive && framed && !truncated;
+
+        Ok(HttpResponse {
+            status,
+            reason,
+            headers: hdrs,
+            body,
+            truncated,
+            reusable,
+        })
+    }
+}
+
+#[cfg(feature = "net")]
+pub use net_io::perform_request;
+
 #[cfg(test)]
 mod tests {
     use super::*;
