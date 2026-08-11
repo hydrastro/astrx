@@ -175,6 +175,38 @@ fn chain(_host: &str, path: &str) -> Option<String> {
     }
 }
 
+fn robots_site(_host: &str, path: &str) -> Option<String> {
+    match path {
+        "/robots.txt" => Some("User-agent: *\nDisallow: /private\n".into()),
+        "/public" => Some("<html><body>public content</body></html>".into()),
+        "/private/secret" => Some("<html><body>secret content</body></html>".into()),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn robots_disallow_is_obeyed() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(run_server(listener, robots_site));
+
+    // obey_robots is on by default
+    let (crawler, store) = direct_crawler(port, &[HOST1], cfg());
+    crawler.add_seeds([
+        format!("http://{HOST1}/public"),
+        format!("http://{HOST1}/private/secret"),
+    ]);
+    crawler.run().await;
+
+    let s = store.lock().unwrap();
+    assert!(s.get_page(&format!("http://{HOST1}/public")).is_some());
+    // /private/* is Disallow-ed → never fetched or stored
+    assert!(s
+        .get_page(&format!("http://{HOST1}/private/secret"))
+        .is_none());
+    assert_eq!(s.page_count(), 1);
+}
+
 #[tokio::test]
 async fn depth_cap_stops_expansion() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

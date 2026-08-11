@@ -16,7 +16,7 @@
 //! robots.txt fetching/caching, conditional GET, media-hash blocking, jitter, and
 //! the scheduled-reseed daemon.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +25,7 @@ use crate::canonical::{canonicalize, CanonicalUrl};
 use crate::extract::extract_html;
 use crate::fetcher::Fetcher;
 use crate::onion::find_onion_urls;
+use crate::robots::{parse_robots, RobotsRules};
 use crate::store::{Caps, Enqueued, HostCounter, Store, StoreOutcome};
 use crate::urlparse::parse_qsl;
 use crawlcore::hash::{sha1, to_hex};
@@ -86,6 +87,14 @@ pub struct CrawlConfig {
     pub lease_ttl: f64,
     pub allow_v2: bool,
     pub allow_i2p: bool,
+    /// Fetch + obey `robots.txt` (Allow/Disallow) before crawling a URL.
+    pub obey_robots: bool,
+    /// The crawler's user-agent (the robots group + `User-Agent` header identity).
+    pub user_agent: String,
+    /// Honour `Crawl-delay` from robots.txt (capped by `max_robots_crawl_delay`).
+    pub respect_robots_crawl_delay: bool,
+    /// Cap on a robots `Crawl-delay` (seconds) — stops a delay-based tarpit.
+    pub max_robots_crawl_delay: f64,
     pub obey_meta_robots: bool,
     pub obey_x_robots_tag: bool,
     /// Allowed bare content-types (empty = allow all).
@@ -122,6 +131,10 @@ impl Default for CrawlConfig {
             lease_ttl: 300.0,
             allow_v2: false,
             allow_i2p: false,
+            obey_robots: true,
+            user_agent: "OnionCrawler/1.0".to_string(),
+            respect_robots_crawl_delay: true,
+            max_robots_crawl_delay: 30.0,
             obey_meta_robots: true,
             obey_x_robots_tag: true,
             allowed_content_types: vec!["text/html".to_string(), "text/plain".to_string()],
@@ -179,6 +192,8 @@ pub struct Crawler {
     fetcher: Arc<Fetcher>,
     abuse: Option<Arc<AbuseFilter>>,
     config: CrawlConfig,
+    /// Per-host parsed robots rules (avoids re-parsing across a host's URLs).
+    robots_cache: Arc<Mutex<HashMap<String, RobotsRules>>>,
 }
 
 impl Crawler {
@@ -190,6 +205,7 @@ impl Crawler {
             fetcher,
             abuse: None,
             config,
+            robots_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -208,6 +224,67 @@ impl Crawler {
         self.abuse
             .as_ref()
             .and_then(|a| a.page_blocked(host, title, text))
+    }
+
+    /// The robots rules for `host`, from the in-memory cache, then the persisted
+    /// host row, else fetched once from `{scheme}://{host}/robots.txt` (and its
+    /// `Crawl-delay` recorded as the host's politeness delay). The store lock is
+    /// never held across the fetch `.await`.
+    async fn robots_for(&self, host: &str, scheme: &str) -> RobotsRules {
+        if let Some(r) = self.robots_cache.lock().expect("lock").get(host) {
+            return r.clone();
+        }
+        // persisted (survives resume): a set robots_fetched_at means we've looked.
+        let persisted = {
+            let s = self.store.lock().expect("lock");
+            s.get_host(host).and_then(|h| {
+                h.robots_fetched_at.map(|_| {
+                    if h.robots_present {
+                        parse_robots(h.robots_body.as_deref().unwrap_or(""))
+                    } else {
+                        RobotsRules::empty()
+                    }
+                })
+            })
+        };
+        if let Some(rules) = persisted {
+            self.robots_cache
+                .lock()
+                .expect("lock")
+                .insert(host.to_string(), rules.clone());
+            return rules;
+        }
+
+        // first time: fetch robots.txt (no counter bump — Python doesn't count it)
+        let mut rules = RobotsRules::empty();
+        let mut body: Option<String> = None;
+        let mut present = false;
+        let res = self
+            .fetcher
+            .fetch(&format!("{scheme}://{host}/robots.txt"))
+            .await;
+        if res.ok && !res.body.is_empty() {
+            let text = String::from_utf8_lossy(&res.body).into_owned();
+            rules = parse_robots(&text);
+            body = Some(text);
+            present = true;
+        }
+        let delay = if present && self.config.respect_robots_crawl_delay {
+            rules
+                .crawl_delay(&self.config.user_agent)
+                .map(|cd| cd.min(self.config.max_robots_crawl_delay))
+        } else {
+            None
+        };
+        {
+            let mut s = self.store.lock().expect("lock");
+            s.save_robots(host, body.as_deref(), present, now_secs(), delay);
+        }
+        self.robots_cache
+            .lock()
+            .expect("lock")
+            .insert(host.to_string(), rules.clone());
+        rules
     }
 
     /// Enqueue seed URLs (canonicalized + darknet-gated). Returns how many were
@@ -315,6 +392,18 @@ impl Crawler {
             s.mark_error(fid, "blocked-host");
             s.log_trap(host, url, "blocked-host", now_secs());
             return;
+        }
+
+        // robots.txt: fetch + cache per host, then obey Allow/Disallow
+        if self.config.obey_robots {
+            let rules = self.robots_for(host, &cu.scheme).await;
+            if !rules.allowed(&cu.path, &self.config.user_agent) {
+                let mut s = self.store.lock().expect("lock");
+                s.mark_done(fid);
+                s.log_trap(host, url, "robots-disallow", now_secs());
+                self.park(&mut s, host);
+                return;
+            }
         }
 
         // fetch (no lock held across the await)
