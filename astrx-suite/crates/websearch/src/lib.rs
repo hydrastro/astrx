@@ -25,8 +25,10 @@
 
 pub mod canonical;
 pub mod dedup;
+pub mod frontier;
 pub mod htmlparse;
 pub mod httpclient;
+pub mod index;
 pub mod robots;
 pub mod ssrf;
 
@@ -35,11 +37,13 @@ pub mod fetcher;
 
 pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
 pub use dedup::simhash;
+pub use frontier::{Frontier, HostRow, Lease};
 pub use htmlparse::{extract as extract_html, guess_lang, Extracted};
 pub use httpclient::{
     authority_exempt, decode_body, decompress, parse_content_type, vet_addrs, FetchResult,
     GateError, Headers, HttpError,
 };
+pub use index::{content_hash, DocFields, Document, Index, Stats};
 pub use robots::{parse as parse_robots, Robots};
 pub use ssrf::{ip_is_internal, SafeIp};
 

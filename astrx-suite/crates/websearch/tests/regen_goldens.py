@@ -181,8 +181,96 @@ def gen_htmlparse() -> None:
         print("gl:%r|%r\t%s" % (text, hint, guess_lang(text, hint)))
 
 
+def gen_frontier() -> None:
+    import sqlite3
+    import time
+    # Deterministic clock: added_at becomes insertion order, matching the Rust
+    # port's monotonic counter, so the lease ordering is reproducible.
+    counter = [0]
+
+    def fake_time():
+        counter[0] += 1
+        return float(counter[0])
+
+    time.time = fake_time
+    from websearch.frontier import Frontier
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.isolation_level = None
+    f = Frontier(conn)
+
+    def lz(now, budget=None):
+        r = f.lease(now=now, lease_seconds=120, host_budget=budget)
+        return r["url"] if r else None
+
+    print("== frontier ==")
+    print("adds\t%s\t%s\t%s\t%s" % (
+        f.add("http://a/1", "a", 0), f.add("http://a/2", "a", 1),
+        f.add("http://b/1", "b", 0), f.add("http://a/1", "a", 0)))
+    print("seen\t%s\t%s" % (f.seen("http://a/1"), f.seen("http://z")))
+    print("lease1000\t%r" % lz(1000))
+    f.note_fetch("a", 1100)
+    print("lease1000b\t%r" % lz(1000))
+    f.note_fetch("b", 1100)
+    print("lease1000none\t%r" % lz(1000))
+    print("nrt\t%r" % f.next_ready_time())
+    print("lease1200\t%r" % lz(1200))
+    f.note_fetch("a", 1300)
+    f.complete("http://a/1", "done")
+    f.complete("http://b/1", "error", "boom")
+    print("total_done\t%d" % f.total_done())
+    print("has_queued\t%s" % f.has_queued())
+    print("counts\t%r" % dict(sorted(f.counts().items())))
+    f.reclaim(now=1400)
+    print("has_queued2\t%s" % f.has_queued())
+    print("counts2\t%r" % dict(sorted(f.counts().items())))
+    print("lease2000b2\t%r" % lz(2000, 2))
+    print("lease2000b3\t%r" % lz(2000, 3))
+    hr = f.host_row("a")
+    print("host_a\t%r" % ((hr["next_time"], hr["crawl_delay"],
+                           hr["robots_done"], hr["fetched"]),))
+
+
+def gen_index() -> None:
+    from websearch import index
+    print("== index: content_hash ==")
+    for parts in [("a", "b", "c"), ("T2", "", ""),
+                  ("Hello", "World", "Body text here"), ("", "", ""),
+                  ("café", "é", "")]:
+        print("ch:%r\t%s" % (list(parts), index.content_hash(*parts)))
+    conn = index.connect(":memory:")
+
+    def up(url, **kw):
+        return index.upsert_document(
+            conn, url, kw.get("title", ""), kw.get("desc", ""), kw.get("body", ""),
+            host=kw.get("host", ""), lang=kw.get("lang", ""),
+            fetched_at=kw.get("fa", 0.0), etag=kw.get("etag", ""),
+            last_modified=kw.get("lm", ""), http_status=200)
+
+    print("== index: store ==")
+    print("ids\t%d\t%d\t%d" % (
+        up("http://x/a", title="A", body="alpha body", host="x", lang="en", fa=100.0, etag='"v1"'),
+        up("http://x/b", title="B", body="beta body", host="x", lang="en", fa=200.0),
+        up("http://y/c", title="C", body="gamma body", host="y", lang="fr", fa=300.0)))
+    print("id1_re\t%d" % up("http://x/a", title="A2", body="alpha body", host="x", lang="en", fa=150.0))
+    print("valid_a\t%r" % (index.get_validators(conn, "http://x/a"),))
+    index.touch_revalidated(conn, "http://x/a", fetched_at=500.0, etag='"v2"')
+    print("valid_a2\t%r" % (index.get_validators(conn, "http://x/a"),))
+    print("due\t%r" % index.due_for_recrawl(conn, 100.0, now=1000.0))
+    index.add_links(conn, "http://x/a", [("http://x/b", True), ("http://y/c", False)])
+    index.add_links(conn, "http://x/a", [("http://x/b", True)])
+    index.add_links(conn, "http://y/c", [("http://x/b", True)])
+    index.recompute_incoming(conn)
+    print("incoming_b\t%d" % conn.execute(
+        "SELECT incoming FROM docs WHERE url='http://x/b'").fetchone()[0])
+    s = index.stats(conn)
+    print("stats\t%d\t%d\t%d\t%r\t%r\t%r\t%r" % (
+        s["docs"], s["hosts"], s["links"], s["oldest"], s["newest"],
+        s["top_hosts"], s["languages"]))
+
+
 SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
-            gen_htmlparse]
+            gen_htmlparse, gen_frontier, gen_index]
 
 if __name__ == "__main__":
     for section in SECTIONS:
