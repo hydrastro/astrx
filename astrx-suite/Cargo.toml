@@ -17,7 +17,12 @@
 # `cargo clippy ... -- -D warnings`, not a manifest `[lints]` table.
 [workspace]
 resolver = "2"
-members = ["crates/crawlcore", "crates/torrentds", "crates/onioncrawler"]
+members = [
+    "crates/crawlcore",
+    "crates/torrentds",
+    "crates/onioncrawler",
+    "crates/websearch",
+]
 # `fuzz/` is a cargo-fuzz project with its own manifest; it is not a workspace
 # member and is built only via `cargo +nightly fuzz`.
 exclude = ["fuzz"]
