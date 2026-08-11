@@ -1,20 +1,24 @@
 //! The document store + link graph — a dependency-free port of the store core of
 //! the Python `websearch.index` (which is SQLite + FTS5).
 //!
-//! This is **stage 1 — the store the crawler writes to**: one [`Document`] per
-//! indexed page (upsert by URL, returning a stable rowid), `content_hash`
+//! The store the crawler writes to and the search reads from: one [`Document`]
+//! per indexed page (upsert by URL, returning a stable rowid), `content_hash`
 //! exact-dup detection, conditional-GET validators (`etag` / `last_modified`),
 //! the recrawl due-list, the `(src → dst)` link graph with incoming-link counts,
-//! and index statistics. `content_hash` (SHA-256 over crawlcore) and the store's
-//! observable behaviour are cross-checked byte-identical to Python in
-//! `tests/xcheck_index.rs`.
+//! index statistics, and the offline ranking signals — [`Index::compute_pagerank`]
+//! (internal-graph PageRank-lite → `doc.rank`) and
+//! [`Index::compute_host_authority`] (cross-domain host PageRank → `host_authority`
+//! + `doc.host_rank`), driven together by [`Index::finalize`]. `content_hash`
+//! (SHA-256 over crawlcore), the store behaviour, and the PageRank/host-authority
+//! scores are cross-checked byte-identical to Python (`tests/xcheck_index.rs`,
+//! `tests/xcheck_pagerank.rs`).
 //!
-//! **Deferred to the ranking/search increment** (documented): the FTS5 inverted
-//! index + BM25 search, the image/video vertical search, offline PageRank /
-//! host-authority, `more_like_this`, and vocabulary/typeahead — the parts that
-//! ride on FTS5 (behaviourally faithful, not bit-identical, like the other
-//! engines' hand-rolled search).
+//! **Deferred (documented):** the FTS5 inverted-index BM25 search lives in
+//! [`crate::ranking`] (a behaviourally-faithful hand-rolled Okapi stand-in, since
+//! the stdlib has no FTS5); the image/video vertical search, `more_like_this`, and
+//! vocabulary/typeahead await htmlparse stage 2 / the suggest module.
 
+use crate::canonical::host_of;
 use crawlcore::hash::{sha256, to_hex};
 use std::collections::{BTreeMap, HashMap};
 
@@ -123,6 +127,7 @@ pub struct Index {
     docs: BTreeMap<i64, Document>,
     url_to_id: HashMap<String, i64>,
     links: HashMap<(String, String), bool>, // (src, dst) → internal
+    host_authority: HashMap<String, f64>,   // cross-domain host PageRank (0..1)
     next_id: i64,
 }
 
@@ -333,6 +338,212 @@ impl Index {
             top_hosts: top_n(&host_counts, 10),
             languages: top_n(&lang_counts, 10),
         }
+    }
+
+    /// Cross-domain host authority for `host` (0..1), if computed.
+    #[must_use]
+    pub fn host_authority(&self, host: &str) -> Option<f64> {
+        self.host_authority.get(host).copied()
+    }
+
+    /// PageRank-lite over the internal link graph, written to `doc.rank`
+    /// (normalised so the max is 1). No edges → every rank is 0. Mirrors the
+    /// Python `compute_pagerank`.
+    pub fn compute_pagerank(&mut self, damping: f64, iterations: usize, tol: f64) {
+        let urls: Vec<String> = self.docs.values().map(|d| d.url.clone()).collect();
+        let n = urls.len();
+        if n == 0 {
+            return;
+        }
+        let idx: HashMap<&str, usize> = urls
+            .iter()
+            .enumerate()
+            .map(|(i, u)| (u.as_str(), i))
+            .collect();
+        let mut out: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut have_edges = false;
+        let mut keys: Vec<&(String, String)> = self
+            .links
+            .iter()
+            .filter(|(_, v)| **v)
+            .map(|(k, _)| k)
+            .collect();
+        keys.sort();
+        for (src, dst) in keys {
+            if let (Some(&si), Some(&di)) = (idx.get(src.as_str()), idx.get(dst.as_str())) {
+                if si != di {
+                    out[si].push(di);
+                    have_edges = true;
+                }
+            }
+        }
+        if !have_edges {
+            for d in self.docs.values_mut() {
+                d.rank = 0.0;
+            }
+            return;
+        }
+        let nf = n as f64;
+        let mut pr = vec![1.0 / nf; n];
+        let base = (1.0 - damping) / nf;
+        for _ in 0..iterations {
+            let mut new = vec![base; n];
+            let mut dangling = 0.0;
+            for i in 0..n {
+                if out[i].is_empty() {
+                    dangling += damping * pr[i] / nf;
+                } else {
+                    let share = damping * pr[i] / out[i].len() as f64;
+                    for &j in &out[i] {
+                        new[j] += share;
+                    }
+                }
+            }
+            if dangling != 0.0 {
+                for v in &mut new {
+                    *v += dangling;
+                }
+            }
+            let delta: f64 = (0..n).map(|i| (new[i] - pr[i]).abs()).sum();
+            pr = new;
+            if delta < tol {
+                break;
+            }
+        }
+        let top = normalizer(&pr);
+        let ranks: Vec<(i64, f64)> = self
+            .docs
+            .values()
+            .map(|d| (d.id, pr[idx[d.url.as_str()]] / top))
+            .collect();
+        for (id, r) in ranks {
+            self.docs.get_mut(&id).expect("doc").rank = r;
+        }
+    }
+
+    /// Cross-domain host-level PageRank — the authority signal — over the graph of
+    /// hosts linked by cross-domain edges (weight = distinct source pages). Written
+    /// to `host_authority` and denormalised onto `doc.host_rank` (max = 1). No
+    /// cross-domain edges → every `host_rank` is 0. Mirrors the Python
+    /// `compute_host_authority`.
+    pub fn compute_host_authority(&mut self, damping: f64, iterations: usize, tol: f64) {
+        let mut adj: HashMap<String, HashMap<String, f64>> = HashMap::new();
+        let mut hosts: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut keys: Vec<&(String, String)> = self.links.keys().collect();
+        keys.sort();
+        for (src, dst) in keys {
+            let sh = host_of(src);
+            let dh = host_of(dst);
+            if sh.is_empty() || dh.is_empty() || sh == dh {
+                continue;
+            }
+            hosts.insert(sh.clone());
+            hosts.insert(dh.clone());
+            *adj.entry(sh).or_default().entry(dh).or_insert(0.0) += 1.0;
+        }
+        for d in self.docs.values() {
+            if !d.host.is_empty() {
+                hosts.insert(d.host.clone());
+            }
+        }
+        self.host_authority.clear();
+        if hosts.is_empty() {
+            for d in self.docs.values_mut() {
+                d.host_rank = 0.0;
+            }
+            return;
+        }
+        let nodes: Vec<String> = hosts.into_iter().collect();
+        let idx: HashMap<&str, usize> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (h.as_str(), i))
+            .collect();
+        let n = nodes.len();
+        let mut out: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+        let mut out_w = vec![0.0f64; n];
+        let mut have_edges = false;
+        for (i, h) in nodes.iter().enumerate() {
+            if let Some(targets) = adj.get(h) {
+                let mut tks: Vec<&String> = targets.keys().collect();
+                tks.sort();
+                for dh in tks {
+                    let w = targets[dh];
+                    out[i].push((idx[dh.as_str()], w));
+                    out_w[i] += w;
+                    have_edges = true;
+                }
+            }
+        }
+        if !have_edges {
+            for d in self.docs.values_mut() {
+                d.host_rank = 0.0;
+            }
+            return;
+        }
+        let nf = n as f64;
+        let mut pr = vec![1.0 / nf; n];
+        let base = (1.0 - damping) / nf;
+        for _ in 0..iterations {
+            let mut new = vec![base; n];
+            let mut dangling = 0.0;
+            for i in 0..n {
+                if out_w[i] > 0.0 {
+                    let factor = damping * pr[i] / out_w[i];
+                    for &(j, w) in &out[i] {
+                        new[j] += factor * w;
+                    }
+                } else {
+                    dangling += damping * pr[i] / nf;
+                }
+            }
+            if dangling != 0.0 {
+                for v in &mut new {
+                    *v += dangling;
+                }
+            }
+            let delta: f64 = (0..n).map(|i| (new[i] - pr[i]).abs()).sum();
+            pr = new;
+            if delta < tol {
+                break;
+            }
+        }
+        let top = normalizer(&pr);
+        for (i, h) in nodes.iter().enumerate() {
+            self.host_authority.insert(h.clone(), pr[i] / top);
+        }
+        let updates: Vec<(i64, f64)> = self
+            .docs
+            .values()
+            .map(|d| {
+                (
+                    d.id,
+                    self.host_authority.get(&d.host).copied().unwrap_or(0.0),
+                )
+            })
+            .collect();
+        for (id, hr) in updates {
+            self.docs.get_mut(&id).expect("doc").host_rank = hr;
+        }
+    }
+
+    /// Post-crawl finalise: recompute incoming counts, page PageRank (30 iters),
+    /// and cross-domain host authority (50 iters), with the Python defaults.
+    pub fn finalize(&mut self) {
+        self.recompute_incoming();
+        self.compute_pagerank(0.85, 30, 1e-6);
+        self.compute_host_authority(0.85, 50, 1e-6);
+    }
+}
+
+/// The PageRank normaliser: the max score, or `1.0` if it is zero
+/// (Python `max(pr) or 1.0`).
+fn normalizer(pr: &[f64]) -> f64 {
+    let m = pr.iter().copied().fold(f64::MIN, f64::max);
+    if m == 0.0 {
+        1.0
+    } else {
+        m
     }
 }
 

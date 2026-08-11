@@ -307,8 +307,36 @@ def gen_ranking() -> None:
     print("sn3\t%r" % r.make_snippet("", ["x"]))
 
 
+def gen_pagerank() -> None:
+    from websearch import index
+    conn = index.connect(":memory:")
+
+    def up(url, host):
+        index.upsert_document(conn, url, url, "", "body", host=host,
+                              fetched_at=100.0, http_status=200)
+    up("http://x/a", "x")
+    up("http://x/b", "x")
+    up("http://y/c", "y")
+    up("http://z/d", "z")
+    index.add_links(conn, "http://x/a", [("http://x/b", True),
+                                         ("http://y/c", False), ("http://z/d", False)])
+    index.add_links(conn, "http://x/b", [("http://x/a", True), ("http://y/c", False)])
+    index.add_links(conn, "http://y/c", [("http://x/a", False)])
+    index.recompute_incoming(conn)
+    index.compute_pagerank(conn)
+    index.compute_host_authority(conn)
+    print("== pagerank (url, rank, host_rank, incoming) ==")
+    for u in ["http://x/a", "http://x/b", "http://y/c", "http://z/d"]:
+        r = conn.execute(
+            "SELECT rank, host_rank, incoming FROM docs WHERE url=?", (u,)).fetchone()
+        print("%s\t%.9f\t%.9f\t%d" % (u, r[0], r[1], r[2]))
+    print("== host_authority ==")
+    for h, rk in conn.execute("SELECT host, rank FROM host_authority ORDER BY host"):
+        print("ha:%s\t%.9f" % (h, rk))
+
+
 SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
-            gen_htmlparse, gen_frontier, gen_index, gen_ranking]
+            gen_htmlparse, gen_frontier, gen_index, gen_ranking, gen_pagerank]
 
 if __name__ == "__main__":
     for section in SECTIONS:
