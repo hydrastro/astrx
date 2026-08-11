@@ -335,8 +335,133 @@ def gen_pagerank() -> None:
         print("ha:%s\t%.9f" % (h, rk))
 
 
+def gen_structured() -> None:
+    """htmlparse stage-2 helpers — emits the Rust literals embedded verbatim in
+    `tests/xcheck_structured.rs` (diff the two to prove parity)."""
+    import json
+    from websearch.htmlparse import (
+        parse_duration, _classify_player, _is_direct_media, _first_str,
+        _first_url, _type_of, _iter_json_dicts, _collect_readable,
+        _balanced_json, _extract_state_json,
+    )
+
+    def rs(s):
+        if s is None:
+            return "None"
+        out = ['"']
+        for ch in s:
+            if ch == '\\':
+                out.append('\\\\')
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == '\n':
+                out.append('\\n')
+            elif ch == '\t':
+                out.append('\\t')
+            elif ch == '\r':
+                out.append('\\r')
+            elif ord(ch) < 0x20:
+                out.append('\\u{%x}' % ord(ch))
+            else:
+                out.append(ch)
+        out.append('"')
+        return ''.join(out)
+
+    def opt(s):
+        return "None" if s is None else "Some(%s)" % rs(s)
+
+    print("// ==== structured::parse_duration ====")
+    for d in ["PT1H2M3S", "PT1M30S", "P1DT2H", "PT0S", "P1W", "P2DT3H4M5S",
+              "PT1.5S", "PT0.5S", "PT2.5S", "PT1.4S", "PT1.6S", "pt1h", "PT1.S",
+              "PT.5S", "PT1.2.3S", "P", "PT", "", "garbage", "P1Y", "  PT1H  ",
+              "P1WT1H", "P1D", "PT10M", "PT1H0M0S", "P0W", "PT90M"]:
+        v = parse_duration(d)
+        print("    (%s, %s)," % (rs(d), "None" if v is None else "Some(%d)" % v))
+
+    print("// ==== structured::classify_player ====")
+    for src in ["https://www.youtube.com/embed/dQw4w9WgXcQ",
+                "https://www.youtube.com/embed/short",
+                "https://www.youtube-nocookie.com/embed/abcdef1234",
+                "https://youtu.be/dQw4w9WgXcQ", "https://youtu.be/",
+                "https://player.vimeo.com/video/12345",
+                "https://player.vimeo.com/video/abc",
+                "https://www.dailymotion.com/embed/video/x7tgad0",
+                "https://www.dailymotion.com/video/x7tgad0",
+                "https://dai.ly/x7tgad0",
+                "https://peertube.example.org/videos/embed/abc-123",
+                "https://odysee.com/@x:1/y:2", "https://rumble.com/embed/v123",
+                "https://example.com/x", "https://vimeo.com/12345",
+                "//youtube.com/embed/abcdef",
+                "https://WWW.YOUTUBE.COM/embed/UPPER123"]:
+        p, w = _classify_player(src)
+        print("    (%s, (%s, %s))," % (rs(src), opt(p), opt(w)))
+
+    print("// ==== structured::is_direct_media ====")
+    for m in ["http://a/clip.mp4", "http://a/clip.MP4", "http://a/v.webm",
+              "http://a/v.m3u8", "http://a/v.mpd", "http://a/v.ogv",
+              "http://a/v.mov", "http://a/page.html", "http://a/noext",
+              "http://a/clip.mp4?x=1"]:
+        print("    (%s, %s)," % (rs(m), "true" if _is_direct_media(m) else "false"))
+
+    print("// ==== structured::first_str ====")
+    for j in ['"hello"', '"  hi  "', '["", "  x ", "y"]', '[1, 2, "z"]', '42',
+              '{"a":1}', '[]', '["   ", ""]']:
+        print("    (%s, %s)," % (rs(j), rs(_first_str(json.loads(j)))))
+
+    print("// ==== structured::first_url ====")
+    for j in ['"http://x"', '{"url": "http://u"}', '{"@id": "http://id"}',
+              '{"contentUrl": "http://c"}', '{"url": "", "@id": "http://id"}',
+              '{"url": "http://u", "@id": "http://id"}',
+              '["http://a", "http://b"]', '[{"url":"http://x"}]', '{}',
+              '{"url": ["http://l1", "http://l2"]}', '42']:
+        print("    (%s, %s)," % (rs(j), rs(_first_url(json.loads(j)))))
+
+    print("// ==== structured::type_of ====")
+    for j in ['{"@type": "VideoObject"}', '{"@type": ["Article", "NewsArticle"]}',
+              '{"@type": ["Thing", 42, "Other"]}', '{"no_type": 1}',
+              '{"@type": 42}']:
+        ts = _type_of(json.loads(j))
+        print("    (%s, &[%s])," % (rs(j), ", ".join(rs(t) for t in ts)))
+
+    print("// ==== structured::iter_dicts (each dict projected via type_of) ====")
+    for j in ['{"@type":"A"}', '{"@graph":[{"@type":"B"},{"@type":"C"}]}',
+              '[{"@type":"X"}, {"@type":"Y"}]',
+              '{"@type":"Root", "nested":{"@type":"Deep"}}',
+              '{"@type":"R", "@graph":[{"@type":"G1"}, {"nested":{"@type":"NG"}}]}']:
+        parts = ["&[%s]" % ", ".join(rs(t) for t in _type_of(d))
+                 for d in _iter_json_dicts(json.loads(j))]
+        print("    (%s, &[%s])," % (rs(j), ", ".join(parts)))
+
+    print("// ==== structured::collect_readable ====")
+    for j in ['{"name":"Cats", "nested":{"description":"d"}, "url":"u"}',
+              '{"title":"T", "headline":"H", "body":"B"}',
+              '{"Title":"Cap", "DESCRIPTION":"UP"}', '{"name":"  spaced  "}',
+              '{"name":""}', '{"name":"   "}', '{"other":"x"}',
+              '{"items":[{"name":"A"},{"name":"B"}]}']:
+        out = _collect_readable(json.loads(j), [])
+        print("    (%s, &[%s])," % (rs(j), ", ".join(rs(s) for s in out)))
+
+    print("// ==== structured::balanced_json ====")
+    for text, start in [('{"a":1}', 0), ('prefix {"a":1} suffix', 7),
+                        ('xx {"a": {"b":2}} yy', 3), ('[1, 2, [3]]', 0),
+                        ('no opener here', 0), ('{"s": "has } brace"}', 0),
+                        ('  {unclosed', 0), ('{"e": "esc \\" quote"}', 0),
+                        ('     {"a":1}', 0), (' ' * 150 + '{}', 0)]:
+        print("    (%s, %d, %s)," % (rs(text), start, opt(_balanced_json(text, start))))
+
+    print("// ==== structured::extract_state_json ====")
+    for text in ['var x=1; window.__NUXT__ = {"a":{"title":"Hi"}}; more();',
+                 'window.__INITIAL_STATE__={"k":1}',
+                 '__APOLLO_STATE__ = {"x":[1,2,3]}',
+                 '__PRELOADED_STATE__ : {"y":true}', 'no marker here {"a":1}',
+                 '__NUXT__ = not json', '__NUXT__   =   {"a":1}',
+                 'a __NUXT__={"n":1} b __INITIAL_STATE__={"i":2}']:
+        print("    (%s, %s)," % (rs(text), opt(_extract_state_json(text))))
+
+
 SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
-            gen_htmlparse, gen_frontier, gen_index, gen_ranking, gen_pagerank]
+            gen_htmlparse, gen_frontier, gen_index, gen_ranking, gen_pagerank,
+            gen_structured]
 
 if __name__ == "__main__":
     for section in SECTIONS:

@@ -34,6 +34,7 @@ pub mod ranking;
 pub mod robots;
 pub mod serve;
 pub mod ssrf;
+pub mod structured;
 
 #[cfg(feature = "net")]
 pub mod fetcher;
@@ -42,7 +43,7 @@ pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
 pub use crawler::{public_resolved, trap_ok, CrawlConfig, CrawlStats};
 pub use dedup::simhash;
 pub use frontier::{Frontier, HostRow, Lease};
-pub use htmlparse::{extract as extract_html, guess_lang, Extracted};
+pub use htmlparse::{extract as extract_html, guess_lang, Extracted, Image};
 pub use httpclient::{
     authority_exempt, decode_body, decompress, parse_content_type, vet_addrs, FetchResult,
     GateError, Headers, HttpError,
@@ -52,6 +53,10 @@ pub use ranking::{parse_query, search, Query, SearchOpts, SearchResponse, Search
 pub use robots::{parse as parse_robots, Robots};
 pub use serve::{Resp, SearchServer};
 pub use ssrf::{ip_is_internal, SafeIp};
+pub use structured::{
+    balanced_json, classify_player, collect_readable, extract_state_json, first_str, first_url,
+    is_direct_media, iter_dicts, parse_duration, type_of, Video,
+};
 
 #[cfg(feature = "net")]
 pub use crawler::Crawler;

@@ -208,25 +208,46 @@ impl Parser<'_> {
     }
 
     fn parse_number(&mut self) -> Result<Value, JsonError> {
+        // Enforce the RFC-8259 grammar strictly (like `json.loads`): a leading
+        // zero admits no more integer digits, a `.` requires >=1 fraction digit,
+        // and an exponent requires >=1 digit. `f64::parse` alone is too lax
+        // (it accepts `01` / `1.`), which would let a blob parse in Rust that
+        // Python rejects.
         let start = self.pos;
         if self.peek() == Some('-') {
             self.pos += 1;
         }
-        while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-            self.pos += 1;
+        // integer part: "0" | [1-9][0-9]*
+        match self.peek() {
+            Some('0') => self.pos += 1,
+            Some(c) if c.is_ascii_digit() => {
+                self.pos += 1;
+                while matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
+                    self.pos += 1;
+                }
+            }
+            _ => return Err(self.err("invalid number")),
         }
+        // fraction: "." 1*digit
         if self.peek() == Some('.') {
             self.pos += 1;
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+            if !matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
+                return Err(self.err("invalid number: digit expected after '.'"));
+            }
+            while matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
                 self.pos += 1;
             }
         }
+        // exponent: ("e"|"E") ["+"|"-"] 1*digit
         if matches!(self.peek(), Some('e') | Some('E')) {
             self.pos += 1;
             if matches!(self.peek(), Some('+') | Some('-')) {
                 self.pos += 1;
             }
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+            if !matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
+                return Err(self.err("invalid number: digit expected in exponent"));
+            }
+            while matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
                 self.pos += 1;
             }
         }
