@@ -1,29 +1,24 @@
 [package]
 name = "onioncrawler"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Darknet (.onion/.i2p) crawler: the anti-leak host gate expressed as a type, URL canonicalizer, language guess, SOCKS5 fetch, no-JS search."
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/hydrastro/astrx"
+description = "Darknet (.onion/.i2p) crawler: the anti-leak host gate expressed as a type, URL canonicalizer, language guess, SOCKS5 fetch, storage, no-JS search."
 
-[lints]
-workspace = true
-
-# Like `torrentds`, this crate is organised in feature tiers so the auditable
-# core stays dependency-free. The pure modules ported so far — `onion` (the
-# darknet host gate) and `lang` (language guess) — need nothing but `std`, so the
-# default (empty) feature set pulls in ZERO third-party crates. The networking
-# tier (SOCKS5 client, HTTP fetcher, no-JS search server) will live behind the
-# opt-in `net`/`rand` features and pull in only the two vetted deps the rest of
-# the suite already uses (`tokio`, `getrandom`); they are declared here so those
-# modules slot in without a manifest churn.
 [dependencies]
 # First-party shared crawl library (globmatch, dedup/SimHash, scheduler, traps,
-# hashing). Not a third-party dependency — the zero-dep-by-default guarantee is
-# about crates.io deps; crawlcore is itself stdlib-only.
+# hashing incl. BLAKE2b). Not a third-party dependency — the zero-dep-by-default
+# guarantee is about crates.io deps; crawlcore is itself stdlib-only.
 crawlcore = { path = "../crawlcore" }
-tokio = { workspace = true, optional = true }
-getrandom = { workspace = true, optional = true }
+# The networking tier (SOCKS5 client, HTTP fetcher, no-JS search server) lives
+# behind the opt-in `net`/`rand` features and pulls in only the two vetted deps
+# the rest of the suite uses. Versions are declared here (not via
+# `[workspace.dependencies]`) so the manifest parses on pre-1.64 Cargo — see the
+# root Cargo.toml note.
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"], optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [features]
 default = []

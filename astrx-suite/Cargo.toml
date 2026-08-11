@@ -6,28 +6,21 @@
 # only by the opt-in `net`/`rand` features. `cargo tree --no-default-features`
 # over torrentds is asserted empty in CI, so the claim stays true, not aspirational.
 # The Python engines being retired live under legacy-python/ during migration.
+#
+# Manifests are deliberately written WITHOUT Cargo workspace-inheritance
+# (`field.workspace = true`, `[workspace.dependencies]`, `[workspace.lints]`) or
+# the `[lints]` table, so the whole workspace parses on Cargo as old as 1.56 and
+# a toolchain below the declared `rust-version` fails with a clear MSRV message
+# rather than a cryptic "feature `workspace-inheritance` is required" parse error.
+# Each crate therefore repeats its `edition`/`rust-version`/`license` and declares
+# its own `tokio`/`getrandom` versions; clippy's lint bar is enforced in CI via
+# `cargo clippy ... -- -D warnings`, not a manifest `[lints]` table.
 [workspace]
 resolver = "2"
 members = ["crates/crawlcore", "crates/torrentds", "crates/onioncrawler"]
 # `fuzz/` is a cargo-fuzz project with its own manifest; it is not a workspace
 # member and is built only via `cargo +nightly fuzz`.
 exclude = ["fuzz"]
-
-[workspace.package]
-edition = "2021"
-license = "MIT"
-rust-version = "1.80"
-repository = "https://github.com/hydrastro/astrx"
-
-# Versions for the two optional live-networking deps are centralised here so a
-# single line governs them workspace-wide; the crates reference them with
-# `{ workspace = true, optional = true }`.
-[workspace.dependencies]
-tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"] }
-getrandom = "0.2"
-
-[workspace.lints.clippy]
-all = "warn"
 
 [profile.release]
 opt-level = 3

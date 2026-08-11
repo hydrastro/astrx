@@ -1,12 +1,10 @@
 [package]
 name = "crawlcore"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Shared crawl library: robots glob, SimHash dedup, recrawl scheduling, trap predicates."
-
-[lints]
-workspace = true
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/hydrastro/astrx"
+description = "Shared crawl library: robots glob, SimHash dedup, recrawl scheduling, trap predicates, hashing (SHA-1/256, MD5, BLAKE2b), INFLATE."
 
 [dependencies]

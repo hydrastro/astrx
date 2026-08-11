@@ -21,7 +21,7 @@ parsers have `cargo fuzz` harnesses (`fuzz/`).
 |------------------|--------------|------|-----------|
 | **crawlcore**    | ✅ complete   | globmatch, dedup (SimHash), scheduler, traps, hashing (SHA-1/SHA-256/MD5), INFLATE (DEFLATE/gzip/zlib) — 22 tests, SimHash + hashes + inflate byte-identical to Python | — |
 | **torrentds**    | ✅ parity    | SHA-1 + **SHA-256** + bencode (+ `decode_prefix`/`decode_lenient`) + KRPC codec + async UDP transport (anti-spoof) + Kademlia routing + **live DHT node** (all 4 queries + BEP-51; harvest; token guard; iterative `get_peers` lookup; Sybil crawl) + **metadata fetch** (BEP-3/10/9 ut_metadata + **BEP-52 v2/hybrid**: SHA-256 infohash, bounded file-tree walk → `TorrentMeta`) + **magnet** (btih/btmh) + **HTTP + UDP tracker servers** (BEP-3/23 + BEP-15) on a shared **swarm peer store** (LRU-bounded, TTL-reaped, bencode snapshot/restore) + **BEP-33 scrape** + **release classifier** (regex-free, Unicode `\b`) + **spam heuristics** + **persistent index store** (records + ingest, categorize, content-sig dedup, discovered queue, blocklist, retention, stats, **dependency-free FTS inverted index + BM25 search**, bencode snapshot/restore) + **no-JS search UI + JSON API** (`/search`, `/browse`, `/recent`, `/t/<ih>`, `/api/*`, RSS, rebuilt `.torrent`, `/metrics`, `/health`, token-gated `POST /api/block`) + **Torznab/Newznab feed** + **indexer** (harvest sink → discovery queue → bounded concurrent fetch pool → store; BEP-51 sampler; DHT-resolve fetch; maintenance/retention; routing-contact persistence for warm restart) — 100 tests (workspace: 114); DHT/ut_metadata/tracker wire, v1/v2/hybrid infohashes, magnet, SimHash, BEP-33, classifier, spam, store helpers, serving-layer helpers all cross-checked byte-identical to Python + loopback round-trips of the HTTP server **and the harvest→store→fetch path**. Layered into `default`/`rand`/`net` feature tiers so the pure wire core is dependency-free | at parity — retire `legacy-python/torrentds/` (kept for now as the golden reference) |
-| **onioncrawler** | 🚧 net tier underway | 60 | **darknet host gate as a type** — `OnionHost`/`I2pHost`/`DarknetHost` construct-only-if-valid (`normalize_host`, v3/v2 onion, i2p b32/name, `is_darknet_host`) so a clearnet/localhost/IP leak is a *compile* error; in-text `.onion` discovery scanner (look-behind, 56/16, port clamp, path-stop set); stdlib language-guess; **URL canonicalizer** (dependency-free `urllib.parse`/`posixpath` port: `urljoin` RFC-3986 resolution, percent quote/unquote, `normpath` incl. leading-`//`, query clean/sort/`+`↔space, template + skeleton trap keys); **entity extractor** (PGP-armor SHA-1 fingerprint + backtracking-free btc/xmr/eth recognition); **abuse filter** (host/keyword/media blocklists + Ahmia `md5(domain)` bans, every-page hot path); **robots.txt parser** (UA groups, Allow/Disallow + `$` over the ReDoS-safe glob, Crawl-delay, Sitemap); **sitemap parser** (hand-rolled XXE/bomb-safe XML parser reproducing ElementTree's entity decoding, `el.text` and parse-error behaviour); plus the started **`net` tier** — a token-bucket **rate limiter**, the **SOCKS5 client** (RFC-1928/1929 pure encoders + async `socks5_connect` with remote name resolution, mock-loopback-tested), and the **HTTP wire helpers** (`build_request`, status/header parse, chunked decode, **gzip/deflate `decompress`** with a bomb cap, over crawlcore's new **INFLATE**) — all cross-checked byte-identical to Python, zero third-party deps by default (net tier behind `net`/`rand` → tokio + getrandom; reuses first-party `crawlcore` + its shared `hash`/`inflate` modules). **Next:** the async `perform_request` (streaming reader + framing + decompression), then the fetcher (the `&OnionHost`-gated socket) + resumable frontier + Tor fetch-pool + no-JS search |
+| **onioncrawler** | 🚧 store + search + serve + extract | 131 | **darknet host gate as a type** — `OnionHost`/`I2pHost`/`DarknetHost` construct-only-if-valid (`normalize_host`, v3/v2 onion, i2p b32/name, `is_darknet_host`) so a clearnet/localhost/IP leak is a *compile* error; in-text `.onion` discovery scanner (look-behind, 56/16, port clamp, path-stop set); stdlib language-guess; **URL canonicalizer** (dependency-free `urllib.parse`/`posixpath` port: `urljoin` RFC-3986 resolution, percent quote/unquote, `normpath` incl. leading-`//`, query clean/sort/`+`↔space, template + skeleton trap keys); **entity extractor** (PGP-armor SHA-1 fingerprint + backtracking-free btc/xmr/eth recognition); **abuse filter** (host/keyword/media blocklists + Ahmia `md5(domain)` bans, every-page hot path); **robots.txt parser** (UA groups, Allow/Disallow + `$` over the ReDoS-safe glob, Crawl-delay, Sitemap); **sitemap parser** (hand-rolled XXE/bomb-safe XML parser reproducing ElementTree's entity decoding, `el.text` and parse-error behaviour); plus the **`net` tier** (functionally complete) — a token-bucket **rate limiter**; the **SOCKS5 client** (RFC-1928/1929 encoders + async `socks5_connect`, remote DNS + per-host stream isolation); the **HTTP client** (`build_request`/status/header parse, async `perform_request` with content-length/chunked/close framing + keep-alive reuse + **gzip/deflate `decompress`** with a bomb cap over crawlcore's **INFLATE**); the **I2P proxy** encoders + `read_connect_reply`; and the **fetcher** (`FetchResult` + a `&OnionHost`-gated `open`, redirect loop, `TorSocks` + testing `Direct` transports) — cross-checked byte-identical to Python **plus loopback round-trips** of the SOCKS handshake and the full fetch (redirects, gzip, clearnet-refusal). plus the **storage layer** — a hand-rolled **dependency-free store** ported from the SQLite/FTS5 Python `Storage`: the resumable, leased **frontier** with trap-cap admission control (same `ok`/`dup-url`/`unique-budget`/`host-budget`/`template-cap`/`skeleton-cap`/`host-dead` codes), the host **state machine** + politeness + robots + dead-onion **liveness aging**, the **page store** with exact-content dedup (`stored`/`updated`/`unchanged`/`duplicate`), the **entity verticals**, the inter-onion **link graph** with offline **PageRank**, **SimHash** mirror clustering, and a versioned **snapshot/restore** blob (native `i64`/`f64`, no DB) — with **`simhash64`** (BLAKE2b token hash, now in `crawlcore`) as the fuzzy fingerprint. Cross-checked byte-identical to Python **plus loopback round-trips** of the SOCKS handshake and the full fetch (redirects, gzip, clearnet-refusal); the store's PageRank + clustering + `simhash64` cross-checked against the Python `Storage`, and a snapshot round-trip covered. Plus a dependency-free **FTS search** over the stored bodies — a hand-rolled inverted-index **BM25** (title-10×/body-1× field weighting, implicit-AND + quoted phrases, host/lang/date filters, host+language facets, near-duplicate collapse, optional authority blend, hidden-host exclusion), the behaviourally-faithful stdlib replacement for the Python SQLite/FTS5 `bm25` path (unit-tested; not bit-identical, since stdlib has no FTS5). Plus the **no-JS HTTP serving layer** — pure renderers + a pure `route()` over an `Arc<Mutex<Store>>` (HTML search UI + `/api/search`, entity `/find` + `/api/find`, `/stats` + `/api/stats`, `/cached`, `/health`, Prometheus `/metrics`, `/robots.txt`, `/opensearch.xml`), the async accept loop behind `net`, verified by a loopback round-trip + pure route tests — now including the **write endpoints** (`POST /add` / `/purge` / `/recrawl` behind a `Bearer` admin token, with an optional capped public-submit path) over the ported **submit** intake (canonicalize → darknet-only gate → abuse-check → trusted/untrusted `add_seed`). Zero third-party deps by default (net tier behind `net`/`rand` → tokio + getrandom; reuses first-party `crawlcore` + its shared `hash`/`inflate`/`blake2b` modules; `https` awaits an opt-in `tls` feature). the **HTML extractor** (`extract_html`: title + visible text with block line-breaks, followable `<a href>` links with `rel=nofollow`, `<base href>`, robots `<meta>`, charset decode) — a dependency-free port of the stdlib `html.parser` extractor, cross-checked to Python on a corpus. **Next:** the crawler orchestration loop — lease → fetch → **extract** → store + link expansion (reusing crawlcore `traps`/`dedup`/`scheduler`); every dependency it needs is now in place |
 | **websearch**    | ⏳ not started | — | polite resumable crawler; SSRF denylist (as a type); FTS index; BM25 + PageRank ranking; verticals; no-JS UI + JSON API; federation (sharding + scatter-gather) |
 | **gitweb**       | ⏳ not started | — | argv-only git exec (confined); repo/log/diff/tree/blob/blame/refs; releases; patch/mail archive; no-JS UI |
 | **suitedash**    | ⏳ not started | — | no-JS ops dashboard; health/metrics aggregation |
@@ -85,15 +85,47 @@ fetch clearnet from the onion crawler" becomes a compile-time guarantee. The
 (`OnionHost`/`I2pHost`/`DarknetHost` + the `.onion` discovery scanner), the
 language-guess, the **URL canonicalizer**, the **entity extractor**, the **abuse
 filter**, the **robots.txt parser** and the **sitemap parser**. The `net` tier is now
-**underway**: the token-bucket rate limiter, the SOCKS5 client (pure encoders +
-async `socks5_connect`, loopback-tested), the HTTP wire helpers, a hand-rolled
-gzip/deflate/zlib **INFLATE** in crawlcore (zero-dep, cross-checked against
-Python `zlib`) and the HTTP `decompress` on top of it have landed. What remains:
-the async `perform_request` (streaming reader + framing + decompression), then
-the fetcher — where taking an `&OnionHost` makes the anti-leak invariant a compile
-guarantee — the resumable frontier, the
-Tor fetch-pool, and the no-JS search UI. Reuses crawlcore
-(globmatch/traps/dedup/scheduler + the shared `hash` module) directly.
+**functionally complete**: the token-bucket rate limiter, the SOCKS5 client, a
+hand-rolled gzip/deflate/zlib **INFLATE** in crawlcore, the async **HTTP client**
+(`perform_request` with full framing + decompression), the **I2P proxy** helpers,
+and the **fetcher** — where taking an `&OnionHost` makes the anti-leak invariant a
+*compile* guarantee — have landed, verified by loopback round-trips of the SOCKS
+handshake and the full fetch (redirects, gzip, clearnet-refusal). (`https` awaits
+an opt-in `tls` feature, since stdlib has no TLS.) The **storage layer** has now
+landed too: a hand-rolled, dependency-free port of the SQLite/FTS5 Python
+`Storage` — the resumable **leased frontier** with its trap-cap admission control
+(identical reason codes), the host **state machine** + dead-onion liveness aging,
+the **page store** with exact-content dedup, the **entity verticals**, the
+inter-onion **link graph** with offline **PageRank**, **SimHash** mirror
+clustering, and a versioned **snapshot/restore** blob (native `i64`/`f64`, no
+database) — with `simhash64` (a hand-rolled RFC 7693 **BLAKE2b** token hash, now
+in crawlcore) as the fuzzy fingerprint. Its PageRank, clustering and `simhash64`
+are cross-checked against the Python `Storage`, and a snapshot round-trip is
+covered. The **FTS search** over the stored bodies has landed too — a
+dependency-free inverted-index **BM25** (title-10×/body-1× weighting, implicit-AND
++ quoted phrases, host/lang/date filters, host+language facets, near-duplicate
+collapse, optional authority blend, hidden-host exclusion), the behaviourally
+faithful stdlib replacement for the SQLite/FTS5 `bm25` path (unit-tested; not
+bit-identical, since the stdlib has no FTS5). The no-JS HTTP **serving layer** has
+landed too — pure renderers + a pure `route()` over an `Arc<Mutex<Store>>` (HTML
+search UI, `/api/search`, entity `/find`, `/stats`, `/cached`, `/health`,
+Prometheus `/metrics`, `/opensearch.xml`), with only the async accept loop behind
+`net`, verified by pure route tests + a loopback round-trip. The **write
+endpoints** have landed too — `POST /add` (submit onion seeds through the abuse
+filter + `add_seed` trap caps), `/purge` and `/recrawl`, behind a `Bearer` admin
+token with an optional capped public-submit path, over the ported **submit**
+intake (canonicalize → darknet-only gate → abuse-check → trusted/untrusted
+enqueue). The **HTML extractor** (`extract_html`: title + visible text with
+block line-breaks, followable `<a href>` links honouring `rel=nofollow`, `<base
+href>`, robots `<meta>`, charset decode — a dependency-free port of the stdlib
+`html.parser` extractor, cross-checked to Python) has landed too, which was the
+last prerequisite. What remains for the engine: the crawler **orchestration
+loop** — lease → fetch (net tier) → `extract_html` → `store_page` +
+`add_link_edge` + link expansion, with concurrency + politeness (reusing
+crawlcore `traps`/`dedup`/`scheduler`); every part it needs is now in place.
+Reuses crawlcore
+(globmatch/traps/dedup/scheduler + the shared `hash`/`inflate`/`blake2b` modules)
+directly.
 
 **Phase 3 — websearch.** Crawler + FTS + ranking. Folds in the requested ranking
 work (BM25 + real PageRank + freshness + popularity as selectable methods) and

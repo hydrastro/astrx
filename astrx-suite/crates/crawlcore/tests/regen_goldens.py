@@ -12,6 +12,7 @@ byte-identical to `zlib`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import zlib
 
@@ -44,7 +45,27 @@ def gen_inflate() -> None:
         show(f"{name}:gzip", gz.hex())
 
 
-SECTIONS = [gen_inflate]
+def gen_blake2b() -> None:
+    """BLAKE2b goldens (unkeyed) for `tests/xcheck_blake2b.rs`: (out_len,
+    input_hex, digest_hex) across small inputs, several output lengths, and a
+    >128-byte message that spans two compression blocks."""
+    cases = [
+        (8, b""),
+        (8, b"a"),
+        (8, b"abc"),
+        (8, b"hello world"),
+        (8, b"onion"),
+        (8, b"The quick brown fox jumps over the lazy dog"),
+        (32, b"abc"),
+        (64, b"abc"),
+        (16, bytes(range(200))),
+    ]
+    print("== blake2b (out_len, input_hex, digest_hex) ==")
+    for n, msg in cases:
+        show(f"blake2b:{n}:{msg.hex()}", hashlib.blake2b(msg, digest_size=n).hexdigest())
+
+
+SECTIONS = [gen_inflate, gen_blake2b]
 
 if __name__ == "__main__":
     for section in SECTIONS:

@@ -1,3 +1,8 @@
+# The development toolchain. `stable` builds the suite; the crates' declared
+# `rust-version` (1.80) is the supported floor (MSRV). On a system Rust older
+# than 1.80 (e.g. NixOS's older channels), Cargo reports the MSRV clearly instead
+# of a manifest parse error, because the manifests avoid workspace-inheritance and
+# the `[lints]` table (see the root Cargo.toml note).
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]

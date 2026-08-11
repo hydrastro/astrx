@@ -31,7 +31,7 @@ if _PYREF not in sys.path:
     sys.path.insert(0, _PYREF)
 
 from onioncrawler import (  # noqa: E402
-    abuse, canonical, entities, http_client, lang, onion, ratelimit, robots, sitemap, socks,
+    abuse, canonical, entities, http_client, i2p, lang, onion, ratelimit, robots, sitemap, socks,
 )
 
 V3 = "a" * 56
@@ -342,8 +342,85 @@ def gen_http() -> None:
     show("chunked_ext", dechunk(b"4;ext=1\r\nWiki\r\n0\r\n\r\n"))
 
 
+def gen_i2p() -> None:
+    """xcheck_i2p.rs: I2P proxy CONNECT + absolute-form GET target encoders."""
+    print("== i2p ==")
+    show("connect", i2p.build_http_connect("stats.i2p", 443).decode())
+    show("get_none", i2p.build_proxy_get_target("http", "stats.i2p", None, "/path"))
+    show("get_port", i2p.build_proxy_get_target("http", "stats.i2p", 8080, "/x"))
+    show("get_default", i2p.build_proxy_get_target("http", "stats.i2p", 80, "/"))
+    show("get_https_empty", i2p.build_proxy_get_target("https", "site.i2p", 443, ""))
+
+
+def gen_simhash() -> None:
+    """xcheck_simhash.rs: signed 64-bit SimHash fingerprints + one Hamming pair."""
+    from onioncrawler.simhash import simhash64, hamming
+    print("== simhash ==")
+    for t in ["", "a", "hello world",
+              "The quick brown fox jumps over the lazy dog",
+              "onion darknet market", "Hello World\nHELLO world hello",
+              "café résumé naïve", "aaa bbb aaa ccc aaa"]:
+        show(f"simhash:{t!r}", simhash64(t))
+    show("hamming", hamming(simhash64("hello world foo bar"),
+                            simhash64("hello world foo baz")))
+
+
+def gen_store() -> None:
+    """xcheck_store.rs: PageRank-lite authority + SimHash mirror clustering,
+    driven through the Python SQLite `Storage`. Emits the per-host authority and
+    the per-page (id, simhash, cluster_id) the Rust store must reproduce."""
+    import tempfile
+    from onioncrawler.storage import Storage, fts5_available
+    if not fts5_available():
+        print("== store == (skipped: no FTS5)")
+        return
+    s = Storage(os.path.join(tempfile.mkdtemp(), "x.db"))
+    for h in ["hub.onion", "a.onion", "b.onion", "c.onion", "d.onion"]:
+        s.ensure_host(h)
+    for (src, dst, w) in [("a.onion", "hub.onion", 1), ("b.onion", "hub.onion", 2),
+                          ("c.onion", "hub.onion", 1), ("d.onion", "hub.onion", 1),
+                          ("a.onion", "b.onion", 1), ("hub.onion", "a.onion", 1)]:
+        s.add_link_edge(src, dst, w)
+    s.compute_authority(iterations=25, damping=0.85)
+    print("== store: authority ==")
+    for r in s.db.execute("SELECT host, authority FROM hosts ORDER BY host"):
+        show(f"auth:{r['host']}", r["authority"])
+    pages = [
+        ("http://x.onion/1", "the quick brown fox jumps over the lazy dog in the meadow every single morning today"),
+        ("http://x.onion/2", "the quick brown fox jumps over the lazy dog in the field every single morning today"),
+        ("http://x.onion/3", "completely different content discussing finance markets equities and interest rates policy"),
+        ("http://x.onion/4", "the quick brown fox jumps over the lazy dog in the meadow every single evening today"),
+    ]
+    s.ensure_host("x.onion")
+    for (u, t) in pages:
+        s.store_page(u, "x.onion", None, t, "hash-" + u[-1], 200, "text/html", len(t), 100.0, dedup=False)
+    s.cluster_mirrors(threshold=5, max_pages=1000)
+    print("== store: pages (id, simhash, cluster_id) ==")
+    for (u, _) in pages:
+        row = s.db.execute("SELECT id, simhash, cluster_id FROM pages WHERE url=?", (u,)).fetchone()
+        show(f"page:{u}", [row["id"], row["simhash"], row["cluster_id"]])
+
+
+def gen_extract() -> None:
+    """xcheck_extract.rs: title / text / links / meta / base from HTML."""
+    from onioncrawler.extract import extract_html
+    print("== extract ==")
+    cases = [
+        b"<html><head><title>Hello &amp; Welcome</title></head><body><p>First para.</p><p>Second <a href='/x'>link</a> here.</p><script>var a=1;</script><a href='http://y.onion/z' rel='nofollow'>skip</a></body></html>",
+        b"<html><head><meta name='robots' content='noindex, nofollow'><title>T</title></head><body>hi</body></html>",
+        b"<html><head><base href='http://b.onion/'><title>A&#233;B</title></head><body><div>x</div><div>y&nbsp;z</div></body></html>",
+        b"<body><style>.a{}</style><p>keep <b>this</b> text</p><noscript>drop</noscript></body>",
+        b"<body><p>a<br/>b</p><a href='/l'/>after</body>",
+    ]
+    for html in cases:
+        e = extract_html(html)
+        show("extract", [e.title, e.text, list(e.links),
+                         e.meta_noindex, e.meta_nofollow, e.base_href])
+
+
 SECTIONS = [gen_onion, gen_lang, gen_canonical, gen_entities, gen_abuse, gen_robots,
-            gen_sitemap, gen_ratelimit, gen_socks, gen_http]
+            gen_sitemap, gen_ratelimit, gen_socks, gen_http, gen_i2p, gen_simhash,
+            gen_store, gen_extract]
 
 if __name__ == "__main__":
     for section in SECTIONS:
