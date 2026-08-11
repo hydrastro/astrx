@@ -8,18 +8,25 @@
 //! (only `<mark>` markup survives), so the results page is XSS-safe.
 //!
 //! Routes: `/` + `/search` (HTML results, `?type=news|files` verticals),
-//! `/api/search` (JSON, the endpoint the PHP bridge calls; `?limit=`/`?page_size=`/
-//! `?sort=` supported), `/about` + `/stats`, `/opensearch.xml`, `/metrics`,
-//! `/healthz`, `/style.css`, `/favicon.ico`. The image/video verticals, `/suggest`,
-//! and `/similar` are deferred (htmlparse stage 2 / suggest).
+//! `/images` + `/videos` (the media verticals, `?q=`), `/api/search` (JSON, the
+//! endpoint the PHP bridge calls; `?limit=`/`?page_size=`/`?sort=` supported),
+//! `/suggest` (OpenSearch Suggestions JSON typeahead, `?q=`), `/about` +
+//! `/stats`, `/opensearch.xml`, `/metrics`, `/healthz`, `/style.css`,
+//! `/favicon.ico`. `/similar` is deferred (`more_like_this`).
 
-use crate::index::Index;
+use crate::index::{ImageResult, Index, VideoResult};
 use crate::ranking::{search, Query, SearchOpts, SearchResult};
 use crawlcore::urlparse::{parse_qsl, urlencode, urlsplit};
 use std::sync::{Arc, Mutex};
 
 const PAGE_SIZE: usize = 10;
 const API_MAX_LIMIT: usize = 200;
+/// Max image/video results per vertical page (Python `IMAGE_LIMIT`).
+const IMAGE_LIMIT: usize = 30;
+/// Hard cap on the `/suggest` `q` at the edge — the echoed query and parse cost
+/// bound, applied before [`crate::suggest::suggest`]'s own internal `q[:64]`
+/// (Python `SUGGEST_MAX_QUERY`).
+const SUGGEST_MAX_QUERY: usize = 128;
 
 /// HTML-escape (`&`,`<`,`>`,`"`,`'`) — Python `html.escape(quote=True)`.
 #[must_use]
@@ -63,6 +70,40 @@ fn jq(s: &str) -> String {
 fn json_str_array(v: &[String]) -> String {
     let items: Vec<String> = v.iter().map(|s| jq(s)).collect();
     format!("[{}]", items.join(","))
+}
+
+/// A quoted JSON string literal byte-identical to Python
+/// `json.dumps(s, ensure_ascii=False)`: short escapes for `"`, `\`, and
+/// `\b`/`\f`/`\n`/`\r`/`\t`, `\uXXXX` (lowercase) for the other C0 control
+/// characters, and every other code point — non-ASCII, and `<`/`>`/`&` — emitted
+/// raw. Distinct from [`json_str`], which lacks the `\b`/`\f` short forms.
+fn json_dq(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The OpenSearch Suggestions JSON body `[query, [completions…]]`, byte-identical
+/// to Python `json.dumps([q, terms], ensure_ascii=False)` — note the SPACED
+/// separators (`", "`), unlike the compact [`json_str_array`] used by the search
+/// API.
+fn suggestions_json(q: &str, terms: &[String]) -> String {
+    let items: Vec<String> = terms.iter().map(|t| json_dq(t)).collect();
+    format!("[{}, [{}]]", json_dq(q), items.join(", "))
 }
 
 fn json_opt_str(v: &Option<String>) -> String {
@@ -126,6 +167,13 @@ impl Resp {
         Resp {
             status: 200,
             ctype: "application/opensearchdescription+xml; charset=utf-8",
+            body,
+        }
+    }
+    fn suggestions(status: u16, body: String) -> Self {
+        Resp {
+            status,
+            ctype: "application/x-suggestions+json; charset=utf-8",
             body,
         }
     }
@@ -270,6 +318,7 @@ fn vertical_tabs(q: &str, active: &str) -> String {
     } else {
         format!("?{}", urlencode(&[("q".to_string(), q.to_string())]))
     };
+    // A plain tab (Web / Images / Videos) links to its own path with `?q=` appended.
     let tab = |href: &str, label: &str, key: &str| {
         let cls = if key == active { "tab active" } else { "tab" };
         format!(
@@ -277,11 +326,179 @@ fn vertical_tabs(q: &str, active: &str) -> String {
             esc(&format!("{href}{qs}"))
         )
     };
+    // A `/search?type=` vertical (News / Files) puts `type` and `q` in one query.
+    let vtab = |label: &str, key: &str| {
+        let href = if q.is_empty() {
+            format!(
+                "/search?{}",
+                urlencode(&[("type".to_string(), key.to_string())])
+            )
+        } else {
+            format!(
+                "/search?{}",
+                urlencode(&[
+                    ("type".to_string(), key.to_string()),
+                    ("q".to_string(), q.to_string()),
+                ])
+            )
+        };
+        let cls = if key == active { "tab active" } else { "tab" };
+        format!("<a class='{cls}' href='{}'>{label}</a>", esc(&href))
+    };
     format!(
-        "<div class=tabs>{}{}</div>",
+        "<div class=tabs>{}{}{}{}{}</div>",
         tab("/search", "Web", "web"),
-        tab("/search?type=news", "News", "news"),
+        vtab("News", "news"),
+        tab("/images", "Images", "images"),
+        tab("/videos", "Videos", "videos"),
+        vtab("Files", "files"),
     )
+}
+
+/// Whole seconds → `H:MM:SS` / `M:SS` (empty string if unknown/negative).
+/// Mirrors the Python `_fmt_duration`.
+fn fmt_duration(secs: Option<i64>) -> String {
+    let s = match secs {
+        Some(s) => s,
+        None => return String::new(),
+    };
+    if s < 0 {
+        return String::new();
+    }
+    let h = s / 3600;
+    let rem = s % 3600;
+    let m = rem / 60;
+    let sec = rem % 60;
+    if h != 0 {
+        format!("{h}:{m:02}:{sec:02}")
+    } else {
+        format!("{m}:{sec:02}")
+    }
+}
+
+/// No-JS image results. Each thumbnail is a plain `<img src>` pointing at the
+/// ORIGINAL remote URL (the browser loads it — the server never fetches it), and
+/// every field is HTML-escaped. Byte-identical to the Python `_render_images`.
+fn render_images(q: &str, images: &[ImageResult]) -> String {
+    let mut s = String::from("<main><div class=wrap>");
+    s.push_str(&vertical_tabs(q, "images"));
+    if q.is_empty() {
+        s.push_str(
+            "<p class=meta>Enter a query to search images harvested from crawled pages \
+(no image is fetched by the server).</p>",
+        );
+    } else if images.is_empty() {
+        s.push_str(&format!(
+            "<p class=empty>No images matched <strong>{}</strong>.</p>",
+            esc(q)
+        ));
+    } else {
+        s.push_str(&format!(
+            "<div class=meta>{} image result{}</div>",
+            images.len(),
+            if images.len() == 1 { "" } else { "s" }
+        ));
+        s.push_str("<div class=imggrid>");
+        for im in images {
+            let cap_src = if !im.alt.is_empty() {
+                &im.alt
+            } else if !im.title.is_empty() {
+                &im.title
+            } else {
+                &im.src
+            };
+            s.push_str(&format!(
+                "<figure class=imgcard>\
+<a href='{page}' rel='noreferrer nofollow'>\
+<img class=thumb loading=lazy referrerpolicy=no-referrer src='{src}' alt='{alt}'></a>\
+<figcaption>{cap}<span class=imghost>{host}</span></figcaption>\
+</figure>",
+                page = esc(&im.page_url),
+                src = esc(&im.src),
+                alt = esc(&im.alt),
+                cap = esc(cap_src),
+                host = esc(&im.host),
+            ));
+        }
+        s.push_str("</div>");
+    }
+    s.push_str("<footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+    s
+}
+
+/// No-JS video results. Each card links to the source PAGE and shows the harvested
+/// thumbnail (loaded by the browser from its ORIGINAL URL — the server fetches
+/// nothing); every field is HTML-escaped. Byte-identical to Python `_render_videos`.
+fn render_videos(q: &str, videos: &[VideoResult]) -> String {
+    let mut s = String::from("<main><div class=wrap>");
+    s.push_str(&vertical_tabs(q, "videos"));
+    if q.is_empty() {
+        s.push_str(
+            "<p class=meta>Enter a query to search videos harvested from crawled pages \
+(no video or thumbnail is fetched by the server).</p>",
+        );
+    } else if videos.is_empty() {
+        s.push_str(&format!(
+            "<p class=empty>No videos matched <strong>{}</strong>.</p>",
+            esc(q)
+        ));
+    } else {
+        s.push_str(&format!(
+            "<div class=meta>{} video result{}</div>",
+            videos.len(),
+            if videos.len() == 1 { "" } else { "s" }
+        ));
+        s.push_str("<div class=imggrid>");
+        for v in videos {
+            let cap_src = if !v.title.is_empty() {
+                v.title.as_str()
+            } else if !v.watch_url.is_empty() {
+                v.watch_url.as_str()
+            } else if !v.embed_url.is_empty() {
+                v.embed_url.as_str()
+            } else if !v.video_url.is_empty() {
+                v.video_url.as_str()
+            } else {
+                "video"
+            };
+            let media = if v.thumbnail_url.is_empty() {
+                "<div class='thumb noimg'>video</div>".to_string()
+            } else {
+                format!(
+                    "<img class=thumb loading=lazy referrerpolicy=no-referrer src='{}' alt=''>",
+                    esc(&v.thumbnail_url)
+                )
+            };
+            let host = esc(&v.host);
+            let mut bits: Vec<String> = Vec::new();
+            if !v.source.is_empty() {
+                bits.push(esc(&v.source));
+            }
+            let dur = fmt_duration(v.duration);
+            if !dur.is_empty() {
+                bits.push(esc(&dur));
+            }
+            let sub = if host.is_empty() {
+                bits.join(" &middot; ")
+            } else {
+                let mut all: Vec<String> = Vec::with_capacity(bits.len() + 1);
+                all.push(host);
+                all.extend(bits);
+                all.join(" &middot; ")
+            };
+            s.push_str(&format!(
+                "<figure class=imgcard>\
+<a href='{page}' rel='noreferrer nofollow'>{media}</a>\
+<figcaption>{cap}<span class=imghost>{sub}</span></figcaption>\
+</figure>",
+                page = esc(&v.page_url),
+                cap = esc(cap_src),
+            ));
+        }
+        s.push_str("</div>");
+    }
+    s.push_str("<footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+    s
 }
 
 fn render_home() -> String {
@@ -447,7 +664,10 @@ impl SearchServer {
             },
             "/metrics" => self.metrics(),
             "/opensearch.xml" => Resp::xml(opensearch_xml(&self.base_url)),
+            "/images" => self.images_html(&params),
+            "/videos" => self.videos_html(&params),
             "/api/search" => self.api_search(&params),
+            "/suggest" => self.suggest(&params),
             "/about" | "/stats" => {
                 let ix = self.index.lock().expect("index mutex");
                 Resp::html(
@@ -505,6 +725,44 @@ impl SearchServer {
         let title = format!("{q} - astrx search");
         let body = header(&q) + &self.render_results(&q, &resp, page, active);
         Resp::html(200, wrap_page(&title, &body))
+    }
+
+    fn images_html(&self, params: &[(String, String)]) -> Resp {
+        let q = param(params, "q").unwrap_or("").trim().to_string();
+        let images = if q.is_empty() {
+            Vec::new()
+        } else {
+            let ix = self.index.lock().expect("index mutex");
+            ix.image_search(&q, IMAGE_LIMIT)
+        };
+        let title = if q.is_empty() {
+            "astrx images".to_string()
+        } else {
+            format!("{q} - images - astrx search")
+        };
+        Resp::html(
+            200,
+            wrap_page(&title, &(header(&q) + &render_images(&q, &images))),
+        )
+    }
+
+    fn videos_html(&self, params: &[(String, String)]) -> Resp {
+        let q = param(params, "q").unwrap_or("").trim().to_string();
+        let videos = if q.is_empty() {
+            Vec::new()
+        } else {
+            let ix = self.index.lock().expect("index mutex");
+            ix.video_search(&q, IMAGE_LIMIT)
+        };
+        let title = if q.is_empty() {
+            "astrx videos".to_string()
+        } else {
+            format!("{q} - videos - astrx search")
+        };
+        Resp::html(
+            200,
+            wrap_page(&title, &(header(&q) + &render_videos(&q, &videos))),
+        )
     }
 
     fn api_search(&self, params: &[(String, String)]) -> Resp {
@@ -567,6 +825,28 @@ impl SearchServer {
             results.join(",")
         );
         Resp::json(200, payload)
+    }
+
+    /// OpenSearch Suggestions typeahead: `q` is stripped then capped to the first
+    /// [`SUGGEST_MAX_QUERY`] code points and echoed verbatim (original case). The
+    /// body is `[q, [terms…]]` where `terms` is [`crate::suggest::suggest`] with an
+    /// EMPTY `popular` slice (the in-process popular-query tracker is intentionally
+    /// not implemented). An empty `q` short-circuits to `["", []]` without a search.
+    /// Mirrors the Python `_suggest`.
+    fn suggest(&self, params: &[(String, String)]) -> Resp {
+        let q: String = param(params, "q")
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(SUGGEST_MAX_QUERY)
+            .collect();
+        let terms = if q.is_empty() {
+            Vec::new()
+        } else {
+            let ix = self.index.lock().expect("index mutex");
+            crate::suggest::suggest(&ix, &q, &[], crate::suggest::MAX_SUGGESTIONS)
+        };
+        Resp::suggestions(200, suggestions_json(&q, &terms))
     }
 
     fn metrics(&self) -> Resp {
@@ -782,5 +1062,158 @@ mod tests {
         assert!(!html.contains("<script>alert"));
         let json = srv.route("GET", "/api/search?q=rust").body;
         assert!(json.contains("<script>")); // JSON keeps the raw title (string-escaped), not HTML
+    }
+
+    #[test]
+    fn images_route_prompt_rows_and_empty() {
+        let mut ix = Index::new();
+        ix.replace_images(
+            1,
+            "https://ex.com/p",
+            "ex.com",
+            &[crate::htmlparse::Image {
+                src: "https://ex.com/a.jpg".into(),
+                alt: "a rusty cat".into(),
+                title: String::new(),
+                context: String::new(),
+            }],
+        );
+        let srv = SearchServer::new(Arc::new(Mutex::new(ix)), "http://x");
+        // no query -> prompt, Images tab active
+        let prompt = srv.route("GET", "/images");
+        assert_eq!(prompt.status, 200);
+        assert!(prompt.body.contains("Enter a query to search images"));
+        assert!(prompt.body.contains("class='tab active' href='/images'"));
+        // a query renders the matching row
+        let hit = srv.route("GET", "/images?q=cat").body;
+        assert!(hit.contains("1 image result"));
+        assert!(hit.contains("src='https://ex.com/a.jpg'"));
+        // no match -> empty state
+        assert!(srv
+            .route("GET", "/images?q=zzzz")
+            .body
+            .contains("No images matched"));
+    }
+
+    #[test]
+    fn videos_route_prompt_and_rows() {
+        let mut ix = Index::new();
+        ix.replace_videos(
+            1,
+            "https://ex.com/v",
+            "ex.com",
+            &[crate::structured::Video {
+                video_url: String::new(),
+                embed_url: "https://yt/e".into(),
+                watch_url: "https://yt/w".into(),
+                title: "funny dogs".into(),
+                thumbnail: "https://yt/t.jpg".into(),
+                source: "youtube".into(),
+                duration: Some(3723),
+                context: String::new(),
+            }],
+        );
+        let srv = SearchServer::new(Arc::new(Mutex::new(ix)), "http://x");
+        assert!(srv
+            .route("GET", "/videos")
+            .body
+            .contains("Enter a query to search videos"));
+        let hit = srv.route("GET", "/videos?q=dogs").body;
+        assert!(hit.contains("1 video result"));
+        assert!(hit.contains("src='https://yt/t.jpg'"));
+        assert!(hit.contains("1:02:03")); // duration H:MM:SS
+        assert!(hit.contains("ex.com &middot; youtube &middot; 1:02:03"));
+    }
+
+    #[test]
+    fn images_route_escapes_script_in_alt() {
+        let mut ix = Index::new();
+        ix.replace_images(
+            1,
+            "https://ex.com/p",
+            "ex.com",
+            &[crate::htmlparse::Image {
+                src: "https://ex.com/a.jpg".into(),
+                alt: "<script>alert(1)</script> cat".into(),
+                title: String::new(),
+                context: String::new(),
+            }],
+        );
+        let srv = SearchServer::new(Arc::new(Mutex::new(ix)), "http://x");
+        let body = srv.route("GET", "/images?q=cat").body;
+        assert!(body.contains("&lt;script&gt;"));
+        assert!(!body.contains("<script>alert"));
+    }
+
+    // Cross-check: the PURE renderers + duration formatter are byte-identical to
+    // the Python `_render_images` / `_render_videos` / `_fmt_duration` /
+    // `_vertical_tabs`. Goldens emitted by driving the real Python module.
+    #[test]
+    fn media_renderers_byte_identical_to_python() {
+        // _fmt_duration
+        assert_eq!(fmt_duration(None), "");
+        assert_eq!(fmt_duration(Some(-1)), "");
+        assert_eq!(fmt_duration(Some(0)), "0:00");
+        assert_eq!(fmt_duration(Some(5)), "0:05");
+        assert_eq!(fmt_duration(Some(65)), "1:05");
+        assert_eq!(fmt_duration(Some(125)), "2:05");
+        assert_eq!(fmt_duration(Some(3599)), "59:59");
+        assert_eq!(fmt_duration(Some(3600)), "1:00:00");
+        assert_eq!(fmt_duration(Some(3661)), "1:01:01");
+        assert_eq!(fmt_duration(Some(7323)), "2:02:03");
+        assert_eq!(fmt_duration(Some(3723)), "1:02:03");
+        // _vertical_tabs (empty + query, active variations)
+        assert_eq!(vertical_tabs("", "videos"), "<div class=tabs><a class='tab' href='/search'>Web</a><a class='tab' href='/search?type=news'>News</a><a class='tab' href='/images'>Images</a><a class='tab active' href='/videos'>Videos</a><a class='tab' href='/search?type=files'>Files</a></div>");
+        assert_eq!(vertical_tabs("cats", "images"), "<div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab active' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div>");
+        assert_eq!(vertical_tabs("foo bar & baz", "web"), "<div class=tabs><a class='tab active' href='/search?q=foo+bar+%26+baz'>Web</a><a class='tab' href='/search?type=news&amp;q=foo+bar+%26+baz'>News</a><a class='tab' href='/images?q=foo+bar+%26+baz'>Images</a><a class='tab' href='/videos?q=foo+bar+%26+baz'>Videos</a><a class='tab' href='/search?type=files&amp;q=foo+bar+%26+baz'>Files</a></div>");
+        // _render_images: prompt / empty / rows
+        assert_eq!(render_images("", &[]), "<main><div class=wrap><div class=tabs><a class='tab' href='/search'>Web</a><a class='tab' href='/search?type=news'>News</a><a class='tab active' href='/images'>Images</a><a class='tab' href='/videos'>Videos</a><a class='tab' href='/search?type=files'>Files</a></div><p class=meta>Enter a query to search images harvested from crawled pages (no image is fetched by the server).</p><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        assert_eq!(render_images("cats", &[]), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab active' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><p class=empty>No images matched <strong>cats</strong>.</p><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        let imgs = vec![
+            ImageResult {
+                src: "https://ex.com/a.jpg".into(),
+                alt: "A <cat> & dog".into(),
+                title: "T1".into(),
+                page_url: "https://ex.com/p1".into(),
+                host: "ex.com".into(),
+            },
+            ImageResult {
+                src: "https://ex.com/b.jpg".into(),
+                alt: String::new(),
+                title: String::new(),
+                page_url: "https://ex.com/p2".into(),
+                host: String::new(),
+            },
+        ];
+        assert_eq!(render_images("cats", &imgs[..1]), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab active' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>1 image result</div><div class=imggrid><figure class=imgcard><a href='https://ex.com/p1' rel='noreferrer nofollow'><img class=thumb loading=lazy referrerpolicy=no-referrer src='https://ex.com/a.jpg' alt='A &lt;cat&gt; &amp; dog'></a><figcaption>A &lt;cat&gt; &amp; dog<span class=imghost>ex.com</span></figcaption></figure></div><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        assert_eq!(render_images("cats", &imgs), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab active' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>2 image results</div><div class=imggrid><figure class=imgcard><a href='https://ex.com/p1' rel='noreferrer nofollow'><img class=thumb loading=lazy referrerpolicy=no-referrer src='https://ex.com/a.jpg' alt='A &lt;cat&gt; &amp; dog'></a><figcaption>A &lt;cat&gt; &amp; dog<span class=imghost>ex.com</span></figcaption></figure><figure class=imgcard><a href='https://ex.com/p2' rel='noreferrer nofollow'><img class=thumb loading=lazy referrerpolicy=no-referrer src='https://ex.com/b.jpg' alt=''></a><figcaption>https://ex.com/b.jpg<span class=imghost></span></figcaption></figure></div><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        // _render_videos: prompt / empty / rows
+        assert_eq!(render_videos("", &[]), "<main><div class=wrap><div class=tabs><a class='tab' href='/search'>Web</a><a class='tab' href='/search?type=news'>News</a><a class='tab' href='/images'>Images</a><a class='tab active' href='/videos'>Videos</a><a class='tab' href='/search?type=files'>Files</a></div><p class=meta>Enter a query to search videos harvested from crawled pages (no video or thumbnail is fetched by the server).</p><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        assert_eq!(render_videos("dogs", &[]), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=dogs'>Web</a><a class='tab' href='/search?type=news&amp;q=dogs'>News</a><a class='tab' href='/images?q=dogs'>Images</a><a class='tab active' href='/videos?q=dogs'>Videos</a><a class='tab' href='/search?type=files&amp;q=dogs'>Files</a></div><p class=empty>No videos matched <strong>dogs</strong>.</p><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        let vids = vec![
+            VideoResult {
+                video_url: String::new(),
+                embed_url: "https://yt/embed/1".into(),
+                watch_url: "https://yt/watch/1".into(),
+                title: "Fun <b>clip</b> & more".into(),
+                thumbnail_url: "https://yt/t1.jpg".into(),
+                source: "youtube".into(),
+                duration: Some(3723),
+                page_url: "https://ex.com/v1".into(),
+                host: "ex.com".into(),
+            },
+            VideoResult {
+                video_url: "https://ex.com/x.mp4".into(),
+                embed_url: String::new(),
+                watch_url: String::new(),
+                title: String::new(),
+                thumbnail_url: String::new(),
+                source: String::new(),
+                duration: None,
+                page_url: "https://ex.com/v2".into(),
+                host: String::new(),
+            },
+        ];
+        assert_eq!(render_videos("dogs", &vids), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=dogs'>Web</a><a class='tab' href='/search?type=news&amp;q=dogs'>News</a><a class='tab' href='/images?q=dogs'>Images</a><a class='tab active' href='/videos?q=dogs'>Videos</a><a class='tab' href='/search?type=files&amp;q=dogs'>Files</a></div><div class=meta>2 video results</div><div class=imggrid><figure class=imgcard><a href='https://ex.com/v1' rel='noreferrer nofollow'><img class=thumb loading=lazy referrerpolicy=no-referrer src='https://yt/t1.jpg' alt=''></a><figcaption>Fun &lt;b&gt;clip&lt;/b&gt; &amp; more<span class=imghost>ex.com &middot; youtube &middot; 1:02:03</span></figcaption></figure><figure class=imgcard><a href='https://ex.com/v2' rel='noreferrer nofollow'><div class='thumb noimg'>video</div></a><figcaption>https://ex.com/x.mp4<span class=imghost></span></figcaption></figure></div><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
     }
 }

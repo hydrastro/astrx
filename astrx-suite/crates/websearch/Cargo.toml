@@ -23,3 +23,12 @@ getrandom = { version = "0.2", optional = true }
 default = []
 rand = ["dep:getrandom"]
 net = ["dep:tokio", "rand"]
+
+# The `websearch` command-line entrypoint (crawl / serve / stats / backup),
+# porting the Python `python3 -m websearch` CLI. Gated on `net` via
+# `required-features` so `cargo build -p websearch` (no features) stays a pure,
+# zero-dependency library — the binary and its tokio use exist only under `net`.
+[[bin]]
+name = "websearch"
+path = "src/bin/websearch.rs"
+required-features = ["net"]

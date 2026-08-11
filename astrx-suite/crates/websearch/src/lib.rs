@@ -26,15 +26,18 @@
 pub mod canonical;
 pub mod crawler;
 pub mod dedup;
+pub mod federation;
 pub mod frontier;
 pub mod htmlparse;
 pub mod httpclient;
 pub mod index;
+pub mod pdftext;
 pub mod ranking;
 pub mod robots;
 pub mod serve;
 pub mod ssrf;
 pub mod structured;
+pub mod suggest;
 
 #[cfg(feature = "net")]
 pub mod fetcher;
@@ -42,13 +45,18 @@ pub mod fetcher;
 pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
 pub use crawler::{public_resolved, trap_ok, CrawlConfig, CrawlStats};
 pub use dedup::simhash;
+pub use federation::{norm_host, owns, shard_for};
 pub use frontier::{Frontier, HostRow, Lease};
 pub use htmlparse::{extract as extract_html, guess_lang, Extracted, Image};
 pub use httpclient::{
     authority_exempt, decode_body, decompress, parse_content_type, vet_addrs, FetchResult,
     GateError, Headers, HttpError,
 };
-pub use index::{content_hash, DocFields, Document, Index, Stats};
+pub use index::{
+    content_hash, prefix_upper, DocFields, Document, ImageResult, Index, Stats, StoredImage,
+    StoredVideo, VideoResult, FUZZY_SCAN_CAP, MAX_IMAGES_PER_DOC, MAX_VIDEOS_PER_DOC,
+};
+pub use pdftext::{extract_text as extract_pdf_text, extract_title as extract_pdf_title};
 pub use ranking::{parse_query, search, Query, SearchOpts, SearchResponse, SearchResult};
 pub use robots::{parse as parse_robots, Robots};
 pub use serve::{Resp, SearchServer};
@@ -57,8 +65,13 @@ pub use structured::{
     balanced_json, classify_player, collect_readable, extract_state_json, first_str, first_url,
     is_direct_media, iter_dicts, parse_duration, type_of, Video,
 };
+pub use suggest::{levenshtein, suggest};
 
 #[cfg(feature = "net")]
 pub use crawler::Crawler;
 #[cfg(feature = "net")]
-pub use fetcher::{clear_dns_cache, fetch, resolve_checked, FetchOpts};
+pub use federation::{
+    federated_search, normalize_bases, FederatedOpts, FederatedResponse, ShardOutcome, ShardResult,
+};
+#[cfg(feature = "net")]
+pub use fetcher::{clear_dns_cache, fetch, resolve_checked, FetchOpts, Fetcher};

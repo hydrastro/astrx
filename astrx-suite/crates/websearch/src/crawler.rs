@@ -13,11 +13,26 @@
 //! [`trap_ok`], [`public_resolved`]) compile without `net`; the [`Crawler`]
 //! orchestration (which drives the async fetch) is behind the `net` feature.
 //!
-//! Deferred (documented): the image/video verticals (need htmlparse stage 2),
-//! PDF extraction (`pdftext`), multi-worker `MultiCrawler`, federation sharding
-//! (single-node owns all hosts), and per-redirect-hop robots re-checking (each
-//! hop is still re-checked for scheme + scope + the SSRF internal-IP gate; robots
-//! is enforced on the leased URL).
+//! PDFs (`application/pdf`) are indexed via the pure [`crate::pdftext`] extractor
+//! when [`PDF_TYPE`] is added to [`CrawlConfig::content_types`] (off by default).
+//!
+//! Federation-aware: [`enqueue_links`](Crawler) records every edge but only
+//! *follows* an internal target this node owns under HRW hashing
+//! ([`CrawlConfig::shard_id`] + [`CrawlConfig::shards`]; empty = single-node owns
+//! everything). See [`crate::federation`].
+//!
+//! Concurrency: [`CrawlConfig::workers`] `> 1` spawns that many worker tasks that
+//! share the frontier + index + a global page budget; atomic leasing keeps every
+//! reachable allowed page indexed exactly once regardless of fetch order, so the
+//! indexed set is deterministic under concurrency ([`Crawler::run`] dispatches to
+//! the multi-worker path and rejoins the shared state afterwards). Each worker
+//! runs the same per-URL logic as the single-worker path ([`net_impl::Core::finish_fetch`]
+//! is the shared result-processing tail). With [`CrawlConfig::keep_alive`] each
+//! worker routes fetches through its own pooled [`Fetcher`](crate::fetcher::Fetcher).
+//!
+//! Deferred (documented): per-redirect-hop robots re-checking (each hop is still
+//! re-checked for scheme + scope + the SSRF internal-IP gate; robots is enforced
+//! on the leased URL).
 
 use crate::canonical::{canonicalize, host_of, max_segment_repeat, path_depth, query_param_count};
 use crate::ssrf::ip_is_internal;
@@ -42,7 +57,7 @@ const TEXT_TYPES: &[&str] = &[
     "application/json",
     "text/x-rst",
 ];
-/// The PDF media type (extraction deferred to `pdftext`).
+/// The PDF media type (indexed via the pure [`crate::pdftext`] extractor).
 pub const PDF_TYPE: &str = "application/pdf";
 
 /// True for a plain-text-like content type.
@@ -113,7 +128,8 @@ pub fn public_resolved(raw: &str, base: &str) -> String {
     abs
 }
 
-/// Crawl configuration (single-node; the fleet/federation knobs are omitted).
+/// Crawl configuration. Defaults to single-node (empty [`shards`](CrawlConfig::shards)
+/// = this node owns every host); set `shard_id` + `shards` for fleet mode.
 #[derive(Clone, Debug)]
 pub struct CrawlConfig {
     /// Hosts to keep in scope (`None` = crawl broadly).
@@ -157,6 +173,21 @@ pub struct CrawlConfig {
     pub block_internal_ips: bool,
     /// Authorities exempt from the internal-address block.
     pub allow_hosts: Vec<String>,
+    /// Route fetches through a pooled, keep-alive [`Fetcher`](crate::fetcher::Fetcher)
+    /// (per worker) instead of a fresh connection per request. The SSRF gate still
+    /// runs on every request and redirect hop — even when a pooled socket is
+    /// reused. Default `false` (a fresh, `Connection: close` fetch per request).
+    pub keep_alive: bool,
+    /// Number of concurrent crawl workers sharing the frontier + index + a global
+    /// page budget. Default `1` (the single-worker sequential path, unchanged).
+    /// `>1` spawns that many worker tasks; leasing keeps each reachable allowed
+    /// page indexed exactly once regardless of fetch order.
+    pub workers: usize,
+    /// This node's id in the shard set (fleet mode). `None` = single-node.
+    pub shard_id: Option<String>,
+    /// All shard ids for HRW routing; empty = single-node (this node owns every
+    /// host). See [`crate::federation`].
+    pub shards: Vec<String>,
 }
 
 impl Default for CrawlConfig {
@@ -189,6 +220,10 @@ impl Default for CrawlConfig {
             lease_seconds: 120.0,
             block_internal_ips: true,
             allow_hosts: Vec::new(),
+            keep_alive: false,
+            workers: 1,
+            shard_id: None,
+            shards: Vec::new(),
         }
     }
 }
@@ -233,16 +268,23 @@ pub use net_impl::Crawler;
 
 #[cfg(feature = "net")]
 mod net_impl {
-    use super::{is_text_type, path_of, scheme_of, trap_ok, CrawlConfig, CrawlStats, PDF_TYPE};
+    use super::{
+        is_text_type, path_of, public_resolved, scheme_of, trap_ok, CrawlConfig, CrawlStats,
+        PDF_TYPE,
+    };
     use crate::canonical::{authority_of, canonicalize, host_of, in_scope, join};
-    use crate::fetcher::{fetch, FetchOpts};
+    use crate::fetcher::{fetch, FetchOpts, Fetcher};
     use crate::frontier::Frontier;
     use crate::htmlparse::{self, guess_lang, Extracted};
-    use crate::httpclient::decode_body;
+    use crate::httpclient::{decode_body, FetchResult};
     use crate::index::{content_hash, DocFields, Index};
+    use crate::pdftext;
     use crate::robots::{parse as parse_robots, Robots};
     use std::collections::HashMap;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use tokio::task::JoinSet;
 
     fn now_secs() -> f64 {
         SystemTime::now()
@@ -251,48 +293,78 @@ mod net_impl {
             .unwrap_or(0.0)
     }
 
+    /// The last path segment of `url` (`urlsplit(url).path.rsplit("/", 1)[-1]`),
+    /// used as a PDF's title fallback when it carries no `/Title`.
+    fn url_filename(url: &str) -> String {
+        let path = crawlcore::urlparse::urlsplit(url, "").path;
+        path.rsplit('/').next().unwrap_or("").to_string()
+    }
+
+    /// The shared crawl state — the frontier (work queue), the document index,
+    /// and the run statistics. In single-worker mode the [`Crawler`] owns one
+    /// directly; in multi-worker mode it is moved behind an `Arc<Mutex<Core>>` so N
+    /// workers share it, and moved back into the crawler when they join. Grouping
+    /// the three lets the per-URL result tail ([`Core::finish_fetch`]) run under a
+    /// single lock, so a multi-worker crawl's indexed result is the same set as a
+    /// single-worker crawl (each leased URL is processed atomically, exactly once).
+    #[derive(Default)]
+    pub(super) struct Core {
+        fr: Frontier,
+        ix: Index,
+        stats: CrawlStats,
+    }
+
     /// The crawl engine over a [`Frontier`] + an [`Index`], driving the
     /// SSRF-checked fetch.
     pub struct Crawler {
         /// The crawl configuration.
         pub cfg: CrawlConfig,
-        fr: Frontier,
-        ix: Index,
+        core: Core,
         robots: HashMap<String, Robots>,
-        stats: CrawlStats,
         pages_fetched: u64,
+        /// The per-worker pooled connector, present iff `cfg.keep_alive`. Fetches
+        /// route through it (reusing sockets) instead of the free `fetch`.
+        fetcher: Option<Fetcher>,
     }
 
     impl Crawler {
         /// A crawler with the given config over a fresh frontier + index.
         #[must_use]
         pub fn new(cfg: CrawlConfig) -> Self {
+            let fetcher = cfg.keep_alive.then(|| Fetcher::new(true));
             Crawler {
                 cfg,
-                fr: Frontier::new(),
-                ix: Index::new(),
+                core: Core::default(),
                 robots: HashMap::new(),
-                stats: CrawlStats::default(),
                 pages_fetched: 0,
+                fetcher,
             }
         }
 
         /// The document index (to read results after a crawl).
         #[must_use]
         pub fn index(&self) -> &Index {
-            &self.ix
+            &self.core.ix
+        }
+
+        /// The document index, mutably — so a driver can [`Index::finalize`] the
+        /// ranking signals and then [`Index::snapshot`] it after a crawl (what the
+        /// `websearch crawl` CLI does, mirroring the Python `index.finalize`).
+        #[must_use]
+        pub fn index_mut(&mut self) -> &mut Index {
+            &mut self.core.ix
         }
 
         /// The frontier (to inspect queue state).
         #[must_use]
         pub fn frontier(&self) -> &Frontier {
-            &self.fr
+            &self.core.fr
         }
 
         /// The run statistics.
         #[must_use]
         pub fn stats(&self) -> &CrawlStats {
-            &self.stats
+            &self.core.stats
         }
 
         /// Seed the frontier; returns how many URLs were newly queued.
@@ -302,7 +374,16 @@ mod net_impl {
                 let Some(u) = canonicalize(s, None) else {
                     continue;
                 };
-                if self.cfg.scheme_allowed(&u) && self.fr.add(&u, &authority_of(&u), 0) {
+                // Seeds are federation-gated too, so a shard only crawls hosts it
+                // owns (single-node default: `owns` is always true).
+                if self.cfg.scheme_allowed(&u)
+                    && crate::federation::owns(
+                        &host_of(&u),
+                        self.cfg.shard_id.as_deref(),
+                        &self.cfg.shards,
+                    )
+                    && self.core.fr.add(&u, &authority_of(&u), 0)
+                {
                     added += 1;
                 }
             }
@@ -311,21 +392,29 @@ mod net_impl {
 
         /// Run the crawl loop until the page budget is spent or the frontier
         /// drains. Returns the run statistics.
+        ///
+        /// With `cfg.workers > 1` this dispatches to the multi-worker path
+        /// ([`run_multi`](Self::run_multi)); otherwise it takes the single-worker
+        /// sequential loop below (unchanged: `workers == 1` is byte-for-byte the
+        /// original behaviour).
         pub async fn run(&mut self, max_pages: Option<u64>) -> CrawlStats {
+            if self.cfg.workers > 1 {
+                return self.run_multi(max_pages).await;
+            }
             let budget = max_pages.unwrap_or(self.cfg.total_budget);
-            self.fr.reclaim(now_secs());
+            self.core.fr.reclaim(now_secs());
             while self.pages_fetched < budget {
                 let now = now_secs();
-                self.fr.reclaim(now);
+                self.core.fr.reclaim(now);
                 let hb = self.host_budget();
-                let leased = self.fr.lease(now, self.cfg.lease_seconds, hb);
+                let leased = self.core.fr.lease(now, self.cfg.lease_seconds, hb);
                 match leased {
                     Some(l) => self.process(&l.url, l.depth).await,
                     None => {
-                        if !self.fr.has_queued() {
+                        if !self.core.fr.has_queued() {
                             break;
                         }
-                        match self.fr.next_ready_time(hb) {
+                        match self.core.fr.next_ready_time(hb) {
                             Some(t) if t > now => {
                                 let wait = (t - now).clamp(0.0, 5.0);
                                 tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
@@ -335,7 +424,48 @@ mod net_impl {
                     }
                 }
             }
-            self.stats.clone()
+            // Release any pooled keep-alive sockets (mirrors Python `run` -> close).
+            if let Some(f) = self.fetcher.as_mut() {
+                f.close();
+            }
+            self.core.stats.clone()
+        }
+
+        /// Multi-worker crawl: move the shared state behind an `Arc<Mutex<Core>>`,
+        /// spawn `cfg.workers` worker tasks that share it plus a global page
+        /// [`Budget`], join them, then move the state back so [`index`](Self::index)
+        /// et al. still work. Aggregated stats accumulate directly into the shared
+        /// `Core` (one counter set, bumped under the same lock as the tail), so the
+        /// returned totals equal the sum a single-worker run would produce over the
+        /// same reachable set.
+        async fn run_multi(&mut self, max_pages: Option<u64>) -> CrawlStats {
+            let total = max_pages.unwrap_or(self.cfg.total_budget) as i64;
+            let workers = self.cfg.workers.max(1);
+            // Take the seeded state out of `self` and share it.
+            let shared = Arc::new(Mutex::new(std::mem::take(&mut self.core)));
+            let budget = Arc::new(Budget::new(total));
+            let stop = Arc::new(AtomicBool::new(false));
+            {
+                lock_core(&shared).fr.reclaim(now_secs());
+            }
+
+            let mut set: JoinSet<()> = JoinSet::new();
+            for _ in 0..workers {
+                let shared = Arc::clone(&shared);
+                let budget = Arc::clone(&budget);
+                let stop = Arc::clone(&stop);
+                let cfg = self.cfg.clone();
+                set.spawn(async move {
+                    worker_loop(&shared, &budget, &stop, &cfg).await;
+                });
+            }
+            while set.join_next().await.is_some() {}
+
+            // All workers joined: move the shared state back into `self` (so
+            // `index`/`frontier`/`stats` keep working) by taking it out from under
+            // the lock — no `Arc::try_unwrap` gymnastics, and poison-safe.
+            self.core = std::mem::take(&mut *lock_core(&shared));
+            self.core.stats.clone()
         }
 
         fn host_budget(&self) -> Option<u64> {
@@ -351,31 +481,8 @@ mod net_impl {
             if self.robots.contains_key(authority) {
                 return;
             }
-            let robots_url = format!("{scheme}://{authority}/robots.txt");
-            let opts = FetchOpts {
-                user_agent: self.cfg.user_agent.clone(),
-                timeout: self.cfg.timeout,
-                max_bytes: 262_144,
-                max_redirects: 3,
-                block_internal: self.cfg.block_internal_ips,
-                allow_hosts: self.cfg.allow_hosts.clone(),
-                ..FetchOpts::default()
-            };
-            // robots fetch gate: scheme + scope only (NOT robots, which would
-            // recurse); the internal-IP denylist is enforced by the fetch itself.
-            let schemes = self.cfg.allowed_schemes.clone();
-            let scope = self.cfg.scope_hosts.clone();
-            let allow = move |u: &str| -> bool {
-                schemes.contains(&scheme_of(u)) && in_scope(u, scope.as_deref())
-            };
-            let res = fetch(&robots_url, &opts, Some(&allow)).await;
-            let text = if res.error.is_none() && res.status == 200 {
-                decode_body(&res.body, res.charset.as_deref())
-            } else {
-                String::new() // 4xx/5xx/error → empty → allow all
-            };
-            let rob = parse_robots(&text, &self.cfg.robots_agent);
-            self.fr.set_crawl_delay(authority, rob.crawl_delay());
+            let rob = fetch_robots(&self.cfg, &mut self.fetcher, authority, scheme).await;
+            self.core.fr.set_crawl_delay(authority, rob.crawl_delay());
             self.robots.insert(authority.to_string(), rob);
         }
 
@@ -384,10 +491,10 @@ mod net_impl {
             let scheme = scheme_of(url);
 
             // Per-host budget.
-            let hrow = self.fr.host_row(&host);
+            let hrow = self.core.fr.host_row(&host);
             if self.cfg.per_host_budget > 0 && hrow.fetched >= self.cfg.per_host_budget {
-                self.fr.complete(url, "skipped", Some("host-budget"));
-                self.stats.skipped += 1;
+                self.core.fr.complete(url, "skipped", Some("host-budget"));
+                self.core.stats.skipped += 1;
                 return;
             }
 
@@ -398,41 +505,49 @@ mod net_impl {
                 None => (true, None),
             };
             if self.cfg.respect_robots && !allowed {
-                self.fr.complete(url, "skipped", Some("robots"));
-                self.stats.robots_blocked += 1;
+                self.core.fr.complete(url, "skipped", Some("robots"));
+                self.core.stats.robots_blocked += 1;
                 return;
             }
             let delay = cdelay.map_or(self.cfg.base_delay, |cd| self.cfg.base_delay.max(cd));
-            self.fr.reserve_host(&host, now_secs() + delay);
+            self.core.fr.reserve_host(&host, now_secs() + delay);
 
             // Conditional GET from stored validators.
-            let (etag, last_mod) = self.ix.get_validators(url);
-            let mut extra: Vec<(String, String)> = Vec::new();
-            if !etag.is_empty() {
-                extra.push(("If-None-Match".to_string(), etag));
-            }
-            if !last_mod.is_empty() {
-                extra.push(("If-Modified-Since".to_string(), last_mod));
-            }
+            let (etag, last_mod) = self.core.ix.get_validators(url);
+            let extra = conditional_headers(&etag, &last_mod);
 
             self.pages_fetched += 1;
-            let opts = FetchOpts {
-                user_agent: self.cfg.user_agent.clone(),
-                timeout: self.cfg.timeout,
-                max_bytes: self.cfg.max_bytes,
-                max_redirects: self.cfg.max_redirects,
-                block_internal: self.cfg.block_internal_ips,
-                allow_hosts: self.cfg.allow_hosts.clone(),
-                extra_headers: extra,
-                ..FetchOpts::default()
-            };
+            let opts = fetch_opts(&self.cfg, extra);
             let schemes = self.cfg.allowed_schemes.clone();
             let scope = self.cfg.scope_hosts.clone();
             let allow = |u: &str| -> bool {
                 schemes.contains(&scheme_of(u)) && in_scope(u, scope.as_deref())
             };
-            let res = fetch(url, &opts, Some(&allow)).await;
-            self.fr.note_fetch(&host, now_secs() + delay);
+            let res = route_fetch(&mut self.fetcher, url, &opts, Some(&allow)).await;
+            // The post-fetch result tail is shared verbatim with the multi-worker
+            // path (`process_shared`), so both index the same set for a given page.
+            self.core
+                .finish_fetch(&self.cfg, url, depth, &host, delay, res);
+        }
+    }
+
+    impl Core {
+        /// The shared post-fetch tail: record the fetch, then route the result
+        /// (error / 304 / non-200 / content-type / extract → canonical → dedup →
+        /// index → link expansion) and mark the frontier entry complete. Pure of
+        /// network I/O and `await` — the multi-worker path runs it under one lock,
+        /// so a leased URL's whole result is applied atomically (each reachable
+        /// allowed page is indexed exactly once, regardless of fetch order).
+        fn finish_fetch(
+            &mut self,
+            cfg: &CrawlConfig,
+            url: &str,
+            depth: i64,
+            host: &str,
+            delay: f64,
+            res: FetchResult,
+        ) {
+            self.fr.note_fetch(host, now_secs() + delay);
             self.stats.fetched += 1;
 
             if let Some(err) = res.error.clone() {
@@ -455,7 +570,7 @@ mod net_impl {
                 return;
             }
             let ctype = res.content_type.clone();
-            if !ctype.is_empty() && !self.cfg.content_types.contains(&ctype) {
+            if !ctype.is_empty() && !cfg.content_types.contains(&ctype) {
                 self.fr
                     .complete(url, "done", Some(&format!("ctype-{ctype}")));
                 return;
@@ -468,13 +583,32 @@ mod net_impl {
             let new_etag = res.headers.get("etag").unwrap_or("").to_string();
             let new_last_mod = res.headers.get("last-modified").unwrap_or("").to_string();
 
-            // PDF extraction is deferred (pdftext); such a page is recorded done.
-            if ctype == PDF_TYPE {
-                self.fr.complete(url, "done", Some("pdf-deferred"));
-                return;
-            }
-            let body_text = decode_body(&res.body, res.charset.as_deref());
-            let ex = if is_text_type(&ctype) {
+            // PDF: pure, dependency-free text extraction (pdftext). Mirrors the
+            // Python crawler — recover text; skip (don't fake) a scanned/encrypted
+            // PDF that yields none; otherwise index it as a normal document, with a
+            // title from the PDF `/Title`, else the URL filename, else the URL.
+            let ex = if ctype == PDF_TYPE {
+                let text = pdftext::extract_text(&res.body, pdftext::DEFAULT_MAX_CHARS);
+                if text.is_empty() {
+                    self.fr.complete(url, "done", Some("pdf-no-text"));
+                    return;
+                }
+                let mut title = pdftext::extract_title(&res.body);
+                if title.is_empty() {
+                    title = url_filename(&final_url);
+                }
+                if title.is_empty() {
+                    title = final_url.clone();
+                }
+                let mut e = Extracted {
+                    text,
+                    title,
+                    ..Extracted::default()
+                };
+                e.lang = Some(guess_lang(&e.text, None));
+                e
+            } else if is_text_type(&ctype) {
+                let body_text = decode_body(&res.body, res.charset.as_deref());
                 let mut e = Extracted {
                     text: body_text.trim().to_string(),
                     ..Extracted::default()
@@ -482,6 +616,7 @@ mod net_impl {
                 e.lang = Some(guess_lang(&e.text, None));
                 e
             } else {
+                let body_text = decode_body(&res.body, res.charset.as_deref());
                 htmlparse::extract(&body_text)
             };
 
@@ -500,19 +635,24 @@ mod net_impl {
             if let Some(cn) = canon {
                 if cn != final_url
                     && cn != url
-                    && schemes.contains(&scheme_of(&cn))
-                    && in_scope(&cn, scope.as_deref())
+                    && cfg.allowed_schemes.contains(&scheme_of(&cn))
+                    && in_scope(&cn, cfg.scope_hosts.as_deref())
                 {
                     let follow = !ex.nofollow();
-                    self.enqueue_links(&final_url, &base, &ex, depth, follow);
-                    self.fr.add(&cn, &authority_of(&cn), depth);
+                    self.enqueue_links(cfg, &final_url, &base, &ex, depth, follow);
+                    // Only enqueue the canonical target if this shard owns it (the
+                    // alias is still marked done either way), matching Python.
+                    if crate::federation::owns(&host_of(&cn), cfg.shard_id.as_deref(), &cfg.shards)
+                    {
+                        self.fr.add(&cn, &authority_of(&cn), depth);
+                    }
                     self.fr.complete(url, "done", Some("canonical"));
                     return;
                 }
             }
 
             let follow = !ex.nofollow();
-            self.enqueue_links(&final_url, &base, &ex, depth, follow);
+            self.enqueue_links(cfg, &final_url, &base, &ex, depth, follow);
 
             if ex.noindex() {
                 self.fr.complete(url, "done", Some("noindex"));
@@ -531,7 +671,7 @@ mod net_impl {
 
             let sim = crawlcore::dedup::signed64(crate::dedup::simhash(&ex.text));
             let host_field = host_of(&final_url);
-            self.ix.upsert_document(
+            let doc_id = self.ix.upsert_document(
                 &final_url,
                 DocFields {
                     title: &ex.title,
@@ -548,12 +688,85 @@ mod net_impl {
                     simhash: sim,
                 },
             );
+            // Store the harvested media verticals (metadata only — NO network I/O
+            // and NO SSRF surface: URLs are resolved against the page base with the
+            // pure canonicalizer and any internal-IP-literal host is dropped, so the
+            // viewer's browser is never handed an internal-address thumbnail/embed).
+            self.index_images(doc_id, &final_url, &base, &ex);
+            self.index_videos(doc_id, &final_url, &base, &ex);
             self.stats.indexed += 1;
             self.fr.complete(url, "done", None);
         }
 
+        /// Resolve + store `<img>` metadata for `doc_id` (mirrors the Python
+        /// `_index_images`). Pure string work: `public_resolved` canonicalizes
+        /// against `base` and drops a non-http(s) / internal-IP-literal src.
+        fn index_images(&mut self, doc_id: i64, page_url: &str, base: &str, ex: &Extracted) {
+            if ex.images.is_empty() {
+                return;
+            }
+            let mut resolved: Vec<crate::htmlparse::Image> = Vec::new();
+            for im in &ex.images {
+                let abs_src = public_resolved(&im.src, base);
+                if abs_src.is_empty() {
+                    continue;
+                }
+                resolved.push(crate::htmlparse::Image {
+                    src: abs_src,
+                    alt: im.alt.clone(),
+                    title: im.title.clone(),
+                    context: im.context.clone(),
+                });
+            }
+            if !resolved.is_empty() {
+                self.ix
+                    .replace_images(doc_id, page_url, &host_of(page_url), &resolved);
+            }
+        }
+
+        /// Resolve + store harvested video metadata for `doc_id` (mirrors the
+        /// Python `_index_videos`): each candidate URL is `public_resolved`, a
+        /// video with no remaining linkable URL is skipped, and the same video
+        /// surfaced by several signals is collapsed by `(video, embed, watch)`.
+        fn index_videos(&mut self, doc_id: i64, page_url: &str, base: &str, ex: &Extracted) {
+            if ex.videos.is_empty() {
+                return;
+            }
+            let mut resolved: Vec<crate::structured::Video> = Vec::new();
+            let mut seen: std::collections::HashSet<(String, String, String)> =
+                std::collections::HashSet::new();
+            for v in &ex.videos {
+                let video_url = public_resolved(&v.video_url, base);
+                let embed_url = public_resolved(&v.embed_url, base);
+                let watch_url = public_resolved(&v.watch_url, base);
+                let thumbnail = public_resolved(&v.thumbnail, base);
+                if video_url.is_empty() && embed_url.is_empty() && watch_url.is_empty() {
+                    continue;
+                }
+                let key = (video_url.clone(), embed_url.clone(), watch_url.clone());
+                if !seen.insert(key) {
+                    continue;
+                }
+                resolved.push(crate::structured::Video {
+                    video_url,
+                    embed_url,
+                    watch_url,
+                    title: v.title.clone(),
+                    thumbnail,
+                    source: v.source.clone(),
+                    duration: v.duration,
+                    context: v.context.clone(),
+                });
+            }
+            if !resolved.is_empty() {
+                self.ix
+                    .replace_videos(doc_id, page_url, &host_of(page_url), &resolved);
+            }
+        }
+
         fn enqueue_links(
             &mut self,
+            cfg: &CrawlConfig,
             src_url: &str,
             base: &str,
             ex: &Extracted,
@@ -566,13 +779,22 @@ mod net_impl {
                 let Some(tgt) = canonicalize(href, Some(base)) else {
                     continue;
                 };
-                if !self.cfg.scheme_allowed(&tgt) || seen.contains_key(&tgt) {
+                if !cfg.scheme_allowed(&tgt) || seen.contains_key(&tgt) {
                     continue;
                 }
                 seen.insert(tgt.clone(), ());
-                let internal = in_scope(&tgt, self.cfg.scope_hosts.as_deref());
+                let internal = in_scope(&tgt, cfg.scope_hosts.as_deref());
                 edges.push((tgt.clone(), internal));
-                if follow && internal && depth < self.cfg.max_depth && trap_ok(&tgt, &self.cfg) {
+                // The edge is always recorded; only the *follow/enqueue* is
+                // federation-gated. In fleet mode a shard enqueues only the hosts
+                // it owns under HRW, so each host is crawled by exactly one shard
+                // (single-node default: empty `shards` -> owns everything).
+                if follow
+                    && internal
+                    && depth < cfg.max_depth
+                    && trap_ok(&tgt, cfg)
+                    && crate::federation::owns(&host_of(&tgt), cfg.shard_id.as_deref(), &cfg.shards)
+                {
                     self.fr.add(&tgt, &authority_of(&tgt), depth + 1);
                 }
             }
@@ -580,6 +802,264 @@ mod net_impl {
                 self.ix.add_links(src_url, &edges);
             }
         }
+    }
+
+    // ---- shared fetch helpers (single- and multi-worker) ------------------
+
+    /// The conditional-GET headers (`If-None-Match` / `If-Modified-Since`) for the
+    /// stored validators; empty validators are omitted.
+    fn conditional_headers(etag: &str, last_mod: &str) -> Vec<(String, String)> {
+        let mut extra: Vec<(String, String)> = Vec::new();
+        if !etag.is_empty() {
+            extra.push(("If-None-Match".to_string(), etag.to_string()));
+        }
+        if !last_mod.is_empty() {
+            extra.push(("If-Modified-Since".to_string(), last_mod.to_string()));
+        }
+        extra
+    }
+
+    /// The [`FetchOpts`] for a page fetch, from the crawl config + conditional
+    /// headers (shared by the single- and multi-worker paths).
+    fn fetch_opts(cfg: &CrawlConfig, extra_headers: Vec<(String, String)>) -> FetchOpts {
+        FetchOpts {
+            user_agent: cfg.user_agent.clone(),
+            timeout: cfg.timeout,
+            max_bytes: cfg.max_bytes,
+            max_redirects: cfg.max_redirects,
+            block_internal: cfg.block_internal_ips,
+            allow_hosts: cfg.allow_hosts.clone(),
+            extra_headers,
+            ..FetchOpts::default()
+        }
+    }
+
+    /// Route a fetch through the per-worker pooled [`Fetcher`] when present
+    /// (keep-alive), else the free [`fetch`] — same SSRF-gated semantics either
+    /// way. Mirrors the Python `Crawler._fetch`.
+    async fn route_fetch(
+        fetcher: &mut Option<Fetcher>,
+        url: &str,
+        opts: &FetchOpts,
+        allow: Option<&(dyn Fn(&str) -> bool + Sync)>,
+    ) -> FetchResult {
+        match fetcher {
+            Some(f) => f.fetch(url, opts, allow).await,
+            None => fetch(url, opts, allow).await,
+        }
+    }
+
+    /// Fetch + parse `authority`'s robots.txt (or empty → allow-all on any
+    /// non-200 / error), routing through the pooled connector when present. The
+    /// fetch gate is scheme + scope only (NOT robots, which would recurse); the
+    /// internal-IP denylist is enforced by the fetch itself. Mirrors the Python
+    /// `Crawler._robots_for` fetch half.
+    async fn fetch_robots(
+        cfg: &CrawlConfig,
+        fetcher: &mut Option<Fetcher>,
+        authority: &str,
+        scheme: &str,
+    ) -> Robots {
+        let robots_url = format!("{scheme}://{authority}/robots.txt");
+        let opts = FetchOpts {
+            user_agent: cfg.user_agent.clone(),
+            timeout: cfg.timeout,
+            max_bytes: 262_144,
+            max_redirects: 3,
+            block_internal: cfg.block_internal_ips,
+            allow_hosts: cfg.allow_hosts.clone(),
+            ..FetchOpts::default()
+        };
+        let schemes = cfg.allowed_schemes.clone();
+        let scope = cfg.scope_hosts.clone();
+        let allow = move |u: &str| -> bool {
+            schemes.contains(&scheme_of(u)) && in_scope(u, scope.as_deref())
+        };
+        let res = route_fetch(fetcher, &robots_url, &opts, Some(&allow)).await;
+        let text = if res.error.is_none() && res.status == 200 {
+            decode_body(&res.body, res.charset.as_deref())
+        } else {
+            String::new() // 4xx/5xx/error → empty → allow all
+        };
+        parse_robots(&text, &cfg.robots_agent)
+    }
+
+    // ---- multi-worker driver ----------------------------------------------
+
+    /// A thread-safe global page budget shared by all workers of a crawl (the
+    /// analogue of the Python `_Budget`): [`take`](Self::take) atomically claims a
+    /// page slot iff one remains, and [`give_back`](Self::give_back) returns an
+    /// unused slot. The sum of successful `take`s over a run never exceeds the
+    /// initial total, so the workers collectively fetch at most `total` pages.
+    struct Budget(AtomicI64);
+
+    impl Budget {
+        fn new(total: i64) -> Self {
+            Budget(AtomicI64::new(total))
+        }
+
+        /// Claim one page slot; `true` iff one was available.
+        fn take(&self) -> bool {
+            // Speculatively decrement; if we went past zero, undo and report empty.
+            if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
+                true
+            } else {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                false
+            }
+        }
+
+        /// Return a slot claimed by [`take`](Self::take) but not spent (no work was
+        /// leasable), so it can be reused by this or another worker.
+        fn give_back(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Lock the shared [`Core`], recovering the guard even if a worker panicked
+    /// while holding it (a poisoned lock still yields the state — one bad URL must
+    /// not wedge the whole crawl).
+    fn lock_core(m: &Mutex<Core>) -> std::sync::MutexGuard<'_, Core> {
+        m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// One worker of a multi-worker crawl (the analogue of the Python
+    /// `Crawler.run_worker`). Coordinates purely through the shared frontier
+    /// (atomic leases) and the shared page `budget`; a worker stops only when the
+    /// budget is spent, `stop` is set, or there is provably no more work — no
+    /// leasable queued URL *and* no peer still holds a lease that could enqueue
+    /// more (`fr.has_leased`). Has its own robots cache + pooled [`Fetcher`], so a
+    /// pooled socket is never shared across workers.
+    async fn worker_loop(
+        shared: &Mutex<Core>,
+        budget: &Budget,
+        stop: &AtomicBool,
+        cfg: &CrawlConfig,
+    ) {
+        let mut robots: HashMap<String, Robots> = HashMap::new();
+        let mut fetcher: Option<Fetcher> = cfg.keep_alive.then(|| Fetcher::new(true));
+        let hb = if cfg.per_host_budget == 0 {
+            None
+        } else {
+            Some(cfg.per_host_budget)
+        };
+        {
+            lock_core(shared).fr.reclaim(now_secs());
+        }
+        loop {
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
+            if !budget.take() {
+                break;
+            }
+            let now = now_secs();
+            // Reclaim + lease under ONE lock so the lease is atomic (no two workers
+            // ever process the same URL).
+            let leased = {
+                let mut c = lock_core(shared);
+                c.fr.reclaim(now);
+                c.fr.lease(now, cfg.lease_seconds, hb)
+            };
+            match leased {
+                Some(l) => {
+                    process_shared(shared, cfg, &mut robots, &mut fetcher, &l.url, l.depth).await;
+                }
+                None => {
+                    budget.give_back(); // slot unused: nothing was leasable
+                    let (has_queued, next_ready, has_leased) = {
+                        let c = lock_core(shared);
+                        (
+                            c.fr.has_queued(),
+                            c.fr.next_ready_time(hb),
+                            c.fr.has_leased(),
+                        )
+                    };
+                    // Queued URLs remain but their host is on a politeness cooldown:
+                    // wait briefly and retry.
+                    if has_queued {
+                        if let Some(t) = next_ready {
+                            if t > now {
+                                let wait = (t - now).clamp(0.0, 0.25);
+                                tokio::time::sleep(Duration::from_secs_f64(wait)).await;
+                                continue;
+                            }
+                        }
+                    }
+                    // A peer still holds a lease and may enqueue more — stay alive.
+                    if has_leased {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        continue;
+                    }
+                    break; // provably drained
+                }
+            }
+        }
+        if let Some(f) = fetcher.as_mut() {
+            f.close();
+        }
+    }
+
+    /// A worker's per-URL processing: the same lease→robots→conditional-GET→fetch
+    /// pipeline as the single-worker [`Crawler::process`], but each frontier/index
+    /// access takes the shared lock and the network fetch runs lock-free. The
+    /// post-fetch result tail runs under one lock via the shared
+    /// [`Core::finish_fetch`], so it applies atomically.
+    async fn process_shared(
+        shared: &Mutex<Core>,
+        cfg: &CrawlConfig,
+        robots: &mut HashMap<String, Robots>,
+        fetcher: &mut Option<Fetcher>,
+        url: &str,
+        depth: i64,
+    ) {
+        let host = authority_of(url);
+        let scheme = scheme_of(url);
+
+        // Per-host budget.
+        let hrow = lock_core(shared).fr.host_row(&host);
+        if cfg.per_host_budget > 0 && hrow.fetched >= cfg.per_host_budget {
+            let mut c = lock_core(shared);
+            c.fr.complete(url, "skipped", Some("host-budget"));
+            c.stats.skipped += 1;
+            return;
+        }
+
+        // Robots (per-worker cache, like the Python worker's own `self.robots`).
+        if !robots.contains_key(&host) {
+            let rob = fetch_robots(cfg, fetcher, &host, &scheme).await;
+            lock_core(shared)
+                .fr
+                .set_crawl_delay(&host, rob.crawl_delay());
+            robots.insert(host.clone(), rob);
+        }
+        let (allowed, cdelay) = match robots.get(&host) {
+            Some(r) => (r.can_fetch(&path_of(url)), r.crawl_delay()),
+            None => (true, None),
+        };
+        if cfg.respect_robots && !allowed {
+            let mut c = lock_core(shared);
+            c.fr.complete(url, "skipped", Some("robots"));
+            c.stats.robots_blocked += 1;
+            return;
+        }
+        let delay = cdelay.map_or(cfg.base_delay, |cd| cfg.base_delay.max(cd));
+        lock_core(shared).fr.reserve_host(&host, now_secs() + delay);
+
+        // Conditional GET from stored validators.
+        let (etag, last_mod) = lock_core(shared).ix.get_validators(url);
+        let extra = conditional_headers(&etag, &last_mod);
+
+        let opts = fetch_opts(cfg, extra);
+        let schemes = cfg.allowed_schemes.clone();
+        let scope = cfg.scope_hosts.clone();
+        let allow = move |u: &str| -> bool {
+            schemes.contains(&scheme_of(u)) && in_scope(u, scope.as_deref())
+        };
+        // The network fetch holds NO lock — this is where workers overlap.
+        let res = route_fetch(fetcher, url, &opts, Some(&allow)).await;
+        // Apply the whole result atomically under one lock (shared tail).
+        lock_core(shared).finish_fetch(cfg, url, depth, &host, delay, res);
     }
 }
 

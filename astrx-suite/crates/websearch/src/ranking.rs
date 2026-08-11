@@ -38,7 +38,9 @@ const OPTIC_PENALTY: f64 = 1.50;
 const FRESH_HALFLIFE_DAYS: f64 = 30.0;
 
 const CANDIDATE_CAP: usize = 400;
-const SIMHASH_HAMMING: u32 = 3;
+/// Cross-host near-duplicate Hamming threshold. Shared with the federation
+/// aggregator so a fleet collapses mirrors exactly as a single node does.
+pub(crate) const SIMHASH_HAMMING: u32 = 3;
 
 // BM25 tuning for the hand-rolled relevance base.
 const BM25_K1: f64 = 1.2;

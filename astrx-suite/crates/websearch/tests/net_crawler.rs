@@ -48,6 +48,9 @@ fn body_for(path: &str) -> (&'static str, &'static str, &'static str) {
             "200 OK",
             "text/html",
             "<html><head><title>Page A</title></head><body><p>alpha content</p>\
+             <img src=\"https://cdn.example.com/kitten.png\" alt=\"fluffy kitten photo\">\
+             <p>a great documentary</p>\
+             <iframe src=\"https://www.youtube.com/embed/abcdef123456\"></iframe>\
              <a href=\"/b\">B again</a></body></html>",
         ),
         "/b" => (
@@ -120,6 +123,37 @@ async fn crawl_drains_indexes_and_obeys_robots() {
     assert!(cr.index().stats().links >= 3);
     // Titles came through htmlparse.
     assert_eq!(cr.index().get_doc(&url("/a")).unwrap().title, "Page A");
+}
+
+#[tokio::test]
+async fn crawl_populates_media_verticals() {
+    // Page /a carries an external <img> and a known-player <iframe>; the crawl
+    // should harvest, resolve, and index them so the verticals are searchable.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = serve_site(listener);
+
+    let mut cr = Crawler::new(crawl_config(port, true));
+    let seed = format!("http://127.0.0.1:{port}/");
+    cr.add_seeds(&[&seed]);
+    cr.run(Some(100)).await;
+    server.abort();
+
+    // The <img> (external src, non-internal host) is stored + searchable by alt.
+    let imgs = cr.index().image_search("kitten", 30);
+    assert_eq!(imgs.len(), 1, "image vertical not populated");
+    assert_eq!(imgs[0].src, "https://cdn.example.com/kitten.png");
+    assert_eq!(imgs[0].alt, "fluffy kitten photo");
+
+    // The known-player <iframe> is stored as a youtube video with a watch URL,
+    // searchable by its nearby context text.
+    let vids = cr.index().video_search("documentary", 30);
+    assert_eq!(vids.len(), 1, "video vertical not populated");
+    assert_eq!(vids[0].source, "youtube");
+    assert_eq!(
+        vids[0].watch_url,
+        "https://www.youtube.com/watch?v=abcdef123456"
+    );
 }
 
 #[tokio::test]

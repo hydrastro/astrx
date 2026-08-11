@@ -291,6 +291,7 @@ pub fn truthy(v: &Value) -> bool {
         Value::Null => false,
         Value::Bool(b) => *b,
         Value::Num(n) => *n != 0.0,
+        Value::Int(i) => *i != 0,
         Value::Str(s) => !s.is_empty(),
         Value::Array(a) => !a.is_empty(),
         Value::Object(o) => !o.is_empty(),

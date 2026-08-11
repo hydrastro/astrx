@@ -684,6 +684,7 @@ impl Parser {
         let duration = match node.get("duration") {
             Some(Value::Bool(_)) => None,
             Some(Value::Num(n)) => Some(*n as i64),
+            Some(Value::Int(i)) => Some(*i),
             Some(Value::Str(s)) => parse_duration(s),
             _ => None,
         };

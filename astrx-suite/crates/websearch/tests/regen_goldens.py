@@ -459,9 +459,163 @@ def gen_structured() -> None:
         print("    (%s, %s)," % (rs(text), opt(_extract_state_json(text))))
 
 
+def gen_suggest() -> None:
+    """Query typeahead — emits the Rust literals embedded in
+    `tests/xcheck_suggest.rs` (diff the two to prove parity). Drives the real
+    Python `suggest.levenshtein` / `suggest.suggest` over a SQLite/FTS5 corpus and
+    the exact `/suggest` `json.dumps([q, terms])` body handling."""
+    import json
+    from urllib.parse import quote_plus
+    from websearch import index, suggest
+
+    def rs(s):
+        out = ['"']
+        for ch in s:
+            if ch == '\\':
+                out.append('\\\\')
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == '\n':
+                out.append('\\n')
+            elif ch == '\t':
+                out.append('\\t')
+            elif ch == '\r':
+                out.append('\\r')
+            elif ord(ch) < 0x20:
+                out.append('\\u{%x}' % ord(ch))
+            else:
+                out.append(ch)
+        out.append('"')
+        return ''.join(out)
+
+    def rslist(xs):
+        return "&[%s]" % ", ".join(rs(x) for x in xs)
+
+    print("// ==== suggest::levenshtein (a, b, max_dist, dist) ====")
+    lev_cases = [
+        ("", "", 1), ("", "a", 1), ("a", "", 1), ("abc", "abc", 2),
+        ("kitten", "sitting", 3), ("kitten", "sitting", 2),
+        ("flaw", "lawn", 2), ("flaw", "lawn", 1),
+        ("rust", "rusty", 1), ("rust", "runs", 1), ("rust", "runs", 2),
+        ("java", "jaba", 1), ("javascript", "javascrpit", 2),
+        ("abcdef", "abc", 2), ("abc", "abcdef", 2),
+        ("book", "back", 2), ("book", "back", 1),
+        ("café", "cafe", 1), ("cafe", "café", 1),
+        ("naïve", "naive", 1), ("naïve", "naive", 2),
+        ("café", "café", 1),
+        ("résumé", "resume", 2), ("résumé", "resume", 1),
+        ("Straße", "Strasse", 2),
+        ("a", "b", 1), ("ab", "ba", 1), ("ab", "ba", 2),
+    ]
+    for a, b, m in lev_cases:
+        print("    (%s, %s, %d, %d)," % (rs(a), rs(b), m, suggest.levenshtein(a, b, m)))
+
+    # ASCII / diacritic-free corpus (must match DOCS in xcheck_suggest.rs).
+    DOCS = [
+        ("http://h/1", "Rust programming language", "the rust programming guide",
+         "rust is a programming language and rust powers programs"),
+        ("http://h/2", "Programming in Rust", "learn programming",
+         "programming programs and programmers write programs"),
+        ("http://h/3", "Programmer notes", "a programmer writes code",
+         "programmable systems and programmer tips"),
+        ("http://h/4", "Program manager", "program management",
+         "the program runs a program every day"),
+        ("http://h/5", "Programs galore", "many programs",
+         "programs programs programs everywhere"),
+        ("http://h/6", "Programmable chips", "programmable hardware",
+         "programmable and programmatic devices"),
+        ("http://h/7", "Web crawler design", "building a web crawler",
+         "the web crawler fetches web pages"),
+        ("http://h/8", "Java and JavaScript", "java jvm notes",
+         "javascript runs java bytecode sometimes"),
+        ("http://h/9", "Hello world", "the hello message",
+         "hello there hello again"),
+        ("http://h/10", "Python testing", "testing python code",
+         "testing tester tested tests testable testing"),
+        ("http://h/11", "Test harness", "a test suite",
+         "test tests tester tested testable testing testy"),
+        ("http://h/12", "Database systems", "database indexing",
+         "database queries and database tuning"),
+    ]
+    conn = index.connect(":memory:")
+    for u, t, d, b in DOCS:
+        index.upsert_document(conn, u, t, d, b, host="h", fetched_at=100.0,
+                              http_status=200)
+
+    print("// ==== suggest::suggest, popular=[] (query, &[expected]) ====")
+    for q in ["prog", "web cra", "jaba", "javascrpit", "program", "helo",
+              "test", "databse", "  ", "rust", "xyzzy", "prog lang"]:
+        print("    (%s, %s)," % (rs(q), rslist(suggest.suggest(conn, q, popular=None))))
+
+    print("// ==== suggest::suggest, with popular (query, &[popular], &[expected]) ====")
+    for q, pop in [("rust pro", ["Rust Programming", "Rust Project"]),
+                   ("prog", ["Programming Guide"])]:
+        print("    (%s, %s, %s)," % (rs(q), rslist(pop),
+                                     rslist(suggest.suggest(conn, q, popular=pop))))
+
+    print("// ==== suggest::suggest, limit boundary ====")
+    print("    program limit=3 -> %s" % rslist(suggest.suggest(conn, "program", limit=3)))
+    print("    test limit=2 -> %s" % rslist(suggest.suggest(conn, "test", limit=2)))
+
+    print("// ==== /suggest JSON body (target, body) — json.dumps([q, terms]) ====")
+    SUGGEST_MAX_QUERY = 128
+    for rawq in ["prog", "web cra", "", '  a"b\\c  ', "café", "naïve",
+                 "<b>&amp;", "xyzzy"]:
+        q = rawq.strip()[:SUGGEST_MAX_QUERY]
+        terms = suggest.suggest(conn, q, popular=None) if q else []
+        body = json.dumps([q, terms], ensure_ascii=False)
+        target = "/suggest?q=" + quote_plus(rawq)
+        # Bodies never contain the `"#` sequence, so a Rust raw string is exact.
+        print('    (%s, r#"%s"#),' % (rs(target), body))
+
+
+def gen_federation() -> None:
+    """Federation pure sharding core — emits the goldens embedded in
+    `tests/xcheck_federation.rs` (diff to prove byte-identity). Drives the real
+    Python `federation.norm_host` / `shard_for` / `owns`, so the digest
+    byte-construction (`sha256(shard_id \\x00 host)`) and greatest-digest
+    tie-break are cross-checked exactly."""
+    from websearch import federation as f
+
+    print("== federation: norm_host (input, expected) ==")
+    for h in ["Example.COM", "example.com.", "EXAMPLE.com:8080", "host", "",
+              "  Foo.Bar.  ", "[2001:db8::1]", "[2001:db8::1]:443", "[::1]",
+              "a:b:c", "localhost:80", "trailing...", "192.168.0.1:9000",
+              "UPPER.CASE.EXAMPLE.ORG."]:
+        print("norm_host:%r\t%r" % (h, f.norm_host(h)))
+
+    hosts = ["example.com", "example.org", "a.example.com", "news.bbc.co.uk",
+             "wikipedia.org", "rust-lang.org", "python.org", "localhost",
+             "sub.domain.test", "EXAMPLE.COM:443"]
+    shard_sets = [[], ["s0"], ["s0", "s1", "s2"], ["s0", "s1", "s2", "s3"],
+                  ["alpha", "beta", "gamma"], ["node-1", "node-2"]]
+    print("== federation: shard_for (host | shards | owner) ==")
+    for shards in shard_sets:
+        for h in hosts:
+            print("%s | %s | %s" % (h, ",".join(shards), f.shard_for(h, shards)))
+
+    print("== federation: owns (host | my_id | shards | result) ==")
+    owns_cases = [
+        ("example.com", None, []),
+        ("example.com", None, ["s0", "s1", "s2"]),
+        ("example.com", "s0", []),
+        ("example.com", "s0", ["s0", "s1", "s2"]),
+        ("example.com", "s1", ["s0", "s1", "s2"]),
+        ("example.com", "s2", ["s0", "s1", "s2"]),
+        ("example.org", "s0", ["s0", "s1", "s2"]),
+        ("example.org", "s1", ["s0", "s1", "s2"]),
+        ("example.org", "s2", ["s0", "s1", "s2"]),
+        ("wikipedia.org", "s0", ["s0", "s1", "s2", "s3"]),
+        ("wikipedia.org", "s3", ["s0", "s1", "s2", "s3"]),
+        ("example.com", "nonmember", ["s0", "s1", "s2"]),
+    ]
+    for h, my, shards in owns_cases:
+        print("%s | %s | %s | %s" % (h, my, ",".join(shards), f.owns(h, my, shards)))
+
+
 SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
             gen_htmlparse, gen_frontier, gen_index, gen_ranking, gen_pagerank,
-            gen_structured]
+            gen_structured, gen_suggest, gen_federation]
 
 if __name__ == "__main__":
     for section in SECTIONS:

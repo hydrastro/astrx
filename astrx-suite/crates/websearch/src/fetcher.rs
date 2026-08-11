@@ -305,3 +305,254 @@ pub async fn fetch(
         return result_from(url, &current, resp, redirects);
     }
 }
+
+/// A keep-alive-capable fetcher with the **same** SSRF guarantees as [`fetch`].
+///
+/// Maintains a per-instance pool of idle keep-alive connections keyed by
+/// `(scheme, host, port)`. A pooled connection is reused **only after its pinned
+/// address re-clears the [`vet_addrs`] gate** — the crown SSRF invariant, re-run
+/// on every hop even for a reused socket — and every fresh connect (and every
+/// redirect hop) still goes through [`resolve_checked`] + a pinned connect. So a
+/// pooled connection can never bypass the `&SafeIp` gate: it is dialed to a vetted
+/// address and, before each reuse, that pinned address must still clear the
+/// internal-IP check under the *current* policy.
+///
+/// Not shared across tasks — give each crawl worker its own `Fetcher` (mirrors the
+/// Python `httpclient.Fetcher`). HTTPS is refused (no stdlib TLS), like [`fetch`].
+pub struct Fetcher {
+    keep_alive: bool,
+    pool: HashMap<(String, String, u16), (TcpStream, IpAddr)>,
+    opened: u64,
+    reused: u64,
+}
+
+impl Fetcher {
+    /// A fetcher whose connections are pooled + reused when `keep_alive` is set.
+    #[must_use]
+    pub fn new(keep_alive: bool) -> Self {
+        Fetcher {
+            keep_alive,
+            pool: HashMap::new(),
+            opened: 0,
+            reused: 0,
+        }
+    }
+
+    /// New sockets opened over this fetcher's life (observability / tests).
+    #[must_use]
+    pub fn opened(&self) -> u64 {
+        self.opened
+    }
+
+    /// Pooled connections reused over this fetcher's life (observability / tests).
+    #[must_use]
+    pub fn reused(&self) -> u64 {
+        self.reused
+    }
+
+    /// Drop every pooled connection (closing the sockets). Mirrors Python `close`.
+    pub fn close(&mut self) {
+        self.pool.clear();
+    }
+
+    /// Obtain a connection for `(scheme, host, port)`: reuse a pooled keep-alive
+    /// socket **only** after its pinned address re-clears [`vet_addrs`] under the
+    /// current policy, else open a fresh [`resolve_checked`]-vetted, pinned socket.
+    /// Returns `(stream, pinned_addr, reused)`.
+    async fn acquire(
+        &mut self,
+        scheme: &str,
+        host: &str,
+        port: u16,
+        opts: &FetchOpts,
+    ) -> Result<(TcpStream, IpAddr, bool), HttpError> {
+        let key = (scheme.to_string(), host.to_string(), port);
+        if let Some((stream, pinned)) = self.pool.remove(&key) {
+            let exempt = authority_exempt(host, port, &opts.allow_hosts);
+            // Re-run the &SafeIp gate on the pinned address before reuse: a pooled
+            // socket must never skip the internal-IP check (SSRF on every hop).
+            if vet_addrs(&[pinned], opts.block_internal, exempt).is_ok() {
+                self.reused += 1;
+                return Ok((stream, pinned, true));
+            }
+            // Policy changed under us (the pin is now internal + not exempt): drop
+            // the pooled socket and fall through to a fresh, re-validated connect.
+            drop(stream);
+        }
+        let addrs = resolve_checked(host, port, opts.block_internal, &opts.allow_hosts).await?;
+        let mut last: Option<String> = None;
+        for safe in &addrs {
+            match tokio::time::timeout(opts.timeout, TcpStream::connect((safe.addr(), port))).await
+            {
+                Ok(Ok(stream)) => {
+                    self.opened += 1;
+                    return Ok((stream, safe.addr(), false));
+                }
+                Ok(Err(e)) => last = Some(format!("connect:{e}")),
+                Err(_) => last = Some("connect: timed out".to_string()),
+            }
+        }
+        Err(HttpError(
+            last.unwrap_or_else(|| "connect: no address".to_string()),
+        ))
+    }
+
+    /// One request/response on `current` (a single hop) over a pooled or fresh
+    /// connection. A *reused* socket that turns out stale (closed by the peer while
+    /// idle) is retried **once** on a fresh connection — the retry re-runs
+    /// [`resolve_checked`] via [`acquire`](Self::acquire), so the SSRF gate holds
+    /// on the second try too. A *fresh* connection that fails is a real error and
+    /// is never retried. Returns the parsed response or a human error string
+    /// matching [`fetch`]'s error payloads.
+    async fn fetch_once(
+        &mut self,
+        current: &str,
+        opts: &FetchOpts,
+        send_extra: bool,
+    ) -> Result<HttpResponse, String> {
+        let s = urlsplit(current, "");
+        let scheme = s.scheme.to_lowercase();
+        if scheme != "http" && scheme != "https" {
+            return Err("unsupported-scheme".to_string());
+        }
+        if scheme == "https" {
+            return Err("https requires the tls feature".to_string());
+        }
+        let (host, port_str) = host_port(&s.netloc);
+        if host.is_empty() {
+            return Err("no-host".to_string());
+        }
+        let port = match port_str {
+            Some(p) => p.parse::<u16>().map_err(|_| "bad-port".to_string())?,
+            None => default_port(&scheme),
+        };
+        let host_header = if port == default_port(&scheme) {
+            host.clone()
+        } else {
+            format!("{host}:{port}")
+        };
+        let mut path = if s.path.is_empty() {
+            "/".to_string()
+        } else {
+            s.path.clone()
+        };
+        if !s.query.is_empty() {
+            path.push('?');
+            path.push_str(&s.query);
+        }
+        let mut headers = vec![
+            ("User-Agent".to_string(), opts.user_agent.clone()),
+            (
+                "Accept".to_string(),
+                "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1".to_string(),
+            ),
+            ("Accept-Encoding".to_string(), opts.accept_encoding.clone()),
+            (
+                "Connection".to_string(),
+                if self.keep_alive {
+                    "keep-alive"
+                } else {
+                    "close"
+                }
+                .to_string(),
+            ),
+        ];
+        // Conditional-GET / extra headers on the INITIAL request only (empty values
+        // skipped), matching the free `fetch` and the Python `_one`.
+        if send_extra {
+            for (k, v) in &opts.extra_headers {
+                if !v.is_empty() {
+                    headers.push((k.clone(), v.clone()));
+                }
+            }
+        }
+
+        let mut last_err = String::new();
+        // At most two attempts (see [`fetch_once`](Self::fetch_once) doc): the pool
+        // is popped on attempt 0, so the retry always takes the fresh path.
+        for attempt in 0..2 {
+            let (mut stream, pinned, reused) = match self.acquire(&scheme, &host, port, opts).await
+            {
+                Ok(t) => t,
+                // Gate / DNS / connect failures are real errors (no "http:" prefix),
+                // exactly like the free `fetch`; never retried.
+                Err(e) => return Err(e.to_string()),
+            };
+            match perform_request(
+                &mut stream,
+                "GET",
+                &host_header,
+                &path,
+                &headers,
+                opts.max_bytes,
+            )
+            .await
+            {
+                Ok(resp) => {
+                    // Pool the socket only if we asked to keep alive and the framed
+                    // body was fully drained with no peer "close" (perform_request's
+                    // `reusable`), so no unread bytes remain on the wire.
+                    if self.keep_alive && resp.reusable {
+                        self.pool
+                            .insert((scheme.clone(), host.clone(), port), (stream, pinned));
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    // `stream` is dropped here (closed). Only a stale *reused*
+                    // connection is worth one retry on a fresh, re-resolved socket.
+                    if reused && attempt == 0 {
+                        last_err = format!("http:{e}");
+                        continue;
+                    }
+                    return Err(format!("http:{e}"));
+                }
+            }
+        }
+        Err(last_err)
+    }
+
+    /// Fetch `url` through the pool, following up to `opts.max_redirects`
+    /// redirects. Same redirect / `allow` / SSRF-on-every-hop semantics as the free
+    /// [`fetch`], but connections are reused across calls and across hops. `allow`
+    /// is consulted for the initial URL and every redirect target.
+    pub async fn fetch(
+        &mut self,
+        url: &str,
+        opts: &FetchOpts,
+        allow: Option<&(dyn Fn(&str) -> bool + Sync)>,
+    ) -> FetchResult {
+        let mut current = url.to_string();
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut redirects = 0u32;
+        loop {
+            if let Some(pred) = allow {
+                if !pred(&current) {
+                    return FetchResult::failed(url, &current, "blocked".to_string(), redirects);
+                }
+            }
+            // Box the per-hop future: `perform_request` carries sizable read
+            // buffers, and this fetcher sits several async layers below the crawl
+            // loop — keeping that future on the heap keeps the caller's stack flat.
+            let resp = match Box::pin(self.fetch_once(&current, opts, redirects == 0)).await {
+                Ok(r) => r,
+                Err(e) => return FetchResult::failed(url, &current, e, redirects),
+            };
+            if REDIRECT_CODES.contains(&resp.status) && redirects < opts.max_redirects {
+                let target = resp
+                    .header("location")
+                    .and_then(|loc| canonicalize(loc, Some(&current)));
+                match target {
+                    Some(t) if !seen.contains(&t) => {
+                        seen.insert(t.clone());
+                        current = t;
+                        redirects += 1;
+                        continue;
+                    }
+                    _ => return result_from(url, &current, resp, redirects),
+                }
+            }
+            return result_from(url, &current, resp, redirects);
+        }
+    }
+}

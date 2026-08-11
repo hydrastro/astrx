@@ -274,6 +274,14 @@ impl Frontier {
         self.entries.values().any(|e| e.status == "queued")
     }
 
+    /// True if any URL is currently `leased` — a worker holds it and may still
+    /// enqueue more. The multi-worker driver's "peers active" check uses this so a
+    /// worker never quits while another worker could add work to the frontier.
+    #[must_use]
+    pub fn has_leased(&self) -> bool {
+        self.entries.values().any(|e| e.status == "leased")
+    }
+
     /// How many URLs are `done` or `error`.
     #[must_use]
     pub fn total_done(&self) -> u64 {

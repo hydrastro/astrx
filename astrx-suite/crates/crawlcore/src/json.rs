@@ -25,8 +25,13 @@ pub enum Value {
     Null,
     /// `true` / `false`.
     Bool(bool),
-    /// A number (ints and floats both as `f64`).
+    /// A floating-point number (any literal with a fraction or exponent, or an
+    /// integer too large for `i64`).
     Num(f64),
+    /// An integer literal that fits in `i64`, preserved exactly. JSON routinely
+    /// carries full 64-bit integers (e.g. a SimHash fingerprint) that `f64`
+    /// cannot round-trip; `json.loads` keeps them exact and so do we.
+    Int(i64),
     /// A string.
     Str(String),
     /// An array.
@@ -45,11 +50,22 @@ impl Value {
         }
     }
 
-    /// The number, if this is a `Num`.
+    /// The number as `f64`, if this is a `Num` or an `Int`.
     #[must_use]
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Value::Num(n) => Some(*n),
+            Value::Int(i) => Some(*i as f64),
+            _ => None,
+        }
+    }
+
+    /// The exact integer, if this is an `Int`. Preserves the full 64 bits that
+    /// [`as_f64`](Self::as_f64) would lose for large values (e.g. a SimHash).
+    #[must_use]
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            Value::Int(i) => Some(*i),
             _ => None,
         }
     }
@@ -252,6 +268,14 @@ impl Parser<'_> {
             }
         }
         let s: String = self.chars[start..self.pos].iter().collect();
+        // Preserve integers exactly (an integer literal — no `.`/`e`/`E` — that
+        // fits i64 keeps all 64 bits, so a SimHash survives a JSON round-trip);
+        // floats and out-of-range integers fall back to f64 as before.
+        if !s.contains(['.', 'e', 'E']) {
+            if let Ok(i) = s.parse::<i64>() {
+                return Ok(Value::Int(i));
+            }
+        }
         s.parse::<f64>().map(Value::Num).map_err(|_| JsonError {
             pos: start,
             msg: "invalid number".to_string(),
@@ -393,6 +417,27 @@ mod tests {
                 .as_str(),
             Some("c")
         );
+    }
+
+    #[test]
+    fn integers_are_exact_floats_are_f64() {
+        // Integer literals keep all 64 bits — 2^53+1 is the classic value f64
+        // cannot represent, yet a SimHash-sized integer must round-trip exactly.
+        assert_eq!(
+            parse("9007199254740993").unwrap().as_i64(),
+            Some(9_007_199_254_740_993)
+        );
+        assert_eq!(
+            parse("-5089876543210987654").unwrap().as_i64(),
+            Some(-5_089_876_543_210_987_654)
+        );
+        assert_eq!(parse("0").unwrap().as_i64(), Some(0));
+        assert_eq!(parse("42").unwrap(), Value::Int(42));
+        // Anything with a fraction or exponent stays a float (no exact int).
+        assert_eq!(parse("3.14").unwrap().as_i64(), None);
+        assert_eq!(parse("2e3").unwrap(), Value::Num(2000.0));
+        // as_f64 still works across both number kinds.
+        assert_eq!(parse("42").unwrap().as_f64(), Some(42.0));
     }
 
     #[test]
