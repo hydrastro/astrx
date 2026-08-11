@@ -269,8 +269,46 @@ def gen_index() -> None:
         s["top_hosts"], s["languages"]))
 
 
+def gen_ranking() -> None:
+    from websearch import ranking as r
+    print("== ranking: parse_query ==")
+
+    def pq(raw):
+        q = r.parse_query(raw)
+        return (q.optional, q.required, q.excluded, q.phrases, q.highlight,
+                q.intitle, q.site, q.lang, q.filetype, q.after, q.before,
+                q.boost, q.penalize)
+    for raw in ["rust programming", '+rust -java "web crawler"',
+                "site:example.com lang:en foo",
+                "intitle:Rust before:2020-01-01 boost:good.com",
+                '"a" host:X.COM/ filetype:PDF']:
+        print("pq:%r\t%r" % (raw, pq(raw)))
+    print("== ranking: parse_date ==")
+    for d in ["2020-01-01", "2021-06-15", "bad"]:
+        print("pd:%r\t%r" % (d, r._parse_date(d)))
+    print("== ranking: freshness ==")
+    for fa, now in [(0, 1000), (1000.0, 1000.0), (1000.0, 1000.0 + 30 * 86400),
+                    (1000.0, 1000.0 + 60 * 86400)]:
+        print("fr:%r,%r\t%.6f" % (fa, now, r._freshness(fa, now)))
+    print("== ranking: content_quality ==")
+    for n in [0, 50, 100, 101, 600, 1200, 2000]:
+        print("cq:%d\t%.6f" % (n, r._content_quality({"body": "x" * n})))
+    print("== ranking: proximity ==")
+    print("px1\t%.6f" % r._proximity_bonus("the web crawler is here",
+                                            [["web", "crawler"]], ["web", "crawler"]))
+    print("px2\t%.6f" % r._proximity_bonus("web then some words then crawler",
+                                            [], ["web", "crawler"]))
+    print("px3\t%.6f" % r._proximity_bonus("nothing relevant", [], ["web", "crawler"]))
+    print("== ranking: snippet ==")
+    print("sn1\t%r" % r.make_snippet("The quick brown fox jumps over the lazy dog. " * 5,
+                                      ["fox"], width=60))
+    print("sn2\t%r" % r.make_snippet("<script>alert(1)</script> safe word here",
+                                      ["word"], width=80))
+    print("sn3\t%r" % r.make_snippet("", ["x"]))
+
+
 SECTIONS = [gen_ssrf, gen_dedup, gen_canonical, gen_robots, gen_httpclient,
-            gen_htmlparse, gen_frontier, gen_index]
+            gen_htmlparse, gen_frontier, gen_index, gen_ranking]
 
 if __name__ == "__main__":
     for section in SECTIONS:

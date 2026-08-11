@@ -300,6 +300,12 @@ impl Index {
         self.docs.len()
     }
 
+    /// All documents, in ascending rowid (insertion) order — the corpus a search
+    /// pass iterates over.
+    pub fn all_docs(&self) -> impl Iterator<Item = &Document> {
+        self.docs.values()
+    }
+
     /// Index statistics for the about/stats page.
     #[must_use]
     pub fn stats(&self) -> Stats {

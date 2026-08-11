@@ -30,6 +30,7 @@ pub mod frontier;
 pub mod htmlparse;
 pub mod httpclient;
 pub mod index;
+pub mod ranking;
 pub mod robots;
 pub mod ssrf;
 
@@ -46,6 +47,7 @@ pub use httpclient::{
     GateError, Headers, HttpError,
 };
 pub use index::{content_hash, DocFields, Document, Index, Stats};
+pub use ranking::{parse_query, search, Query, SearchOpts, SearchResponse, SearchResult};
 pub use robots::{parse as parse_robots, Robots};
 pub use ssrf::{ip_is_internal, SafeIp};
 
