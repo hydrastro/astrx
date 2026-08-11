@@ -47,9 +47,8 @@ pub mod sitemap;
 pub mod socks;
 pub mod store;
 pub mod submit;
-// Internal port of the `urllib.parse` / `posixpath` subset the canonicalizer and
-// robots parser share. Crate-private: not part of the public API.
-mod urlparse;
+// The `urllib.parse` / `posixpath` subset the canonicalizer + robots parser use
+// now lives in the shared `crawlcore::urlparse` (see the imports below).
 
 // Flat facade: re-export the darknet gate + canonicalizer at the crate root so
 // call sites read `onioncrawler::OnionHost` / `onioncrawler::canonicalize`

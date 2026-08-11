@@ -23,8 +23,17 @@
 //! opt-in behind `net`/`rand`.
 #![forbid(unsafe_code)]
 
+pub mod canonical;
 pub mod dedup;
+pub mod httpclient;
+pub mod robots;
 pub mod ssrf;
 
+pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
 pub use dedup::simhash;
+pub use httpclient::{
+    authority_exempt, decode_body, decompress, parse_content_type, vet_addrs, FetchResult,
+    GateError, Headers, HttpError,
+};
+pub use robots::{parse as parse_robots, Robots};
 pub use ssrf::{ip_is_internal, SafeIp};

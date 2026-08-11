@@ -137,6 +137,21 @@ impl SafeIp {
     pub fn addr(&self) -> IpAddr {
         self.0
     }
+
+    /// Escape hatch: mint a `SafeIp` for an **explicitly operator-allow-listed**
+    /// internal host (the `allow_hosts` config), bypassing the internal check.
+    ///
+    /// `pub(crate)` on purpose — only this crate's own resolver
+    /// ([`crate::httpclient`]) can produce a `SafeIp` over an internal address,
+    /// and only after [`crate::httpclient::authority_exempt`] has matched the
+    /// authority against the operator's allow-list. Callers outside the crate can
+    /// still *only* obtain a strictly-external `SafeIp` via
+    /// [`SafeIp::from_ip`] / [`SafeIp::vet`], so the SSRF type-gate holds by
+    /// default and the exemption is a narrow, audit-visible bypass.
+    #[must_use]
+    pub(crate) fn exempt(ip: IpAddr) -> SafeIp {
+        SafeIp(ip)
+    }
 }
 
 #[cfg(test)]

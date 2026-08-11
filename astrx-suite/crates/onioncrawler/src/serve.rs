@@ -24,7 +24,7 @@ use crate::abuse::AbuseFilter;
 use crate::onion::normalize_host;
 use crate::store::{Caps, Store};
 use crate::submit::{submit_many, SubmitResult, SubmitSummary};
-use crate::urlparse::{parse_qsl, quote_plus};
+use crawlcore::urlparse::{parse_qsl, quote_plus};
 
 /// Configuration for the write endpoints + submission policy.
 #[derive(Clone, Debug)]

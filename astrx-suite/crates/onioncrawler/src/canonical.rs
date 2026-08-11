@@ -9,11 +9,11 @@
 //! `allow_i2p` also admits `.i2p`. Clearnet never survives.
 //!
 //! Ported from the Python `canonical.py`; the `urllib`/`posixpath` behaviour it
-//! leans on is reproduced in [`crate::urlparse`], and the whole pipeline is
+//! leans on is reproduced in [`crawlcore::urlparse`], and the whole pipeline is
 //! cross-checked byte-identical in `tests/xcheck_canonical.rs`.
 
 use crate::onion::{is_darknet_host, normalize_host};
-use crate::urlparse::{
+use crawlcore::urlparse::{
     host_port, normpath, parse_qsl, quote, unquote, urlencode, urljoin, urlsplit, urlunsplit,
 };
 

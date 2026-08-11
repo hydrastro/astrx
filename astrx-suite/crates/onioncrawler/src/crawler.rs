@@ -27,9 +27,9 @@ use crate::fetcher::Fetcher;
 use crate::onion::find_onion_urls;
 use crate::robots::{parse_robots, RobotsRules};
 use crate::store::{Caps, Enqueued, HostCounter, Store, StoreOutcome};
-use crate::urlparse::parse_qsl;
 use crawlcore::hash::{sha1, to_hex};
 use crawlcore::traps;
+use crawlcore::urlparse::parse_qsl;
 
 fn now_secs() -> f64 {
     SystemTime::now()

@@ -15,3 +15,4 @@ pub mod hash;
 pub mod inflate;
 pub mod scheduler;
 pub mod traps;
+pub mod urlparse;

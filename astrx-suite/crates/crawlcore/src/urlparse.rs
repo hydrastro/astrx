@@ -1,5 +1,6 @@
 //! A faithful, dependency-free port of the slice of Python's `urllib.parse` (and
-//! `posixpath.normpath`) that the canonicalizer and robots parser rely on.
+//! `posixpath.normpath`) that the suite's URL canonicalizers + robots parsers
+//! rely on. Shared by `onioncrawler` and `websearch`.
 //!
 //! These reproduce CPython's exact behaviour — scheme/netloc splitting, RFC-3986
 //! reference resolution (`urljoin`), percent `quote`/`unquote` (uppercase hex on

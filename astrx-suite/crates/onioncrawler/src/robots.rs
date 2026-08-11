@@ -10,8 +10,8 @@
 //! Ported from the Python `robots.py`; cross-checked byte-identical in
 //! `tests/xcheck_robots.rs`.
 
-use crate::urlparse::unquote;
 use crawlcore::globmatch::{compile_glob, glob_match};
+use crawlcore::urlparse::unquote;
 use std::collections::HashMap;
 
 /// One Allow/Disallow rule, pre-compiled to backtracking-free glob segments.

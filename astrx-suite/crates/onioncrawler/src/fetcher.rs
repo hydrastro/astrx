@@ -26,7 +26,7 @@ use crate::canonical::canonicalize;
 use crate::http::{self, HttpResponse};
 use crate::onion::OnionHost;
 use crate::socks::socks5_connect;
-use crate::urlparse::urljoin;
+use crawlcore::urlparse::urljoin;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::net::TcpStream;
