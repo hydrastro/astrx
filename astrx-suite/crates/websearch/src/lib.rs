@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod canonical;
+pub mod crawler;
 pub mod dedup;
 pub mod frontier;
 pub mod htmlparse;
@@ -36,6 +37,7 @@ pub mod ssrf;
 pub mod fetcher;
 
 pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
+pub use crawler::{public_resolved, trap_ok, CrawlConfig, CrawlStats};
 pub use dedup::simhash;
 pub use frontier::{Frontier, HostRow, Lease};
 pub use htmlparse::{extract as extract_html, guess_lang, Extracted};
@@ -47,5 +49,7 @@ pub use index::{content_hash, DocFields, Document, Index, Stats};
 pub use robots::{parse as parse_robots, Robots};
 pub use ssrf::{ip_is_internal, SafeIp};
 
+#[cfg(feature = "net")]
+pub use crawler::Crawler;
 #[cfg(feature = "net")]
 pub use fetcher::{clear_dns_cache, fetch, resolve_checked, FetchOpts};

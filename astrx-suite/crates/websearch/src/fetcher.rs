@@ -142,6 +142,10 @@ pub struct FetchOpts {
     pub block_internal: bool,
     /// Authorities (`host` / `host:port`) exempt from the internal-address block.
     pub allow_hosts: Vec<String>,
+    /// Extra request headers sent on the **initial** request only (e.g.
+    /// `If-None-Match` / `If-Modified-Since` for a conditional GET). Empty values
+    /// are skipped.
+    pub extra_headers: Vec<(String, String)>,
 }
 
 impl Default for FetchOpts {
@@ -154,6 +158,7 @@ impl Default for FetchOpts {
             accept_encoding: "gzip, deflate".to_string(),
             block_internal: true,
             allow_hosts: Vec::new(),
+            extra_headers: Vec::new(),
         }
     }
 }
@@ -249,7 +254,7 @@ pub async fn fetch(
             path.push('?');
             path.push_str(&s.query);
         }
-        let headers = [
+        let mut headers = vec![
             ("User-Agent".to_string(), opts.user_agent.clone()),
             (
                 "Accept".to_string(),
@@ -258,6 +263,15 @@ pub async fn fetch(
             ("Accept-Encoding".to_string(), opts.accept_encoding.clone()),
             ("Connection".to_string(), "close".to_string()),
         ];
+        // Conditional-GET / extra headers on the INITIAL request only (empty
+        // values skipped), matching the Python `extra_headers if redirects == 0`.
+        if redirects == 0 {
+            for (k, v) in &opts.extra_headers {
+                if !v.is_empty() {
+                    headers.push((k.clone(), v.clone()));
+                }
+            }
+        }
 
         let resp = match perform_request(
             &mut stream,
