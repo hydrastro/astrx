@@ -7,16 +7,44 @@
 //! is escaped; snippets arrive already-escaped from [`crate::ranking::make_snippet`]
 //! (only `<mark>` markup survives), so the results page is XSS-safe.
 //!
+//! The renderers take everything they render as arguments — including the wall
+//! clock: the search `now` and its measured `elapsed` are read in the route layer
+//! and handed down, so a renderer's output depends only on its inputs.
+//! [`SearchServer::with_frontier`] adds an OPTIONAL second handle, read for the
+//! `/about` Frontier table alone.
+//!
 //! Routes: `/` + `/search` (HTML results, `?type=news|files` verticals),
 //! `/images` + `/videos` (the media verticals, `?q=`), `/api/search` (JSON, the
 //! endpoint the PHP bridge calls; `?limit=`/`?page_size=`/`?sort=` supported),
 //! `/suggest` (OpenSearch Suggestions JSON typeahead, `?q=`), `/about` +
 //! `/stats`, `/opensearch.xml`, `/metrics`, `/healthz`, `/style.css`,
-//! `/favicon.ico`. `/similar` is deferred (`more_like_this`).
+//! `/favicon.ico`.
+//!
+//! # Not ported from the Python `websearch.server`
+//!
+//! Three pieces of the reference server have NO equivalent here. They are gaps,
+//! not decisions the code makes elsewhere — anything deployed on an untrusted
+//! network must supply them at the reverse proxy:
+//!
+//! - **Per-client rate limiting.** Python has a token-bucket `RateLimiter`
+//!   (`server.py:72`) wired through `make_server(rate=…, burst=…)` and the
+//!   `--rate`/`--burst` CLI flags, answering `429` when a client outruns it.
+//!   This server applies no rate limit of any kind, so every route is served as
+//!   fast as it is asked for.
+//! - **HTTP Basic authentication.** Python's `_authorized` (`server.py:610`)
+//!   gates every route except `_OPEN_PATHS` (`server.py:47`) behind
+//!   `make_server(auth=(user, pw))` / `--auth user:pass`, answering `401` with a
+//!   `WWW-Authenticate` challenge. Here every route is public and unauthenticated;
+//!   there is no `auth` parameter to pass.
+//! - **`/similar`** — the `more_like_this` "related pages" route, deferred.
+//!
+//! [`SearchServer::route`] therefore never returns `401` or `429`.
 
-use crate::index::{ImageResult, Index, VideoResult};
+use crate::frontier::Frontier;
+use crate::index::{ImageResult, Index, Stats, VideoResult};
 use crate::ranking::{search, Query, SearchOpts, SearchResult};
 use crawlcore::urlparse::{parse_qsl, urlencode, urlsplit};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 const PAGE_SIZE: usize = 10;
@@ -179,26 +207,74 @@ impl Resp {
     }
 }
 
-const STYLE: &str = "\
-:root { color-scheme: light dark; }\n\
-* { box-sizing: border-box; }\n\
-body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #fafafa; color: #1a1a1a; }\n\
-a { color: #1a56db; text-decoration: none; } a:hover { text-decoration: underline; }\n\
-header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 18px 20px; }\n\
-.wrap { max-width: 760px; margin: 0 auto; }\n\
-.brand { font-weight: 700; font-size: 20px; color:#111; } .brand span { color: #1a56db; }\n\
-form.search { display: flex; gap: 8px; margin-top: 12px; }\n\
-form.search input[type=text] { flex: 1; padding: 11px 14px; border: 1px solid #cbcbcb; border-radius: 8px; }\n\
-form.search button { padding: 11px 18px; border: 0; border-radius: 8px; background: #1a56db; color: #fff; cursor: pointer; }\n\
-main { padding: 20px; } .meta { color: #666; font-size: 13px; margin: 4px 0 18px; }\n\
-.result { margin: 0 0 22px; } .result .url { color: #0a7d33; font-size: 13px; word-break: break-all; }\n\
-.result h2 { font-size: 18px; margin: 2px 0 3px; } .result .snippet { color: #333; font-size: 14px; }\n\
-.result .sub { color: #777; font-size: 12px; margin-top: 3px; }\n\
-mark { background: #fff2ac; color: inherit; padding: 0 1px; border-radius: 2px; }\n\
-.pager { margin: 26px 0; display: flex; gap: 14px; } .empty { color:#555; }\n\
-table.stats td, table.stats th { text-align: left; padding: 4px 18px 4px 0; }\n\
-footer { color:#999; font-size:12px; padding: 24px 20px; }\n\
-@media (prefers-color-scheme: dark) { body { background:#161616; color:#e8e8e8; } header { background:#1f1f1f; border-color:#333; } a { color:#7aa2f7; } }\n";
+/// The stylesheet served at `/style.css`.
+///
+/// Byte-identical to the Python `websearch.server.STYLE`. It is kept verbatim
+/// (a raw string, newlines and all) rather than re-flowed, so a diff against
+/// the reference is trivial — an earlier hand-transcription silently dropped
+/// half the rules, which left the vertical tabs, the image grid, the pager and
+/// the stats tables unstyled.
+const STYLE: &str = r#"
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+       Helvetica, Arial, sans-serif; margin: 0; background: #fafafa;
+       color: #1a1a1a; }
+a { color: #1a56db; text-decoration: none; }
+a:hover { text-decoration: underline; }
+header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 18px 20px; }
+.wrap { max-width: 760px; margin: 0 auto; }
+.brand { font-weight: 700; font-size: 20px; letter-spacing: -.3px; color:#111; }
+.brand span { color: #1a56db; }
+form.search { display: flex; gap: 8px; margin-top: 12px; }
+form.search input[type=text] { flex: 1; padding: 11px 14px; font-size: 16px;
+       border: 1px solid #cbcbcb; border-radius: 8px; background:#fff; }
+form.search button { padding: 11px 18px; font-size: 15px; border: 0;
+       border-radius: 8px; background: #1a56db; color: #fff; cursor: pointer; }
+main { padding: 20px; }
+.meta { color: #666; font-size: 13px; margin: 4px 0 18px; }
+.result { margin: 0 0 22px; }
+.result .url { color: #0a7d33; font-size: 13px; word-break: break-all; }
+.result h2 { font-size: 18px; margin: 2px 0 3px; font-weight: 600; }
+.result .snippet { color: #333; font-size: 14px; }
+.result .sub { color: #777; font-size: 12px; margin-top: 3px; }
+mark { background: #fff2ac; color: inherit; padding: 0 1px; border-radius: 2px; }
+.pager { margin: 26px 0; display: flex; gap: 14px; align-items: center; }
+.pager a { padding: 7px 14px; border: 1px solid #cbcbcb; border-radius: 8px;
+       background:#fff; }
+.empty { color:#555; }
+table.stats { border-collapse: collapse; }
+table.stats td, table.stats th { text-align: left; padding: 4px 18px 4px 0; }
+footer { color:#999; font-size:12px; padding: 24px 20px; }
+code { background:#eee; padding:1px 5px; border-radius:4px; }
+.tabs { display:flex; gap:6px; margin: 2px 0 16px; }
+.tabs a.tab { padding:6px 14px; border:1px solid #cbcbcb; border-radius:8px;
+       background:#fff; color:#333; font-size:14px; }
+.tabs a.tab.active { background:#1a56db; border-color:#1a56db; color:#fff; }
+.imggrid { display:flex; flex-wrap:wrap; gap:14px; }
+figure.imgcard { margin:0; width:180px; }
+figure.imgcard img.thumb { width:180px; height:135px; object-fit:cover;
+       background:#eee; border:1px solid #e5e5e5; border-radius:8px; }
+figure.imgcard .thumb.noimg { width:180px; height:135px; display:flex;
+       align-items:center; justify-content:center; background:#eee;
+       border:1px solid #e5e5e5; border-radius:8px; color:#888;
+       font-size:13px; text-transform:uppercase; letter-spacing:.05em; }
+figure.imgcard figcaption { font-size:12px; color:#444; margin-top:4px;
+       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+figure.imgcard .imghost { display:block; color:#0a7d33; }
+@media (prefers-color-scheme: dark) {
+  body { background:#161616; color:#e8e8e8; }
+  header, form.search input[type=text] { background:#1f1f1f; border-color:#333; }
+  .brand { color:#f2f2f2; } a { color:#7aa2f7; }
+  .result .url { color:#5fbf7f; } .result .snippet { color:#cfcfcf; }
+  mark { background:#5b5220; color:#fff; }
+  .pager a { background:#1f1f1f; border-color:#333; }
+  .tabs a.tab { background:#1f1f1f; border-color:#333; color:#cfcfcf; }
+  .tabs a.tab.active { background:#1a56db; border-color:#1a56db; color:#fff; }
+  figure.imgcard figcaption { color:#cfcfcf; }
+  figure.imgcard .imghost { color:#5fbf7f; }
+}
+"#;
 
 fn wrap_page(title: &str, body: &str) -> String {
     format!(
@@ -511,113 +587,147 @@ explicit ranking. Enter a query above. Supports <code>\"exact phrase\"</code>, \
         .to_string()
 }
 
-impl SearchServer {
-    fn render_results(
-        &self,
-        q: &str,
-        resp: &crate::ranking::SearchResponse,
-        page: usize,
-        active: &str,
-    ) -> String {
-        let mut s = String::from("<main><div class=wrap>");
-        s.push_str(&vertical_tabs(q, active));
-        s.push_str(&active_filters(&resp.query));
-        let total = resp.total;
-        s.push_str(&format!(
-            "<div class=meta>About {total} result{} (0.000 seconds)</div>",
-            if total == 1 { "" } else { "s" }
-        ));
-        if resp.results.is_empty() {
-            s.push_str(&format!(
-                "<p class=empty>No pages matched <strong>{}</strong>. Try fewer or different terms.</p>",
-                esc(q)
-            ));
-        }
-        for r in &resp.results {
-            s.push_str(&result_row(r));
-        }
-        let last = std::cmp::max(1, total.div_ceil(PAGE_SIZE));
-        if last > 1 {
-            s.push_str("<div class=pager>");
-            if page > 1 {
-                let href = urlencode(&[
-                    ("q".to_string(), q.to_string()),
-                    ("page".to_string(), (page - 1).to_string()),
-                ]);
-                s.push_str(&format!("<a href='/search?{href}'>&larr; Prev</a>"));
-            }
-            s.push_str(&format!("<span>Page {page} of {last}</span>"));
-            if page < last {
-                let href = urlencode(&[
-                    ("q".to_string(), q.to_string()),
-                    ("page".to_string(), (page + 1).to_string()),
-                ]);
-                s.push_str(&format!("<a href='/search?{href}'>Next &rarr;</a>"));
-            }
-            s.push_str("</div>");
-        }
-        let jhref = urlencode(&[("q".to_string(), q.to_string())]);
-        s.push_str(&format!(
-            "<footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?{jhref}'>JSON API</a></footer></div></main>"
-        ));
-        s
+/// The base pager query for the results page: `q`, plus `type` for the `news` /
+/// `files` verticals so "Prev"/"Next" stay INSIDE the vertical the user is on.
+/// Mirrors the Python `_pg` dict (insertion order `q`, `type`, then `page`).
+fn pager_params(q: &str, active: &str) -> Vec<(String, String)> {
+    let mut pg = vec![("q".to_string(), q.to_string())];
+    if active == "news" || active == "files" {
+        pg.push(("type".to_string(), active.to_string()));
     }
-
-    fn render_about(&self, ix: &Index) -> String {
-        let st = ix.stats();
-        let mut b =
-            String::from("<main><div class=wrap><h1>Index statistics</h1><table class=stats>");
-        b.push_str(&format!(
-            "<tr><td>Documents indexed</td><td>{}</td></tr>",
-            st.docs
-        ));
-        b.push_str(&format!(
-            "<tr><td>Distinct hosts</td><td>{}</td></tr>",
-            st.hosts
-        ));
-        b.push_str(&format!(
-            "<tr><td>Link edges</td><td>{}</td></tr>",
-            st.links
-        ));
-        if let Some(newest) = st.newest {
-            b.push_str(&format!(
-                "<tr><td>Newest fetch</td><td>{}</td></tr>",
-                fmt_date(newest)
-            ));
-            if let Some(oldest) = st.oldest {
-                b.push_str(&format!(
-                    "<tr><td>Oldest fetch</td><td>{}</td></tr>",
-                    fmt_date(oldest)
-                ));
-            }
-        }
-        b.push_str("</table>");
-        let rows = |pairs: &[(String, usize)]| -> String {
-            pairs
-                .iter()
-                .map(|(k, v)| format!("<tr><td>{}</td><td>{v}</td></tr>", esc(k)))
-                .collect::<String>()
-        };
-        if !st.top_hosts.is_empty() {
-            b.push_str(&format!(
-                "<h2>Top hosts</h2><table class=stats>{}</table>",
-                rows(&st.top_hosts)
-            ));
-        }
-        if !st.languages.is_empty() {
-            b.push_str(&format!(
-                "<h2>Languages</h2><table class=stats>{}</table>",
-                rows(&st.languages)
-            ));
-        }
-        b.push_str("<footer><a href='/'>&larr; Back to search</a></footer></div></main>");
-        b
-    }
+    pg
 }
 
-/// A read-only search server over a shared [`Index`].
+/// One pager href: [`pager_params`] with `page` appended, percent-encoded.
+/// Like the Python, the encoded query string goes into the attribute unescaped —
+/// `urlencode` already percent-encodes every character that could break out of
+/// it (`'`, `"`, `<`, `>`, `&` inside values), so this is XSS-safe.
+fn pager_href(q: &str, active: &str, page: usize) -> String {
+    let mut pg = pager_params(q, active);
+    pg.push(("page".to_string(), page.to_string()));
+    urlencode(&pg)
+}
+
+/// The results page. PURE: `elapsed` (seconds) is measured by the caller and
+/// passed in, exactly as `now` is. Byte-identical to the Python `_render_results`.
+fn render_results(
+    q: &str,
+    resp: &crate::ranking::SearchResponse,
+    page: usize,
+    active: &str,
+    elapsed: f64,
+) -> String {
+    let mut s = String::from("<main><div class=wrap>");
+    s.push_str(&vertical_tabs(q, active));
+    s.push_str(&active_filters(&resp.query));
+    let total = resp.total;
+    s.push_str(&format!(
+        "<div class=meta>About {total} result{} ({elapsed:.3} seconds)</div>",
+        if total == 1 { "" } else { "s" }
+    ));
+    if resp.results.is_empty() {
+        s.push_str(&format!(
+            "<p class=empty>No pages matched <strong>{}</strong>. Try fewer or different terms.</p>",
+            esc(q)
+        ));
+    }
+    for r in &resp.results {
+        s.push_str(&result_row(r));
+    }
+    let last = std::cmp::max(1, total.div_ceil(PAGE_SIZE));
+    if last > 1 {
+        s.push_str("<div class=pager>");
+        if page > 1 {
+            let href = pager_href(q, active, page - 1);
+            s.push_str(&format!("<a href='/search?{href}'>&larr; Prev</a>"));
+        }
+        s.push_str(&format!("<span>Page {page} of {last}</span>"));
+        if page < last {
+            let href = pager_href(q, active, page + 1);
+            s.push_str(&format!("<a href='/search?{href}'>Next &rarr;</a>"));
+        }
+        s.push_str("</div>");
+    }
+    let jhref = urlencode(&[("q".to_string(), q.to_string())]);
+    s.push_str(&format!(
+        "<footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?{jhref}'>JSON API</a></footer></div></main>"
+    ));
+    s
+}
+
+/// The `/about` (= `/stats`) page. PURE: both the index [`Stats`] and the
+/// optional frontier `status → count` map are gathered by the caller.
+///
+/// `frontier` is `None` when the server was built without a [`Frontier`] handle
+/// ([`SearchServer::new`]); the Frontier section is then omitted — as it is for
+/// an EMPTY map, matching the Python `if st.get("frontier")` (a falsy empty dict
+/// prints nothing). Byte-identical to the Python `_render_about`.
+fn render_about(st: &Stats, frontier: Option<&BTreeMap<String, usize>>) -> String {
+    let mut b = String::from("<main><div class=wrap><h1>Index statistics</h1><table class=stats>");
+    b.push_str(&format!(
+        "<tr><td>Documents indexed</td><td>{}</td></tr>",
+        st.docs
+    ));
+    b.push_str(&format!(
+        "<tr><td>Distinct hosts</td><td>{}</td></tr>",
+        st.hosts
+    ));
+    b.push_str(&format!(
+        "<tr><td>Link edges</td><td>{}</td></tr>",
+        st.links
+    ));
+    if let Some(newest) = st.newest {
+        b.push_str(&format!(
+            "<tr><td>Newest fetch</td><td>{}</td></tr>",
+            fmt_date(newest)
+        ));
+        if let Some(oldest) = st.oldest {
+            b.push_str(&format!(
+                "<tr><td>Oldest fetch</td><td>{}</td></tr>",
+                fmt_date(oldest)
+            ));
+        }
+    }
+    b.push_str("</table>");
+    let rows = |pairs: &[(String, usize)]| -> String {
+        pairs
+            .iter()
+            .map(|(k, v)| format!("<tr><td>{}</td><td>{v}</td></tr>", esc(k)))
+            .collect::<String>()
+    };
+    if !st.top_hosts.is_empty() {
+        b.push_str(&format!(
+            "<h2>Top hosts</h2><table class=stats>{}</table>",
+            rows(&st.top_hosts)
+        ));
+    }
+    if !st.languages.is_empty() {
+        b.push_str(&format!(
+            "<h2>Languages</h2><table class=stats>{}</table>",
+            rows(&st.languages)
+        ));
+    }
+    // Frontier counts by status, ordered by status name (the Python sorts the
+    // dict items; a `BTreeMap` already iterates in that order).
+    if let Some(counts) = frontier {
+        if !counts.is_empty() {
+            let pairs: Vec<(String, usize)> = counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            b.push_str(&format!(
+                "<h2>Frontier</h2><table class=stats>{}</table>",
+                rows(&pairs)
+            ));
+        }
+    }
+    b.push_str("<footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+    b
+}
+
+/// A read-only search server over a shared [`Index`], and OPTIONALLY over the
+/// shared [`Frontier`] that fills it (used only to render the `/about` Frontier
+/// table — nothing on the read path queues work).
 pub struct SearchServer {
     index: Arc<Mutex<Index>>,
+    frontier: Option<Arc<Mutex<Frontier>>>,
     base_url: String,
 }
 
@@ -636,13 +746,43 @@ fn param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
 }
 
 impl SearchServer {
-    /// A new server over `index`, describing itself at `base_url`.
+    /// A new server over `index`, describing itself at `base_url`. No frontier
+    /// handle, so `/about` omits the Frontier table — see
+    /// [`with_frontier`](Self::with_frontier).
     #[must_use]
     pub fn new(index: Arc<Mutex<Index>>, base_url: impl Into<String>) -> Self {
         SearchServer {
             index,
+            frontier: None,
             base_url: base_url.into(),
         }
+    }
+
+    /// A new server that ALSO reads `frontier`, so `/about` renders the Frontier
+    /// `status → count` table (the Python `stats(conn)["frontier"]`, which comes
+    /// free there because the frontier shares the index's SQLite file). The
+    /// handle is read-only in practice: the only thing the server calls on it is
+    /// [`Frontier::counts`].
+    #[must_use]
+    pub fn with_frontier(
+        index: Arc<Mutex<Index>>,
+        frontier: Arc<Mutex<Frontier>>,
+        base_url: impl Into<String>,
+    ) -> Self {
+        SearchServer {
+            index,
+            frontier: Some(frontier),
+            base_url: base_url.into(),
+        }
+    }
+
+    /// The frontier `status → count` map, or `None` when this server has no
+    /// frontier handle. Locks the frontier ALONE (never while holding the index
+    /// lock), so the two mutexes are never nested.
+    fn frontier_counts(&self) -> Option<BTreeMap<String, usize>> {
+        self.frontier
+            .as_ref()
+            .map(|f| f.lock().expect("frontier mutex").counts())
     }
 
     /// Route a request (`GET`/`HEAD` only). Pure — no socket. `target` is the raw
@@ -669,12 +809,16 @@ impl SearchServer {
             "/api/search" => self.api_search(&params),
             "/suggest" => self.suggest(&params),
             "/about" | "/stats" => {
-                let ix = self.index.lock().expect("index mutex");
+                let st = {
+                    let ix = self.index.lock().expect("index mutex");
+                    ix.stats()
+                };
+                let counts = self.frontier_counts();
                 Resp::html(
                     200,
                     wrap_page(
                         "astrx search - stats",
-                        &(header("") + &self.render_about(&ix)),
+                        &(header("") + &render_about(&st, counts.as_ref())),
                     ),
                 )
             }
@@ -718,13 +862,23 @@ impl SearchServer {
             sort: sort.to_string(),
             only_files,
         };
+        let (resp, elapsed) = self.timed_search(&q, &opts);
+        let title = format!("{q} - astrx search");
+        let body = header(&q) + &render_results(&q, &resp, page, active, elapsed);
+        Resp::html(200, wrap_page(&title, &body))
+    }
+
+    /// Run a search and return it with its wall-clock duration in seconds — the
+    /// `elapsed` the Python `ranking.search` returns as its third value. The
+    /// clock lives HERE, in the impure route layer; the renderers take the number
+    /// as a parameter and stay pure.
+    fn timed_search(&self, q: &str, opts: &SearchOpts) -> (crate::ranking::SearchResponse, f64) {
+        let t0 = std::time::Instant::now();
         let resp = {
             let ix = self.index.lock().expect("index mutex");
-            search(&ix, &q, &opts)
+            search(&ix, q, opts)
         };
-        let title = format!("{q} - astrx search");
-        let body = header(&q) + &self.render_results(&q, &resp, page, active);
-        Resp::html(200, wrap_page(&title, &body))
+        (resp, t0.elapsed().as_secs_f64())
     }
 
     fn images_html(&self, params: &[(String, String)]) -> Resp {
@@ -797,17 +951,14 @@ impl SearchServer {
             sort: sort.to_string(),
             only_files: vtype == "files",
         };
-        let resp = {
-            let ix = self.index.lock().expect("index mutex");
-            search(&ix, &q, &opts)
-        };
+        let (resp, elapsed) = self.timed_search(&q, &opts);
         let parsed = &resp.query;
         let phrases: Vec<String> = parsed.phrases.iter().map(|p| json_str_array(p)).collect();
         let results: Vec<String> = resp.results.iter().map(result_json).collect();
         let payload = format!(
             "{{\"query\":{},\"parsed\":{{\"optional\":{},\"required\":{},\"excluded\":{},\
 \"phrases\":[{}],\"intitle\":{},\"site\":{},\"lang\":{},\"filetype\":{},\"after\":{},\"before\":{}}},\
-\"page\":{},\"page_size\":{},\"total\":{},\"elapsed_seconds\":0,\"results\":[{}]}}",
+\"page\":{},\"page_size\":{},\"total\":{},\"elapsed_seconds\":{},\"results\":[{}]}}",
             jq(&q),
             json_str_array(&parsed.optional),
             json_str_array(&parsed.required),
@@ -822,6 +973,8 @@ impl SearchServer {
             page,
             page_size,
             resp.total,
+            // Python: `round(elapsed, 6)`, the same rounding it applies to `score`.
+            round6(elapsed),
             results.join(",")
         );
         Resp::json(200, payload)
@@ -1215,5 +1368,257 @@ mod tests {
             },
         ];
         assert_eq!(render_videos("dogs", &vids), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=dogs'>Web</a><a class='tab' href='/search?type=news&amp;q=dogs'>News</a><a class='tab' href='/images?q=dogs'>Images</a><a class='tab active' href='/videos?q=dogs'>Videos</a><a class='tab' href='/search?type=files&amp;q=dogs'>Files</a></div><div class=meta>2 video results</div><div class=imggrid><figure class=imgcard><a href='https://ex.com/v1' rel='noreferrer nofollow'><img class=thumb loading=lazy referrerpolicy=no-referrer src='https://yt/t1.jpg' alt=''></a><figcaption>Fun &lt;b&gt;clip&lt;/b&gt; &amp; more<span class=imghost>ex.com &middot; youtube &middot; 1:02:03</span></figcaption></figure><figure class=imgcard><a href='https://ex.com/v2' rel='noreferrer nofollow'><div class='thumb noimg'>video</div></a><figcaption>https://ex.com/x.mp4<span class=imghost></span></figcaption></figure></div><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+    }
+
+    // ---- pager verticals + elapsed (defects 1 and 3) -----------------------
+
+    /// A [`SearchResponse`](crate::ranking::SearchResponse) with no rows but a
+    /// stated `total`, so the pure renderer's pager/meta/empty-state bytes can be
+    /// compared with the Python's for the same arguments. (Result ROWS are left
+    /// out on purpose: the Rust `result_row` omits the `similar` link because
+    /// `/similar` is deferred, a pre-existing divergence unrelated to these.)
+    fn resp(total: usize) -> crate::ranking::SearchResponse {
+        crate::ranking::SearchResponse {
+            results: Vec::new(),
+            total,
+            query: crate::ranking::parse_query(""),
+        }
+    }
+
+    /// Byte-identical to the Python `_render_results` for the pager + elapsed:
+    /// the `news`/`files` verticals carry `type=` on every page link (`q`, `type`,
+    /// `page` — the Python `_pg` insertion order), `web` carries none, and the
+    /// meta line prints `%.3f` of the elapsed seconds handed in. Goldens emitted
+    /// by driving the real Python module with `results=[]`.
+    #[test]
+    fn results_pager_and_elapsed_byte_identical_to_python() {
+        // news: type= survives on both Prev and Next
+        assert_eq!(render_results("cats", &resp(57), 3, "news", 0.012_345), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab active' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 57 results (0.012 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><div class=pager><a href='/search?q=cats&type=news&page=2'>&larr; Prev</a><span>Page 3 of 6</span><a href='/search?q=cats&type=news&page=4'>Next &rarr;</a></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        // files: same, with type=files
+        assert_eq!(render_results("cats", &resp(57), 3, "files", 0.012_345), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab active' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 57 results (0.012 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><div class=pager><a href='/search?q=cats&type=files&page=2'>&larr; Prev</a><span>Page 3 of 6</span><a href='/search?q=cats&type=files&page=4'>Next &rarr;</a></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        // web: no type= at all (the vertical-less default)
+        assert_eq!(render_results("cats", &resp(57), 3, "web", 0.012_345), "<main><div class=wrap><div class=tabs><a class='tab active' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 57 results (0.012 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><div class=pager><a href='/search?q=cats&page=2'>&larr; Prev</a><span>Page 3 of 6</span><a href='/search?q=cats&page=4'>Next &rarr;</a></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        // first page (Next only), zero elapsed
+        assert_eq!(render_results("cats", &resp(57), 1, "news", 0.0), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab active' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 57 results (0.000 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><div class=pager><span>Page 1 of 6</span><a href='/search?q=cats&type=news&page=2'>Next &rarr;</a></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        // last page (Prev only), elapsed rounded to 3 places
+        assert_eq!(render_results("cats", &resp(57), 6, "files", 1.234_567_8), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab active' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 57 results (1.235 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><div class=pager><a href='/search?q=cats&type=files&page=5'>&larr; Prev</a><span>Page 6 of 6</span></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        // a query needing percent-encoding, carried through every pager href
+        assert_eq!(render_results("foo bar & baz", &resp(25), 2, "news", 0.5), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=foo+bar+%26+baz'>Web</a><a class='tab active' href='/search?type=news&amp;q=foo+bar+%26+baz'>News</a><a class='tab' href='/images?q=foo+bar+%26+baz'>Images</a><a class='tab' href='/videos?q=foo+bar+%26+baz'>Videos</a><a class='tab' href='/search?type=files&amp;q=foo+bar+%26+baz'>Files</a></div><div class=meta>About 25 results (0.500 seconds)</div><p class=empty>No pages matched <strong>foo bar &amp; baz</strong>. Try fewer or different terms.</p><div class=pager><a href='/search?q=foo+bar+%26+baz&type=news&page=1'>&larr; Prev</a><span>Page 2 of 3</span><a href='/search?q=foo+bar+%26+baz&type=news&page=3'>Next &rarr;</a></div><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=foo+bar+%26+baz'>JSON API</a></footer></div></main>");
+        // single page: no pager at all, singular "result"
+        assert_eq!(render_results("cats", &resp(1), 1, "web", 0.001), "<main><div class=wrap><div class=tabs><a class='tab active' href='/search?q=cats'>Web</a><a class='tab' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 1 result (0.001 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+        assert_eq!(render_results("cats", &resp(7), 1, "news", 0.25), "<main><div class=wrap><div class=tabs><a class='tab' href='/search?q=cats'>Web</a><a class='tab active' href='/search?type=news&amp;q=cats'>News</a><a class='tab' href='/images?q=cats'>Images</a><a class='tab' href='/videos?q=cats'>Videos</a><a class='tab' href='/search?type=files&amp;q=cats'>Files</a></div><div class=meta>About 7 results (0.250 seconds)</div><p class=empty>No pages matched <strong>cats</strong>. Try fewer or different terms.</p><footer><a href='/about'>About &amp; stats</a> &middot; <a href='/api/search?q=cats'>JSON API</a></footer></div></main>");
+    }
+
+    /// The regression itself, end to end through [`SearchServer::route`]: paging
+    /// inside a vertical must STAY in that vertical. Before the fix every pager
+    /// href was `q=…&page=N`, so "Next" dropped `type=` and landed on plain Web.
+    #[test]
+    fn route_pager_preserves_the_vertical() {
+        // 12 docs => 2 pages of 10, so the pager renders. They are PDFs so they
+        // survive the `files` vertical's downloadable-document filter too.
+        let mut ix = Index::new();
+        for i in 0..12 {
+            ix.upsert_document(
+                &format!("http://a/rust/{i}.pdf"),
+                DocFields {
+                    title: "Rust guide",
+                    body: "learning rust programming today",
+                    host: "a",
+                    lang: "en",
+                    fetched_at: 1_700_000_000.0,
+                    http_status: 200,
+                    content_type: "application/pdf",
+                    ..DocFields::default()
+                },
+            );
+        }
+        let srv = SearchServer::new(Arc::new(Mutex::new(ix)), "http://x");
+
+        for vertical in ["news", "files"] {
+            let p1 = srv
+                .route("GET", &format!("/search?q=rust&type={vertical}"))
+                .body;
+            assert!(
+                p1.contains(&format!(
+                    "href='/search?q=rust&type={vertical}&page=2'>Next"
+                )),
+                "page 1 of ?type={vertical} lost the vertical: {p1}"
+            );
+            // …and page 2 links back with it, so the vertical is never dropped.
+            let p2 = srv
+                .route("GET", &format!("/search?q=rust&type={vertical}&page=2"))
+                .body;
+            assert!(
+                p2.contains(&format!(
+                    "href='/search?q=rust&type={vertical}&page=1'>&larr; Prev"
+                )),
+                "page 2 of ?type={vertical} lost the vertical: {p2}"
+            );
+            assert!(
+                !p1.contains("href='/search?q=rust&page="),
+                "bare href leaked"
+            );
+        }
+        // The plain web vertical still pages without a `type=`.
+        let web = srv.route("GET", "/search?q=rust").body;
+        assert!(web.contains("href='/search?q=rust&page=2'>Next"));
+        assert!(!web.contains("type=news&page="));
+    }
+
+    /// The clock is real, and it reaches both surfaces: the HTML meta line prints
+    /// a `%.3f` number of seconds and the JSON carries a numeric
+    /// `elapsed_seconds` — neither is the old hardcoded zero-literal.
+    #[test]
+    fn route_renders_measured_elapsed() {
+        let srv = server_with_docs();
+        let html = srv.route("GET", "/search?q=rust").body;
+        let meta = html
+            .split("<div class=meta>")
+            .nth(1)
+            .and_then(|s| s.split("</div>").next())
+            .expect("meta line");
+        // "About 1 result (D.DDD seconds)" — three decimals, from a real measurement.
+        let secs = meta
+            .rsplit('(')
+            .next()
+            .and_then(|s| s.split(" seconds)").next())
+            .expect("elapsed");
+        let (int, frac) = secs.split_once('.').expect("D.DDD");
+        assert_eq!(frac.len(), 3, "meta={meta}");
+        assert!(
+            int.bytes().all(|b| b.is_ascii_digit()) && frac.bytes().all(|b| b.is_ascii_digit()),
+            "meta={meta}"
+        );
+        assert!(secs.parse::<f64>().expect("a number") >= 0.0);
+
+        let json = srv.route("GET", "/api/search?q=rust").body;
+        let field = json
+            .split("\"elapsed_seconds\":")
+            .nth(1)
+            .and_then(|s| s.split(',').next())
+            .expect("elapsed_seconds");
+        assert!(
+            field.parse::<f64>().expect("a JSON number") >= 0.0,
+            "json={json}"
+        );
+    }
+
+    /// `%.3f`, member for member, against the Python format spec (both round the
+    /// exact binary double, ties to even).
+    #[test]
+    fn elapsed_formatting_matches_python_percent_3f() {
+        for (v, want) in [
+            (0.0_f64, "0.000"),
+            (0.000_4, "0.000"),
+            (0.000_5, "0.001"), // 0.0005 is just above the tie in binary
+            (0.001, "0.001"),
+            (0.012_345, "0.012"),
+            (0.25, "0.250"),
+            (0.5, "0.500"),
+            (1.234_567_8, "1.235"),
+            (1.000_5, "1.000"), // an exact tie: to even
+            (12.987_65, "12.988"),
+        ] {
+            assert_eq!(format!("{v:.3}"), want, "for {v}");
+        }
+    }
+
+    // ---- /about frontier table (defect 2) ----------------------------------
+
+    fn stats_fixture() -> Stats {
+        Stats {
+            docs: 3,
+            hosts: 2,
+            links: 5,
+            oldest: Some(1_600_000_000.0),
+            newest: Some(1_700_000_000.0),
+            top_hosts: vec![("a.example".to_string(), 2), ("b.example".to_string(), 1)],
+            languages: vec![("en".to_string(), 3)],
+        }
+    }
+
+    fn counts(pairs: &[(&str, usize)]) -> BTreeMap<String, usize> {
+        pairs.iter().map(|(k, v)| ((*k).to_string(), *v)).collect()
+    }
+
+    /// Byte-identical to the Python `_render_about`, with and without the
+    /// Frontier section. Goldens emitted by driving the real Python module.
+    #[test]
+    fn about_frontier_table_byte_identical_to_python() {
+        let st = stats_fixture();
+        // Present: one row per status, ordered by status name, counts escaped.
+        let fr = counts(&[
+            ("done", 7),
+            ("error", 1),
+            ("leased", 2),
+            ("queued", 4),
+            ("skipped", 3),
+        ]);
+        assert_eq!(render_about(&st, Some(&fr)), "<main><div class=wrap><h1>Index statistics</h1><table class=stats><tr><td>Documents indexed</td><td>3</td></tr><tr><td>Distinct hosts</td><td>2</td></tr><tr><td>Link edges</td><td>5</td></tr><tr><td>Newest fetch</td><td>2023-11-14</td></tr><tr><td>Oldest fetch</td><td>2020-09-13</td></tr></table><h2>Top hosts</h2><table class=stats><tr><td>a.example</td><td>2</td></tr><tr><td>b.example</td><td>1</td></tr></table><h2>Languages</h2><table class=stats><tr><td>en</td><td>3</td></tr></table><h2>Frontier</h2><table class=stats><tr><td>done</td><td>7</td></tr><tr><td>error</td><td>1</td></tr><tr><td>leased</td><td>2</td></tr><tr><td>queued</td><td>4</td></tr><tr><td>skipped</td><td>3</td></tr></table><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+        // Absent (no handle) and EMPTY (a frontier with nothing in it) both omit
+        // the section — the Python's falsy-empty-dict behaviour.
+        let without = "<main><div class=wrap><h1>Index statistics</h1><table class=stats><tr><td>Documents indexed</td><td>3</td></tr><tr><td>Distinct hosts</td><td>2</td></tr><tr><td>Link edges</td><td>5</td></tr><tr><td>Newest fetch</td><td>2023-11-14</td></tr><tr><td>Oldest fetch</td><td>2020-09-13</td></tr></table><h2>Top hosts</h2><table class=stats><tr><td>a.example</td><td>2</td></tr><tr><td>b.example</td><td>1</td></tr></table><h2>Languages</h2><table class=stats><tr><td>en</td><td>3</td></tr></table><footer><a href='/'>&larr; Back to search</a></footer></div></main>";
+        assert_eq!(render_about(&st, None), without);
+        assert_eq!(render_about(&st, Some(&BTreeMap::new())), without);
+        // A status name carrying markup is escaped, never rendered live.
+        let nasty = counts(&[("a<b>&\"'", 1)]);
+        let esc_st = Stats {
+            top_hosts: vec![("<b>&x</b>".to_string(), 1)],
+            languages: Vec::new(),
+            ..stats_fixture()
+        };
+        assert_eq!(render_about(&esc_st, Some(&nasty)), "<main><div class=wrap><h1>Index statistics</h1><table class=stats><tr><td>Documents indexed</td><td>3</td></tr><tr><td>Distinct hosts</td><td>2</td></tr><tr><td>Link edges</td><td>5</td></tr><tr><td>Newest fetch</td><td>2023-11-14</td></tr><tr><td>Oldest fetch</td><td>2020-09-13</td></tr></table><h2>Top hosts</h2><table class=stats><tr><td>&lt;b&gt;&amp;x&lt;/b&gt;</td><td>1</td></tr></table><h2>Frontier</h2><table class=stats><tr><td>a&lt;b&gt;&amp;&quot;&#x27;</td><td>1</td></tr></table><footer><a href='/'>&larr; Back to search</a></footer></div></main>");
+    }
+
+    /// End to end through [`SearchServer::route`]: `/about` (and its `/stats`
+    /// alias) renders the live [`Frontier::counts`] when the server holds a
+    /// frontier, and omits the section when it does not.
+    #[test]
+    fn route_about_renders_the_live_frontier() {
+        let mut fr = Frontier::new();
+        fr.add("http://a/1", "a", 0);
+        fr.add("http://a/2", "a", 0);
+        fr.add("http://b/1", "b", 0);
+        fr.complete("http://a/1", "done", None);
+        fr.complete("http://b/1", "error", Some("boom"));
+        let fr = Arc::new(Mutex::new(fr));
+
+        let ix = Arc::new(Mutex::new(Index::new()));
+        let with = SearchServer::with_frontier(ix.clone(), fr.clone(), "http://x");
+        for path in ["/about", "/stats"] {
+            let body = with.route("GET", path).body;
+            assert!(body.contains("<h2>Frontier</h2>"), "{path}: {body}");
+            assert!(body.contains("<tr><td>done</td><td>1</td></tr>"), "{body}");
+            assert!(body.contains("<tr><td>error</td><td>1</td></tr>"), "{body}");
+            assert!(
+                body.contains("<tr><td>queued</td><td>1</td></tr>"),
+                "{body}"
+            );
+        }
+        // The table tracks the live frontier: queue one more and it moves.
+        fr.lock().unwrap().add("http://c/1", "c", 0);
+        assert!(with
+            .route("GET", "/about")
+            .body
+            .contains("<tr><td>queued</td><td>2</td></tr>"));
+
+        // A server built with `new` (the `websearch serve` path — a restored
+        // snapshot carries no frontier) omits the section entirely.
+        let without = SearchServer::new(ix, "http://x");
+        let body = without.route("GET", "/about").body;
+        assert!(!body.contains("Frontier"), "{body}");
+        assert!(body.contains("Documents indexed"), "{body}");
+    }
+
+    /// An EMPTY live frontier omits the section too — matching the Python, where
+    /// `stats(conn)["frontier"]` is a falsy empty dict before anything is queued.
+    #[test]
+    fn route_about_omits_an_empty_frontier() {
+        let srv = SearchServer::with_frontier(
+            Arc::new(Mutex::new(Index::new())),
+            Arc::new(Mutex::new(Frontier::new())),
+            "http://x",
+        );
+        assert!(!srv.route("GET", "/about").body.contains("Frontier"));
     }
 }

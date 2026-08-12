@@ -78,6 +78,15 @@ impl Scratch {
             .current_dir(cwd)
             .env("HOME", "/nonexistent")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            // Never interactive: GIT_TERMINAL_PROMPT alone only suppresses the TTY
+            // prompt — git still runs an askpass/credential helper if the ambient
+            // environment provides one (on a desktop that pops a GUI dialog and
+            // hangs the test). Shut every door.
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_ASKPASS", "")
+            .env_remove("SSH_ASKPASS")
+            .env_remove("SSH_ASKPASS_REQUIRE")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
             .env("GIT_AUTHOR_NAME", "T")
             .env("GIT_AUTHOR_EMAIL", "t@e.x")

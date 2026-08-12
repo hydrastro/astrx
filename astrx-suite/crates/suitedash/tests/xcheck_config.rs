@@ -464,7 +464,11 @@ port = 2
 /// is the file the README tells operators to copy.
 #[test]
 fn shipped_example_config_parses() {
-    let text = include_str!("../../../legacy-python/suitedash/suitedash.example.toml");
+    // The shipped example config. It used to be included from the Python
+    // package; it now lives in this crate (it documents THIS binary's options),
+    // so the test tree has no dependency on a reference implementation that is
+    // no longer present.
+    let text = include_str!("../suitedash.example.toml");
     let cfg = parse_config(text, None).expect("the shipped example config must parse");
     assert_eq!(cfg.services.len(), 4);
     assert_eq!(cfg.alert_rules.len(), 2);

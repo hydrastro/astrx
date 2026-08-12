@@ -39,13 +39,15 @@ use crate::ssrf::ip_is_internal;
 use std::collections::HashSet;
 use std::time::Duration;
 
-/// HTML-ish content types (parsed with the HTML extractor). Empty is treated as
-/// HTML too, handled at the call site.
+/// HTML-ish content types (parsed with the HTML extractor). The EMPTY string is
+/// a member — a response with no usable `Content-Type` is treated as HTML —
+/// exactly as in the Python `crawler.HTML_TYPES`.
 const HTML_TYPES: &[&str] = &[
     "text/html",
     "application/xhtml+xml",
     "application/xml",
     "text/xml",
+    "",
 ];
 /// Plain-text-like types indexed verbatim (no HTML parsing).
 const TEXT_TYPES: &[&str] = &[
@@ -66,7 +68,9 @@ pub fn is_text_type(ct: &str) -> bool {
     TEXT_TYPES.contains(&ct)
 }
 
-/// True for an HTML-ish content type.
+/// True for an HTML-ish content type — including the EMPTY string, which the
+/// crawler treats as HTML (a response with no `Content-Type`). Mirrors Python's
+/// `ctype in crawler.HTML_TYPES`.
 #[must_use]
 pub fn is_html_type(ct: &str) -> bool {
     HTML_TYPES.contains(&ct)
@@ -183,6 +187,10 @@ pub struct CrawlConfig {
     /// `>1` spawns that many worker tasks; leasing keeps each reachable allowed
     /// page indexed exactly once regardless of fetch order.
     pub workers: usize,
+    /// Default age (seconds) after which an indexed URL is due for a refetch —
+    /// the threshold [`Crawler::enqueue_recrawls`] uses when given no explicit
+    /// interval. Python's `CrawlConfig.recrawl_interval`, default 7 days.
+    pub recrawl_interval: f64,
     /// This node's id in the shard set (fleet mode). `None` = single-node.
     pub shard_id: Option<String>,
     /// All shard ids for HRW routing; empty = single-node (this node owns every
@@ -222,6 +230,7 @@ impl Default for CrawlConfig {
             allow_hosts: Vec::new(),
             keep_alive: false,
             workers: 1,
+            recrawl_interval: 7.0 * 86_400.0,
             shard_id: None,
             shards: Vec::new(),
         }
@@ -388,6 +397,34 @@ mod net_impl {
                 }
             }
             added
+        }
+
+        /// Re-queue every indexed URL that is due for a recrawl; returns how many
+        /// were queued.
+        ///
+        /// "Due" means `fetched_at + interval <= now` ([`Index::due_for_recrawl`]).
+        /// Each due URL goes back into the frontier as `queued` at depth 0 with
+        /// reason `recrawl`, and its host's spent politeness budget is cleared so
+        /// the refetch is not blocked by it. The refetch itself is an ordinary
+        /// [`run`](Self::run) pass — a conditional GET from the stored validators,
+        /// through the same SSRF-checked connector as any other fetch. `interval`
+        /// of `None` uses [`CrawlConfig::recrawl_interval`].
+        ///
+        /// This reads the crawler's OWN index, so a driver that wants to refresh a
+        /// previously persisted crawl must load that snapshot into
+        /// [`index_mut`](Self::index_mut) first (a fresh [`Crawler::new`] has an
+        /// empty index and therefore nothing due). Mirrors the Python
+        /// `Crawler.enqueue_recrawls`, which gets the same effect for free by
+        /// opening the persistent SQLite database.
+        pub fn enqueue_recrawls(&mut self, interval: Option<f64>, now: f64) -> usize {
+            let interval = interval.unwrap_or(self.cfg.recrawl_interval);
+            let due = self.core.ix.due_for_recrawl(interval, now);
+            for (url, _host) in &due {
+                // The Python re-derives the authority from the URL rather than
+                // trusting the stored `docs.host`; so do we.
+                self.core.fr.requeue_for_recrawl(url, &authority_of(url));
+            }
+            due.len()
         }
 
         /// Run the crawl loop until the page budget is spent or the frontier
@@ -1077,6 +1114,41 @@ mod tests {
         assert_eq!(path_of("http://x"), "/");
     }
 
+    /// The predicates are the Python sets, member for member — including the
+    /// EMPTY content type, which is an `HTML_TYPES` member there and so must be
+    /// one here (a missing `Content-Type` is HTML). Pinned against the Python
+    /// `crawler.HTML_TYPES` / `TEXT_TYPES` literals; the matching dispatch pin
+    /// (a real no-`Content-Type` response parsed as HTML) is
+    /// `tests/net_crawler.rs::missing_content_type_is_crawled_as_html`.
+    #[test]
+    fn type_predicates_match_python_sets() {
+        for ct in [
+            "text/html",
+            "application/xhtml+xml",
+            "application/xml",
+            "text/xml",
+            "", // the member the Rust used to be missing
+        ] {
+            assert!(is_html_type(ct), "HTML_TYPES should contain {ct:?}");
+            assert!(!is_text_type(ct), "TEXT_TYPES should not contain {ct:?}");
+        }
+        for ct in [
+            "text/plain",
+            "text/markdown",
+            "text/x-markdown",
+            "text/csv",
+            "text/tab-separated-values",
+            "application/json",
+            "text/x-rst",
+        ] {
+            assert!(is_text_type(ct), "TEXT_TYPES should contain {ct:?}");
+            assert!(!is_html_type(ct), "HTML_TYPES should not contain {ct:?}");
+        }
+        assert!(!is_html_type(PDF_TYPE));
+        assert!(!is_text_type(PDF_TYPE));
+        assert!(!is_html_type("text/html; charset=utf-8")); // params are stripped upstream
+    }
+
     #[test]
     fn internal_ip_media_guard() {
         // literal internal IP → dropped; public host → kept; hostname → kept.
@@ -1111,5 +1183,64 @@ mod tests {
         assert!(cfg.content_types.contains("text/html"));
         assert!(cfg.content_types.contains("application/json"));
         assert!(!cfg.content_types.contains(PDF_TYPE));
+        // Python `CrawlConfig(recrawl_interval=7 * 86400.0)`.
+        assert_eq!(cfg.recrawl_interval, 7.0 * 86_400.0);
+    }
+
+    /// The recrawl scheduler: every indexed URL whose `fetched_at + interval` has
+    /// passed goes back into the frontier as `queued`, with its host's spent
+    /// politeness budget cleared; nothing else moves.
+    ///
+    /// The expected counts were taken from the real Python
+    /// `Crawler.enqueue_recrawls` driven over these same four documents (it
+    /// returns 2, then 3 at `interval=1.0`, and leaves `hosts` for `a.example` at
+    /// `next_time=0, fetched=0`). The host-row half of that is asserted in
+    /// `frontier::tests::requeue_for_recrawl_resets_entry_and_host`, which can
+    /// take the frontier mutably.
+    #[cfg(feature = "net")]
+    #[test]
+    fn enqueue_recrawls_requeues_only_due_docs() {
+        use crate::index::DocFields;
+
+        let mut cr = Crawler::new(CrawlConfig {
+            recrawl_interval: 100.0,
+            ..CrawlConfig::default()
+        });
+        for (url, host, fetched_at) in [
+            ("http://a.example/old", "a.example", 1_000.0), // due at now=2000
+            ("http://a.example/older", "a.example", 500.0), // due
+            ("http://b.example/fresh", "b.example", 1_990.0), // not due
+            ("http://b.example/never", "b.example", 0.0),   // never fetched
+        ] {
+            cr.index_mut().upsert_document(
+                url,
+                DocFields {
+                    title: "t",
+                    body: "b",
+                    host,
+                    fetched_at,
+                    http_status: 200,
+                    ..DocFields::default()
+                },
+            );
+        }
+
+        assert_eq!(cr.enqueue_recrawls(None, 2_000.0), 2);
+        assert!(cr.frontier().seen("http://a.example/old"));
+        assert!(cr.frontier().seen("http://a.example/older"));
+        assert!(!cr.frontier().seen("http://b.example/fresh"));
+        assert!(!cr.frontier().seen("http://b.example/never"));
+        assert_eq!(cr.frontier().counts().get("queued"), Some(&2));
+
+        // An explicit interval overrides the config's: at 1s everything fetched
+        // is due (the never-fetched doc still is not).
+        assert_eq!(cr.enqueue_recrawls(Some(1.0), 2_000.0), 3);
+        assert_eq!(cr.frontier().counts().get("queued"), Some(&3));
+        assert!(!cr.frontier().seen("http://b.example/never"));
+
+        // An empty index has nothing due — the reason the `--recrawl` CLI path
+        // restores its snapshot before calling this.
+        let mut fresh = Crawler::new(CrawlConfig::default());
+        assert_eq!(fresh.enqueue_recrawls(None, 2_000.0), 0);
     }
 }

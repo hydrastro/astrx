@@ -84,6 +84,15 @@ fn git(cwd: &Path, date: &str, args: &[&str]) -> String {
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        // Never interactive: GIT_TERMINAL_PROMPT alone only suppresses the TTY
+        // prompt — git still runs an askpass/credential helper if the ambient
+        // environment provides one (on a desktop that pops a GUI dialog and
+        // hangs the test). Shut every door.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_ASKPASS", "")
+        .env_remove("SSH_ASKPASS")
+        .env_remove("SSH_ASKPASS_REQUIRE")
         .env("GIT_AUTHOR_NAME", "Test Author")
         .env("GIT_AUTHOR_EMAIL", "author@example.com")
         .env("GIT_COMMITTER_NAME", "Test Author")
@@ -351,6 +360,15 @@ fn hostile_git(cwd: &Path, args: &[&str]) -> String {
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        // Never interactive: GIT_TERMINAL_PROMPT alone only suppresses the TTY
+        // prompt — git still runs an askpass/credential helper if the ambient
+        // environment provides one (on a desktop that pops a GUI dialog and
+        // hangs the test). Shut every door.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_ASKPASS", "")
+        .env_remove("SSH_ASKPASS")
+        .env_remove("SSH_ASKPASS_REQUIRE")
         .env("GIT_AUTHOR_NAME", "Eve <script>")
         .env("GIT_AUTHOR_EMAIL", "eve+<x>@example.com")
         .env("GIT_COMMITTER_NAME", "Eve <script>")

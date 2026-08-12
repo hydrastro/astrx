@@ -475,17 +475,33 @@ pub fn object_spec(reference: &SafeRef, path: &SafePath) -> String {
 // Subprocess wrapper
 // --------------------------------------------------------------------------- //
 
-/// Environment for git children: no prompts, no global/system config.
+/// Environment for git children: **never interactive**, no global/system config.
 ///
 /// Ignoring global/system config makes behaviour deterministic and strips any
 /// user aliases/pagers. `safe.directory` is forced on via `-c` so we can still
 /// read repos owned by another uid. `GIT_PROTOCOL` is scrubbed by default so
 /// the wire protocol version is deterministic; the Smart-HTTP layer passes
 /// `version=2` only when the client explicitly negotiated protocol v2.
+///
+/// **Non-interactivity is a hard requirement, not a convenience.** This runs
+/// inside a request handler: a child that stops to ask a human for a password
+/// pins a worker until the timeout, so a single unauthenticated remote could
+/// stall the server. `GIT_TERMINAL_PROMPT=0` alone is *not* enough — it only
+/// suppresses the TTY prompt, and git will still shell out to an **askpass
+/// helper** (`GIT_ASKPASS`, `core.askPass`, `SSH_ASKPASS`) or a configured
+/// **credential helper** if the environment provides one, which on a desktop
+/// pops a GUI dialog. All three doors are shut here.
 fn harden_env(cmd: &mut Command, extra: Option<(&str, &str)>) {
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     cmd.env("GIT_CONFIG_GLOBAL", DEVNULL);
     cmd.env("GIT_CONFIG_SYSTEM", DEVNULL);
+    // Belt-and-braces with GIT_CONFIG_SYSTEM: some builds honour only this.
+    cmd.env("GIT_CONFIG_NOSYSTEM", "1");
+    // Empty (not merely unset) disables the askpass path outright; an inherited
+    // SSH_ASKPASS would otherwise be used as the fallback helper.
+    cmd.env("GIT_ASKPASS", "");
+    cmd.env_remove("SSH_ASKPASS");
+    cmd.env_remove("SSH_ASKPASS_REQUIRE");
     cmd.env_remove("GIT_DIR");
     cmd.env_remove("GIT_WORK_TREE");
     cmd.env_remove("GIT_PROTOCOL");
@@ -554,6 +570,14 @@ fn base_cmd(repo: &RepoPath) -> Command {
         .arg("log.showSignature=false")
         .arg("-c")
         .arg("core.quotePath=false")
+        // The config half of the never-interactive rule (see `harden_env` for
+        // the environment half): an empty `core.askPass` disables the askpass
+        // helper, and an empty `credential.helper` RESETS the helper list, so a
+        // helper configured anywhere else cannot run and block the request.
+        .arg("-c")
+        .arg("core.askPass=")
+        .arg("-c")
+        .arg("credential.helper=")
         .arg("-C")
         .arg(repo.as_os_str());
     cmd

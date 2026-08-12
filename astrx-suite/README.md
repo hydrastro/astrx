@@ -34,8 +34,7 @@ astrx-suite/
 │   └── gitweb/           read-only no-JS git frontend ✅
 ├── deploy/               FROM scratch images, Tor ingress, compose, FLEET.md ✅
 ├── docker-compose.yml    one-command Tor deployment (no host ports)
-├── fuzz/                 cargo-fuzz harnesses for the wire parsers
-└── legacy-python/        the Python engines being retired, one at a time
+└── fuzz/                 cargo-fuzz harnesses for the wire parsers
 ```
 
 `torrentds` is organised in feature tiers so the auditable core stays dep-free:
@@ -44,10 +43,12 @@ all of `metadata`'s parsing) always compile; `rand` adds the CSPRNG-backed
 routing table + swarm store; `net` adds the async DHT node, the HTTP/UDP
 trackers and the metadata fetch client.
 
-`legacy-python/` holds the current, working Python suite (it still builds and
-deploys via `legacy-python/docker-compose.yml`). Each engine is deleted from
-there as its Rust replacement reaches parity — when the folder is empty, the
-migration is done.
+**The migration is done.** `legacy-python/` is gone: every engine reached parity,
+and the tree now contains **no Python at all** — 176 `.rs` files and not one
+`.py`. The reference implementation and the golden generators are preserved in
+git history at the tag `python-reference-final` (see `crates/GOLDENS.md`), so a
+byte-identity golden can still be regenerated if it ever needs to be; the frozen
+literals in `tests/xcheck_*.rs` are now the specification.
 
 ## Why Rust
 
@@ -64,8 +65,9 @@ harnesses under `fuzz/`.
 
 Port one component at a time; keep the Python tests as the executable spec; stand
 each new engine up behind the **identical JSON/loopback API** so the AstrX PHP
-bridge (and its 145 tests) never change. The suite runs mixed-language until the
-last engine is swapped, and the CMS never notices.
+bridge (and its 145 tests) never change. The suite ran mixed-language until the
+last engine was swapped, and the CMS never noticed. That migration is now
+complete — the strangler has finished, and the Python is retired.
 
 ## Status
 

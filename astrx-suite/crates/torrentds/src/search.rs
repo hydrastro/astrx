@@ -109,24 +109,134 @@ fn json_str(s: &str) -> String {
     out
 }
 
-const PAGE_CSS: &str = "body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:900px;\
-margin:0 auto;padding:1.5rem;color:#1a1a1a;background:#fafafa}\
-a{color:#0b57d0;text-decoration:none}a:hover{text-decoration:underline}\
-h1{font-size:1.4rem}form{margin:1rem 0}\
-input[type=text]{width:70%;padding:.5rem;font-size:1rem;border:1px solid #ccc;border-radius:4px}\
-select{padding:.4rem;font-size:.9rem;border:1px solid #ccc;border-radius:4px;margin:.2rem .4rem .2rem 0}\
-button{padding:.5rem 1rem;font-size:1rem;border:0;background:#0b57d0;color:#fff;border-radius:4px;cursor:pointer}\
-.result{background:#fff;border:1px solid #e3e3e3;border-radius:6px;padding:.8rem 1rem;margin:.6rem 0}\
-.result .name{font-weight:600;font-size:1.05rem}\
-.meta{color:#555;font-size:.85rem;margin-top:.3rem}.meta span{margin-right:1rem}\
-.cat{display:inline-block;background:#eef;border-radius:3px;padding:0 .4rem;color:#456}\
-.facet{display:inline-block;background:#f0f0f0;border-radius:3px;padding:0 .35rem;margin-right:.25rem;color:#555;font-size:.8rem}\
-.sw{color:#137333}.sw b{color:#0b8043}.lc{color:#a50e0e}\
-.magnet{font-family:monospace;font-size:.8rem;word-break:break-all}\
-.hash{font-family:monospace;color:#888;font-size:.75rem}\
-.muted{color:#888}.empty{padding:2rem;text-align:center;color:#888}\
-.pager{margin:1rem 0}.pager a{margin-right:1rem}\
-footer{margin-top:2rem;color:#aaa;font-size:.8rem}";
+/// The inline stylesheet, byte-identical to the Python `PAGE_CSS` (1427 B, 26
+/// rules) — including its leading/trailing newlines and line breaks.
+///
+/// Kept as a **raw string, verbatim**: the pages are cross-checked byte-for-byte
+/// against the reference, so re-flowing this (as a hand-transcribed, `\`-joined
+/// literal) both changes the served bytes and makes reference drift invisible in
+/// a diff. Paste changes in from `search.py` rather than editing by hand.
+pub const PAGE_CSS: &str = r#"
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:900px;
+margin:0 auto;padding:1.5rem;color:#1a1a1a;background:#fafafa}
+a{color:#0b57d0;text-decoration:none}a:hover{text-decoration:underline}
+h1{font-size:1.4rem}form{margin:1rem 0}
+input[type=text]{width:70%;padding:.5rem;font-size:1rem;border:1px solid #ccc;border-radius:4px}
+select{padding:.4rem;font-size:.9rem;border:1px solid #ccc;border-radius:4px;margin:.2rem .4rem .2rem 0}
+button{padding:.5rem 1rem;font-size:1rem;border:0;background:#0b57d0;color:#fff;border-radius:4px;cursor:pointer}
+.filters{margin:.4rem 0}
+.result{background:#fff;border:1px solid #e3e3e3;border-radius:6px;padding:.8rem 1rem;margin:.6rem 0}
+.result .name{font-weight:600;font-size:1.05rem}
+.meta{color:#555;font-size:.85rem;margin-top:.3rem}
+.meta span{margin-right:1rem}
+.cat{display:inline-block;background:#eef;border-radius:3px;padding:0 .4rem;color:#456}
+.facet{display:inline-block;background:#f0f0f0;border-radius:3px;padding:0 .35rem;margin-right:.25rem;color:#555;font-size:.8rem}
+.meta .facet{margin-right:.25rem}
+.sw{color:#137333}.sw b{color:#0b8043}.lc{color:#a50e0e}
+.magnet{font-family:monospace;font-size:.8rem;word-break:break-all}
+.hash{font-family:monospace;color:#888;font-size:.75rem}
+.muted{color:#888}.empty{padding:2rem;text-align:center;color:#888}
+.pager{margin:1rem 0}.pager a{margin-right:1rem}
+footer{margin-top:2rem;color:#aaa;font-size:.8rem}
+"#;
+
+// --- filter / order UI vocabulary (Python `_SINCE_PRESETS` … `_VALID_ORDERS`) --
+
+/// Recency-window presets (label, `since=` seconds) offered in the UI.
+const SINCE_PRESETS: &[(&str, &str)] = &[
+    ("Any time", ""),
+    ("Past hour", "3600"),
+    ("Past day", "86400"),
+    ("Past week", "604800"),
+    ("Past month", "2592000"),
+];
+
+/// Minimum-size presets (label, `min_size=` bytes) offered in the UI.
+const SIZE_PRESETS: &[(&str, &str)] = &[
+    ("Any size", ""),
+    ("> 100 MB", "104857600"),
+    ("> 1 GB", "1073741824"),
+    ("> 5 GB", "5368709120"),
+];
+
+/// Orderings offered in the UI. Note `oldest` is a *valid* `order=` param (see
+/// [`order_from_str`]) but deliberately has no option here, mirroring Python's
+/// `_ORDERS` — an `?order=oldest` request therefore renders with no option
+/// selected, exactly as the reference does.
+const ORDERS: &[(&str, &str)] = &[
+    ("Relevance", "relevance"),
+    ("Latest", "latest"),
+    ("Largest", "size"),
+    ("Most seen", "seen"),
+];
+
+/// The accepted `order=` spellings (Python's `_VALID_ORDERS`); anything else
+/// falls back to relevance.
+fn order_from_str(s: &str) -> Order {
+    match s {
+        "latest" => Order::Latest,
+        "oldest" => Order::Oldest,
+        "size" => Order::Size,
+        "seen" => Order::Seen,
+        _ => Order::Relevance,
+    }
+}
+
+/// The `order=` query-param spelling for an [`Order`] (inverse of
+/// [`order_from_str`]), used for the `selected` state and the pager links.
+fn order_param(o: Order) -> &'static str {
+    match o {
+        Order::Relevance => "relevance",
+        Order::Latest => "latest",
+        Order::Oldest => "oldest",
+        Order::Size => "size",
+        Order::Seen => "seen",
+    }
+}
+
+/// The filter state as the *UI* sees it: the raw `category` / `min_size` /
+/// `since` / `order` query-param values, which the form reflects back as the
+/// selected options and the pager preserves in its links.
+///
+/// This is deliberately distinct from the store-side [`Filters`]: `since` there
+/// is resolved against the clock into an absolute `min_last_seen`, which cannot
+/// be rendered back into a preset option or a stable link. Like the reference,
+/// only these four are surfaced in the form and carried across pages —
+/// `max_size` / `min_files` / `max_files` are honoured by the backend for the
+/// current request but are not round-tripped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UiFilters {
+    /// Selected category (must be one of [`CATEGORIES`] to have any effect).
+    pub category: Option<String>,
+    /// Selected `min_size=` in bytes.
+    pub min_size: Option<u64>,
+    /// Selected `since=` recency window, in seconds.
+    pub since: Option<u64>,
+    /// Selected ordering.
+    pub order: Order,
+}
+
+/// Pagination state for a results page (Python's `total`/`limit`/`offset`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Page {
+    /// Total matching torrents, ignoring `limit`/`offset` — the "N match" count
+    /// and what decides whether a `next` link exists.
+    pub total: usize,
+    /// Page size.
+    pub limit: usize,
+    /// Row offset of this page.
+    pub offset: usize,
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            total: 0,
+            limit: 25,
+            offset: 0,
+        }
+    }
+}
 
 /// Local swarm health per infohash, folded into results before rendering.
 type Swarm = std::collections::HashMap<String, (u64, u64)>;
@@ -156,9 +266,120 @@ fn magnet_anchor(magnet: &str) -> String {
     format!("<a class=\"magnet\" href=\"{}\">magnet</a>", esc(magnet))
 }
 
-/// Render the search/results page.
+/// One `<select>` control: `options` is `(label, value)`, and the option whose
+/// value equals `current` gets ` selected`. Both label and value are escaped.
+fn select_html<L: AsRef<str>, V: AsRef<str>>(
+    name: &str,
+    options: &[(L, V)],
+    current: &str,
+) -> String {
+    let mut out = format!("<select name={name}>");
+    for (label, value) in options {
+        let sel = if value.as_ref() == current {
+            " selected"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "<option value='{}'{sel}>{}</option>",
+            esc(value.as_ref()),
+            esc(label.as_ref())
+        ));
+    }
+    out.push_str("</select>");
+    out
+}
+
+/// The category `<select>`: "Any type" plus the fixed [`CATEGORIES`] vocabulary.
+fn category_select(current: Option<&str>) -> String {
+    let mut opts: Vec<(String, String)> = vec![("Any type".to_string(), String::new())];
+    opts.extend(CATEGORIES.iter().map(|c| (title_case(c), (*c).to_string())));
+    select_html("category", &opts, current.unwrap_or_default())
+}
+
+/// The filter/order controls carried on every results page.
+fn filters_html(f: &UiFilters) -> String {
+    let num = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
+    format!(
+        "<div class=filters>{}{}{}{}</div>",
+        category_select(f.category.as_deref()),
+        select_html("min_size", SIZE_PRESETS, &num(f.min_size)),
+        select_html("since", SINCE_PRESETS, &num(f.since)),
+        select_html("order", ORDERS, order_param(f.order)),
+    )
+}
+
+/// The query string that carries the active query + filters onto another page.
+/// Values are percent-encoded (`urllib.parse.quote`), which is also what keeps a
+/// hostile `?q=` inert inside the `href` — nothing here is raw.
+fn qs(query: &str, f: &UiFilters, limit: usize, offset: usize) -> String {
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    if !query.is_empty() {
+        pairs.push(("q", query.to_string()));
+    }
+    pairs.push(("limit", limit.to_string()));
+    pairs.push(("offset", offset.to_string()));
+    if let Some(c) = f.category.as_deref().filter(|c| !c.is_empty()) {
+        pairs.push(("category", c.to_string()));
+    }
+    if let Some(v) = f.min_size {
+        pairs.push(("min_size", v.to_string()));
+    }
+    if let Some(v) = f.since {
+        pairs.push(("since", v.to_string()));
+    }
+    if f.order != Order::Relevance {
+        pairs.push(("order", order_param(f.order).to_string()));
+    }
+    pairs
+        .iter()
+        .map(|(k, v)| format!("{k}={}", crate::store::quote(v)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// prev/next links for a page of `total` results (empty when both would be).
+fn pager(query: &str, f: &UiFilters, page: Page) -> String {
+    let Page {
+        total,
+        limit,
+        offset,
+    } = page;
+    let mut links = String::new();
+    if offset > 0 {
+        let prev = offset.saturating_sub(limit);
+        links.push_str(&format!(
+            "<a href='/search?{}'>&larr; prev</a>",
+            qs(query, f, limit, prev)
+        ));
+    }
+    if offset + limit < total {
+        links.push_str(&format!(
+            "<a href='/search?{}'>next &rarr;</a>",
+            qs(query, f, limit, offset + limit)
+        ));
+    }
+    if links.is_empty() {
+        String::new()
+    } else {
+        format!("<div class=pager>{links}</div>")
+    }
+}
+
+/// Render the search/results page: the query form + filter controls, the result
+/// rows, and the prev/next pager.
+///
+/// `page.total` is the *match* count (`Store::count`), not `results.len()` — it
+/// is what the "N match" line reports and what decides the `next` link.
 #[must_use]
-pub fn render_results(query: &str, results: &[SearchResult], stats: &Stats, sw: &Swarm) -> Vec<u8> {
+pub fn render_results(
+    query: &str,
+    results: &[SearchResult],
+    stats: &Stats,
+    sw: &Swarm,
+    f: &UiFilters,
+    page: Page,
+) -> Vec<u8> {
     let mut p = String::new();
     p.push_str("<!doctype html><html><head><meta charset=utf-8>");
     p.push_str("<meta name=viewport content='width=device-width,initial-scale=1'>");
@@ -171,12 +392,14 @@ pub fn render_results(query: &str, results: &[SearchResult], stats: &Stats, sw: 
         "<input type=text name=q value='{}' placeholder='search torrents...' autofocus>",
         esc(query)
     ));
-    p.push_str("<button type=submit>Search</button></form>");
+    p.push_str("<button type=submit>Search</button>");
+    p.push_str(&filters_html(f));
+    p.push_str("</form>");
     p.push_str(&format!(
-        "<p class=muted>{} torrents indexed &middot; {} total &middot; {} shown</p>",
+        "<p class=muted>{} torrents indexed &middot; {} total &middot; {} match</p>",
         stats.torrents,
         human_size(stats.total_size),
-        results.len()
+        page.total
     ));
     if !query.is_empty() && results.is_empty() {
         p.push_str(&format!(
@@ -209,6 +432,7 @@ pub fn render_results(query: &str, results: &[SearchResult], stats: &Stats, sw: 
         ));
         p.push_str(&format!("<div class=hash>{ih}</div></div>"));
     }
+    p.push_str(&pager(query, f, page));
     p.push_str(
         "<footer>Metadata + magnet links only. No content is stored or served. \
          Operators are responsible for legal compliance.</footer></body></html>",
@@ -279,7 +503,7 @@ pub fn render_browse(counts: &[(&str, usize)], recent: &[SearchResult], stats: &
     p.push_str("<h1>torrentds &mdash; browse</h1>");
     p.push_str("<p><a href='/'>&larr; search</a> &middot; <a href='/recent'>recently added</a> &middot; <a href='/rss'>RSS</a></p>");
     p.push_str(&format!(
-        "<p class=muted>{} torrents indexed &middot; {} total</p><h3>Categories</h3><div>",
+        "<p class=muted>{} torrents indexed &middot; {} total</p><h3>Categories</h3><div class=filters>",
         stats.torrents,
         human_size(stats.total_size)
     ));
@@ -626,12 +850,20 @@ fn filters_from(p: &Params, show_spam: bool) -> Filters {
 }
 
 fn order_from(p: &Params) -> Order {
-    match p.get("order").map(String::as_str) {
-        Some("latest") => Order::Latest,
-        Some("oldest") => Order::Oldest,
-        Some("size") => Order::Size,
-        Some("seen") => Order::Seen,
-        _ => Order::Relevance,
+    order_from_str(p.get("order").map_or("", String::as_str))
+}
+
+/// The UI-visible filter state for this request (what the form reflects back and
+/// the pager preserves). The store-side counterpart is [`filters_from`].
+fn ui_filters_from(p: &Params) -> UiFilters {
+    UiFilters {
+        category: p
+            .get("category")
+            .filter(|c| CATEGORIES.contains(&c.as_str()))
+            .cloned(),
+        min_size: opt_u64(p, "min_size"),
+        since: opt_u64(p, "since"),
+        order: order_from(p),
     }
 }
 
@@ -838,20 +1070,52 @@ impl SearchServer {
             .search(q, limit, offset, order, f, true)
     }
 
+    /// Search, count and snapshot stats under ONE store lock, so the "N match"
+    /// total and the rows it labels can't come from two different store states.
+    fn search_and_count(
+        &self,
+        q: &str,
+        limit: usize,
+        offset: usize,
+        f: &Filters,
+        order: Order,
+    ) -> (Vec<SearchResult>, usize, Stats) {
+        let store = self.store.lock().unwrap();
+        (
+            store.search(q, limit, offset, order, f, true),
+            store.count(q, f),
+            store.stats(),
+        )
+    }
+
     fn results_page(&self, q: &str, limit: usize, offset: usize, p: &Params, spam: bool) -> Resp {
         let f = filters_from(p, spam);
-        let results = self.search(q, limit, offset, &f, order_from(p));
+        let ui = ui_filters_from(p);
+        let (results, total, stats) = self.search_and_count(q, limit, offset, &f, ui.order);
         let sw = self.swarm_for(results.iter().map(|r| r.infohash.clone()));
-        let stats = self.store.lock().unwrap().stats();
-        Resp::html(render_results(q, &results, &stats, &sw))
+        let page = Page {
+            total,
+            limit,
+            offset,
+        };
+        Resp::html(render_results(q, &results, &stats, &sw, &ui, page))
     }
 
     fn recent_page(&self, limit: usize, offset: usize, p: &Params, spam: bool) -> Resp {
         let f = filters_from(p, spam);
-        let results = self.search("", limit, offset, &f, Order::Latest);
+        // `/recent` is "newest first" by definition; the form reflects that back.
+        let ui = UiFilters {
+            order: Order::Latest,
+            ..ui_filters_from(p)
+        };
+        let (results, total, stats) = self.search_and_count("", limit, offset, &f, Order::Latest);
         let sw = self.swarm_for(results.iter().map(|r| r.infohash.clone()));
-        let stats = self.store.lock().unwrap().stats();
-        Resp::html(render_results("", &results, &stats, &sw))
+        let page = Page {
+            total,
+            limit,
+            offset,
+        };
+        Resp::html(render_results("", &results, &stats, &sw, &ui, page))
     }
 
     fn browse_page(&self, p: &Params, limit: usize, offset: usize, spam: bool) -> Resp {
@@ -869,10 +1133,19 @@ impl SearchServer {
             let _ = &sw;
             Resp::html(render_browse(&counts, &recent, &stats))
         } else {
-            let results = self.search("", limit, offset, &f, Order::Latest);
+            let ui = UiFilters {
+                order: Order::Latest,
+                ..ui_filters_from(p)
+            };
+            let (results, total, stats) =
+                self.search_and_count("", limit, offset, &f, Order::Latest);
             let sw = self.swarm_for(results.iter().map(|r| r.infohash.clone()));
-            let stats = self.store.lock().unwrap().stats();
-            Resp::html(render_results("", &results, &stats, &sw))
+            let page = Page {
+                total,
+                limit,
+                offset,
+            };
+            Resp::html(render_results("", &results, &stats, &sw, &ui, page))
         }
     }
 
@@ -1273,5 +1546,284 @@ mod tests {
     fn escaping() {
         assert_eq!(esc("a<b>&\"'"), "a&lt;b&gt;&amp;&quot;&#x27;");
         assert_eq!(xml_text("a&b<c>\u{0}"), "a&amp;b&lt;c&gt;");
+    }
+
+    // -- pure render tests: filters, pager, totals, escaping ----------------
+
+    fn stats() -> Stats {
+        Stats {
+            torrents: 1234,
+            files: 9,
+            total_size: 9_876_543_210,
+            discovered: 0,
+            pending: 0,
+            blocked_infohash: 0,
+            blocked_keyword: 0,
+            hybrid_v2: 0,
+            spam_flagged: 0,
+        }
+    }
+
+    fn row(name: &str) -> SearchResult {
+        SearchResult {
+            infohash: "aa".repeat(20),
+            name: name.to_string(),
+            total_size: 1_400_000_000,
+            file_count: 3,
+            piece_count: 5340,
+            seen_count: 7,
+            last_seen: 1_600_000_000,
+            category: "video".into(),
+            version: "v1".into(),
+            infohash_v2: None,
+            tags: "res:1080p".into(),
+            magnet: "magnet:?xt=urn:btih:aa".into(),
+            dup_count: 1,
+            alt_infohashes: Vec::new(),
+        }
+    }
+
+    fn page_html(query: &str, rows: &[SearchResult], f: &UiFilters, page: Page) -> String {
+        String::from_utf8(render_results(
+            query,
+            rows,
+            &stats(),
+            &Swarm::new(),
+            f,
+            page,
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn css_has_every_reference_rule() {
+        // Byte-for-byte parity with the Python `PAGE_CSS` is pinned in
+        // `tests/xcheck_search.rs`; these are the two rules that were missing.
+        assert_eq!(PAGE_CSS.len(), 1427);
+        assert_eq!(PAGE_CSS.matches('}').count(), 26);
+        assert!(PAGE_CSS.contains("\n.filters{margin:.4rem 0}\n"));
+        assert!(PAGE_CSS.contains("\n.meta .facet{margin-right:.25rem}\n"));
+    }
+
+    #[test]
+    fn renders_the_four_filter_selects() {
+        let html = page_html("", &[], &UiFilters::default(), Page::default());
+        for name in ["category", "min_size", "since", "order"] {
+            assert!(
+                html.contains(&format!("<select name={name}>")),
+                "missing {name} select"
+            );
+        }
+        assert!(html.contains("<div class=filters>"));
+        // Every category is offered, plus the "any" sentinel.
+        for c in CATEGORIES {
+            assert!(
+                html.contains(&format!("<option value='{c}'>")),
+                "missing {c}"
+            );
+        }
+        // Nothing chosen => the empty/relevance options carry `selected`.
+        assert!(html.contains("<option value='' selected>Any type</option>"));
+        assert!(html.contains("<option value='' selected>Any size</option>"));
+        assert!(html.contains("<option value='' selected>Any time</option>"));
+        assert!(html.contains("<option value='relevance' selected>Relevance</option>"));
+    }
+
+    #[test]
+    fn filter_selects_reflect_the_active_filters() {
+        let f = UiFilters {
+            category: Some("audio".into()),
+            min_size: Some(1_073_741_824),
+            since: Some(604_800),
+            order: Order::Size,
+        };
+        let html = page_html("q", &[], &f, Page::default());
+        assert!(html.contains("<option value='audio' selected>Audio</option>"));
+        assert!(html.contains("<option value='1073741824' selected>&gt; 1 GB</option>"));
+        assert!(html.contains("<option value='604800' selected>Past week</option>"));
+        assert!(html.contains("<option value='size' selected>Largest</option>"));
+        // Exactly one option per select is selected.
+        assert_eq!(html.matches(" selected>").count(), 4);
+        // ...and the un-chosen options are NOT marked.
+        assert!(html.contains("<option value='video'>Video</option>"));
+        assert!(html.contains("<option value='relevance'>Relevance</option>"));
+    }
+
+    #[test]
+    fn order_oldest_selects_nothing() {
+        // `oldest` is a valid `order=` but has no option — the reference then
+        // renders the order select with no selected option at all.
+        let f = UiFilters {
+            order: Order::Oldest,
+            ..UiFilters::default()
+        };
+        let html = page_html("", &[], &f, Page::default());
+        assert!(html.contains("<option value='relevance'>Relevance</option>"));
+        assert_eq!(html.matches(" selected>").count(), 3); // category/min_size/since only
+    }
+
+    #[test]
+    fn total_is_the_match_count_not_the_page_size() {
+        let rows = vec![row("a"), row("b")];
+        let page = Page {
+            total: 137,
+            limit: 2,
+            offset: 0,
+        };
+        let html = page_html("ubuntu", &rows, &UiFilters::default(), page);
+        assert!(html.contains("&middot; 137 match</p>"), "{html}");
+        assert!(!html.contains("2 match"));
+        assert!(!html.contains("shown"));
+    }
+
+    #[test]
+    fn pager_absent_when_everything_fits() {
+        let page = Page {
+            total: 1,
+            limit: 25,
+            offset: 0,
+        };
+        let html = page_html("x", &[row("a")], &UiFilters::default(), page);
+        assert!(!html.contains("class=pager"));
+    }
+
+    #[test]
+    fn pager_first_page_has_next_only() {
+        let page = Page {
+            total: 30,
+            limit: 25,
+            offset: 0,
+        };
+        let html = page_html("ubuntu", &[], &UiFilters::default(), page);
+        assert!(html.contains(
+            "<div class=pager><a href='/search?q=ubuntu&limit=25&offset=25'>next &rarr;</a></div>"
+        ));
+        assert!(!html.contains("prev"));
+    }
+
+    #[test]
+    fn pager_last_page_has_prev_only() {
+        let page = Page {
+            total: 42,
+            limit: 25,
+            offset: 25,
+        };
+        let html = page_html("ubuntu", &[], &UiFilters::default(), page);
+        assert!(html.contains(
+            "<div class=pager><a href='/search?q=ubuntu&limit=25&offset=0'>&larr; prev</a></div>"
+        ));
+        assert!(!html.contains("next"));
+    }
+
+    #[test]
+    fn pager_preserves_query_and_filters_across_pages() {
+        let f = UiFilters {
+            category: Some("video".into()),
+            min_size: Some(104_857_600),
+            since: Some(86400),
+            order: Order::Latest,
+        };
+        let page = Page {
+            total: 100,
+            limit: 10,
+            offset: 10,
+        };
+        let html = page_html("ubuntu lts", &[], &f, page);
+        let tail = "&limit=10&offset=20&category=video&min_size=104857600&since=86400&order=latest";
+        assert!(
+            html.contains(&format!(
+                "<a href='/search?q=ubuntu%20lts{tail}'>next &rarr;</a>"
+            )),
+            "{html}"
+        );
+        assert!(html.contains(
+            "<a href='/search?q=ubuntu%20lts&limit=10&offset=0&category=video\
+             &min_size=104857600&since=86400&order=latest'>&larr; prev</a>"
+        ));
+    }
+
+    #[test]
+    fn pager_omits_relevance_order_and_empty_query() {
+        let page = Page {
+            total: 60,
+            limit: 25,
+            offset: 25,
+        };
+        let html = page_html("", &[], &UiFilters::default(), page);
+        // No `q=` (empty) and no `order=relevance` (the default), but `offset=0`
+        // is kept — matching the reference's `_qs`.
+        assert!(html.contains("<a href='/search?limit=25&offset=0'>&larr; prev</a>"));
+        assert!(html.contains("<a href='/search?limit=25&offset=50'>next &rarr;</a>"));
+        assert!(!html.contains("order="));
+    }
+
+    #[test]
+    fn hostile_query_and_category_stay_inert() {
+        let f = UiFilters {
+            // A hostile category can never come from `ui_filters_from` (it is
+            // validated against CATEGORIES) — the renderer escapes it anyway.
+            category: Some("\"><script>alert(1)</script>".into()),
+            ..UiFilters::default()
+        };
+        let page = Page {
+            total: 100,
+            limit: 10,
+            offset: 10,
+        };
+        let html = page_html(
+            "<script>alert(2)</script>'\"&",
+            &[row("<b>x</b>")],
+            &f,
+            page,
+        );
+        // No hostile markup survives anywhere: no tag opener, and the category
+        // (which is only ever url-encoded into an href) never appears literally.
+        assert!(!html.contains("<script"), "unescaped script tag: {html}");
+        assert!(!html.contains("</script"), "unescaped script close: {html}");
+        assert!(!html.contains("alert(1)"), "raw category: {html}");
+        assert!(!html.contains("<b>x</b>"));
+        // The query is escaped in the input value...
+        assert!(html.contains(
+            "value='&lt;script&gt;alert(2)&lt;/script&gt;&#x27;&quot;&amp;' \
+             placeholder='search torrents...'"
+        ));
+        // ...and percent-encoded in the pager hrefs.
+        assert!(html.contains("q=%3Cscript%3Ealert%282%29%3C/script%3E%27%22%26"));
+        assert!(html.contains("category=%22%3E%3Cscript%3Ealert%281%29%3C/script%3E"));
+    }
+
+    #[test]
+    fn browse_categories_use_the_filters_class() {
+        let html = String::from_utf8(render_browse(&[("video", 3)], &[], &stats())).unwrap();
+        assert!(html.contains("<h3>Categories</h3><div class=filters>"));
+    }
+
+    #[test]
+    fn order_param_round_trips() {
+        for o in [
+            Order::Relevance,
+            Order::Latest,
+            Order::Oldest,
+            Order::Size,
+            Order::Seen,
+        ] {
+            assert_eq!(order_from_str(order_param(o)), o);
+        }
+        assert_eq!(order_from_str("bogus"), Order::Relevance);
+        assert_eq!(order_from_str(""), Order::Relevance);
+    }
+
+    #[test]
+    fn ui_filters_reject_an_unknown_category() {
+        let mut p = Params::new();
+        p.insert("category".into(), "<script>".into());
+        p.insert("min_size".into(), "104857600".into());
+        p.insert("since".into(), "86400".into());
+        p.insert("order".into(), "latest".into());
+        let f = ui_filters_from(&p);
+        assert_eq!(f.category, None);
+        assert_eq!(f.min_size, Some(104_857_600));
+        assert_eq!(f.since, Some(86400));
+        assert_eq!(f.order, Order::Latest);
     }
 }

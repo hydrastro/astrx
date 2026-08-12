@@ -37,6 +37,7 @@ than "fixing" them and drifting.
 | `xcheck_peerstore.rs`     | `peerstore`                                             | restore of a Python-emitted bencode swarm snapshot (interop)         |
 | `xcheck_tracker_http.rs`  | `tracker_http`                                          | BEP-3/23 announce / scrape / failure response bytes                  |
 | `xcheck_tracker_udp.rs`   | `tracker_udp`                                           | BEP-15 connect / announce / scrape / error `struct.pack` layouts     |
+| `xcheck_search.rs`        | `search` (+ `build_torrent_file`)                       | `human_size`, `rfc2822`, Torznab caps, and whole rendered search / browse **pages** (`goldens/search.rs`) |
 
 ## Feature-gating — some cross-checks only run under `--all-features`
 
@@ -48,8 +49,8 @@ gated to the tier of the module it exercises via a crate-level
   default, dependency-free build.
 - **`rand`** — `xcheck_dht.rs`, `xcheck_peerstore.rs` (the routing table and swarm
   peer store live behind `rand`).
-- **`net`** — `xcheck_tracker_http.rs`, `xcheck_tracker_udp.rs` (the tracker
-  servers live behind `net`).
+- **`net`** — `xcheck_tracker_http.rs`, `xcheck_tracker_udp.rs`, `xcheck_search.rs`
+  (the tracker servers and the search server live behind `net`).
 
 A gated test file compiles to an empty crate when its feature is off, so:
 
@@ -85,3 +86,25 @@ that live inside request-handler classes in the Python reference; they are
 regenerated via their own harnesses today and can be lifted into the script as
 those entrypoints are made callable. Treat any golden not yet covered by the
 script as a hand-verified fixture and update it deliberately.
+
+### The rendered-page corpus (`goldens/search.rs`)
+
+`search.render_results` / `render_browse` *are* callable standalone, so the whole
+served HTML document is pinned rather than a handful of helpers.
+`regen_search_goldens.py` drives the real Python over a fixed fixture set —
+including a hostile one whose `?q=`, torrent name, facet tags, magnet and
+category all embed `<script>`, quotes and `&` — and writes the corpus as a Rust
+fragment that `xcheck_search.rs` `include!`s:
+
+```sh
+PYTHONPATH=legacy-python/torrentds \
+    python3 crates/torrentds/tests/regen_search_goldens.py \
+    > crates/torrentds/tests/goldens/search.rs
+```
+
+The constant inline stylesheet is elided from each page as
+`<style>@CSS@</style>` and pinned once on its own as `PY_CSS` (compared against
+`search::PAGE_CSS`), which keeps the literals readable while still failing on a
+one-byte CSS drift. Regenerating is a diff, not a hand edit; `goldens/` is not a
+Cargo test target (only top-level `tests/*.rs` are), so the fragment is compiled
+solely through that `include!`.

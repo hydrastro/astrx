@@ -49,7 +49,7 @@
 //!   and an existing destination is refused rather than overwritten.
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
@@ -802,31 +802,161 @@ fn now_secs() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// Parse the seed-file contents (comment-stripped, trimmed, blank lines dropped)
-/// followed by the `extra` seeds — the pure core of the Python `_read_seeds`
-/// (which reads the file first, then extends with the repeatable flag).
-fn seed_lines(contents: &str, extra: &[String]) -> Vec<String> {
-    let mut seeds: Vec<String> = Vec::new();
-    for line in contents.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if !line.is_empty() {
-            seeds.push(line.to_string());
+// Bounds so a huge or malicious seed file cannot exhaust memory / CPU — the
+// Python `seedlist._MAX_SEED_LINE_BYTES` / `_MAX_SEEDS` / `_MAX_SEED_LINES`.
+// The file is streamed line by line (never slurped): each read is length-capped
+// (so a gigabyte with no newline cannot be buffered as one line), the number of
+// accepted roots is capped, and the total lines scanned is capped (so an
+// all-junk file cannot spin forever).
+/// Longest single seed line we will buffer — Python's `readline(size)` argument.
+const MAX_SEED_LINE_BYTES: usize = 4096;
+/// Most seeds we will accept from one file.
+const MAX_SEEDS: usize = 100_000;
+/// Most lines we will scan looking for those seeds.
+const MAX_SEED_LINES: usize = 5_000_000;
+
+/// One `readline(cap)`: read at most `cap` bytes into `out`, stopping after the
+/// first `\n` (which is kept, as Python does). Returns the number of bytes read;
+/// zero means EOF. A line longer than `cap` is delivered in `cap`-sized pieces,
+/// exactly like the reference — each piece then simply fails validation.
+fn read_capped_line<R: std::io::BufRead>(
+    r: &mut R,
+    cap: usize,
+    out: &mut Vec<u8>,
+) -> std::io::Result<usize> {
+    out.clear();
+    while out.len() < cap {
+        let available = match r.fill_buf() {
+            Ok(b) => b,
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        if available.is_empty() {
+            break; // EOF
+        }
+        let room = cap - out.len();
+        match available.iter().position(|&b| b == b'\n') {
+            Some(i) if i < room => {
+                out.extend_from_slice(&available[..=i]);
+                r.consume(i + 1);
+                break;
+            }
+            _ => {
+                let n = room.min(available.len());
+                out.extend_from_slice(&available[..n]);
+                r.consume(n);
+            }
         }
     }
-    seeds.extend(extra.iter().cloned());
-    seeds
+    Ok(out.len())
+}
+
+/// Stream the comment-stripped, trimmed, non-blank lines of `reader` under the
+/// line-length and lines-scanned bounds, handing each to `accept` — the read
+/// loop of the Python `seedlist.load_seed_list`. `accept` returns `false` to
+/// stop early, which is how the accepted-seed cap is applied.
+fn for_each_seed_line<R: std::io::BufRead>(
+    mut reader: R,
+    max_lines: usize,
+    max_line_bytes: usize,
+    mut accept: impl FnMut(&str) -> bool,
+) {
+    let mut raw = Vec::with_capacity(max_line_bytes.min(4096));
+    let mut scanned = 0usize;
+    while scanned < max_lines {
+        match read_capped_line(&mut reader, max_line_bytes, &mut raw) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        scanned += 1;
+        let line = String::from_utf8_lossy(&raw);
+        let line = line.split('#').next().unwrap_or("").trim();
+        if !line.is_empty() && !accept(line) {
+            break;
+        }
+    }
+}
+
+/// The comment-stripped, trimmed, non-blank seed lines of a stream, bounded on
+/// every axis (line length, lines scanned, seeds accepted).
+fn seed_lines_from<R: std::io::BufRead>(
+    reader: R,
+    max_seeds: usize,
+    max_lines: usize,
+    max_line_bytes: usize,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if max_seeds == 0 {
+        return out;
+    }
+    for_each_seed_line(reader, max_lines, max_line_bytes, |line| {
+        out.push(line.to_string());
+        out.len() < max_seeds
+    });
+    out
 }
 
 /// The full `_read_seeds`: the seed URLs from `path` (if given) plus `extra`.
+/// The file is streamed under the seed-list bounds, never slurped.
 fn read_seeds(path: Option<&str>, extra: &[String]) -> Result<Vec<String>, String> {
     match path {
         None => Ok(extra.to_vec()),
         Some(p) => {
-            let contents = std::fs::read_to_string(p)
+            let fh = std::fs::File::open(p)
                 .map_err(|e| format!("error: cannot read seed file {p}: {e}"))?;
-            Ok(seed_lines(&contents, extra))
+            let mut seeds = seed_lines_from(
+                std::io::BufReader::new(fh),
+                MAX_SEEDS,
+                MAX_SEED_LINES,
+                MAX_SEED_LINE_BYTES,
+            );
+            seeds.extend(extra.iter().cloned());
+            Ok(seeds)
         }
     }
+}
+
+/// The Python `seedlist.load_seed_list`: the curated seed file read under the
+/// same bounds as [`read_seeds`], then canonicalized (darknet-only, so no
+/// clearnet line can leak) and deduped by canonical URL, order-preserving. A
+/// line that is not a valid darknet URL is dropped silently.
+fn load_seed_list(path: &str, allow_v2: bool, allow_i2p: bool) -> Result<Vec<String>, String> {
+    let fh = std::fs::File::open(path)
+        .map_err(|e| format!("error: cannot read seed file {path}: {e}"))?;
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for_each_seed_line(
+        std::io::BufReader::new(fh),
+        MAX_SEED_LINES,
+        MAX_SEED_LINE_BYTES,
+        |line| {
+            if let Some(cu) = canon_seed(line, allow_v2, allow_i2p) {
+                if seen.insert(cu.clone()) {
+                    out.push(cu);
+                }
+            }
+            out.len() < MAX_SEEDS
+        },
+    );
+    Ok(out)
+}
+
+/// The Python `seedlist._canon`: canonicalize a seed line, defaulting the scheme
+/// for a bare host. Returns the canonical URL string.
+fn canon_seed(line: &str, allow_v2: bool, allow_i2p: bool) -> Option<String> {
+    let s = line.trim();
+    if s.is_empty() || s.starts_with('#') {
+        return None;
+    }
+    canonicalize(s, None, allow_v2, allow_i2p)
+        .or_else(|| {
+            if s.contains("://") {
+                None
+            } else {
+                canonicalize(&format!("http://{s}"), None, allow_v2, allow_i2p)
+            }
+        })
+        .map(|cu| cu.url)
 }
 
 /// `host.onion=127.0.0.1:8080` → `(host, (ip, port))` for the loopback test
@@ -1245,13 +1375,21 @@ fn run_submit(a: &SubmitArgs) -> ExitCode {
 /// re-enqueue curated roots, bypassing the trap caps (`force`), refusing hosts
 /// on the abuse blocklist.
 fn run_reseed(a: &ReseedArgs) -> ExitCode {
-    let seeds = match read_seeds(a.seed_list.as_deref(), &a.seed) {
-        Ok(s) => s,
-        Err(msg) => {
-            eprintln!("{msg}");
-            return ExitCode::from(1);
-        }
+    // The curated file goes through `load_seed_list` (bounded streaming read +
+    // canonical dedup, dropping anything that is not a darknet URL); the
+    // repeatable `--seed` flags are appended verbatim, as in the Python
+    // `cmd_reseed`.
+    let mut seeds = match a.seed_list.as_deref() {
+        None => Vec::new(),
+        Some(p) => match load_seed_list(p, a.allow_v2, a.enable_i2p) {
+            Ok(s) => s,
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::from(1);
+            }
+        },
     };
+    seeds.extend(a.seed.iter().cloned());
     if seeds.is_empty() {
         eprintln!("reseed: provide --seed-list FILE and/or --seed URL");
         return ExitCode::from(2);
@@ -1267,7 +1405,9 @@ fn run_reseed(a: &ReseedArgs) -> ExitCode {
     let now = now_secs();
     let (mut reseeded, mut added, mut blocked, mut capped, mut not_onion) = (0, 0, 0, 0, 0);
     for raw in seeds {
-        let Some(cu) = canonicalize(&raw, None, a.allow_v2, a.enable_i2p) else {
+        let Some(cu) = canon_seed(&raw, a.allow_v2, a.enable_i2p)
+            .and_then(|u| canonicalize(&u, None, a.allow_v2, a.enable_i2p))
+        else {
             not_onion += 1;
             continue;
         };
@@ -1950,17 +2090,75 @@ mod tests {
     // -- helpers ------------------------------------------------------------
 
     #[test]
-    fn seed_lines_strips_comments_and_appends_extra_last() {
+    fn seed_lines_strips_comments_and_blanks() {
+        let seeds =
+            |c: &str| seed_lines_from(c.as_bytes(), MAX_SEEDS, MAX_SEED_LINES, MAX_SEED_LINE_BYTES);
         let contents = "  http://one.onion/  \n# a comment\nhttp://two.onion/ # inline\n\n  \n";
-        let extra = vec!["http://extra.onion/".to_string()];
         assert_eq!(
-            seed_lines(contents, &extra),
-            vec![
-                "http://one.onion/",
-                "http://two.onion/",
-                "http://extra.onion/"
-            ]
+            seeds(contents),
+            vec!["http://one.onion/", "http://two.onion/"]
         );
+        // a file with no trailing newline still yields its last line
+        assert_eq!(seeds("http://one.onion/"), vec!["http://one.onion/"]);
+    }
+
+    // -- the bounded seed reader (Python `seedlist.load_seed_list`) ----------
+
+    #[test]
+    fn seed_reader_caps_the_line_length() {
+        // a 10k line with no newline is delivered in 4096-byte pieces rather
+        // than buffered whole, so a gigabyte-with-no-newline cannot OOM us
+        let junk = "x".repeat(10_000);
+        let got = seed_lines_from(junk.as_bytes(), 100, 100, 4096);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].len(), 4096);
+        assert_eq!(got[1].len(), 4096);
+        assert_eq!(got[2].len(), 10_000 - 8192);
+        // and every piece fails canonicalization, so nothing junk is accepted
+        for piece in &got {
+            assert!(canon_seed(piece, false, false).is_none());
+        }
+    }
+
+    #[test]
+    fn seed_reader_caps_lines_scanned_and_seeds_accepted() {
+        let blanks_then_seeds = format!("{}http://one.onion/\n", "\n".repeat(10));
+        // only the first 5 lines are scanned → the seed after them is never seen
+        assert!(seed_lines_from(blanks_then_seeds.as_bytes(), 100, 5, 4096).is_empty());
+        assert_eq!(
+            seed_lines_from(blanks_then_seeds.as_bytes(), 100, 100, 4096).len(),
+            1
+        );
+        // and the accepted count is capped independently of the lines scanned
+        let many: String = (0..50).map(|i| format!("http://h{i}.onion/\n")).collect();
+        assert_eq!(seed_lines_from(many.as_bytes(), 7, 1000, 4096).len(), 7);
+        // the shipped bounds are the reference's
+        assert_eq!(MAX_SEED_LINE_BYTES, 4096);
+        assert_eq!(MAX_SEEDS, 100_000);
+        assert_eq!(MAX_SEED_LINES, 5_000_000);
+    }
+
+    #[test]
+    fn load_seed_list_canonicalizes_dedups_and_drops_clearnet() {
+        let a = onion('a');
+        let b = onion('b');
+        let path = tmp("seedlist", line!());
+        std::fs::write(
+            &path,
+            format!(
+                "{a}\n# comment\n{a}\n  {a}?utm_source=x  \n{}\nhttp://example.com/\n\
+not-a-url\n{b}\n",
+                // a bare host defaults to http:// like the reference `_canon`
+                b.trim_start_matches("http://").trim_end_matches('/'),
+            ),
+        )
+        .unwrap();
+        let got = load_seed_list(path.to_str().unwrap(), false, false).unwrap();
+        std::fs::remove_file(&path).ok();
+        // deduped by canonical URL (the tracking param is stripped), order
+        // preserving, and neither the clearnet line nor the junk line survives
+        assert_eq!(got, vec![a, b]);
+        assert!(load_seed_list("/nonexistent/seeds.txt", false, false).is_err());
     }
 
     #[test]

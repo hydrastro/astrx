@@ -115,6 +115,52 @@ impl Frontier {
         added
     }
 
+    /// Re-queue an ALREADY-CRAWLED `url` for a refetch, and clear `host`'s spent
+    /// politeness budget so the refetch is not blocked by it.
+    ///
+    /// The port of the two statements the Python `Crawler.enqueue_recrawls` runs
+    /// per due URL — the `INSERT … ON CONFLICT(url) DO UPDATE SET status='queued',
+    /// lease_until=0, reason='recrawl'` upsert (depth `0`), and the
+    /// `UPDATE hosts SET fetched=0, next_time=0 WHERE host=?` that follows it.
+    /// They are one method because they are one operation: a re-queue that a
+    /// spent host budget would otherwise silently swallow. The host row is only
+    /// reset if it already exists, matching the SQL's `WHERE host=?`.
+    ///
+    /// Returns `true` if the URL was newly added (unknown to the frontier), and
+    /// `false` if an existing entry was reset to `queued`.
+    pub fn requeue_for_recrawl(&mut self, url: &str, host: &str) -> bool {
+        let fresh = match self.entries.get_mut(url) {
+            Some(e) => {
+                e.status = "queued".to_string();
+                e.lease_until = 0.0;
+                e.reason = Some("recrawl".to_string());
+                false
+            }
+            None => {
+                let added_at = self.seq as f64;
+                self.seq += 1;
+                self.entries.insert(
+                    url.to_string(),
+                    Entry {
+                        host: host.to_string(),
+                        depth: 0,
+                        status: "queued".to_string(),
+                        lease_until: 0.0,
+                        added_at,
+                        tries: 0,
+                        reason: Some("recrawl".to_string()),
+                    },
+                );
+                true
+            }
+        };
+        if let Some(h) = self.hosts.get_mut(host) {
+            h.fetched = 0;
+            h.next_time = 0.0;
+        }
+        fresh
+    }
+
     /// True if `url` is already known to the frontier.
     #[must_use]
     pub fn seen(&self, url: &str) -> bool {
@@ -381,5 +427,52 @@ mod tests {
         assert_eq!(f.cache_get("robots:a"), None);
         f.cache_set("robots:a", "User-agent: *");
         assert_eq!(f.cache_get("robots:a").as_deref(), Some("User-agent: *"));
+    }
+
+    /// The recrawl re-queue: a `done` URL goes back to `queued` (`plain add`
+    /// would refuse it, it is already known), an unknown URL is inserted at depth
+    /// 0, and the host's spent budget + politeness hold are cleared so the
+    /// refetch is not swallowed by them.
+    #[test]
+    fn requeue_for_recrawl_resets_entry_and_host() {
+        let mut f = Frontier::new();
+        f.add("http://a/1", "a", 2);
+        let l = f.lease(100.0, 5.0, None).unwrap();
+        f.complete(&l.url, "done", Some("indexed"));
+        f.note_fetch("a", 9_999.0); // budget spent, host held far in the future
+        assert_eq!(f.counts().get("done"), Some(&1));
+        assert!(!f.has_queued());
+        assert_eq!(f.host_row("a").fetched, 1);
+
+        // Known URL: reset in place (not a new entry), depth untouched.
+        assert!(!f.requeue_for_recrawl("http://a/1", "a"));
+        assert_eq!(f.counts().get("queued"), Some(&1));
+        assert_eq!(f.counts().get("done"), None);
+        let row = f.host_row("a");
+        assert_eq!(row.fetched, 0);
+        assert_eq!(row.next_time, 0.0);
+        // …and it leases again straight away, which is the whole point.
+        assert_eq!(f.lease(200.0, 5.0, Some(1)).unwrap().url, "http://a/1");
+
+        // Unknown URL: inserted fresh at depth 0.
+        assert!(f.requeue_for_recrawl("http://c/9", "c",));
+        assert!(f.seen("http://c/9"));
+        assert_eq!(f.lease(300.0, 5.0, None).unwrap().depth, 0);
+        // A host with no row is left alone (the SQL's `WHERE host=?`).
+        assert!(f.requeue_for_recrawl("http://d/1", "d"));
+    }
+
+    /// `add` refuses a URL the frontier already knows — which is exactly why
+    /// `requeue_for_recrawl` exists.
+    #[test]
+    fn add_will_not_requeue_a_completed_url() {
+        let mut f = Frontier::new();
+        f.add("http://a/1", "a", 0);
+        let l = f.lease(100.0, 5.0, None).unwrap();
+        f.complete(&l.url, "done", None);
+        assert!(!f.add("http://a/1", "a", 0));
+        assert!(!f.has_queued());
+        assert!(!f.requeue_for_recrawl("http://a/1", "a"));
+        assert!(f.has_queued());
     }
 }

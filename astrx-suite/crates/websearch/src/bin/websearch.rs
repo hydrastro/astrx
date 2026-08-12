@@ -6,6 +6,24 @@
 //! snapshot and runs the no-JS [`SearchServer`]; `stats` restores and prints the
 //! index statistics; `backup` restores and writes a fresh snapshot to `--out`.
 //!
+//! `crawl` normally starts from an EMPTY index and overwrites `--db` with the
+//! run's result — where the Python crawls straight into a persistent SQLite file.
+//! `crawl --recrawl` is the one path that restores `--db` first, because its whole
+//! job is to refetch what is already indexed ([`Crawler::enqueue_recrawls`]); that
+//! run extends the restored index rather than replacing it.
+//!
+//! `serve` builds the server with [`SearchServer::new`], i.e. WITHOUT a frontier
+//! handle, so its `/about` page omits the Frontier table: `--db` is an
+//! [`Index::snapshot`], and that format carries documents only — the frontier
+//! lives in the crawler process and is never persisted, where the Python's
+//! frontier shares the index's SQLite file and so is always readable from
+//! `serve`. A server that DOES hold a live [`websearch::Frontier`] (an in-process
+//! crawl + serve) renders the table via [`SearchServer::with_frontier`].
+//!
+//! Not ported from the Python CLI: `serve`'s `--rate`/`--burst`/`--auth`
+//! (the server has neither a rate limiter nor HTTP Basic auth — see the
+//! [`websearch::serve`] module docs) and the `fed-serve` subcommand.
+//!
 //! The whole binary is gated behind the crate's `net` feature (see the `[[bin]]`
 //! `required-features` in `Cargo.toml`), so the default `websearch` build stays a
 //! pure, zero-dependency library. Argument parsing is hand-rolled — no `clap`, no
@@ -62,6 +80,12 @@ struct CrawlArgs {
     workers: usize,
     keep_alive: bool,
     index_pdf: bool,
+    /// Also re-queue already-indexed URLs that are due for a refetch. Implies
+    /// loading `--db` into the crawler first (see [`run_crawl`]) — without an
+    /// existing index there is nothing to be due. Python `--recrawl`.
+    recrawl: bool,
+    /// Recrawl age threshold in seconds. Python `--recrawl-interval`, 7 days.
+    recrawl_interval: f64,
     shard_id: Option<String>,
     shards: Option<String>,
     verbose: bool,
@@ -247,6 +271,8 @@ fn parse_crawl(toks: &[String]) -> Result<CrawlArgs, CliError> {
         workers: 1,
         keep_alive: false,
         index_pdf: false,
+        recrawl: false,
+        recrawl_interval: 7.0 * 86_400.0,
         shard_id: None,
         shards: None,
         verbose: false,
@@ -315,6 +341,12 @@ fn parse_crawl(toks: &[String]) -> Result<CrawlArgs, CliError> {
             }
             "--keep-alive" => a.keep_alive = true,
             "--index-pdf" => a.index_pdf = true,
+            "--recrawl" => a.recrawl = true,
+            "--recrawl-interval" => {
+                i += 1;
+                a.recrawl_interval =
+                    parse_f64(need(toks, i, "--recrawl-interval")?, "--recrawl-interval")?;
+            }
             "--shard-id" => {
                 i += 1;
                 a.shard_id = Some(need(toks, i, "--shard-id")?.to_string());
@@ -525,6 +557,7 @@ fn build_config(a: &CrawlArgs, scope: Option<Vec<String>>) -> CrawlConfig {
         allow_hosts: a.allow_host.clone(),
         keep_alive: a.keep_alive,
         workers: a.workers,
+        recrawl_interval: a.recrawl_interval,
         shard_id: a.shard_id.clone(),
         shards: parse_shards(a.shards.as_deref()),
         ..CrawlConfig::default()
@@ -555,6 +588,15 @@ fn looks_like_uri(s: &str) -> bool {
         }
     }
     false
+}
+
+/// Wall-clock now as epoch seconds — the `now` the recrawl due-list is measured
+/// against (`Index::due_for_recrawl` takes it explicitly so it stays testable).
+fn epoch_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 /// `fetched_at` epoch seconds → `YYYY-MM-DD` (UTC), for the `stats` fetch range.
@@ -614,7 +656,9 @@ async fn run_crawl(a: CrawlArgs) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    if seeds.is_empty() {
+    // Python: `if not seeds and not args.recrawl`. A `--recrawl` pass needs no
+    // seeds — its work comes from the URLs already in `--db`.
+    if seeds.is_empty() && !a.recrawl {
         eprintln!("error: no seeds given (use --seeds FILE or positional URLs)");
         return ExitCode::from(2);
     }
@@ -630,15 +674,37 @@ async fn run_crawl(a: CrawlArgs) -> ExitCode {
     }
 
     let mut crawler = Crawler::new(cfg);
+    // The Python crawls straight into the persistent SQLite database, so its
+    // recrawl due-list is simply "what is already indexed". Here the index is a
+    // snapshot file, so `--recrawl` has to load it into the crawler before asking
+    // what is due — and the run then extends that index instead of replacing it.
+    if a.recrawl {
+        match read_index(&a.db) {
+            Ok(ix) => *crawler.index_mut() = ix,
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::from(1);
+            }
+        }
+    }
     let seed_refs: Vec<&str> = seeds.iter().map(String::as_str).collect();
-    let added = crawler.add_seeds(&seed_refs);
+    let added = if seeds.is_empty() {
+        0
+    } else {
+        crawler.add_seeds(&seed_refs)
+    };
+    let requeued = if a.recrawl {
+        crawler.enqueue_recrawls(None, epoch_secs())
+    } else {
+        0
+    };
     if a.workers > 1 {
         println!(
-            "seeded {added} URL(s); scope={label}; workers={}",
+            "seeded {added} URL(s); recrawl-queued {requeued}; scope={label}; workers={}",
             a.workers
         );
     } else {
-        println!("seeded {added} URL(s); scope={label}");
+        println!("seeded {added} URL(s); recrawl-queued {requeued}; scope={label}");
     }
 
     let t0 = Instant::now();
@@ -677,6 +743,9 @@ async fn run_serve(a: ServeArgs) -> ExitCode {
         .base_url
         .clone()
         .unwrap_or_else(|| format!("http://{}:{}", a.host, a.port));
+    // `new`, not `with_frontier`: there is no frontier to pass. `--db` is an
+    // index snapshot and that format stores documents only, so `/about` here
+    // omits the Frontier table (see the module docs).
     let server = Arc::new(SearchServer::new(
         Arc::new(Mutex::new(index)),
         base.as_str(),
@@ -824,6 +893,10 @@ options:
   --workers N             parallel crawl workers (default: 1)
   --keep-alive            reuse HTTP connections (still SSRF-checked per hop)
   --index-pdf             index application/pdf via best-effort text extraction
+  --recrawl               also re-queue indexed URLs due for a recrawl (loads
+                          --db first, so the run refreshes that index in place;
+                          may be used with no seeds at all)
+  --recrawl-interval SEC  recrawl age threshold in seconds (default 604800 = 7 days)
   --shard-id ID           this node's shard id (fleet mode)
   --shards IDS            comma-separated set of ALL shard ids
   --verbose               log the resolved crawl config to stderr
@@ -918,6 +991,8 @@ mod tests {
         assert_eq!(a.workers, 1);
         assert!(!a.keep_alive);
         assert!(!a.index_pdf);
+        assert!(!a.recrawl);
+        assert_eq!(a.recrawl_interval, 7.0 * 86_400.0); // Python `7 * 86400.0`
         assert_eq!(a.shard_id, None);
         assert_eq!(a.shards, None);
     }
@@ -958,6 +1033,9 @@ mod tests {
             "4",
             "--keep-alive",
             "--index-pdf",
+            "--recrawl",
+            "--recrawl-interval",
+            "3600",
             "--shard-id",
             "s1",
             "--shards",
@@ -981,9 +1059,89 @@ mod tests {
         assert_eq!(a.workers, 4);
         assert!(a.keep_alive);
         assert!(a.index_pdf);
+        assert!(a.recrawl);
+        assert_eq!(a.recrawl_interval, 3600.0);
         assert_eq!(a.shard_id, Some("s1".to_string()));
         assert_eq!(a.shards, Some("s1,s2,s3".to_string()));
         assert!(a.verbose);
+    }
+
+    /// `--recrawl` / `--recrawl-interval` reach the library: the flag parses in
+    /// both forms, the interval lands on the [`CrawlConfig`] the crawl runs with,
+    /// and the crawl help documents them. Python `__main__.py:234-237`.
+    #[test]
+    fn recrawl_flags_reach_the_config() {
+        let a = crawl_of(&[
+            "crawl",
+            "--recrawl",
+            "--recrawl-interval=86400",
+            "http://x/",
+        ]);
+        assert!(a.recrawl);
+        assert_eq!(a.recrawl_interval, 86_400.0);
+        let cfg = build_config(&a, None);
+        assert_eq!(cfg.recrawl_interval, 86_400.0);
+        // The default flows through untouched when the flag is absent.
+        let d = build_config(&crawl_of(&["crawl", "http://x/"]), None);
+        assert_eq!(d.recrawl_interval, CrawlConfig::default().recrawl_interval);
+        // …and both flags are documented.
+        let help = crawl_help();
+        assert!(help.contains("--recrawl "), "{help}");
+        assert!(help.contains("--recrawl-interval SEC"), "{help}");
+        // A bad interval is a usage error, like every other numeric flag.
+        assert!(matches!(
+            parse_args(&argv(&["crawl", "--recrawl-interval", "soon"])),
+            Err(CliError::Usage(_))
+        ));
+    }
+
+    /// `crawl --recrawl` loads `--db` into the crawler before asking what is due,
+    /// so the re-queue has something to work from. Without that load a fresh
+    /// crawler's index is empty and NOTHING is ever due — the reason this path
+    /// restores the snapshot where a plain `crawl` does not.
+    #[test]
+    fn recrawl_requeues_from_the_restored_snapshot() {
+        let dir = std::env::temp_dir().join(format!("websearch-recrawl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("web.db");
+
+        let mut seeded = Index::new();
+        seeded.upsert_document(
+            "http://a.example/old",
+            DocFields {
+                title: "t",
+                body: "b",
+                host: "a.example",
+                fetched_at: 1_000.0,
+                http_status: 200,
+                ..DocFields::default()
+            },
+        );
+        std::fs::write(&db, seeded.snapshot()).unwrap();
+
+        let a = crawl_of(&["crawl", "--recrawl", "--recrawl-interval=100"]);
+        let mut cr = Crawler::new(build_config(&a, None));
+        // Without the restore: nothing is due, because nothing is indexed.
+        assert_eq!(cr.enqueue_recrawls(None, 2_000.0), 0);
+        // With it (what `run_crawl` does for `--recrawl`): the stored doc is due.
+        *cr.index_mut() = read_index(db.to_str().unwrap()).unwrap();
+        assert_eq!(cr.enqueue_recrawls(None, 2_000.0), 1);
+        assert!(cr.frontier().seen("http://a.example/old"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `--recrawl` makes seeds optional (Python `if not seeds and not
+    /// args.recrawl`), so `crawl --recrawl` with no URLs at all is a valid
+    /// invocation rather than the "no seeds given" usage error.
+    #[test]
+    fn recrawl_parses_without_seeds() {
+        let a = crawl_of(&["crawl", "--recrawl"]);
+        assert!(a.seeds.is_empty());
+        assert!(a.recrawl);
+        // No seeds and no --recrawl is still an error at run time; the scope of a
+        // seedless run is BROAD, as in the Python.
+        assert_eq!(compute_scope(&a, &[]), None);
     }
 
     #[test]

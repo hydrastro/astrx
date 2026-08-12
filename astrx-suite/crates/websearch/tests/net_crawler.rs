@@ -156,6 +156,66 @@ async fn crawl_populates_media_verticals() {
     );
 }
 
+/// A site whose responses carry NO `Content-Type` header at all, so the crawler
+/// sees `ctype == ""`.
+fn serve_typeless_site(listener: TcpListener) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
+            let path = read_req_path(&mut sock).await;
+            let body: &str = match path.as_str() {
+                "/robots.txt" => "User-agent: *\nAllow: /\n",
+                "/" => {
+                    "<html><head><title>Typeless Home</title></head><body>\
+<p>a page served with no content type at all</p>\
+<a href=\"/leaf\">Leaf</a></body></html>"
+                }
+                "/leaf" => {
+                    "<html><head><title>Typeless Leaf</title></head>\
+<body><p>the linked leaf page</p></body></html>"
+                }
+                _ => "<html><head><title>nope</title></head><body>nope</body></html>",
+            };
+            // NOTE: deliberately no Content-Type header.
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+        }
+    })
+}
+
+/// The dispatch half of the `is_html_type("")` parity fix: a response with no
+/// `Content-Type` is neither content-type-filtered away nor indexed verbatim —
+/// it is parsed as HTML, so its `<title>` and its links come through. This pins
+/// the behaviour the predicate now also reports (see
+/// `crawler::tests::type_predicates_match_python_sets`).
+#[tokio::test]
+async fn missing_content_type_is_crawled_as_html() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = serve_typeless_site(listener);
+
+    let mut cr = Crawler::new(crawl_config(port, true));
+    let seed = format!("http://127.0.0.1:{port}/");
+    assert_eq!(cr.add_seeds(&[&seed]), 1);
+    let stats = cr.run(Some(100)).await;
+    server.abort();
+
+    let url = |p: &str| format!("http://127.0.0.1:{port}{p}");
+    // Parsed as HTML: the <title> was extracted (raw-text indexing would have
+    // left it empty) and the <a href> was followed.
+    let home = cr.index().get_doc(&url("/")).expect("home indexed");
+    assert_eq!(home.title, "Typeless Home", "stats={stats:?}");
+    assert!(!home.body.contains("<html>"), "body kept raw HTML markup");
+    let leaf = cr.index().get_doc(&url("/leaf")).expect("link followed");
+    assert_eq!(leaf.title, "Typeless Leaf");
+    assert_eq!(cr.index().doc_count(), 2, "stats={stats:?}");
+}
+
 #[tokio::test]
 async fn crawl_is_ssrf_gated() {
     // Same loopback site, but WITHOUT the allow_hosts exemption: the SSRF gate

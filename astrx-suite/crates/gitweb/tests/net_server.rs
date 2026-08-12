@@ -122,6 +122,14 @@ fn git_env(cmd: &mut Command) -> &mut Command {
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
+        // GIT_TERMINAL_PROMPT only suppresses the TTY prompt; git still runs an
+        // askpass/credential helper if the environment provides one (on a
+        // desktop that pops a GUI dialog and hangs the run). Shut every door —
+        // `anonymous_clone_is_refused` deliberately clones an auth-required URL.
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_ASKPASS", "")
+        .env_remove("SSH_ASKPASS")
+        .env_remove("SSH_ASKPASS_REQUIRE")
         .env("GIT_AUTHOR_NAME", "Test Author")
         .env("GIT_AUTHOR_EMAIL", "author@example.com")
         .env("GIT_COMMITTER_NAME", "Test Author")
@@ -154,9 +162,15 @@ fn git_clone(url: &str, dst: &Path, version: Option<u8>) -> std::process::Output
         args.push("-c".to_string());
         args.push(format!("protocol.version={v}"));
     }
-    // Never route the loopback clone through an ambient http proxy.
+    // Never route the loopback clone through an ambient http proxy, and never
+    // let a configured askpass/credential helper turn a refused clone into an
+    // interactive password prompt.
     args.push("-c".to_string());
     args.push("http.proxy=".to_string());
+    args.push("-c".to_string());
+    args.push("core.askPass=".to_string());
+    args.push("-c".to_string());
+    args.push("credential.helper=".to_string());
     args.push("clone".to_string());
     args.push(url.to_string());
     args.push(dst.display().to_string());
@@ -378,6 +392,91 @@ async fn access_control_rejects_and_accepts_over_http() {
     assert_eq!(
         git_capture(&scratch.0.join("authed"), &["rev-parse", "HEAD"]),
         fx.shas[5]
+    );
+
+    live.stop();
+    drop(fx);
+}
+
+/// A refused clone must FAIL, never ask a human.
+///
+/// Regression test for a real portability bug: `GIT_TERMINAL_PROMPT=0` only
+/// suppresses the *TTY* prompt. If the ambient environment supplies an askpass
+/// helper (`GIT_ASKPASS`/`SSH_ASKPASS`, routine on a desktop), git happily runs
+/// it instead — so the anonymous-clone-against-auth case above popped a
+/// username/password dialog and hung the run on machines that had one, while
+/// passing on machines that did not.
+///
+/// This plants a hostile askpass helper that records every invocation, runs the
+/// refused clone under it, and asserts the helper was **never called**.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_refused_clone_never_prompts_for_credentials() {
+    if !common::git_available() {
+        eprintln!("skipping: no usable `git` on PATH");
+        return;
+    }
+    let fx = common::build();
+    let spec = format!(
+        "alice:{}",
+        gitweb::auth::hash_password("s3cret", "abcd1234")
+    );
+    let live = spawn(Config {
+        auth: spec,
+        ..config(&fx.root)
+    })
+    .await;
+
+    let scratch = Scratch(temp_dir("noprompt"));
+    std::fs::create_dir_all(&scratch.0).expect("scratch");
+    let marker = scratch.0.join("askpass-was-called");
+    let helper = scratch.0.join("askpass.sh");
+    std::fs::write(
+        &helper,
+        format!(
+            "#!/bin/sh\necho called >> {}\necho alice\n",
+            marker.display()
+        ),
+    )
+    .expect("write helper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod helper");
+    }
+
+    // Plant the hostile helper the way a desktop session would: in the AMBIENT
+    // environment, BEFORE our hardening runs. Order is the whole point — git
+    // resolves askpass as `GIT_ASKPASS` env > `core.askPass` config >
+    // `SSH_ASKPASS`, so a `-c core.askPass=` alone would lose to an inherited
+    // `GIT_ASKPASS`. `git_env` is applied afterwards and must win.
+    let mut cmd = Command::new("git");
+    cmd.env("GIT_ASKPASS", &helper)
+        .env("SSH_ASKPASS", &helper)
+        .env("DISPLAY", ":0");
+    git_env(&mut cmd);
+    let out = cmd
+        .arg("-c")
+        .arg("http.proxy=")
+        .arg("-c")
+        .arg("core.askPass=")
+        .arg("-c")
+        .arg("credential.helper=")
+        .arg("clone")
+        .arg(format!("{}/xrepo", live.base()))
+        .arg(scratch.0.join("out").display().to_string())
+        .output()
+        .expect("run git clone");
+
+    assert!(
+        !out.status.success(),
+        "an unauthenticated clone succeeded against an auth-gated server"
+    );
+    assert!(
+        !marker.exists(),
+        "git invoked the askpass helper — the clone would have blocked on a \
+         human. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 
     live.stop();
