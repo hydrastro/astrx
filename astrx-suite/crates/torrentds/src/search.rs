@@ -750,6 +750,15 @@ impl SearchServer {
         }
     }
 
+    /// Set the self-describing base URL (e.g. `http://127.0.0.1:8804`) used for
+    /// the absolute links in the RSS feed and the Torznab `<enclosure>`/download
+    /// URLs. Empty (the default) leaves those links host-relative.
+    #[must_use]
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
     /// Compute local swarm health (seeders, leechers) for a set of results.
     fn swarm_for(&self, ihs: impl Iterator<Item = String>) -> Swarm {
         let mut sw = Swarm::new();

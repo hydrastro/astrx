@@ -1226,6 +1226,21 @@ impl Store {
         m
     }
 
+    /// Hosts demoted out of `active` by the trap defences, as
+    /// `(host, trapped_reason)` sorted by host — the per-host detail behind the
+    /// `hosts_trapped` / `hosts_blocked` gauges, for the operator `stats` report.
+    #[must_use]
+    pub fn trapped_hosts(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
+            .hosts
+            .iter()
+            .filter(|(_, h)| h.trapped_reason.is_some())
+            .map(|(name, h)| (name.clone(), h.trapped_reason.clone().unwrap_or_default()))
+            .collect();
+        out.sort();
+        out
+    }
+
     /// A flat map of numeric gauges (for `/metrics` + `/health`).
     #[must_use]
     pub fn metrics(&self) -> HashMap<&'static str, i64> {

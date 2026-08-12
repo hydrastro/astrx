@@ -30,6 +30,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gitweb"
+version = "0.1.0"
+dependencies = [
+ "crawlcore",
+ "getrandom",
+ "tokio",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -87,6 +96,15 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys",
+]
+
+[[package]]
+name = "suitedash"
+version = "0.1.0"
+dependencies = [
+ "crawlcore",
+ "getrandom",
+ "tokio",
 ]
 
 [[package]]

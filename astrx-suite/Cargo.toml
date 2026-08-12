@@ -22,6 +22,8 @@ members = [
     "crates/torrentds",
     "crates/onioncrawler",
     "crates/websearch",
+    "crates/gitweb",
+    "crates/suitedash",
 ]
 # `fuzz/` is a cargo-fuzz project with its own manifest; it is not a workspace
 # member and is built only via `cargo +nightly fuzz`.

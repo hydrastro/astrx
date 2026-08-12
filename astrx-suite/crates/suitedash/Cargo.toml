@@ -1,0 +1,32 @@
+[package]
+name = "suitedash"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/hydrastro/astrx"
+description = "No-JS ops/status dashboard for the astrx-suite: tolerant bounded service probing, health/metrics aggregation, alerts, sparklines, and a Prometheus exporter."
+
+[dependencies]
+# First-party shared library (hashing, INFLATE, urlparse, json). Not a
+# third-party dependency — crawlcore is itself stdlib-only.
+crawlcore = { path = "../crawlcore" }
+# The polling + serving tier lives behind the opt-in `net`/`rand` features and
+# pulls in only the two vetted deps the rest of the suite uses. Declared here
+# (not via `[workspace.dependencies]`) so the manifest parses on pre-1.64 Cargo
+# — see the root Cargo.toml note.
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"], optional = true }
+getrandom = { version = "0.2", optional = true }
+
+[features]
+default = []
+rand = ["dep:getrandom"]
+net = ["dep:tokio", "rand"]
+
+# The `suitedash` command-line entrypoint, porting the Python console script.
+# Gated on `net` via `required-features` so `cargo build -p suitedash` (no
+# features) stays a pure, zero-dependency library.
+[[bin]]
+name = "suitedash"
+path = "src/bin/suitedash.rs"
+required-features = ["net"]

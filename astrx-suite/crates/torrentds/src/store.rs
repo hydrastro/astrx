@@ -502,6 +502,17 @@ impl Store {
         self.block_keyword.insert(keyword.to_lowercase());
     }
 
+    /// The blocklisted infohashes (lowercase hex), in sorted order.
+    ///
+    /// Exposed so an operator front-end (the `tracker` CLI) can source the
+    /// tracker's denylist from the same blocklist the index enforces — the Rust
+    /// analogue of the Python CLI reaching into `Store._conn` for the
+    /// `blocklist_infohash` table.
+    #[must_use]
+    pub fn blocked_infohashes(&self) -> Vec<String> {
+        self.block_infohash.iter().cloned().collect()
+    }
+
     /// Is this infohash/name blocked?
     #[must_use]
     pub fn is_blocked(&self, infohash_hex: &str, name: &str) -> bool {

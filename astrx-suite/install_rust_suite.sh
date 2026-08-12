@@ -112,9 +112,9 @@ if [ "$BUILD_ONLY" -eq 0 ]; then
 fi
 
 echo "==> [$STEP] zero-dependency assertion (--no-default-features)"; STEP=$((STEP+1))
-for crate in crawlcore torrentds onioncrawler websearch; do
+for crate in crawlcore torrentds onioncrawler websearch suitedash gitweb; do
   deps="$(cargo tree "${OFFLINE[@]}" -p "$crate" --no-default-features --prefix none 2>/dev/null \
-          | grep -vE "^(crawlcore|torrentds|onioncrawler|websearch)( |$)" | sort -u || true)"
+          | grep -vE "^(crawlcore|torrentds|onioncrawler|websearch|suitedash|gitweb)( |$)" | sort -u || true)"
   if [ -n "$deps" ]; then
     echo "    WARN: $crate pulled third-party deps with default features:" >&2
     echo "$deps" | sed 's/^/      /' >&2

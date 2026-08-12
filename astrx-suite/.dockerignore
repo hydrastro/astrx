@@ -1,0 +1,10 @@
+# Keep the build context small and cache-friendly: the builder needs only the
+# workspace manifests + crates/.
+target/
+**/target/
+.git/
+legacy-python/
+fuzz/
+deploy/
+*.md
+.env

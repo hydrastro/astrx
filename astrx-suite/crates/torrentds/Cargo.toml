@@ -28,3 +28,13 @@ getrandom = { version = "0.2", optional = true }
 default = []
 rand = ["dep:getrandom"]
 net = ["dep:tokio", "rand"]
+
+# The `torrentds` command-line entrypoint (index / search / tracker / stats /
+# block / backup), porting the Python `python3 -m torrentds` CLI. Gated on `net`
+# via `required-features` so `cargo build -p torrentds` (no features) stays a
+# pure, zero-dependency library — the binary and its tokio use exist only under
+# `net`.
+[[bin]]
+name = "torrentds"
+path = "src/bin/torrentds.rs"
+required-features = ["net"]

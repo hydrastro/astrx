@@ -24,3 +24,13 @@ getrandom = { version = "0.2", optional = true }
 default = []
 rand = ["dep:getrandom"]
 net = ["dep:tokio", "rand"]
+
+# The `onioncrawler` command-line entrypoint (crawl / search / stats / submit /
+# reseed / backup / authority / cluster / recrawl), porting the Python
+# `python3 -m onioncrawler` CLI. Gated on `net` via `required-features` so
+# `cargo build -p onioncrawler` (no features) stays a pure, zero-dependency
+# library — the binary and its tokio use exist only under `net`.
+[[bin]]
+name = "onioncrawler"
+path = "src/bin/onioncrawler.rs"
+required-features = ["net"]

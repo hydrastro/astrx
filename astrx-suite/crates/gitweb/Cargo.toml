@@ -1,0 +1,32 @@
+[package]
+name = "gitweb"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/hydrastro/astrx"
+description = "Read-only no-JS git web frontend: argv-only (never shell) git plumbing, repo/log/diff/tree/blob/refs views, releases, and a patch/mail archive."
+
+[dependencies]
+# First-party shared library (hashing, INFLATE, urlparse). Not a third-party
+# dependency — crawlcore is itself stdlib-only.
+crawlcore = { path = "../crawlcore" }
+# The HTTP serving tier lives behind the opt-in `net`/`rand` features. The git
+# plumbing itself needs no dependency at all: it execs the `git` binary through
+# `std::process::Command` with an argv vector (never a shell), so the whole
+# read-only core compiles in the default, zero-dependency build.
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"], optional = true }
+getrandom = { version = "0.2", optional = true }
+
+[features]
+default = []
+rand = ["dep:getrandom"]
+net = ["dep:tokio", "rand"]
+
+# The `gitweb` command-line entrypoint, porting the Python `python3 -m gitweb`
+# CLI. Gated on `net` via `required-features` so `cargo build -p gitweb` (no
+# features) stays a pure, zero-dependency library.
+[[bin]]
+name = "gitweb"
+path = "src/bin/gitweb.rs"
+required-features = ["net"]

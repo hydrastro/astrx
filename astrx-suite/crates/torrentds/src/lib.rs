@@ -79,7 +79,8 @@ pub use routing::{InfoHash, Node, NodeId};
 // --- Re-exports: `net` tier ---
 #[cfg(feature = "net")]
 pub use dht::node::{
-    make_neighbor_id, DhtConfig, DhtNode, GetPeersOutcome, InfohashSink, SampleOutcome,
+    default_bootstrap, make_neighbor_id, DhtConfig, DhtNode, GetPeersOutcome, InfohashSink,
+    SampleOutcome,
 };
 #[cfg(feature = "net")]
 pub use indexer::{Indexer, IndexerConfig, IndexerStats};

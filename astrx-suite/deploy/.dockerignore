@@ -1,0 +1,5 @@
+# Context for the tor image is ./deploy — it needs only torrc + the entrypoint.
+*.md
+Dockerfile
+.env*
+Makefile

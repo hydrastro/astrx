@@ -1,0 +1,25 @@
+# Tor ingress for the astrx-suite.
+#
+# The Rust engines are static musl binaries, so the deployment no longer carries
+# a Python base image; Tor rides on alpine instead — the same libc the engines
+# are linked against, and the smallest image that ships a packaged tor daemon.
+# Alpine's `tor` package creates the unprivileged `tor` user.
+FROM alpine:3.20
+
+RUN apk add --no-cache tor
+
+# Hidden-service keys and Tor state live here; the compose `tor-keys` volume
+# mounts over it to keep the .onion addresses stable across restarts.
+VOLUME ["/var/lib/tor"]
+
+COPY torrc /etc/tor/torrc
+COPY tor-entrypoint.sh /usr/local/bin/tor-entrypoint.sh
+RUN chmod +x /usr/local/bin/tor-entrypoint.sh
+
+# SOCKS for the onion crawler on the internal Docker network (never published).
+EXPOSE 9050
+
+# The entrypoint runs as root, fixes the key-volume ownership, then execs Tor,
+# which setuids to the `tor` user (torrc `User`). Extra args (e.g.
+# --verify-config) are passed straight through.
+ENTRYPOINT ["/usr/local/bin/tor-entrypoint.sh"]
