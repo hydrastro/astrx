@@ -86,6 +86,32 @@ impl Huffman {
         }
         Huffman { count, symbol }
     }
+
+    /// Kraft-inequality slack: `0` = complete, `> 0` = incomplete, `< 0` =
+    /// over-subscribed. This is what puff's `construct` returns and what the
+    /// port originally dropped on the floor — without it crawlcore happily
+    /// decoded streams every real decoder rejects. Concretely, the 13-byte
+    /// over-subscribed stream `05 c0 01 09 00 00 00 80 20 fb 7f 5a 04` returned
+    /// `Ok([0x00])` here while Python's zlib raised "invalid literal/lengths
+    /// set" — a content differential a hostile origin can aim at the indexer.
+    fn slack(&self) -> i32 {
+        let mut left: i32 = 1;
+        for len in 1..=MAXBITS {
+            left <<= 1;
+            left -= i32::from(self.count[len]);
+            if left < 0 {
+                return left; // over-subscribed: stop early, as puff does
+            }
+        }
+        left
+    }
+
+    /// Whether an incomplete code is the one degenerate case RFC 1951 permits:
+    /// no used symbols at all, or exactly one symbol of length 1. `n` is the
+    /// number of symbols the code was built over.
+    fn incomplete_ok(&self, n: usize) -> bool {
+        n == usize::from(self.count[0]) + usize::from(self.count[1])
+    }
 }
 
 struct State<'a> {
@@ -255,6 +281,11 @@ impl<'a> State<'a> {
             cl[ORDER[i]] = self.bits(3)? as u16;
         }
         let clcode = Huffman::construct(&cl);
+        // The code-length code must be COMPLETE — puff refuses any non-zero
+        // slack here outright (its error -4).
+        if clcode.slack() != 0 {
+            return Err(InflateError("incomplete code-length code".to_string()));
+        }
 
         // read literal/length + distance code lengths
         let mut lengths = vec![0u16; nlen + ndist];
@@ -289,7 +320,16 @@ impl<'a> State<'a> {
             return Err(InflateError("no end-of-block code".to_string()));
         }
         let lencode = Huffman::construct(&lengths[..nlen]);
+        // Over-subscribed is always fatal; incomplete is allowed only in the
+        // degenerate no-symbol/one-symbol case (puff's
+        // `err < 0 || nlen != count[0] + count[1]` test, errors -7 and -8).
+        if lencode.slack() != 0 && (lencode.slack() < 0 || !lencode.incomplete_ok(nlen)) {
+            return Err(InflateError("invalid literal/length code".to_string()));
+        }
         let distcode = Huffman::construct(&lengths[nlen..]);
+        if distcode.slack() != 0 && (distcode.slack() < 0 || !distcode.incomplete_ok(ndist)) {
+            return Err(InflateError("invalid distance code".to_string()));
+        }
         self.codes(&lencode, &distcode)
     }
 
@@ -316,9 +356,16 @@ impl<'a> State<'a> {
 /// # Errors
 /// [`InflateError`] on malformed DEFLATE data.
 pub fn inflate_raw(data: &[u8], max_out: usize) -> Result<(Vec<u8>, bool), InflateError> {
+    inflate_raw_at(data, max_out).map(|(out, trunc, _)| (out, trunc))
+}
+
+/// As [`inflate_raw`], but also reports how many input bytes the stream
+/// consumed, so a wrapper can find what follows it (gzip members concatenate).
+fn inflate_raw_at(data: &[u8], max_out: usize) -> Result<(Vec<u8>, bool, usize), InflateError> {
     let mut state = State::new(data, max_out);
     state.run()?;
-    Ok((state.out, state.truncated))
+    let used = state.incnt;
+    Ok((state.out, state.truncated, used))
 }
 
 /// Inflate a zlib (RFC 1950) stream: a 2-byte header, the DEFLATE body, and a
@@ -338,21 +385,64 @@ pub fn inflate_zlib(data: &[u8], max_out: usize) -> Result<(Vec<u8>, bool), Infl
     if (u16::from(cmf) * 256 + u16::from(flg)) % 31 != 0 {
         return Err(InflateError("zlib: bad header check".to_string()));
     }
-    // FDICT set => a 4-byte dictionary id follows the header (rare).
-    let start = if flg & 0x20 != 0 { 6 } else { 2 };
-    if data.len() < start {
-        return Err(InflateError("zlib: truncated header".to_string()));
+    // FDICT set => the stream needs a preset dictionary we do not have, so it
+    // cannot be decoded. Stepping over the 4-byte dict id and inflating anyway
+    // (what this used to do) produced plausible-looking output for a stream
+    // Python's `zlib.decompress` rejects with "Error 2 while decompressing" —
+    // the same accept-where-everyone-else-refuses family as an over-subscribed
+    // Huffman table.
+    if flg & 0x20 != 0 {
+        return Err(InflateError(
+            "zlib: preset dictionary required (FDICT)".to_string(),
+        ));
     }
-    inflate_raw(&data[start..], max_out)
+    inflate_raw(&data[2..], max_out)
 }
 
 /// Inflate a gzip (RFC 1952) stream: a variable-length header (magic, method,
 /// flags, and any FEXTRA/FNAME/FCOMMENT/FHCRC fields), the DEFLATE body, and an
 /// 8-byte CRC-32/ISIZE trailer (parsed past, not verified).
 ///
+/// gzip files may hold **several concatenated members**, and `gzip.decompress`
+/// returns all of them joined; decoding only the first — what this used to do,
+/// silently and with `truncated == false` — let an origin hide half a page from
+/// the indexer while every browser saw the whole thing.
+///
 /// # Errors
 /// [`InflateError`] on a bad gzip header or malformed body.
 pub fn inflate_gzip(data: &[u8], max_out: usize) -> Result<(Vec<u8>, bool), InflateError> {
+    let mut out: Vec<u8> = Vec::new();
+    let mut rest = data;
+    loop {
+        let room = max_out.saturating_sub(out.len());
+        let (bytes, truncated, used) = inflate_gzip_member(rest, room)?;
+        out.extend_from_slice(&bytes);
+        if truncated {
+            return Ok((out, true));
+        }
+        // Past the member's 8-byte CRC-32/ISIZE trailer; anything left that
+        // still starts with the gzip magic is another member.
+        let after = used.saturating_add(8);
+        if after >= rest.len() {
+            return Ok((out, false));
+        }
+        rest = &rest[after..];
+        if rest.len() < 2 || rest[0] != 0x1f || rest[1] != 0x8b {
+            // Trailing garbage, exactly as CPython's `gzip.decompress` treats a
+            // non-member tail: stop, keep what decoded.
+            return Ok((out, false));
+        }
+        if room == 0 {
+            return Ok((out, true));
+        }
+    }
+}
+
+/// One gzip member: `(bytes, truncated, input_bytes_consumed_before_the_trailer)`.
+fn inflate_gzip_member(
+    data: &[u8],
+    max_out: usize,
+) -> Result<(Vec<u8>, bool, usize), InflateError> {
     if data.len() < 10 {
         return Err(InflateError("gzip stream too short".to_string()));
     }
@@ -392,7 +482,8 @@ pub fn inflate_gzip(data: &[u8], max_out: usize) -> Result<(Vec<u8>, bool), Infl
         need(pos, 2)?;
         pos += 2;
     }
-    inflate_raw(&data[pos..], max_out)
+    let (out, truncated, used) = inflate_raw_at(&data[pos..], max_out)?;
+    Ok((out, truncated, pos + used))
 }
 
 fn skip_zstring(data: &[u8], mut pos: usize) -> Result<usize, InflateError> {
@@ -432,5 +523,96 @@ mod tests {
         assert!(inflate_raw(&[0xff, 0xff, 0xff], 100).is_err()); // invalid block type
         assert!(inflate_zlib(&[0x00], 100).is_err());
         assert!(inflate_gzip(&[0x1f, 0x8b], 100).is_err());
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// A DEFLATE block whose literal/length code is OVER-SUBSCRIBED (Kraft sum
+    /// 1.25). Every real decoder refuses it — Python's zlib raises "invalid
+    /// literal/lengths set" — but this returned `Ok([0x00])`, because the port
+    /// dropped puff's `construct` return value. A hostile origin can use that to
+    /// feed the indexer a body no browser will ever render.
+    #[test]
+    fn an_oversubscribed_huffman_table_is_refused() {
+        assert!(inflate_raw(
+            &unhex("05c00109000000802 0fb7f5a04".replace(' ', "").as_str()),
+            1 << 20
+        )
+        .is_err());
+    }
+
+    /// The other half of the same missing check: an INCOMPLETE code (Kraft sum
+    /// 0.75) that is not the degenerate one-symbol case RFC 1951 allows.
+    #[test]
+    fn an_incomplete_huffman_table_is_refused() {
+        assert!(inflate_raw(
+            &unhex("05c0010900000080 20ffaf0e01".replace(' ', "").as_str()),
+            1 << 20
+        )
+        .is_err());
+    }
+
+    /// The completeness check must not reject what real compressors emit.
+    #[test]
+    fn well_formed_streams_still_decode() {
+        // Fixed-Huffman block for "hello".
+        assert_eq!(
+            inflate_raw(&[0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x00], 1 << 20)
+                .unwrap()
+                .0,
+            b"hello"
+        );
+        // A real DYNAMIC-Huffman block (BTYPE=2) — what the new check gates.
+        let dynamic = unhex(concat!(
+            "edcec11183201404d05636f78c75e49899d800444012044504a5fa60262de4b6e7fd7ff7f5a3",
+            "c2b2d9e71b3286e2a1c38ed736cd2b425611a9c54ed40343301deea2dd4d07643b2a368dd036",
+            "ab1655e5e1ecb285d87ecddae1160ab2daad37eef8d50f42275425a358bf03173ce6d1fa1d41",
+            "43bab378d9444cf5dad2c1a8732687d2a1279040020924904002092490400209249040020924",
+            "904002092490400209fc0ff003",
+        ));
+        let (out, truncated) = inflate_raw(&dynamic, 1 << 20).unwrap();
+        assert_eq!(out.len(), 6440);
+        assert!(!truncated);
+        assert!(out.starts_with(b"The quick brown fox"));
+    }
+
+    /// FDICT means the stream needs a preset dictionary we do not have, so it is
+    /// undecodable. Skipping the 4-byte dict id and inflating anyway produced
+    /// plausible output for a stream `zlib.decompress` rejects.
+    #[test]
+    fn a_zlib_stream_needing_a_preset_dictionary_is_refused() {
+        assert!(inflate_zlib(
+            &unhex("782000000001cb48cdc9c95728cf2fca490100000000"),
+            1 << 20
+        )
+        .is_err());
+    }
+
+    /// gzip files may hold several concatenated members and `gzip.decompress`
+    /// joins them all. Decoding only the first — silently, with
+    /// `truncated == false` — let an origin hide half a page from the indexer.
+    #[test]
+    fn every_gzip_member_is_decoded_not_just_the_first() {
+        let two = unhex(concat!(
+            "1f8b080094317c6a02ff737474740400f1080d9b04000000",
+            "1f8b080094317c6a02ff7372727202003f1bda3904000000",
+        ));
+        assert_eq!(
+            inflate_gzip(&two, 1 << 20).unwrap(),
+            (b"AAAABBBB".to_vec(), false)
+        );
+        // …and the output cap still governs across members.
+        let (out, truncated) = inflate_gzip(&two, 6).unwrap();
+        assert!(out.len() <= 6 && truncated);
     }
 }

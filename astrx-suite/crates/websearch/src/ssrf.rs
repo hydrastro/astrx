@@ -82,6 +82,47 @@ fn v6_internal(ip: Ipv6Addr) -> bool {
 }
 
 /// Classify a parsed address, unwrapping an IPv4-mapped IPv6 address first.
+/// Ranges the Python reference's denylist MISSES, kept separate from
+/// [`V4_NETS`]/[`V6_NETS`] because `tests/xcheck_ssrf.rs` pins `ip_is_internal`
+/// byte-identical to that reference. `SafeIp` enforces the union, so the gate is
+/// strictly stronger than the golden without the golden becoming a lie.
+///
+/// `100.64.0.0/10` is CGNAT — it contains `100.100.100.200`, the Alibaba Cloud
+/// metadata endpoint, and is the space many k8s/EKS clusters put internal
+/// services in. `192.88.99.0/24` is the 6to4 relay anycast prefix. `::/96` is
+/// IPv4-compatible IPv6, so `::127.0.0.1` and `::a9fe:a9fe` reached loopback and
+/// the AWS metadata address respectively; `::ffff:0:0:0/96` is IPv4-translated.
+/// An attacker needs only an A/AAAA record pointing at one of these.
+const EXTRA_V4_NETS: &[([u8; 4], u32)] = &[([100, 64, 0, 0], 10), ([192, 88, 99, 0], 24)];
+const EXTRA_V6_NETS: &[(&str, u32)] = &[("::", 96), ("::ffff:0:0:0", 96)];
+
+/// The predicate the SSRF gate actually enforces: [`ip_is_internal`] plus the
+/// ranges above. A strict superset by construction — see the test that asserts
+/// exactly that.
+#[must_use]
+pub fn ip_is_blocked(ip: IpAddr) -> bool {
+    if classify(ip) {
+        return true;
+    }
+    let ip = match ip {
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map(IpAddr::V4)
+            .unwrap_or(IpAddr::V6(v6)),
+        v4 => v4,
+    };
+    match ip {
+        IpAddr::V4(v4) => {
+            let x = u32::from(v4);
+            EXTRA_V4_NETS.iter().any(|&(net, p)| v4_in(x, net, p))
+        }
+        IpAddr::V6(v6) => {
+            let x = u128::from(v6);
+            EXTRA_V6_NETS.iter().any(|&(net, p)| v6_in(x, net, p))
+        }
+    }
+}
+
 fn classify(ip: IpAddr) -> bool {
     let ip = match ip {
         IpAddr::V6(v6) => v6
@@ -119,7 +160,7 @@ impl SafeIp {
     /// Vet an already-parsed address; `None` if it is internal.
     #[must_use]
     pub fn from_ip(ip: IpAddr) -> Option<SafeIp> {
-        if classify(ip) {
+        if ip_is_blocked(ip) {
             None
         } else {
             Some(SafeIp(ip))
@@ -191,5 +232,74 @@ mod tests {
         assert!(!ip_is_internal("100.64.0.1")); // CGNAT is external here
         assert!(ip_is_internal("2002::1")); // 6to4
         assert!(!ip_is_internal("2001:20::1")); // not Teredo/2001::/32
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// The gate must refuse the ranges the Python reference's denylist misses.
+    /// `100.100.100.200` is the Alibaba Cloud metadata endpoint; `::a9fe:a9fe`
+    /// reaches AWS's `169.254.169.254` through IPv4-compatible IPv6. An attacker
+    /// needs only an A/AAAA record pointing at one of these.
+    #[test]
+    fn the_gate_refuses_the_ranges_python_misses() {
+        for s in [
+            "100.64.0.0",
+            "100.100.100.200",
+            "100.127.255.255",
+            "192.88.99.1",
+            "::127.0.0.1",
+            "::a9fe:a9fe",
+            "::ffff:0:7f00:1",
+        ] {
+            assert!(
+                SafeIp::vet(s).is_none(),
+                "{s} must be refused by the SSRF gate"
+            );
+        }
+    }
+
+    /// …without over-blocking anything genuinely external.
+    #[test]
+    fn the_extra_ranges_do_not_over_block() {
+        for s in [
+            "100.63.255.255",
+            "100.128.0.0",
+            "192.88.98.255",
+            "192.88.100.0",
+            "8.8.8.8",
+            "2606:4700:4700::1111",
+        ] {
+            assert!(SafeIp::vet(s).is_some(), "{s} must stay reachable");
+        }
+    }
+
+    /// `ip_is_blocked` is what `SafeIp` enforces and must be a STRICT SUPERSET
+    /// of the golden-pinned `ip_is_internal`, so the gate can be stronger than
+    /// the Python parity contract without that contract becoming a lie.
+    #[test]
+    fn blocked_is_a_superset_of_internal() {
+        for s in [
+            "127.0.0.1",
+            "10.0.0.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "224.0.0.1",
+            "255.255.255.255",
+            "::1",
+            "fe80::1",
+            "fc00::1",
+            "2002::1",
+            "100.64.0.1",
+            "8.8.8.8",
+            "1.1.1.1",
+        ] {
+            let ip: std::net::IpAddr = s.parse().unwrap();
+            if ip_is_internal(s) {
+                assert!(ip_is_blocked(ip), "{s}: internal but not blocked");
+            }
+        }
     }
 }

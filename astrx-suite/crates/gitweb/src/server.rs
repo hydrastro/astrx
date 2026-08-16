@@ -2471,6 +2471,12 @@ mod net_impl {
     const REFUSED_BODY_DRAIN: usize = 64 * 1024;
     /// How long to spend on that courtesy drain.
     const REFUSED_BODY_DRAIN_TIMEOUT: Duration = Duration::from_millis(250);
+    /// TOTAL time allowed to receive one request head, independent of the
+    /// per-read `socket_timeout`. A per-read timer alone is not a Slowloris
+    /// guard: it resets on every byte, so a client sending one byte every
+    /// `socket_timeout - ε` holds its connection slot for as long as it likes,
+    /// and `max_workers` (default 32) such clients shut everyone else out.
+    const HEAD_DEADLINE: Duration = Duration::from_secs(30);
 
     /// One request, owned so it can cross onto a blocking worker.
     #[derive(Default)]
@@ -2563,7 +2569,12 @@ mod net_impl {
         }
 
         /// Read one request head (up to and including the blank line).
+        ///
+        /// Bounded by a TOTAL deadline, not just the per-read `socket_timeout` —
+        /// see [`HEAD_DEADLINE`]. The connection cap bounds how many sockets can
+        /// be open; this is what bounds how long one of them may hold its slot.
         async fn read_head(&mut self) -> Option<String> {
+            let deadline = tokio::time::Instant::now() + HEAD_DEADLINE;
             loop {
                 if let Some(end) = find(&self.buf, b"\r\n\r\n") {
                     let head = String::from_utf8_lossy(&self.buf[..end]).into_owned();
@@ -2573,8 +2584,25 @@ mod net_impl {
                 if self.buf.len() > MAX_REQUEST_HEAD {
                     return None;
                 }
-                if !self.fill().await {
+                if tokio::time::Instant::now() >= deadline {
                     return None;
+                }
+                if !self.fill_by(deadline).await {
+                    return None;
+                }
+            }
+        }
+
+        /// `fill`, but never past `deadline` — so a slow trickle cannot outlive
+        /// the whole-request budget by resetting a per-read timer.
+        async fn fill_by(&mut self, deadline: tokio::time::Instant) -> bool {
+            let mut tmp = [0u8; 8192];
+            let cut = deadline.min(tokio::time::Instant::now() + self.timeout);
+            match tokio::time::timeout_at(cut, self.sock.read(&mut tmp)).await {
+                Ok(Ok(0)) | Ok(Err(_)) | Err(_) => false,
+                Ok(Ok(n)) => {
+                    self.buf.extend_from_slice(&tmp[..n]);
+                    true
                 }
             }
         }
@@ -2625,7 +2653,12 @@ mod net_impl {
                     }
                     break;
                 }
-                if out.len() + size > cap {
+                // NB: `out.len() + size > cap` would OVERFLOW. `size` is the
+                // peer's hex chunk header and can be usize::MAX, whose sum wraps
+                // to a small value that passes the check — and read_exact_body is
+                // then handed an unbounded length, buffering until the socket
+                // idles. Compare against the room that is left instead.
+                if size > cap.saturating_sub(out.len()) {
                     return Err(GitError::BadRequest("request body too large".to_string()));
                 }
                 let chunk = self.read_exact_body(size).await;

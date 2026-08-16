@@ -21,7 +21,7 @@ use crate::routing::{random_node_id, InfoHash, Node};
 use crate::store::Store;
 use crate::{DhtConfig, DhtNode, InfohashSink};
 use std::collections::HashSet;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -32,6 +32,60 @@ fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// True unless `ip` is a routable public unicast address.
+///
+/// Peer addresses arrive as four raw bytes in a `get_peers` reply's `values`
+/// (`routing::decode_endpoint` accepts any four), and the DHT contact that sends
+/// them chooses what they are — nothing in the protocol ties them to a real
+/// swarm. So `values = ["\x7f\x00\x00\x01\x00\x16", "\x0a\x00\x00\x05\x0c\xea",
+/// "\xa9\xfe\xa9\xfe\x00\x50"]` asks the indexer to open TCP to `127.0.0.1:22`,
+/// `10.0.0.5:3306` and `169.254.169.254:80` (the cloud metadata endpoint) and
+/// speak BitTorrent at them. This is the list of everything that must never be
+/// dialled: loopback, RFC1918 private, CGNAT, link-local, unspecified, multicast
+/// and broadcast, documentation/benchmarking/reserved space, and the IPv6
+/// equivalents. `Ipv4Addr::is_global` is still unstable on the 1.80 MSRV, so the
+/// ranges are spelled out.
+#[must_use]
+pub fn is_internal_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_internal_v4(v4),
+        IpAddr::V6(v6) => is_internal_v6(v6),
+    }
+}
+
+fn is_internal_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    a == 0                                          // 0.0.0.0/8 ("this network")
+        || a == 10                                  // RFC1918
+        || (a == 100 && (64..128).contains(&b))     // 100.64/10 CGNAT
+        || a == 127                                 // loopback
+        || (a == 169 && b == 254)                   // link-local + cloud metadata
+        || (a == 172 && (16..32).contains(&b))      // RFC1918
+        || (a == 192 && b == 0 && (c == 0 || c == 2)) // IETF assignments, TEST-NET-1
+        || (a == 192 && b == 88 && c == 99)         // 6to4 relay anycast
+        || (a == 192 && b == 168)                   // RFC1918
+        || (a == 198 && (18..20).contains(&b))      // benchmarking
+        || (a == 198 && b == 51 && c == 100)        // TEST-NET-2
+        || (a == 203 && b == 0 && c == 113)         // TEST-NET-3
+        || a >= 224 // multicast, reserved 240/4, and 255.255.255.255
+}
+
+fn is_internal_v6(ip: Ipv6Addr) -> bool {
+    // An IPv4-mapped/compatible address is just IPv4 wearing a hat — judge the
+    // embedded address, else ::ffff:127.0.0.1 walks straight past the v4 rules.
+    if let Some(v4) = ip.to_ipv4_mapped().or_else(|| ip.to_ipv4()) {
+        return is_internal_v4(v4);
+    }
+    let s = ip.segments();
+    ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_multicast()
+        || (s[0] & 0xfe00) == 0xfc00                // fc00::/7 unique local
+        || (s[0] & 0xffc0) == 0xfe80                // fe80::/10 link-local
+        || (s[0] == 0x2001 && s[1] == 0x0db8)       // 2001:db8::/32 documentation
+        || (s[0] == 0x0100 && s[1] == 0 && s[2] == 0 && s[3] == 0) // 100::/64 discard
 }
 
 /// Tunable knobs for the [`Indexer`].
@@ -53,6 +107,14 @@ pub struct IndexerConfig {
     pub resolve_max_peers: usize,
     /// Wall-clock budget for one DHT-resolve fetch.
     pub resolve_budget: Duration,
+    /// Dial peers on internal/reserved addresses (see [`is_internal_ip`]).
+    ///
+    /// **Off by default** — a DHT contact picks the peer addresses it hands back,
+    /// so with this on it can aim the fetcher at the operator's own network
+    /// (`127.0.0.1:22`, `10.0.0.5:3306`, `169.254.169.254:80`), 50 targets per
+    /// harvested infohash, using connect-vs-timeout as a reachability oracle.
+    /// Turn it on only for a loopback test rig or a deliberately internal swarm.
+    pub allow_internal_peers: bool,
 }
 
 impl Default for IndexerConfig {
@@ -66,6 +128,7 @@ impl Default for IndexerConfig {
             neighbor: false,
             resolve_max_peers: 50,
             resolve_budget: Duration::from_secs(60),
+            allow_internal_peers: false,
         }
     }
 }
@@ -77,6 +140,10 @@ pub struct IndexerStats {
     pub sampled: AtomicU64,
     pub fetched: AtomicU64,
     pub failed: AtomicU64,
+    /// Peers refused before connecting because their address was internal or
+    /// reserved (see [`IndexerConfig::allow_internal_peers`]). A non-zero value
+    /// means someone is feeding this node addresses inside your network.
+    pub refused: AtomicU64,
 }
 
 /// The harvester. Cheap to [`Clone`] (all shared state is behind `Arc`s), so its
@@ -199,10 +266,37 @@ impl Indexer {
         Ok(())
     }
 
+    /// May we open a TCP connection to `host`? Every dialled address comes from a
+    /// remote DHT contact, so this is the only thing standing between the fetcher
+    /// and the operator's internal network (see [`is_internal_ip`]).
+    fn dialable(&self, host: &str) -> bool {
+        if self.cfg.allow_internal_peers {
+            return true;
+        }
+        match host.parse::<IpAddr>() {
+            Ok(ip) => !is_internal_ip(ip),
+            // Peers reach us as compact 6-byte endpoints, so a host that is not a
+            // literal address never comes from the DHT; and a name we would have to
+            // resolve cannot be vetted here anyway (what it resolves to can change
+            // between the check and the connect). Refuse it.
+            Err(_) => false,
+        }
+    }
+
     /// Fetch, verify and persist metadata from one peer. Returns success. On any
     /// failure the infohash's attempt counter is bumped (so it is retried, then
     /// eventually pruned). This is the unit under test in the loopback path.
+    ///
+    /// Refuses internal/reserved peer addresses before connecting unless
+    /// [`IndexerConfig::allow_internal_peers`] is set.
     pub async fn fetch_and_store(&self, infohash: InfoHash, host: &str, port: u16) -> bool {
+        if !self.dialable(host) {
+            // Counted, not silently dropped: a rising `refused` is a DHT contact
+            // aiming this node at 127.0.0.1 / 10.0.0.0 / 169.254.169.254.
+            self.stats.refused.fetch_add(1, Ordering::Relaxed);
+            self.store.lock().unwrap().mark_attempt(&infohash);
+            return false;
+        }
         match fetch_metadata(&infohash, host, port, self.cfg.fetch_timeout, None, None).await {
             Ok(meta) => {
                 let mut store = self.store.lock().unwrap();
@@ -364,7 +458,7 @@ impl Indexer {
         while self.running.load(Ordering::Relaxed) {
             tokio::time::sleep(interval).await;
             let mut store = self.store.lock().unwrap();
-            store.prune_discovered(5);
+            store.prune_discovered(5, now_secs());
             if max_torrents.is_some() || max_age.is_some() {
                 store.enforce_retention(max_torrents, max_age, now_secs());
             }
@@ -440,6 +534,15 @@ mod tests {
         Arc::new(Mutex::new(Store::new()))
     }
 
+    /// The loopback test rig dials 127.0.0.1, which the SSRF gate refuses by
+    /// default — these tests opt in explicitly.
+    fn loopback_cfg() -> IndexerConfig {
+        IndexerConfig {
+            allow_internal_peers: true,
+            ..IndexerConfig::default()
+        }
+    }
+
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{x:02x}")).collect()
     }
@@ -478,7 +581,7 @@ mod tests {
         let st = store();
         st.lock().unwrap().add_discovered(&ih, None, 1000);
 
-        let mut indexer = Indexer::new(st.clone(), IndexerConfig::default());
+        let mut indexer = Indexer::new(st.clone(), loopback_cfg());
         indexer.start().await.unwrap();
         let (addr, handle) = serve_metadata(metadata.clone(), false).await.unwrap();
 
@@ -502,7 +605,7 @@ mod tests {
         let st = store();
         let ih = [0x11u8; 20];
         st.lock().unwrap().add_discovered(&ih, None, 1000);
-        let mut indexer = Indexer::new(st.clone(), IndexerConfig::default());
+        let mut indexer = Indexer::new(st.clone(), loopback_cfg());
         indexer.cfg.fetch_timeout = Duration::from_millis(200);
         indexer.start().await.unwrap();
         // Nothing listening → the fetch fails fast and the attempt is recorded.
@@ -510,5 +613,74 @@ mod tests {
         assert!(!ok);
         assert_eq!(indexer.stats().failed.load(Ordering::Relaxed), 1);
         indexer.stop();
+    }
+
+    /// Regression (SSRF / internal port scan): peer addresses come from a remote
+    /// DHT contact's `values` list, which `decode_endpoint` accepts as any four
+    /// bytes, so `fetch_and_store` must refuse internal/reserved addresses before
+    /// connecting. Before the fix a `get_peers` answer of `127.0.0.1:22`,
+    /// `10.0.0.5:3306`, `169.254.169.254:80` got a real 68-byte BitTorrent
+    /// handshake delivered to each — here, to a loopback-only listener.
+    #[tokio::test]
+    async fn refuses_internal_peer_addresses() {
+        // The exact addresses from the repro's `values` list, plus a public one.
+        for ip in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "169.254.169.254",
+            "192.168.1.1",
+            "172.16.0.1",
+            "100.64.0.1",
+            "0.0.0.0",
+            "255.255.255.255",
+            "224.0.0.1",
+            "::1",
+            "::ffff:127.0.0.1",
+            "fd00::1",
+            "fe80::1",
+        ] {
+            assert!(
+                is_internal_ip(ip.parse().unwrap()),
+                "{ip} must never be dialled"
+            );
+        }
+        for ip in ["8.8.8.8", "1.2.3.4", "2606:4700::1111"] {
+            assert!(!is_internal_ip(ip.parse().unwrap()), "{ip} is public");
+        }
+
+        // A *working* loopback peer: the only reason the fetch can fail is the gate.
+        let metadata = make_info("Internal Target");
+        let ih = sha1(&metadata);
+        let st = store();
+        st.lock().unwrap().add_discovered(&ih, None, 1000);
+        let (addr, handle) = serve_metadata(metadata.clone(), false).await.unwrap();
+
+        let mut indexer = Indexer::new(st.clone(), IndexerConfig::default());
+        indexer.start().await.unwrap();
+        let ok = indexer
+            .fetch_and_store(ih, &addr.ip().to_string(), addr.port())
+            .await;
+        assert!(!ok, "a loopback peer must be refused by default");
+        assert_eq!(indexer.stats().refused.load(Ordering::Relaxed), 1);
+        assert_eq!(indexer.stats().fetched.load(Ordering::Relaxed), 0);
+        assert!(st.lock().unwrap().get(&hex(&ih)).is_none());
+        // A hostname cannot be vetted (it can rebind after the check) → refused.
+        assert!(!indexer.fetch_and_store(ih, "localhost", addr.port()).await);
+        assert_eq!(indexer.stats().refused.load(Ordering::Relaxed), 2);
+        indexer.stop();
+
+        // Opting in dials the very same peer successfully — so the refusal above
+        // was the address gate, not a broken test rig.
+        let mut opted_in = Indexer::new(st.clone(), loopback_cfg());
+        opted_in.start().await.unwrap();
+        assert!(
+            opted_in
+                .fetch_and_store(ih, &addr.ip().to_string(), addr.port())
+                .await
+        );
+        assert_eq!(opted_in.stats().refused.load(Ordering::Relaxed), 0);
+        assert!(st.lock().unwrap().get(&hex(&ih)).is_some());
+        handle.abort();
+        opted_in.stop();
     }
 }

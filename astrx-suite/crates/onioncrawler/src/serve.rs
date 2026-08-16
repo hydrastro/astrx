@@ -1124,6 +1124,13 @@ pub async fn handle_conn(
     use tokio::io::AsyncReadExt;
 
     const MAX_HEAD: usize = 64 * 1024;
+    // The largest request body this server will buffer. Every POST here is a
+    // small form (`/add` takes at most `max_public_add_urls` URLs), so 1 MiB is
+    // generous. Without it a single unauthenticated connection could declare
+    // `Content-Length: 4000000000` and stream until the process died — the body
+    // is buffered BEFORE `route()` runs, so even the 401 path allocated first
+    // (measured: 4 GB resident in 6 s).
+    const MAX_BODY: usize = 1024 * 1024;
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
     // read until end of headers
@@ -1160,19 +1167,21 @@ pub async fn handle_conn(
         if let Some((k, v)) = line.split_once(':') {
             let k = k.trim();
             if k.eq_ignore_ascii_case("content-length") {
-                content_length = v.trim().parse().unwrap_or(0);
+                content_length = v.trim().parse().unwrap_or(0).min(MAX_BODY);
             } else if k.eq_ignore_ascii_case("authorization") {
                 auth = Some(v.trim().to_string());
             }
         }
     }
     let mut body = buf[head_end + 4..].to_vec();
+    body.truncate(MAX_BODY);
     while body.len() < content_length {
         let n = stream.read(&mut tmp).await?;
         if n == 0 {
             break;
         }
-        body.extend_from_slice(&tmp[..n]);
+        let room = MAX_BODY - body.len();
+        body.extend_from_slice(&tmp[..n.min(room)]);
     }
     let body_str = String::from_utf8_lossy(&body).to_string();
 

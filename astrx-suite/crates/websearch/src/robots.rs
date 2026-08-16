@@ -10,6 +10,12 @@
 
 use crawlcore::globmatch::{compile_glob, glob_match};
 
+/// The largest `Crawl-delay` this parser will honour, in seconds (24 h). A site
+/// asking for more is asking never to be crawled again, which it can say
+/// properly with `Disallow: /`; accepting the number instead lets one host's
+/// robots.txt park a crawler slot indefinitely.
+const MAX_CRAWL_DELAY: f64 = 86_400.0;
+
 struct Rule {
     allow: bool,
     length: usize,
@@ -85,6 +91,13 @@ fn iter_groups(text: &str) -> Vec<Group> {
     let mut delay: Option<f64> = None;
     let mut last_was_agent = false;
 
+    // A UTF-8 BOM is common on robots.txt files saved by Windows editors, and
+    // it is NOT `char::is_whitespace`, so leaving it attached makes the first
+    // field `"\u{feff}user-agent"` — no group is ever opened, every rule is
+    // dropped by the `agents.is_none()` guard, and the whole file silently
+    // becomes allow-all. Strip it before parsing, as every real parser does.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+
     for raw in text.lines() {
         let line = raw.split('#').next().unwrap_or("").trim();
         if line.is_empty() || !line.contains(':') {
@@ -121,8 +134,15 @@ fn iter_groups(text: &str) -> Vec<Group> {
             "disallow" => rules.push((false, value.to_string())),
             "allow" => rules.push((true, value.to_string())),
             "crawl-delay" => {
+                // Rust's f64 parser accepts "inf"/"nan"; a site serving either
+                // used to reserve its host until `now + inf`, so the host was
+                // never leasable again while still counting as queued — the
+                // crawl loop then span forever without fetching a page. Only a
+                // finite, non-negative, sanely-bounded delay is a delay.
                 if let Ok(d) = value.parse::<f64>() {
-                    delay = Some(d);
+                    if d.is_finite() && (0.0..=MAX_CRAWL_DELAY).contains(&d) {
+                        delay = Some(d);
+                    }
                 }
             }
             _ => {}
@@ -229,5 +249,44 @@ mod tests {
         assert!(!r.can_fetch("/a.pdf"));
         assert!(r.can_fetch("/a.pdf?x")); // $ anchors the end
         assert!(r.can_fetch("/a.html"));
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// A UTF-8 BOM is not `char::is_whitespace`, so it used to make the first
+    /// field `"\u{feff}user-agent"`: no group was ever opened, every rule was
+    /// dropped, and the whole file silently became allow-all.
+    #[test]
+    fn a_utf8_bom_does_not_make_the_file_allow_all() {
+        let r = parse(
+            "\u{feff}User-agent: *\nDisallow: /private\n",
+            "astrx-websearch/1.0",
+        );
+        assert!(!r.can_fetch("/private"), "BOM made the file allow-all");
+        assert!(r.can_fetch("/public"));
+    }
+
+    /// Rust's f64 parser accepts "inf"/"nan"; a site serving either reserved its
+    /// host until `now + inf`, so it was never leasable again while still
+    /// counting as queued and the crawl loop span forever without fetching.
+    #[test]
+    fn a_nonsense_crawl_delay_is_ignored() {
+        for bad in ["inf", "-inf", "NaN", "1e400", "-5", "999999999"] {
+            let text = format!("User-agent: *\nCrawl-delay: {bad}\nDisallow:\n");
+            let d = parse(&text, "astrx-websearch/1.0").crawl_delay();
+            assert!(
+                d.is_none_or(|v| v.is_finite() && (0.0..=86_400.0).contains(&v)),
+                "Crawl-delay: {bad} yielded {d:?}"
+            );
+        }
+        // A sane delay still comes through.
+        let r = parse(
+            "User-agent: *\nCrawl-delay: 2.5\nDisallow:\n",
+            "astrx-websearch/1.0",
+        );
+        assert_eq!(r.crawl_delay(), Some(2.5));
     }
 }

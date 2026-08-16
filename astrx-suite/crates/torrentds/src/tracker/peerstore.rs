@@ -23,6 +23,15 @@ use std::net::{IpAddr, SocketAddr};
 pub const MAX_SWARMS: usize = 1_000_000;
 /// Hard cap on peers retained per swarm (LRU-evicted).
 pub const MAX_PEERS_PER_SWARM: usize = 10_000;
+/// Minimum seconds between full sweeps of every swarm (see [`PeerStore::reap`]).
+///
+/// One `GET /announce` calls into the store four times (announce, counts, and a
+/// `get_peers` per family), and a full sweep is O(swarms): with 200 000 swarms
+/// each sweep measured 4.4 ms, so an unthrottled sweep charged ~17 ms of scan to
+/// every request — ~88 ms at the 1M-swarm cap, an ~11 req/s ceiling. Throttling
+/// the sweep costs nothing in accuracy, because the swarm a request actually
+/// touches is always reaped inline.
+pub const SWEEP_INTERVAL: u64 = 30;
 
 /// A swarm peer endpoint.
 pub type Endpoint = SocketAddr;
@@ -74,12 +83,16 @@ pub struct PeerStore {
     pub interval: u64,
     pub peer_ttl: u64,
     pub max_peers_per_reply: usize,
+    /// Minimum seconds between full sweeps (see [`SWEEP_INTERVAL`]).
+    pub sweep_interval: u64,
     max_swarms: usize,
     max_peers_per_swarm: usize,
     swarms: HashMap<[u8; 20], Swarm>,
     allow: Option<HashSet<[u8; 20]>>,
     deny: HashSet<[u8; 20]>,
     seq: u64,
+    /// `now` of the last full sweep; `None` until the first one.
+    last_sweep: Option<u64>,
 }
 
 impl std::fmt::Debug for PeerStore {
@@ -148,12 +161,14 @@ impl PeerStore {
             interval,
             peer_ttl,
             max_peers_per_reply,
+            sweep_interval: SWEEP_INTERVAL,
             max_swarms: max_swarms.max(1),
             max_peers_per_swarm: max_peers_per_swarm.max(1),
             swarms: HashMap::new(),
             allow: None,
             deny: HashSet::new(),
             seq: 0,
+            last_sweep: None,
         }
     }
 
@@ -188,13 +203,45 @@ impl PeerStore {
 
     // -- reaping ------------------------------------------------------------
 
-    /// Drop peers unseen for `peer_ttl`, and swarms left empty with no downloads.
+    /// Full sweep: drop peers unseen for `peer_ttl`, then any swarm left with no
+    /// peers.
+    ///
+    /// A peerless swarm goes even if it once saw `event=completed`. The old
+    /// predicate kept any swarm with `downloaded > 0`, which made a fill
+    /// permanent: 200 000 `GET /announce?info_hash=<random>&event=completed`
+    /// requests left 200 000 immortal swarms, and every later announce then paid
+    /// 4.4 ms per reap (~17 ms per HTTP request across the four reaps a single
+    /// announce triggers). A scrape counter for a swarm nobody is in is not worth
+    /// an unbounded, un-expirable table.
     pub fn reap(&mut self, now: u64) {
         let cutoff = now.saturating_sub(self.peer_ttl);
         self.swarms.retain(|_, sw| {
             sw.peers.retain(|_, p| p.last_seen >= cutoff);
-            !(sw.peers.is_empty() && sw.downloaded == 0)
+            !sw.peers.is_empty()
         });
+        self.last_sweep = Some(now);
+    }
+
+    /// Expire just one swarm's peers (O(peers in that swarm)), dropping the swarm
+    /// if that empties it. This is what keeps every *answer* exact while the full
+    /// sweep runs only occasionally.
+    fn reap_swarm(&mut self, infohash: &[u8; 20], now: u64) {
+        let cutoff = now.saturating_sub(self.peer_ttl);
+        if let Some(sw) = self.swarms.get_mut(infohash) {
+            sw.peers.retain(|_, p| p.last_seen >= cutoff);
+            if sw.peers.is_empty() {
+                self.swarms.remove(infohash);
+            }
+        }
+    }
+
+    /// Full sweep, but at most once per `sweep_interval` seconds — see
+    /// [`SWEEP_INTERVAL`] for why every announce must not drag one behind it.
+    fn sweep_if_due(&mut self, now: u64) {
+        match self.last_sweep {
+            Some(last) if now < last.saturating_add(self.sweep_interval) => {}
+            _ => self.reap(now),
+        }
     }
 
     // -- announce -----------------------------------------------------------
@@ -211,7 +258,10 @@ impl PeerStore {
         if !self.is_allowed(infohash) {
             return false;
         }
-        self.reap(now);
+        // Exact for the swarm being announced to; the rest of the table is swept
+        // on a timer instead of once per call (four calls per HTTP announce).
+        self.reap_swarm(infohash, now);
+        self.sweep_if_due(now);
         let seq = self.next_seq();
         let cap = self.max_peers_per_swarm;
 
@@ -285,7 +335,8 @@ impl PeerStore {
         family: Family,
         now: u64,
     ) -> Vec<Endpoint> {
-        self.reap(now);
+        self.reap_swarm(infohash, now);
+        self.sweep_if_due(now);
         let numwant = numwant.min(self.max_peers_per_reply);
         let Some(sw) = self.swarms.get(infohash) else {
             return Vec::new();
@@ -311,7 +362,8 @@ impl PeerStore {
     /// order, so callers that reshuffle for the wire now do so by name — the
     /// mislabelling that a bare triple invites cannot happen.
     pub fn counts(&mut self, infohash: &[u8; 20], now: u64) -> ScrapeCounts {
-        self.reap(now);
+        self.reap_swarm(infohash, now);
+        self.sweep_if_due(now);
         match self.swarms.get(infohash) {
             None => ScrapeCounts::default(),
             Some(sw) => {
@@ -540,6 +592,49 @@ mod tests {
         let peers = ps.get_peers(&IH, 50, None, Family::Any, 2);
         assert_eq!(peers.len(), 2);
         assert!(!peers.contains(&ep("1.1.1.1:1")));
+    }
+
+    /// Regression: a swarm with no peers left must expire even if it once counted
+    /// a `completed`. The old retain predicate kept every swarm with
+    /// `downloaded > 0` forever, so 200 000 `GET /announce?info_hash=<random 20B>
+    /// &port=6881&event=completed` requests bought 200 000 permanent swarms — and
+    /// every later announce then paid to scan them (4.4 ms per reap, four reaps
+    /// per HTTP announce).
+    #[test]
+    fn peerless_swarm_expires_even_after_completed() {
+        let mut ps = PeerStore::with_bounds(5, 10, 50, 100, 100); // peer_ttl = 10
+        assert!(ps.announce(&IH, ep("1.2.3.4:6881"), 0, Event::Completed, 0));
+        assert_eq!(ps.counts(&IH, 0), sc(1, 0, 1));
+        // The peer goes silent; past the TTL the swarm itself must go too.
+        assert_eq!(ps.counts(&IH, 20), sc(0, 0, 0));
+        assert_eq!(ps.swarm_count(), 0, "an emptied swarm outlived its peers");
+    }
+
+    /// Regression: the full sweep must be amortised, not run on every call. One
+    /// HTTP announce reaches the store four times (announce, counts, get_peers ×2)
+    /// and a sweep is O(swarms) — 4.4 ms at 200 000 swarms, ~88 ms per request at
+    /// the 1M cap (~11 req/s). The swarm a call actually touches is still exact.
+    #[test]
+    fn full_sweep_is_amortised_but_still_happens() {
+        let mut ps = PeerStore::with_bounds(5, 10, 50, 100, 100); // peer_ttl = 10
+        let ih_b = [0x01u8; 20];
+        let ih_c = [0x02u8; 20];
+        for ih in [&IH, &ih_b, &ih_c] {
+            ps.announce(ih, ep("1.2.3.4:6881"), 0, Event::Started, 0);
+        }
+        assert_eq!(ps.swarm_count(), 3);
+        // t=20: every peer is past the TTL, but the last sweep was at t=0 and
+        // `sweep_interval` is 30 — so only the swarm actually asked about is
+        // touched. Its answer is exact regardless.
+        assert_eq!(ps.counts(&IH, 20), sc(0, 0, 0));
+        assert_eq!(
+            ps.swarm_count(),
+            2,
+            "every call is still dragging a full sweep behind it"
+        );
+        // Past `sweep_interval`, the sweep does run and clears the stragglers.
+        assert_eq!(ps.counts(&IH, 40), sc(0, 0, 0));
+        assert_eq!(ps.swarm_count(), 0);
     }
 
     #[test]

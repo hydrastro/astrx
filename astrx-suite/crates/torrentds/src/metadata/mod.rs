@@ -22,9 +22,10 @@
 //!
 //! Hostile-input hardening mirrors the reference: `metadata_size` and every
 //! peer-wire frame are capped before allocation, each ut_metadata piece must be
-//! exactly its BEP-9 length, and the v2 `file tree` walk is depth- and
-//! node-bounded — so a peer cannot force us to buffer far more than the advertised
-//! (and bounded) metadata size before the final hash check.
+//! exactly its BEP-9 length, and the v2 `file tree` walk is bounded on depth, node
+//! count **and emitted path bytes** — so a peer cannot force us to buffer far more
+//! than the advertised (and bounded) metadata size before the final hash check,
+//! nor to expand a bounded info-dict into an unbounded file list afterwards.
 
 /// The BEP-3 protocol string.
 pub const BT_PROTOCOL: &[u8] = b"BitTorrent protocol";
@@ -51,6 +52,20 @@ pub const UT_REJECT: i64 = 2;
 /// generic depth cap.
 pub const MAX_TREE_DEPTH: usize = 60;
 pub const MAX_TREE_NODES: usize = 100_000;
+/// BEP-52 bound on the walk's **output**: the sum of flattened path bytes.
+///
+/// [`MAX_METADATA_SIZE`], [`MAX_TREE_DEPTH`] and [`MAX_TREE_NODES`] all bound the
+/// *input*; none of them bounds what the walk produces, because every leaf
+/// re-materialises its whole key prefix. An info-dict shaped
+/// `{"file tree": {<6 MiB name>: {<100 000 short names>: {"": {"length": 1}}}}}`
+/// is 8.19 MiB on the wire — under every input cap, and self-consistent because
+/// the attacker publishes `sha1(that)` as the infohash himself — yet flattens to
+/// ~585 GiB of `String`s. Measured through the real client: 4.0 MiB of input with
+/// only 300 such leaves cost +1124 MiB RSS in 745 ms and still returned `Ok`;
+/// 800 leaves cost +3.2 GiB. One TCP connection per OOM-kill. 8 MiB of paths is
+/// far more than any genuine torrent needs (its names must also fit the 10 MiB
+/// metadata cap), so a legitimate file tree never comes near this.
+pub const MAX_TREE_PATH_BYTES: usize = 8 * 1024 * 1024;
 
 /// Any metadata-fetch failure (bad handshake, hostile bytes, hash mismatch, I/O).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +290,58 @@ mod tests {
         }
         let Ben::Dict(tree) = cur else { panic!() };
         assert!(walk_file_tree(&tree).is_err());
+    }
+
+    /// Regression: the `file tree` walk must bound its **output**, not just its
+    /// input. `MAX_METADATA_SIZE` / `MAX_TREE_DEPTH` / `MAX_TREE_NODES` all cap
+    /// what arrives on the wire, but each leaf re-materialises its whole key
+    /// prefix, so `{<big name>: {<many short names>: {"": {"length": 1}}}}` costs
+    /// `leaves × prefix` bytes of `String`. The 100 000-leaf / 6 MiB-name shape is
+    /// 8.19 MiB on the wire (under every input cap, and hash-consistent because
+    /// the attacker publishes its SHA-1 himself) and projects to ~585 GiB → OOM.
+    /// Here 200 leaves under a 64 KiB name = ~12.8 MiB of paths must be rejected;
+    /// before the fix this returned `Ok` with all 200 paths materialised.
+    #[test]
+    fn walk_file_tree_bounds_total_path_bytes() {
+        let leaf = || {
+            let mut inner = Dict::new();
+            inner.insert(b"length".to_vec(), Ben::Int(1));
+            let mut l = Dict::new();
+            l.insert(b"".to_vec(), Ben::Dict(inner));
+            Ben::Dict(l)
+        };
+        let big_name = vec![b'A'; 64 * 1024];
+        let tree_with = |leaves: usize| {
+            let mut children = Dict::new();
+            for i in 0..leaves {
+                children.insert(format!("f{i:06}").into_bytes(), leaf());
+            }
+            let mut tree = Dict::new();
+            tree.insert(big_name.clone(), Ben::Dict(children));
+            tree
+        };
+        // 200 × ~64 KiB of prefix ≈ 12.8 MiB of output → refused.
+        let err = walk_file_tree(&tree_with(200)).expect_err("path amplification refused");
+        assert!(
+            err.message().contains("paths too large"),
+            "unexpected error: {err}"
+        );
+        // The same shape within budget still parses (the guard doesn't over-reach):
+        // 100 × ~64 KiB ≈ 6.4 MiB < MAX_TREE_PATH_BYTES.
+        let ok = walk_file_tree(&tree_with(100)).expect("under the cap");
+        assert_eq!(ok.len(), 100);
+        assert!(ok[0].0.starts_with("AAAA"));
+        // Sanity: an ordinary tree is unaffected.
+        let mut plain = Dict::new();
+        plain.insert(b"dir".to_vec(), {
+            let mut d = Dict::new();
+            d.insert(b"file.bin".to_vec(), leaf());
+            Ben::Dict(d)
+        });
+        assert_eq!(
+            walk_file_tree(&plain).unwrap(),
+            vec![("dir/file.bin".to_string(), 1)]
+        );
     }
 
     #[test]

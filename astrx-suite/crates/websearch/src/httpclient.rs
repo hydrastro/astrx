@@ -257,22 +257,47 @@ impl Headers {
     pub fn pairs(&self) -> &[(String, String)] {
         &self.0
     }
-
-    fn insert(&mut self, key: String, value: String) {
-        if let Some(slot) = self.0.iter_mut().find(|(k, _)| *k == key) {
-            slot.1 = format!("{}, {}", slot.1, value);
-        } else {
-            self.0.push((key, value));
-        }
-    }
 }
 
 fn latin1_decode(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b as char).collect()
 }
 
-fn latin1_encode(s: &str) -> Vec<u8> {
-    s.chars().map(|c| c as u8).collect()
+/// Strip the bytes that would end a header field early. A value can arrive here
+/// from STORAGE — a previous response's `ETag`/`Last-Modified` is replayed as
+/// `If-None-Match`/`If-Modified-Since` — so an origin that plants a CR or LF in
+/// one would otherwise inject a header line into every later conditional GET,
+/// on every subsequent crawl.
+fn header_safe(v: &str) -> String {
+    v.chars()
+        .filter(|c| !matches!(c, '\r' | '\n' | '\0'))
+        .collect()
+}
+
+/// Percent-encode a request target so it is guaranteed to be a single ASCII
+/// token. Paths arrive canonicalised, i.e. already percent-encoded, so existing
+/// `%XX` and reserved characters pass through untouched; what gets escaped is
+/// exactly what may not appear literally in a request line — SP, the CTLs (CR
+/// and LF above all) and every non-ASCII byte.
+///
+/// Writing the code point out with `c as u8` instead — what this did before —
+/// TRUNCATED it: U+010D became a raw CR and U+010A a raw LF, so a crawled
+/// `<a href="/x\u{010d}\u{010a}X-Injected: 1">` injected a header line, and a
+/// doubled pair smuggled a whole second request onto a keep-alive socket. It
+/// also silently mangled every non-Latin-1 IRI.
+fn encode_request_target(path: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        if b > 0x20 && b < 0x7f {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0f) as usize] as char);
+        }
+    }
+    out
 }
 
 fn trim_ascii(b: &[u8]) -> &[u8] {
@@ -309,12 +334,21 @@ pub fn build_request(
     extra_headers: &[(String, String)],
 ) -> Vec<u8> {
     let path = if path.is_empty() { "/" } else { path };
-    let mut s = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n");
+    let mut s = String::with_capacity(path.len() + host.len() + 64);
+    s.push_str(&header_safe(method));
+    s.push(' ');
+    s.push_str(&encode_request_target(path));
+    s.push_str(" HTTP/1.1\r\nHost: ");
+    s.push_str(&header_safe(host));
+    s.push_str("\r\n");
     for (k, v) in extra_headers {
-        s.push_str(&format!("{k}: {v}\r\n"));
+        s.push_str(&header_safe(k));
+        s.push_str(": ");
+        s.push_str(&header_safe(v));
+        s.push_str("\r\n");
     }
     s.push_str("\r\n");
-    latin1_encode(&s)
+    s.into_bytes()
 }
 
 /// Parse a status line into `(version, status, reason)`.
@@ -344,12 +378,37 @@ pub fn parse_status_line(line: &[u8]) -> Result<(String, u16, String), HttpError
 pub fn parse_headers(block: &[u8]) -> Headers {
     let mut headers = Headers::default();
     let text = latin1_decode(block);
-    for raw in text.split("\r\n") {
+    // `at` maps a header name to its slot so a duplicate is joined in O(1). The
+    // scan used to be linear per header, making a head O(headers²): an origin
+    // filling the head cap with tens of thousands of one-byte headers cost about
+    // a second of crawler CPU per response, free, on every page it served. It
+    // lives here rather than inside `Headers` so the struct — which is held
+    // across `.await` points all down the fetch path — does not grow (widening
+    // it overflowed a debug-build future's stack).
+    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    // Split on LF and drop a trailing CR, rather than splitting on CRLF: a
+    // header line terminated by a BARE LF used to leave that LF *inside* the
+    // preceding value, and values like `ETag` are stored and replayed on the
+    // next conditional GET — a persistent, cross-run header injection.
+    for raw in text.split('\n') {
+        let raw = raw.strip_suffix('\r').unwrap_or(raw);
         if raw.is_empty() || !raw.contains(':') {
             continue;
         }
         let (k, v) = raw.split_once(':').unwrap();
-        headers.insert(k.trim().to_lowercase(), v.trim().to_string());
+        let (key, value) = (k.trim().to_lowercase(), v.trim());
+        match at.get(&key) {
+            // Duplicate keys are joined with `, `, matching `http.client`.
+            Some(&i) => {
+                let slot = &mut headers.0[i].1;
+                slot.push_str(", ");
+                slot.push_str(value);
+            }
+            None => {
+                at.insert(key.clone(), headers.0.len());
+                headers.0.push((key, value.to_string()));
+            }
+        }
     }
     headers
 }
@@ -376,7 +435,10 @@ pub fn decode_chunked(buf: &[u8], max_bytes: usize) -> Result<(Vec<u8>, bool), H
         if size == 0 {
             break;
         }
-        if i + size + 2 > buf.len() {
+        // NB: `i + size + 2 > buf.len()` would OVERFLOW on a huge declared size
+        // and wrap into an inverted `buf[i..i + size]` range below. Compare
+        // against the bytes that actually remain.
+        if size > buf.len().saturating_sub(i).saturating_sub(2) {
             return Err(HttpError("chunk data shorter than declared".to_string()));
         }
         let data = &buf[i..i + size];
@@ -573,8 +635,13 @@ mod net_io {
                 let _ = r.read_until(b"\r\n", 16 * 1024).await; // trailers / final CRLF
                 break;
             }
-            if out.len() + size > max_bytes {
-                let want = max_bytes.saturating_sub(out.len());
+            // NB: `out.len() + size > max_bytes` would OVERFLOW. `size` is the
+            // origin's hex chunk header and can be usize::MAX, whose sum wraps
+            // to a small value that passes the check — and `read_n` is then
+            // handed an unbounded length (measured: 3 MB of wire turning into
+            // 529 MB RSS in 0.6 s). Compare against the room that is left.
+            let want = max_bytes.saturating_sub(out.len());
+            if size > want {
                 out.extend_from_slice(&r.read_n(want).await?);
                 truncated = true;
                 break;
@@ -770,6 +837,87 @@ mod tests {
         assert_eq!(
             decode_body(b"<meta charset=utf-8>\xc3\xa9", None),
             "<meta charset=utf-8>é"
+        );
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// `out.len() + size > max_bytes` OVERFLOWS: `size` is the origin's hex
+    /// chunk header, so `ffffffffffffffff` wraps the sum to a small value that
+    /// PASSES the check, and the reader is then handed an unbounded length
+    /// (measured: 3 MB of wire became 529 MB RSS in 0.6 s).
+    #[test]
+    fn a_chunk_size_near_usize_max_cannot_bypass_the_body_cap() {
+        let mut buf = b"1\r\nA\r\nffffffffffffffff\r\n".to_vec();
+        buf.extend_from_slice(&b"B".repeat(4096));
+        buf.extend_from_slice(b"\r\n0\r\n\r\n");
+        // Must refuse rather than wrap into an inverted slice range.
+        assert!(decode_chunked(&buf, 1024).is_err());
+    }
+
+    /// `latin1_encode`'s `c as u8` TRUNCATED code points: U+010D became a raw CR
+    /// and U+010A a raw LF, so a crawled href injected a header line and a
+    /// doubled pair smuggled a second request onto a keep-alive socket.
+    #[test]
+    fn a_request_target_can_never_inject_a_header_line() {
+        let req = build_request("GET", "/x\u{010d}\u{010a}X-Injected: 1", "example.com", &[]);
+        let text = String::from_utf8_lossy(&req);
+        assert!(!text.contains("X-Injected: 1\r\n"), "injected: {text:?}");
+        assert!(text.starts_with("GET /x%C4%8D%C4%8A"), "{text:?}");
+        // The head must contain exactly one CRLFCRLF — i.e. one request.
+        assert_eq!(text.matches("\r\n\r\n").count(), 1, "{text:?}");
+    }
+
+    /// A stored `ETag` is replayed as `If-None-Match` on the next conditional
+    /// GET, so a CR/LF planted in one is a persistent, cross-run injection.
+    #[test]
+    fn a_stored_header_value_cannot_inject_on_replay() {
+        let hs = vec![(
+            "If-None-Match".to_string(),
+            "\"x\"\r\nX-Evil: 1".to_string(),
+        )];
+        let req = build_request("GET", "/", "example.com", &hs);
+        let text = String::from_utf8_lossy(&req);
+        // The CR/LF are stripped, so the whole thing collapses into ONE header
+        // value — no line of the request may begin with the smuggled name.
+        assert!(
+            !text.lines().any(|l| l.starts_with("X-Evil:")),
+            "smuggled a header line: {text:?}"
+        );
+        assert!(
+            text.contains("If-None-Match: \"x\"X-Evil: 1\r\n"),
+            "{text:?}"
+        );
+        assert_eq!(text.matches("\r\n\r\n").count(), 1, "{text:?}");
+    }
+
+    /// A header line terminated by a BARE LF used to leave that LF inside the
+    /// preceding value, which is then stored and replayed.
+    #[test]
+    fn a_bare_lf_terminates_a_header_line() {
+        let h = parse_headers(b"ETag: \"a\"\nX-Next: b\r\n");
+        assert_eq!(h.get("etag"), Some("\"a\""));
+        assert_eq!(h.get("x-next"), Some("b"));
+    }
+
+    /// Parsing a head was O(headers²): an origin filling the head cap with tens
+    /// of thousands of one-byte headers cost ~1 s of crawler CPU per response.
+    #[test]
+    fn many_headers_parse_in_linear_time() {
+        let mut block = String::new();
+        for i in 0..20_000 {
+            block.push_str(&format!("h{i}: v\r\n"));
+        }
+        let t = std::time::Instant::now();
+        let h = parse_headers(block.as_bytes());
+        assert_eq!(h.pairs().len(), 20_000);
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(2),
+            "quadratic header parse: {:?}",
+            t.elapsed()
         );
     }
 }

@@ -217,8 +217,15 @@ fn sanitize(url: &str) -> String {
         .chars()
         .filter(|&c| c != '\t' && c != '\r' && c != '\n')
         .collect();
+    // LEADING only, deliberately. `urlsplit` says so in as many words — "Only
+    // lstrip url as some applications rely on preserving trailing space" — and
+    // trimming the right-hand end too (what this used to do) collapsed distinct
+    // URLs onto one canonical form: `http://h/a  ` and `http://h/a\0` both
+    // became `http://h/a`, so dedup and index keys stopped matching the
+    // reference. It was the single largest divergence class in the URL corpus,
+    // 250 of 4039 cases.
     stripped
-        .trim_matches(|c: char| (c as u32) <= 0x20)
+        .trim_start_matches(|c: char| (c as u32) <= 0x20)
         .to_string()
 }
 
@@ -229,9 +236,15 @@ pub fn urlsplit(url: &str, default_scheme: &str) -> SplitUrl {
     let mut rest = url.as_str();
     let mut scheme = default_scheme.to_string();
 
-    // scheme: leading run of scheme-chars before the first ':'
+    // scheme: leading run of scheme-chars before the first ':'. RFC 3986 (and
+    // CPython, via `url[0].isascii() and url[0].isalpha()`) requires the FIRST
+    // character to be an ASCII letter. Without that check `12:34/evil` parsed
+    // as scheme `12`, so `urljoin("http://good.example/a/b", "12:34/evil")`
+    // returned the reference verbatim instead of resolving it — and downstream
+    // `canonical::join` then dropped a perfectly good same-host link.
     if let Some(i) = rest.find(':') {
-        if i > 0 && rest[..i].chars().all(is_scheme_char) {
+        let starts_alpha = rest.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+        if i > 0 && starts_alpha && rest[..i].chars().all(is_scheme_char) {
             scheme = rest[..i].to_lowercase();
             rest = &rest[i + 1..];
         }
@@ -298,20 +311,34 @@ pub fn host_port(netloc: &str) -> (String, Option<String>) {
         Some(i) => &netloc[i + 1..],
         None => netloc,
     };
-    if let Some(after_lb) = hostinfo.strip_prefix('[') {
+    // CPython's `_hostinfo` uses `partition('[')`, i.e. a bracket ANYWHERE
+    // opens the IPv6 form — not only one at position 0.
+    if let Some(lb) = hostinfo.find('[') {
+        let after_lb = &hostinfo[lb + 1..];
         // IPv6 literal — host between the brackets, optional :port after ']'
         let (host, tail) = match after_lb.find(']') {
             Some(e) => (&after_lb[..e], &after_lb[e + 1..]),
             None => (after_lb, ""),
         };
-        let port = tail.strip_prefix(':').map(str::to_string);
+        let port = tail
+            .strip_prefix(':')
+            .filter(|p| !p.is_empty())
+            .map(str::to_string);
         (host.to_lowercase(), port)
     } else {
-        match hostinfo.rfind(':') {
-            Some(i) => (
+        // Split on the FIRST colon, as CPython's `hostinfo.partition(':')`
+        // does. Splitting on the last one turned the malformed authority
+        // `h:80:90` into the accepted host `h:80` with port `90`; canonicalize
+        // then saw a colon in the "host", bracketed it, and emitted
+        // `http://[h:80]:90/x` — a fabricated pseudo-IPv6 literal for a URL
+        // CPython rejects outright (`.port` raises ValueError).
+        match hostinfo.find(':') {
+            // An empty port is `None` in CPython, not `Some("")`.
+            Some(i) if i + 1 < hostinfo.len() => (
                 hostinfo[..i].to_lowercase(),
                 Some(hostinfo[i + 1..].to_string()),
             ),
+            Some(i) => (hostinfo[..i].to_lowercase(), None),
             None => (hostinfo.to_lowercase(), None),
         }
     }
@@ -437,5 +464,64 @@ mod tests {
         assert_eq!(urljoin("http://h/a/b/c", "../c"), "http://h/a/c");
         assert_eq!(urljoin("http://h/a", "//h2/x"), "http://h2/x");
         assert_eq!(urljoin("http://h/a/b?q=1", ""), "http://h/a/b?q=1");
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// CPython only LEFT-strips the URL — `urlsplit` says so in a comment,
+    /// because "some applications rely on preserving trailing space". Trimming
+    /// both ends collapsed distinct URLs onto one canonical form, breaking dedup
+    /// and index keys against the reference (250 of 4039 corpus cases).
+    #[test]
+    fn trailing_control_and_space_are_preserved() {
+        assert_eq!(urlsplit("http://h/a  ", "").path, "/a  ");
+        assert_eq!(urlsplit("http://h/a\u{0}", "").path, "/a\u{0}");
+        assert_eq!(urlsplit("  http://h/a", "").scheme, "http"); // leading still stripped
+        assert_eq!(urlsplit("http://h/a\tb\r\nc", "").path, "/abc"); // tab/CR/LF still removed
+    }
+
+    /// A scheme must begin with an ASCII letter. Without that rule `12:34/evil`
+    /// parsed as scheme `12`, so a relative reference CPython resolves came back
+    /// verbatim and the link was later dropped as un-joinable.
+    #[test]
+    fn a_scheme_must_start_with_an_ascii_letter() {
+        assert_eq!(
+            urljoin("http://good.example/a/b", "12:34/evil"),
+            "http://good.example/a/12:34/evil"
+        );
+        for s in ["12:34/evil", "+x:y", "-a:b", ".:x"] {
+            assert_eq!(urlsplit(s, "").scheme, "", "{s} must not parse a scheme");
+        }
+        assert_eq!(urlsplit("a+b-c.d:x", "").scheme, "a+b-c.d");
+    }
+
+    /// CPython's `_hostinfo` partitions on the FIRST colon. Using the last one
+    /// accepted the malformed authority `h:80:90` as host `h:80` + port `90`, and
+    /// canonicalisation then bracketed the colon-bearing "host" into the
+    /// fabricated IPv6 literal `[h:80]`.
+    #[test]
+    fn host_port_splits_on_the_first_colon() {
+        assert_eq!(
+            host_port("host:80:90"),
+            ("host".into(), Some("80:90".into()))
+        );
+        assert_eq!(
+            host_port("user@h:80:90"),
+            ("h".into(), Some("80:90".into()))
+        );
+        assert_eq!(host_port("host:80"), ("host".into(), Some("80".into())));
+    }
+
+    /// An empty port is `None` in CPython, not `Some("")`, and a bracket
+    /// anywhere opens the IPv6 form (CPython partitions on `[`).
+    #[test]
+    fn host_port_empty_port_and_late_bracket() {
+        assert_eq!(host_port("h:"), ("h".into(), None));
+        assert_eq!(host_port("foo[bar]"), ("bar".into(), None));
+        assert_eq!(host_port("[::1]:8080"), ("::1".into(), Some("8080".into())));
+        assert_eq!(host_port("[::1]"), ("::1".into(), None));
     }
 }

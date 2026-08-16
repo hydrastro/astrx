@@ -342,12 +342,19 @@ mod net_impl {
                     }
                     break;
                 }
+                // NB: `size` is the peer's hex chunk header and is unbounded, so
+                // reading the chunk whole and only THEN trimming into `out`
+                // buffered the entire stream in `self.buf` — `cap` bounded the
+                // output but nothing bounded the read, and the dashboard was
+                // OOM-killed outright. Never ask for more than the room left.
+                let room = cap.saturating_sub(out.len());
+                if size > room {
+                    out.extend_from_slice(&self.read_n(room).await?);
+                    break; // framing abandoned; the connection is not reusable
+                }
                 let chunk = self.read_n(size).await?;
                 let short = chunk.len() < size;
-                if out.len() < cap {
-                    let room = cap - out.len();
-                    out.extend_from_slice(&chunk[..room.min(chunk.len())]);
-                }
+                out.extend_from_slice(&chunk);
                 if short {
                     break; // peer closed mid-chunk; keep what arrived
                 }

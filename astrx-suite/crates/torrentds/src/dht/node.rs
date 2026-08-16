@@ -33,12 +33,23 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Fan-out for the iterative `get_peers` lookup (queried per round).
 pub const LOOKUP_ALPHA: usize = 3;
 /// Peers retained per infohash in the served peer store.
 pub const MAX_PEERS_PER_INFOHASH: usize = 128;
+/// Peers we put in one `get_peers` reply's `values` list.
+///
+/// The reply is this node's amplification surface. A `get_peers` query is a
+/// 95-byte datagram whose source address UDP lets the sender choose, and
+/// answering it with all 128 stored peers made the response 1317 bytes — ~14×,
+/// aimed wherever the attacker likes. The peer list is attacker-sized too: peers
+/// are keyed `(ip, port)`, so 200 announces from **one** socket cycling
+/// `port=1..200` fill it single-handedly. Some amplification is inherent to
+/// BEP-5 (`nodes` alone is ~208 bytes), but 16 peers is plenty for a lookup to
+/// converge and keeps the answer in the same class as a plain `find_node` reply.
+pub const MAX_VALUES_PER_REPLY: usize = 16;
 /// Distinct infohashes retained in the served peer store (LRU-evicted).
 pub const MAX_STORED_INFOHASHES: usize = 4096;
 
@@ -48,6 +59,15 @@ pub const SAMPLE_MAX: usize = 20;
 pub const SAMPLE_INTERVAL: i64 = 21_600; // 6h, the BEP-51 recommendation ceiling
 /// Upper bound on the ring of recently-seen infohashes we can serve via BEP-51.
 pub const RECENT_INFOHASH_CAP: usize = 2000;
+
+/// How long one `announce_peer` token secret stays live (BEP-5: "change the
+/// secret every five minutes", accepting the previous one as well).
+///
+/// A fixed-for-the-process secret makes a token a permanent announce credential:
+/// `make_token` mixes only the secret and the source IP, so one `get_peers` reply
+/// obtained on day one still lets that IP inject peers for any infohash on day
+/// thirty. Rotation bounds that to two windows.
+pub const TOKEN_ROTATE: Duration = Duration::from_secs(300);
 
 /// A harvested-infohash sink: `(infohash, peer)` where `peer` is `Some` only for
 /// an `announce_peer`. It must not panic (a panic unwinds the receive task).
@@ -238,9 +258,77 @@ impl ServedPeers {
         }
     }
 
-    fn get(&self, info_hash: &NodeId) -> Vec<SocketAddrV4> {
-        self.map.get(info_hash).cloned().unwrap_or_default()
+    /// Up to `max` stored peers, a uniformly random subset when there are more
+    /// (see [`MAX_VALUES_PER_REPLY`] for why the reply is capped at all; random
+    /// rather than the head of the list so repeated lookups see the whole swarm).
+    fn get(&self, info_hash: &NodeId, max: usize) -> Vec<SocketAddrV4> {
+        let Some(all) = self.map.get(info_hash) else {
+            return Vec::new();
+        };
+        if all.len() <= max {
+            return all.clone();
+        }
+        let mut picked = all.clone();
+        for i in 0..max {
+            // partial Fisher–Yates over the remaining tail
+            let j = i + (rand_u64() as usize) % (picked.len() - i);
+            picked.swap(i, j);
+        }
+        picked.truncate(max);
+        picked
     }
+}
+
+// --- announce-token secrets ------------------------------------------------
+
+/// The live token secret plus the outgoing one, rotated on a timer.
+struct TokenSecrets {
+    current: [u8; 16],
+    /// The secret from before the last rotation; tokens minted under it are still
+    /// accepted, so a peer that got its token seconds before a rotation can still
+    /// announce. `None` once it has aged out.
+    previous: Option<[u8; 16]>,
+    next_rotate: Instant,
+}
+
+impl TokenSecrets {
+    fn new(period: Duration) -> Self {
+        let mut current = [0u8; 16];
+        rand_fill(&mut current);
+        Self {
+            current,
+            previous: None,
+            next_rotate: Instant::now() + period,
+        }
+    }
+
+    /// Rotate if the window has elapsed. Lazy (driven by whoever asks for or
+    /// checks a token) so no timer task is needed.
+    fn refresh(&mut self, now: Instant, period: Duration) {
+        if now < self.next_rotate {
+            return;
+        }
+        // A whole extra period late means nothing has queried us for that long:
+        // the outgoing secret is already older than the accept window, so retire
+        // it outright rather than promoting it — an idle hour must not leave an
+        // hour-old token spendable.
+        self.previous = (now < self.next_rotate + period).then_some(self.current);
+        rand_fill(&mut self.current);
+        self.next_rotate = now + period;
+    }
+}
+
+/// The opaque per-address token `SHA-1(secret || ip)[..8]`. It never crosses the
+/// Python/Rust boundary (a get_peers and its matching announce are always served
+/// by the same instance), so it need not be byte-identical to Python — only
+/// self-consistent and unforgeable without the secret.
+fn token_with(secret: &[u8; 16], addr: SocketAddr) -> Vec<u8> {
+    let mut data = secret.to_vec();
+    match addr {
+        SocketAddr::V4(a) => data.extend_from_slice(&a.ip().octets()),
+        SocketAddr::V6(a) => data.extend_from_slice(&a.ip().octets()),
+    }
+    crate::infohash::sha1(&data)[..8].to_vec()
 }
 
 // --- shared node state -----------------------------------------------------
@@ -250,7 +338,8 @@ struct DhtState {
     k: usize,
     neighbor: bool,
     neighbor_shared: usize,
-    token_secret: [u8; 16],
+    tokens: Mutex<TokenSecrets>,
+    token_rotate: Duration,
     routing: Mutex<RoutingTable>,
     recent: Mutex<RecentRing>,
     peers: Mutex<ServedPeers>,
@@ -265,21 +354,27 @@ impl DhtState {
         r
     }
 
-    /// An opaque per-address token: `SHA-1(secret || ip)[..8]`. It never crosses
-    /// the Python/Rust boundary (a get_peers and its matching announce are always
-    /// served by the same instance), so it need not be byte-identical to Python —
-    /// only self-consistent and unforgeable without the secret.
+    /// Mint a token for `addr` under the current secret, rotating first if the
+    /// window has elapsed (see [`TOKEN_ROTATE`]).
     fn make_token(&self, addr: SocketAddr) -> Vec<u8> {
-        let mut data = self.token_secret.to_vec();
-        match addr {
-            SocketAddr::V4(a) => data.extend_from_slice(&a.ip().octets()),
-            SocketAddr::V6(a) => data.extend_from_slice(&a.ip().octets()),
-        }
-        crate::infohash::sha1(&data)[..8].to_vec()
+        let mut secrets = self.tokens.lock().unwrap();
+        secrets.refresh(Instant::now(), self.token_rotate);
+        token_with(&secrets.current, addr)
     }
 
+    /// Accept a token minted under either live secret — BEP-5's two-window rule.
+    /// Without rotation this check never expires, so one token harvested from a
+    /// single `get_peers` is a permanent announce credential for that IP.
     fn valid_token(&self, token: Option<&Ben>, addr: SocketAddr) -> bool {
-        matches!(token, Some(Ben::Bytes(t)) if *t == self.make_token(addr))
+        let Some(Ben::Bytes(t)) = token else {
+            return false;
+        };
+        let mut secrets = self.tokens.lock().unwrap();
+        secrets.refresh(Instant::now(), self.token_rotate);
+        *t == token_with(&secrets.current, addr)
+            || secrets
+                .previous
+                .is_some_and(|prev| *t == token_with(&prev, addr))
     }
 
     fn harvest(&self, ih: &NodeId, peer: Option<SocketAddrV4>) {
@@ -335,8 +430,8 @@ impl DhtState {
                 r.insert(b"token".to_vec(), Ben::Bytes(self.make_token(addr)));
                 // BEP-5: return `values` (compact 6-byte peers) when we hold any
                 // for this infohash, plus the closest nodes to keep the lookup
-                // converging.
-                let stored = self.peers.lock().unwrap().get(&ih);
+                // converging. Bounded — see `MAX_VALUES_PER_REPLY`.
+                let stored = self.peers.lock().unwrap().get(&ih, MAX_VALUES_PER_REPLY);
                 if !stored.is_empty() {
                     let values = stored
                         .iter()
@@ -414,6 +509,10 @@ pub struct DhtConfig {
     pub neighbor_shared: usize,
     /// Per-query timeout.
     pub timeout: Duration,
+    /// How long an `announce_peer` token secret stays live (see [`TOKEN_ROTATE`]).
+    /// The previous secret is accepted for one further window, so lowering this
+    /// below a round-trip time will start rejecting honest announces.
+    pub token_rotate: Duration,
 }
 
 impl std::fmt::Debug for DhtConfig {
@@ -426,6 +525,7 @@ impl std::fmt::Debug for DhtConfig {
             .field("neighbor", &self.neighbor)
             .field("neighbor_shared", &self.neighbor_shared)
             .field("timeout", &self.timeout)
+            .field("token_rotate", &self.token_rotate)
             .finish()
     }
 }
@@ -440,6 +540,7 @@ impl Default for DhtConfig {
             neighbor: false,
             neighbor_shared: 15,
             timeout: DEFAULT_TIMEOUT,
+            token_rotate: TOKEN_ROTATE,
         }
     }
 }
@@ -464,14 +565,13 @@ impl DhtNode {
     /// Bind and start serving.
     pub async fn bind(cfg: DhtConfig) -> std::io::Result<Self> {
         let self_id = cfg.node_id.unwrap_or_else(random_node_id);
-        let mut token_secret = [0u8; 16];
-        rand_fill(&mut token_secret);
         let state = Arc::new(DhtState {
             self_id,
             k: cfg.k,
             neighbor: cfg.neighbor,
             neighbor_shared: cfg.neighbor_shared,
-            token_secret,
+            tokens: Mutex::new(TokenSecrets::new(cfg.token_rotate)),
+            token_rotate: cfg.token_rotate,
             routing: Mutex::new(RoutingTable::new(self_id, cfg.k)),
             recent: Mutex::new(RecentRing::default()),
             peers: Mutex::new(ServedPeers::default()),
@@ -898,6 +998,108 @@ mod tests {
         assert_eq!(seen[0], (ih, None)); // get_peers: infohash, no peer
         assert_eq!(seen[1].0, ih);
         assert_eq!(seen[1].1.unwrap().port(), 6881); // announce: peer port
+    }
+
+    /// Amplification bound: a `get_peers` reply must not grow with the number of
+    /// peers someone announced. Peers are keyed `(ip, port)`, so one socket
+    /// cycling ports fills the list on its own (as here), and the reply goes to
+    /// whatever source address the 95-byte query claimed — measured at 1317 bytes
+    /// (~14×) before the cap.
+    #[tokio::test]
+    async fn get_peers_reply_caps_the_values_list() {
+        let b = DhtNode::bind(cfg()).await.unwrap();
+        let a = DhtNode::bind(cfg()).await.unwrap();
+        let b_addr = b.local_addr().unwrap();
+        let ih = [0x33u8; ID_BYTES];
+
+        let token = a.get_peers(&ih, b_addr).await.unwrap().token.unwrap();
+        for port in 1..=40u16 {
+            a.announce_peer(&ih, port, &token, b_addr, false)
+                .await
+                .unwrap();
+        }
+        let out = a.get_peers(&ih, b_addr).await.unwrap();
+        assert_eq!(
+            out.peers.len(),
+            MAX_VALUES_PER_REPLY,
+            "the whole primed peer list came back"
+        );
+        // The subset is a real sample of what was stored, not a fixed prefix.
+        assert!(out.peers.iter().all(|p| (1..=40).contains(&p.port())));
+    }
+
+    /// The token secret's state machine (BEP-5: rotate every few minutes, keep
+    /// accepting the previous one). Driven with injected `Instant`s, so no sleeps.
+    #[test]
+    fn token_secret_rotates_with_a_two_window_accept() {
+        let period = TOKEN_ROTATE;
+        let t0 = Instant::now();
+        let mut s = TokenSecrets::new(period);
+        s.next_rotate = t0 + period; // pin the schedule to t0
+        let first = s.current;
+
+        s.refresh(t0 + Duration::from_secs(1), period); // not due yet
+        assert_eq!(s.current, first);
+        assert_eq!(s.previous, None);
+
+        s.refresh(t0 + period, period); // due: rotate, keep the old one usable
+        assert_ne!(s.current, first);
+        assert_eq!(s.previous, Some(first));
+        let second = s.current;
+
+        s.refresh(t0 + period * 2, period); // two windows on, `first` is retired
+        assert_eq!(s.previous, Some(second));
+        assert_ne!(s.previous, Some(first));
+
+        // An idle node waking up long after the deadline must not promote a secret
+        // that is already older than the accept window.
+        let third = s.current;
+        s.refresh(t0 + period * 10, period);
+        assert_eq!(s.previous, None);
+        assert_ne!(s.current, third);
+    }
+
+    /// Regression: a token must stop working. The secret was fixed for the whole
+    /// process lifetime and `make_token` mixes only secret + source IP, so one
+    /// token harvested from a single `get_peers` was a permanent announce
+    /// credential for that IP — inject peers into any infohash, forever. After
+    /// rotation it must survive exactly one window and then be refused.
+    #[tokio::test]
+    async fn announce_token_expires_after_two_rotations() {
+        let b = DhtNode::bind(cfg()).await.unwrap();
+        let a = DhtNode::bind(cfg()).await.unwrap();
+        let b_addr = b.local_addr().unwrap();
+        let ih = [0x77u8; ID_BYTES];
+
+        // Drive B's clock deterministically: rotate exactly at the deadline.
+        let rotate = || {
+            let mut t = b.state.tokens.lock().unwrap();
+            let at = t.next_rotate;
+            t.refresh(at, TOKEN_ROTATE);
+        };
+
+        let token = a.get_peers(&ih, b_addr).await.unwrap().token.unwrap();
+        rotate();
+        // One window later the token still announces (BEP-5's previous-secret rule).
+        assert!(a
+            .announce_peer(&ih, 6881, &token, b_addr, false)
+            .await
+            .is_ok());
+        // A token issued now differs — the secret really did change.
+        let fresh = a.get_peers(&ih, b_addr).await.unwrap().token.unwrap();
+        assert_ne!(fresh, token);
+
+        rotate();
+        let stale = a.announce_peer(&ih, 6881, &token, b_addr, false).await;
+        assert!(
+            matches!(stale, Err(QueryError::Krpc(ref e)) if e.code == ERR_PROTOCOL),
+            "a two-rotation-old token was still accepted: {stale:?}"
+        );
+        // …while the token from the current window still works.
+        assert!(a
+            .announce_peer(&ih, 6881, &fresh, b_addr, false)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@
 //! (name, files, sizes, piece info) for v1, BEP-52 v2, and hybrid torrents, plus
 //! the SHA-1 / SHA-256 assembly-and-verify checks. No I/O, no third-party deps.
 
-use super::{merr, MetadataError, MAX_TREE_DEPTH, MAX_TREE_NODES};
+use super::{merr, MetadataError, MAX_TREE_DEPTH, MAX_TREE_NODES, MAX_TREE_PATH_BYTES};
 use crate::bencode::Dict;
 use crate::bencode::{decode, decode_lenient, encode, Ben};
 use crate::infohash::{sha1, sha256};
@@ -227,22 +227,40 @@ pub fn verify_v2(info_bytes: &[u8], expected: &[u8]) -> bool {
 
 /// Flatten a BEP-52 `file tree` into `[(path, length), …]`. Each leaf is a
 /// `{"": {"length": N, …}}` node whose accumulated key path is the file path. The
-/// recursion is bounded on both depth and total node count — the tree is hostile
-/// network data.
+/// recursion is bounded on depth, total node count **and total emitted path
+/// bytes** — the tree is hostile network data, and the last of those is the only
+/// bound on the walk's output (see [`MAX_TREE_PATH_BYTES`]).
 pub fn walk_file_tree(file_tree: &Dict) -> Result<Vec<(String, u64)>, MetadataError> {
-    let mut out = Vec::new();
-    let mut nodes = 0usize;
+    let mut walk = TreeWalk {
+        nodes: 0,
+        prefix_bytes: 0,
+        path_bytes: 0,
+        out: Vec::new(),
+    };
     let mut prefix: Vec<String> = Vec::new();
-    walk_tree_rec(file_tree, &mut prefix, 0, &mut nodes, &mut out)?;
-    Ok(out)
+    walk_tree_rec(file_tree, &mut prefix, 0, &mut walk)?;
+    Ok(walk.out)
+}
+
+/// The running budget of one [`walk_file_tree`].
+struct TreeWalk {
+    /// Tree nodes visited so far (capped by [`MAX_TREE_NODES`]).
+    nodes: usize,
+    /// Byte length the *current* prefix would have once joined with `/`. Kept
+    /// incrementally so the output check below is O(1) and never has to build the
+    /// string in order to price it — pricing by building is exactly the O(prefix)
+    /// per leaf cost that makes the amplification work.
+    prefix_bytes: usize,
+    /// Total path bytes emitted so far (capped by [`MAX_TREE_PATH_BYTES`]).
+    path_bytes: usize,
+    out: Vec<(String, u64)>,
 }
 
 fn walk_tree_rec(
     node: &Dict,
     prefix: &mut Vec<String>,
     depth: usize,
-    nodes: &mut usize,
-    out: &mut Vec<(String, u64)>,
+    walk: &mut TreeWalk,
 ) -> Result<(), MetadataError> {
     if depth > MAX_TREE_DEPTH {
         return merr(format!("file tree nested too deeply (>{MAX_TREE_DEPTH})"));
@@ -250,14 +268,25 @@ fn walk_tree_rec(
     // A file leaf: the empty-string key holds the length / pieces-root.
     if let Some(Ben::Dict(leaf)) = node.get(b"".as_slice()) {
         if leaf.contains_key(b"length".as_slice()) {
+            // Bound the OUTPUT, not just the input: every leaf re-materialises the
+            // whole key prefix, so a 6 MiB directory name with 100 000 leaves under
+            // it is 8.19 MiB on the wire but ~585 GiB of paths here (measured: 300
+            // leaves = +1124 MiB RSS, and it returned Ok). Checked before the join
+            // so the oversized path is never allocated at all.
+            if walk.path_bytes.saturating_add(walk.prefix_bytes) > MAX_TREE_PATH_BYTES {
+                return merr(format!(
+                    "file tree paths too large (>{MAX_TREE_PATH_BYTES} bytes)"
+                ));
+            }
+            walk.path_bytes += walk.prefix_bytes;
             let length = ben_int(leaf, b"length").max(0) as u64;
-            out.push((prefix.join("/"), length));
+            walk.out.push((prefix.join("/"), length));
             return Ok(());
         }
     }
     for (name, child) in node {
-        *nodes += 1;
-        if *nodes > MAX_TREE_NODES {
+        walk.nodes += 1;
+        if walk.nodes > MAX_TREE_NODES {
             return merr(format!("file tree too large (>{MAX_TREE_NODES} nodes)"));
         }
         if name.is_empty() {
@@ -266,9 +295,15 @@ fn walk_tree_rec(
         let Ben::Dict(child_dict) = child else {
             continue;
         };
-        prefix.push(String::from_utf8_lossy(name).into_owned());
-        walk_tree_rec(child_dict, prefix, depth + 1, nodes, out)?;
+        let component = String::from_utf8_lossy(name).into_owned();
+        // What `prefix.join("/")` will cost once this component is on the stack.
+        let added = component.len() + usize::from(!prefix.is_empty());
+        prefix.push(component);
+        walk.prefix_bytes += added;
+        let result = walk_tree_rec(child_dict, prefix, depth + 1, walk);
+        walk.prefix_bytes -= added;
         prefix.pop();
+        result?;
     }
     Ok(())
 }

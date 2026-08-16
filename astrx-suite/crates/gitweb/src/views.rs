@@ -1220,6 +1220,12 @@ pub fn numbered_lines(text: &str, hl: &[usize]) -> String {
     if lines.last() == Some(&"") {
         lines.pop();
     }
+    // A set, not `hl.contains(&n)` on the slice: `?highlight=a-b` admits up to
+    // MAX_HIGHLIGHT_SPAN + 1 = 5001 numbers, and a blob near the 2 MiB inline
+    // cap made of short lines is ~2M lines — so the linear scan per line was on
+    // the order of 10^10 comparisons, i.e. seconds of CPU for one
+    // unauthenticated GET that an attacker can repeat.
+    let hl: std::collections::HashSet<usize> = hl.iter().copied().collect();
     let mut rows = String::new();
     for (i, line) in lines.iter().enumerate() {
         let n = i + 1;

@@ -60,7 +60,12 @@ fn keyword_matches(kw: &str, hay_lower: &str) -> bool {
         if before_ok && after_ok {
             return true;
         }
-        start = i + 1; // keep scanning (allow overlapping starts)
+        // Advance one CHARACTER, not one byte: `i + 1` lands inside a multi-byte
+        // code point whenever the keyword starts with a non-ASCII char (the
+        // shipped lists are not ASCII-only), and re-slicing there panics —
+        // taking the crawl worker, and with one worker the whole crawl's
+        // unsaved work, down. Overlapping starts are still allowed.
+        start = i + hay_lower[i..].chars().next().map_or(1, char::len_utf8);
     }
     false
 }
@@ -278,5 +283,46 @@ mod tests {
         assert!(f.media_blocked("abc123")); // normalized lowercase
         assert!(!f.media_blocked(""));
         assert_eq!(f.media_bytes_blocked(b""), None); // empty data
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// `start = i + 1` lands inside a multi-byte code point whenever the keyword
+    /// starts with a non-ASCII character, and re-slicing there PANICS — taking
+    /// the crawl worker down, and with a single worker the whole crawl's unsaved
+    /// work with it. The shipped blocklists are not ASCII-only.
+    #[test]
+    fn a_non_ascii_keyword_never_panics_the_scan() {
+        let f = AbuseFilter::new(
+            &[],
+            &[
+                "\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442}".to_string(), // Cyrillic
+                "\u{4f60}\u{597d}".to_string(),                           // Han
+                "caf\u{e9}".to_string(),                                  // Latin-1 tail
+                "\u{1f600}".to_string(),                                  // astral
+            ],
+            &[],
+            &[],
+        );
+        // The advance only runs when the keyword IS found but the word-boundary
+        // check rejects that occurrence — so each haystack puts an ASCII
+        // alphanumeric immediately before a real match. `start = i + 1` then
+        // lands inside the keyword's leading multi-byte character.
+        for hay in [
+            "x\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442}",
+            "7\u{4f60}\u{597d}",
+            "z\u{1f600}",
+            "a\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43f}\u{440}\u{438}\u{432}\u{435}\u{442}",
+        ] {
+            let _ = f.content_hit(&[hay]); // must not panic
+        }
+        // …and the filter still actually matches.
+        assert!(f
+            .content_hit(&["a \u{43f}\u{440}\u{438}\u{432}\u{435}\u{442} b"])
+            .is_some());
+        assert!(f.content_hit(&["nothing here"]).is_none());
     }
 }

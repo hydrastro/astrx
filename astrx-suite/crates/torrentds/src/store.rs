@@ -34,6 +34,27 @@ pub const CATEGORIES: &[&str] = &[
 /// Default spam flag threshold, re-exported for callers.
 pub use crate::spam::DEFAULT_THRESHOLD as DEFAULT_SPAM_THRESHOLD;
 
+/// Default cap on the discovery queue (see [`Store::set_max_discovered`]).
+///
+/// Every inbound `get_peers` lands in that queue (`dht/node.rs` harvest sink →
+/// `indexer.rs` → [`Store::add_discovered`]), and a 95-byte KRPC datagram with a
+/// fresh random `info_hash` needs no token, no handshake and no routable source
+/// address to get there. Each row retains ~170 B, so an unbounded queue is 163 MiB
+/// per million spoofed datagrams — and it never shrinks, because
+/// [`Store::prune_discovered`]'s `!fetched && attempts < max` predicate keeps a
+/// never-attempted row forever (measured: `prune_discovered` removed 0 of 1M).
+/// 100 000 rows is far more than the fetch pool can ever drain (20 concurrent
+/// fetches, ~15 s each) and bounds the queue at ~17 MiB.
+pub const MAX_DISCOVERED: usize = 100_000;
+
+/// How long an un-fetched discovery row is worth keeping, in seconds.
+///
+/// The peer that announced an infohash is gone long before this; without an age
+/// bound a row that is never attempted (there is always newer work) is immortal,
+/// which is what let a spoofed-source `get_peers` flood become permanent
+/// residency. Enforced by [`Store::prune_discovered`].
+pub const DISCOVERED_TTL: u64 = 86_400;
+
 // (extension, category) table — flattened from Python's `_CATEGORY_EXT`.
 const CATEGORY_EXTS: &[(&str, &[&str])] = &[
     (
@@ -219,8 +240,22 @@ fn tokenize(text: &str) -> Vec<String> {
     out
 }
 
+/// Cap on the number of query tokens honoured by [`Store::search`] /
+/// [`Store::count`]; extra words are ignored.
+///
+/// Both are O(tokens × corpus): every token is prefix-matched against every
+/// document, under the store mutex. The query arrives in the HTTP request line,
+/// whose head limit is 32 768 bytes (`search.rs`), so ~4000 tokens fit in a single
+/// GET — measured on a 20 000-torrent index that one request burned **20.2 s of
+/// server CPU** and blocked a concurrent `/health` for 14.9 s. Sixteen words is
+/// more than any real torrent query needs, and matches how the tag facet filter
+/// already truncates (`take(8)` in `passes_filters`).
+pub const MAX_QUERY_TOKENS: usize = 16;
+
 /// Turn a free-text query into prefix tokens (each keeps only alnum chars,
-/// lowercased), mirroring Python's `_fts_query` (`"tok"*` AND-joined).
+/// lowercased), mirroring Python's `_fts_query` (`"tok"*` AND-joined), truncated
+/// to [`MAX_QUERY_TOKENS`]. `take` short-circuits the split, so a 32 KiB query
+/// line is not even tokenised past its sixteenth word.
 fn query_tokens(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|raw| {
@@ -230,6 +265,7 @@ fn query_tokens(text: &str) -> Vec<String> {
                 .collect::<String>()
         })
         .filter(|t| !t.is_empty())
+        .take(MAX_QUERY_TOKENS)
         .collect()
 }
 
@@ -354,6 +390,8 @@ pub struct Store {
     /// Persisted DHT routing contacts (node id → host, port) for warm restart.
     dht_nodes: BTreeMap<[u8; 20], (String, u16)>,
     spam_threshold: f64,
+    /// Cap on `discovered` (see [`MAX_DISCOVERED`]).
+    max_discovered: usize,
 }
 
 impl Default for Store {
@@ -382,7 +420,14 @@ impl Store {
             block_keyword: BTreeSet::new(),
             dht_nodes: BTreeMap::new(),
             spam_threshold,
+            max_discovered: MAX_DISCOVERED,
         }
+    }
+
+    /// Override the discovery-queue cap (default [`MAX_DISCOVERED`]); it applies
+    /// from the next [`Store::add_discovered`]. Clamped to at least 1.
+    pub fn set_max_discovered(&mut self, cap: usize) {
+        self.max_discovered = cap.max(1);
     }
 
     // -- DHT routing persistence (warm restart) -----------------------------
@@ -419,11 +464,15 @@ impl Store {
     // -- discovery queue ----------------------------------------------------
 
     /// Queue an infohash (20 raw bytes) for metadata fetch. Returns `true` if
-    /// newly added.
+    /// newly added. The queue is bounded (see [`MAX_DISCOVERED`]); at the cap the
+    /// least useful rows are evicted to make room.
     pub fn add_discovered(&mut self, infohash: &[u8; 20], peer: Option<Peer>, now: u64) -> bool {
         let ih = hex(infohash);
         if self.discovered.contains_key(&ih) {
             return false;
+        }
+        if self.discovered.len() >= self.max_discovered {
+            self.evict_discovered();
         }
         self.discovered.insert(
             ih,
@@ -437,22 +486,75 @@ impl Store {
         true
     }
 
+    /// Drop the least useful rows so a full discovery queue can take new work.
+    ///
+    /// Ranking is least-useful-first: already fetched, then most attempts, then
+    /// oldest — so a row that has never been tried is the last to go. A whole
+    /// batch (a tenth of the cap) is dropped at once, which amortises this O(n)
+    /// pass over that many inserts instead of running it per inbound datagram.
+    fn evict_discovered(&mut self) {
+        let keep = self
+            .max_discovered
+            .saturating_sub((self.max_discovered / 10).max(1));
+        if self.discovered.len() <= keep {
+            return;
+        }
+        let drop_n = self.discovered.len() - keep;
+        // Key ordered so that GREATER = evict sooner; `ih` makes it a total order,
+        // so the victim set is deterministic despite the unstable selection.
+        let mut rows: Vec<(u8, u32, std::cmp::Reverse<u64>, &str)> = self
+            .discovered
+            .iter()
+            .map(|(ih, d)| {
+                (
+                    u8::from(d.fetched),
+                    d.attempts,
+                    std::cmp::Reverse(d.first_seen),
+                    ih.as_str(),
+                )
+            })
+            .collect();
+        // Partial selection (O(n)), not a sort: sorting a million-row queue is the
+        // very cost this cap exists to keep off the datagram path.
+        rows.select_nth_unstable_by(drop_n - 1, |a, b| b.cmp(a));
+        let victims: Vec<String> = rows[..drop_n].iter().map(|r| r.3.to_string()).collect();
+        for ih in victims {
+            self.discovered.remove(&ih);
+        }
+    }
+
     /// Up to `limit` unfetched infohashes under `max_attempts`, oldest-first.
     #[must_use]
     pub fn pending_infohashes(&self, limit: usize, max_attempts: u32) -> Vec<PendingFetch> {
-        let mut rows: Vec<(&String, &Discovered)> = self
-            .discovered
-            .iter()
-            .filter(|(_, d)| !d.fetched && d.attempts < max_attempts)
-            .collect();
-        rows.sort_by(|a, b| {
-            a.1.attempts
-                .cmp(&b.1.attempts)
-                .then(a.1.first_seen.cmp(&b.1.first_seen))
-        });
+        if limit == 0 {
+            return Vec::new();
+        }
+        // Bounded selection instead of sorting the whole queue: the fetch
+        // dispatcher calls this every 200 ms–1 s with `limit` = 4× concurrency
+        // (80 by default), and sorting a 1M-row queue measured 36.7 ms per tick —
+        // all of it with the store mutex held, so it also stalls the harvest sink.
+        // The heap keeps the `limit` best rows, so this is O(n log limit).
+        let mut heap: std::collections::BinaryHeap<(u32, u64, &str)> =
+            std::collections::BinaryHeap::with_capacity(limit + 1);
+        for (ih, d) in &self.discovered {
+            if d.fetched || d.attempts >= max_attempts {
+                continue;
+            }
+            // Same total order as the old sort: fewest attempts, then oldest, then
+            // hex (which is how the BTreeMap already iterates, so stable-sort ties
+            // resolved this way too).
+            let row = (d.attempts, d.first_seen, ih.as_str());
+            if heap.len() < limit {
+                heap.push(row);
+            } else if heap.peek().is_some_and(|worst| row < *worst) {
+                heap.pop();
+                heap.push(row);
+            }
+        }
+        let mut rows = heap.into_vec();
+        rows.sort_unstable();
         rows.into_iter()
-            .take(limit)
-            .filter_map(|(ih, d)| unhex20(ih).map(|h| (h, d.peer.clone())))
+            .filter_map(|(_, _, ih)| unhex20(ih).map(|h| (h, self.discovered[ih].peer.clone())))
             .collect()
     }
 
@@ -470,11 +572,18 @@ impl Store {
         }
     }
 
-    /// Drop fetched / attempt-exhausted queue rows. Returns the count removed.
-    pub fn prune_discovered(&mut self, max_attempts: u32) -> usize {
+    /// Drop fetched, attempt-exhausted, or expired queue rows. Returns the count
+    /// removed.
+    ///
+    /// The age check ([`DISCOVERED_TTL`]) is what makes this able to shrink at all
+    /// under a flood: the old predicate (`!fetched && attempts < max`) retains a
+    /// row that was never attempted forever, so 1M rows queued by spoofed-source
+    /// `get_peers` datagrams survived every prune (measured: 0 removed).
+    pub fn prune_discovered(&mut self, max_attempts: u32, now: u64) -> usize {
+        let cutoff = now.saturating_sub(DISCOVERED_TTL);
         let before = self.discovered.len();
         self.discovered
-            .retain(|_, d| !d.fetched && d.attempts < max_attempts);
+            .retain(|_, d| !d.fetched && d.attempts < max_attempts && d.first_seen >= cutoff);
         before - self.discovered.len()
     }
 
@@ -807,7 +916,16 @@ impl Store {
     /// Python `bm - 2·ln(1+seen) - 0.5·ln(1+size/1e6)`.
     /// Document frequency per query token, over the WHOLE corpus (not just the
     /// matched candidates) — so a rarer term earns a larger idf, as BM25 intends.
-    fn doc_freqs(&self, qtokens: &[String]) -> Vec<f64> {
+    ///
+    /// `cands` is passed only to skip the scan when it is empty: the frequencies
+    /// exist solely to score candidates, so with none they are pure waste — yet
+    /// this is a full corpus scan *per token* with the store mutex held, which on
+    /// 20 000 torrents is what turned one filtered-to-nothing GET into 20.2 s of
+    /// server CPU.
+    fn doc_freqs(&self, qtokens: &[String], cands: &[&String]) -> Vec<f64> {
+        if cands.is_empty() {
+            return Vec::new();
+        }
         qtokens
             .iter()
             .map(|q| {
@@ -886,7 +1004,7 @@ impl Store {
         };
         match effective_order {
             Order::Relevance => {
-                let dfs = self.doc_freqs(&qtokens);
+                let dfs = self.doc_freqs(&qtokens, &cands);
                 let mut scored: Vec<(f64, &String)> = cands
                     .iter()
                     .map(|ih| (self.relevance(ih, &qtokens, &dfs, avgdl), *ih))
@@ -904,24 +1022,46 @@ impl Store {
             Order::Seen => self.sort_cands(&mut cands, |r| r.seen_count, true),
         }
 
-        // Collapse duplicates by content signature, then page.
+        // Collapse duplicates by content signature and page in one pass.
+        //
+        // Only rows inside `[offset, offset+limit)` are materialised. Building a
+        // `SearchResult` clones six `String`s and formats a fresh magnet (which
+        // percent-encodes the name byte by byte), so materialising first and
+        // paging afterwards charged the whole corpus for one row: `/recent?limit=1`
+        // over 20 000 torrents took 174 ms and allocated 20 000 rows to return one
+        // (~9 s and hundreds of MB at 1M). `rank` is the position the row *would*
+        // have in the full collapsed list, so the page contents are unchanged.
+        let end = offset.saturating_add(limit);
         let mut results: Vec<SearchResult> = Vec::new();
         let mut sig_index: HashMap<String, usize> = HashMap::new();
+        let mut rank = 0usize;
         for ih in cands {
             let r = &self.torrents[ih];
             if collapse {
                 if let Some(sig) = &r.content_sig {
                     if let Some(&idx) = sig_index.get(sig) {
-                        results[idx].dup_count += 1;
-                        results[idx].alt_infohashes.push(r.infohash.clone());
+                        // Fold into the representative, if that one is on this page.
+                        if let Some(row) = idx.checked_sub(offset).and_then(|i| results.get_mut(i))
+                        {
+                            row.dup_count += 1;
+                            row.alt_infohashes.push(r.infohash.clone());
+                        }
                         continue;
                     }
-                    sig_index.insert(sig.clone(), results.len());
+                    sig_index.insert(sig.clone(), rank);
                 }
             }
-            results.push(self.to_result(r));
+            if rank >= offset && rank < end {
+                results.push(self.to_result(r));
+            }
+            rank += 1;
+            // Past the page: with `collapse` the scan must continue, because a
+            // later duplicate still bumps `dup_count` on a row we already emitted.
+            if rank >= end && !collapse {
+                break;
+            }
         }
-        results.into_iter().skip(offset).take(limit).collect()
+        results
     }
 
     fn sort_cands<F: Fn(&TorrentRecord) -> u64>(&self, cands: &mut [&String], key: F, desc: bool) {
@@ -1414,6 +1554,229 @@ mod tests {
         }
         assert_eq!(s.enforce_retention(Some(3), None, 200), 2);
         assert_eq!(s.len(), 3);
+    }
+
+    /// Regression: the query-token count must be capped. `search`/`count` are
+    /// O(tokens × corpus) under the store mutex, and ~4000 tokens fit in one HTTP
+    /// request line (32 768-byte head limit) — measured at 20.2 s of server CPU
+    /// for a single GET over 20 000 torrents, blocking `/health` for 14.9 s.
+    /// Before the fix `query_tokens` returned all 4000.
+    #[test]
+    fn query_token_count_is_capped() {
+        let flood = (0..4000)
+            .map(|i| format!("t{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(query_tokens(&flood).len(), MAX_QUERY_TOKENS);
+        // Tokens past the cap are ignored, so a padded query still finds the doc.
+        let mut s = Store::new();
+        s.store_metadata(&meta("Ubuntu ISO", &[("u.iso", 1000)], [1u8; 20]), 100);
+        let f = Filters {
+            include_spam: true,
+            ..Default::default()
+        };
+        // The first MAX_QUERY_TOKENS terms match; the ones past the cap ("zzz")
+        // are dropped, so the row is still returned. Uncapped, the AND over every
+        // token would require "zzz" and return nothing.
+        let padded = format!("{} zzz zzz", vec!["ubuntu"; MAX_QUERY_TOKENS].join(" "));
+        assert_eq!(
+            s.search(&padded, 25, 0, Order::Relevance, &f, true).len(),
+            1
+        );
+    }
+
+    /// Regression: with no candidates there is nothing to score, so the corpus
+    /// scan `doc_freqs` performs (one full pass per query token, mutex held) must
+    /// not run at all — it ran unconditionally, which is where most of the 20.2 s
+    /// of the token-flood GET was spent even when filters matched nothing.
+    #[test]
+    fn doc_freqs_skips_corpus_scan_without_candidates() {
+        let mut s = Store::new();
+        s.store_metadata(&meta("Ubuntu ISO", &[("u.iso", 1000)], [1u8; 20]), 100);
+        let qtokens = query_tokens("ubuntu iso");
+        assert!(s.doc_freqs(&qtokens, &[]).is_empty());
+        // With candidates the frequencies are still computed as before.
+        let ih = hex(&[1u8; 20]);
+        assert_eq!(s.doc_freqs(&qtokens, &[&ih]), vec![1.0, 1.0]);
+    }
+
+    /// Regression: the discovery queue must be bounded. It is fed by every inbound
+    /// `get_peers` (no token, no handshake, spoofable source), ~170 B retained per
+    /// 95-byte datagram — 1M rows = 163 MiB — and `prune_discovered` removed none
+    /// of them because a never-attempted row satisfied its retain predicate.
+    #[test]
+    fn discovery_queue_is_capped_and_evicts_least_useful() {
+        let mut s = Store::new();
+        s.set_max_discovered(100);
+        let ih_of = |i: u32| {
+            let mut ih = [0u8; 20];
+            ih[..4].copy_from_slice(&i.to_be_bytes());
+            ih
+        };
+        // A row that has been fetched (its work is done) is the first to go.
+        s.add_discovered(&ih_of(0), None, 1000);
+        s.mark_fetched(&ih_of(0));
+        for i in 1..500 {
+            s.add_discovered(&ih_of(i), None, 1000 + u64::from(i));
+        }
+        let (total, _) = s.discovered_counts();
+        assert!(total <= 100, "queue grew to {total} past the cap");
+        assert!(total >= 50, "eviction over-reached: {total} left");
+        // Still usable as a work queue after the eviction pass.
+        assert!(!s.pending_infohashes(10, 5).is_empty());
+        // The fetched row was evicted before any never-attempted one.
+        assert!(
+            !s.discovered.contains_key(&hex(&ih_of(0))),
+            "a fetched row outlived un-attempted ones"
+        );
+    }
+
+    /// Regression: a never-attempted queue row must eventually expire. The old
+    /// predicate (`!fetched && attempts < max`) kept it forever, so a spoofed
+    /// `get_peers` flood took permanent residency (0 of 1M rows pruned).
+    #[test]
+    fn prune_discovered_expires_never_attempted_rows() {
+        let mut s = Store::new();
+        s.add_discovered(&[7u8; 20], None, 1000);
+        // Still fresh: nothing is dropped.
+        assert_eq!(s.prune_discovered(5, 1000 + DISCOVERED_TTL), 0);
+        assert_eq!(s.discovered_counts(), (1, 1));
+        // One second past the TTL: dropped, despite attempts == 0.
+        assert_eq!(s.prune_discovered(5, 1001 + DISCOVERED_TTL), 1);
+        assert_eq!(s.discovered_counts(), (0, 0));
+    }
+
+    /// The bounded-heap selection in `pending_infohashes` (which replaced sorting
+    /// the whole queue every dispatcher tick — 36.7 ms at 1M rows, mutex held)
+    /// must return exactly the rows, and the order, the full sort did.
+    #[test]
+    fn pending_infohashes_matches_a_full_sort() {
+        let mut s = Store::new();
+        let ih_of = |i: u32| {
+            let mut ih = [0u8; 20];
+            ih[..4].copy_from_slice(&i.to_be_bytes());
+            ih
+        };
+        for i in 0..50u32 {
+            // Interleave ages so first_seen order != insertion/hex order.
+            s.add_discovered(&ih_of(i), None, 1000 + u64::from((i * 37) % 50));
+        }
+        for i in 0..50u32 {
+            for _ in 0..(i % 4) {
+                s.mark_attempt(&ih_of(i)); // vary the attempt counts too
+            }
+        }
+        s.mark_fetched(&ih_of(3));
+        // Reference: the old full-sort implementation.
+        let mut rows: Vec<(&String, &Discovered)> = s
+            .discovered
+            .iter()
+            .filter(|(_, d)| !d.fetched && d.attempts < 3)
+            .collect();
+        rows.sort_by(|a, b| {
+            a.1.attempts
+                .cmp(&b.1.attempts)
+                .then(a.1.first_seen.cmp(&b.1.first_seen))
+        });
+        let expect: Vec<[u8; 20]> = rows
+            .iter()
+            .take(10)
+            .filter_map(|(ih, _)| unhex20(ih))
+            .collect();
+        let got: Vec<[u8; 20]> = s
+            .pending_infohashes(10, 3)
+            .into_iter()
+            .map(|(h, _)| h)
+            .collect();
+        assert_eq!(got, expect);
+        assert!(s.pending_infohashes(0, 3).is_empty());
+
+        // …and it must cost materially less than that full sort. The dispatcher
+        // runs this every 200 ms–1 s holding the store mutex, so at 1M rows the
+        // 36.7 ms sort was also 36.7 ms of blocked inbound harvesting per tick.
+        let mut big = Store::new();
+        for i in 0..40_000u32 {
+            big.add_discovered(&ih_of(i), None, 1000 + u64::from((i * 7919) % 40_000));
+        }
+        let t = std::time::Instant::now();
+        let selected = big.pending_infohashes(80, 5);
+        let heap_time = t.elapsed();
+        let t = std::time::Instant::now();
+        let mut every: Vec<(&String, &Discovered)> = big.discovered.iter().collect();
+        every.sort_by(|a, b| {
+            a.1.attempts
+                .cmp(&b.1.attempts)
+                .then(a.1.first_seen.cmp(&b.1.first_seen))
+        });
+        let sort_time = t.elapsed();
+        assert_eq!(selected.len(), 80);
+        assert!(
+            heap_time * 2 < sort_time,
+            "bounded selection ({heap_time:?}) is no cheaper than the full sort \
+             ({sort_time:?}) it replaced"
+        );
+    }
+
+    /// Regression: `search` must page BEFORE materialising. Every candidate used
+    /// to be cloned into a `SearchResult` (six `String`s + a freshly formatted
+    /// magnet) and only then were `offset`/`limit` applied, so `/recent?limit=1`
+    /// over 20 000 torrents took 174 ms and built 20 000 rows to return one.
+    /// Asserted as a ratio against the same query asking for every row, which is
+    /// ~1.0 without the fix.
+    #[test]
+    fn search_pages_before_materialising() {
+        let mut s = Store::new();
+        const N: u32 = 3000;
+        for i in 0..N {
+            let mut ih = [0u8; 20];
+            ih[..4].copy_from_slice(&i.to_be_bytes());
+            // Distinct file layouts, so `collapse` folds nothing away.
+            let video = format!("Release {i}/video {i}.mkv");
+            let sample = format!("Release {i}/sample/sample {i}.mkv");
+            s.store_metadata(
+                &meta(
+                    &format!(
+                        "Some Release Name {i} 2019 1080p BluRay x265 10bit DTS HD MA 5 1 GROUP \
+                         [www example org] multi subs edition"
+                    ),
+                    &[(&video, 1_000_000), (&sample, 1000)],
+                    ih,
+                ),
+                100 + u64::from(i),
+            );
+        }
+        let f = Filters {
+            include_spam: true,
+            ..Default::default()
+        };
+        // Same corpus, same ordering, same filters — only the page size differs,
+        // so the gap is exactly the per-row materialisation the fix skips.
+        let bench = |limit: usize| {
+            let mut best = std::time::Duration::MAX;
+            for _ in 0..5 {
+                let t = std::time::Instant::now();
+                let r = s.search("", limit, 0, Order::Latest, &f, false);
+                best = best.min(t.elapsed());
+                assert_eq!(r.len(), limit.min(N as usize));
+            }
+            best
+        };
+        let one = bench(1);
+        let all = bench(N as usize);
+        // Best-of-5 on each side; measured ~5× apart with the fix, ~1× without, so
+        // 3× discriminates with room for a noisy machine.
+        assert!(
+            one * 3 < all,
+            "limit=1 ({one:?}) is not materially cheaper than limit={N} ({all:?}) — \
+             the whole result set is still being materialised before paging"
+        );
+        // Paging is unchanged: page 2 of 2 is the same row the old skip/take gave.
+        let page = s.search("", 2, 2, Order::Latest, &f, true);
+        let head = s.search("", 4, 0, Order::Latest, &f, true);
+        assert_eq!(
+            page.iter().map(|r| &r.infohash).collect::<Vec<_>>(),
+            head[2..].iter().map(|r| &r.infohash).collect::<Vec<_>>()
+        );
     }
 
     /// Regression: a non-empty query that tokenises to nothing (all

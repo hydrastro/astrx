@@ -35,7 +35,7 @@
 //!   matching the `websearch` CLI's guards.
 #![forbid(unsafe_code)]
 
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::process::ExitCode;
@@ -96,6 +96,11 @@ struct IndexArgs {
     /// Rust addition: the store-autosave period, standing in for the Python
     /// CLI's save-on-SIGINT (see the module docs).
     save_interval: u64,
+    /// Rust addition: dial peers on internal/reserved addresses. Off by default —
+    /// the peer list comes from remote DHT contacts, so leaving it off is what
+    /// stops one of them pointing the fetcher at 127.0.0.1 / 10.0.0.0/8 /
+    /// 169.254.169.254.
+    allow_internal_peers: bool,
 }
 
 /// `search` — the no-JS search server + JSON API.
@@ -325,6 +330,7 @@ fn parse_index(toks: &[String]) -> Result<IndexArgs, CliError> {
         max_torrents: None,
         max_age_days: None,
         save_interval: 30,
+        allow_internal_peers: false,
     };
     let mut i = 0;
     while i < toks.len() {
@@ -378,6 +384,7 @@ fn parse_index(toks: &[String]) -> Result<IndexArgs, CliError> {
                 i += 1;
                 a.save_interval = parse_u64(need(toks, i, "--save-interval")?, "--save-interval")?;
             }
+            "--allow-internal-peers" => a.allow_internal_peers = true,
             s if s.starts_with('-') => return Err(unknown_option(s, "index")),
             other => return Err(unexpected_arg(other, "index")),
         }
@@ -667,10 +674,55 @@ fn read_store(db: &str, spam_threshold: f64) -> Result<Store, String> {
     }
 }
 
-/// Persist a store snapshot to `db`.
+/// Replace `path`'s contents with `bytes` atomically: write a temp file in the
+/// same directory, `sync_all` it, then `rename` it over the destination.
+///
+/// `std::fs::write` truncates the destination and only then streams into it, so
+/// anything that interrupts the write — the documented Ctrl-C shutdown, a full
+/// disk — leaves a half-written snapshot on disk. `read_store` treats a snapshot
+/// it cannot decode as a hard error, so both `index` and `search` then refuse to
+/// start and the whole index is gone: an 89 MB snapshot truncated at 5 %, 50 %
+/// and 99.9 % made `Store::restore` return `None` in all three cases. A rename
+/// within one directory is atomic, so a reader (or the next start-up) sees either
+/// the complete previous snapshot or the complete new one, never a prefix.
+fn write_atomic(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let dst = Path::new(path);
+    let dir = match dst.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let stem = dst
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("snapshot"));
+    // Unique per process and per call, so a second writer (or a retry after a
+    // failure) can never share, and truncate, an in-flight temp file.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let mut tmp_name = stem.to_os_string();
+    tmp_name.push(format!(".tmp-{}-{nonce}", std::process::id()));
+    let tmp = dir.join(tmp_name);
+
+    let written = std::fs::File::create(&tmp).and_then(|mut f| {
+        f.write_all(bytes)?;
+        // Durable BEFORE the rename publishes it: a rename that beats the data to
+        // disk would publish a file of zeroes across a power cut.
+        f.sync_all()
+    });
+    if let Err(e) = written.and_then(|()| std::fs::rename(&tmp, dst)) {
+        let _ = std::fs::remove_file(&tmp); // never leave a temp file behind
+        return Err(e);
+    }
+    // Best effort: flush the directory entry too, so the rename itself survives a
+    // crash. Not supported on every platform, so a failure here is not fatal.
+    let _ = std::fs::File::open(dir).map(|d| d.sync_all());
+    Ok(())
+}
+
+/// Persist a store snapshot to `db`, atomically (see [`write_atomic`]).
 fn write_store(store: &Store, db: &str) -> Result<usize, String> {
     let blob = store.snapshot();
-    std::fs::write(db, &blob).map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
+    write_atomic(db, &blob).map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
     Ok(blob.len())
 }
 
@@ -753,6 +805,7 @@ async fn run_index(a: IndexArgs) -> ExitCode {
             fetch_concurrency: a.concurrency,
             num_nodes: a.nodes,
             neighbor: a.neighbor,
+            allow_internal_peers: a.allow_internal_peers,
             ..IndexerConfig::default()
         },
     );
@@ -769,6 +822,14 @@ async fn run_index(a: IndexArgs) -> ExitCode {
         a.concurrency.max(1),
         a.neighbor
     );
+    if a.allow_internal_peers {
+        // Loud on purpose: peer addresses come from remote DHT contacts, so this
+        // hands them a dialer inside the operator's network.
+        eprintln!(
+            "[index] WARNING: --allow-internal-peers is set; peers on loopback, RFC1918 and \
+link-local addresses will be dialled"
+        );
+    }
     println!("[index] crawling + BEP-51 sampling + harvesting; Ctrl-C to stop");
 
     let max_age = a.max_age_days.map(|d| (d * 86_400.0).max(0.0) as u64);
@@ -979,7 +1040,9 @@ async fn run_tracker(a: TrackerArgs) -> ExitCode {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .snapshot(now_secs());
-        if let Err(e) = std::fs::write(&path, &blob) {
+        // Atomic like the store snapshot: a torn peers db is a hard error for the
+        // next `tracker` start-up's `restore`, losing every live swarm.
+        if let Err(e) = write_atomic(&path, &blob) {
             // Matches Python's `except OSError: pass` — a transient write failure
             // must not take the trackers down.
             eprintln!("warning: cannot write peers db {path}: {e}");
@@ -1118,6 +1181,11 @@ options:
   --max-age-days DAYS   retention: drop torrents not seen within this many days
   --save-interval SECS  store autosave period (default: 30); no SIGINT handler
                         is available, so this is how state survives shutdown
+  --allow-internal-peers
+                        dial peers on internal/reserved addresses (loopback,
+                        RFC1918, link-local ...). Off by default: peer addresses
+                        come from remote DHT contacts, so allowing them lets a
+                        contact aim the fetcher at your own network
 "
     )
 }
@@ -1260,6 +1328,7 @@ mod tests {
         assert_eq!(a.max_torrents, None);
         assert_eq!(a.max_age_days, None);
         assert_eq!(a.save_interval, 30);
+        assert!(!a.allow_internal_peers); // SSRF gate on unless asked otherwise
     }
 
     #[test]
@@ -1288,6 +1357,7 @@ mod tests {
             "30",
             "--save-interval",
             "5",
+            "--allow-internal-peers",
         ])) {
             Ok(Command::Index(a)) => a,
             other => panic!("expected index, got {other:?}"),
@@ -1303,6 +1373,7 @@ mod tests {
         assert_eq!(a.max_torrents, Some(1000));
         assert_eq!(a.max_age_days, Some(30.0));
         assert_eq!(a.save_interval, 5);
+        assert!(a.allow_internal_peers);
     }
 
     #[test]
@@ -1555,6 +1626,75 @@ mod tests {
 
         std::fs::write(&path, b"not a snapshot").unwrap();
         assert!(read_store(&db, DEFAULT_SPAM_THRESHOLD).is_err());
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Regression: the snapshot write must be atomic. `std::fs::write` truncates
+    /// the destination and then streams into it, so anything reading (or the next
+    /// start-up) during a save can see a prefix — and `read_store` treats a
+    /// snapshot it cannot decode as a hard error, so `index` and `search` both
+    /// refuse to start with the index gone (an 89 MB snapshot truncated at 5 %,
+    /// 50 % and 99.9 % gave `Store::restore == None` every time). Here a reader
+    /// thread hammers `read_store` while the writer rewrites a ~1 MB snapshot 30
+    /// times: with a rename it can never observe a partial file.
+    #[test]
+    fn write_store_is_atomic_under_a_concurrent_reader() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let path = tmp("atomic", line!());
+        let db = path.to_str().unwrap().to_string();
+        // ~1 MB of snapshot: big enough that a truncating write has a real window.
+        let mut store = Store::new();
+        for i in 0..250u32 {
+            let mut info = Dict::new();
+            info.insert(b"length".to_vec(), Ben::Int(700 * 1024 * 1024));
+            info.insert(
+                b"name".to_vec(),
+                Ben::Bytes(format!("Atomic Release {i}").into_bytes()),
+            );
+            info.insert(b"piece length".to_vec(), Ben::Int(262_144));
+            info.insert(b"pieces".to_vec(), Ben::Bytes(vec![0xABu8; 20 * 200]));
+            let bytes = encode(&Ben::Dict(info.clone()));
+            let meta = parse_info(&info, None, Some(bytes)).expect("info parses");
+            store.store_metadata(&meta, 1_700_000_000);
+        }
+        let size = write_store(&store, &db).expect("first save");
+        assert!(size > 500_000, "snapshot unexpectedly small: {size}");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader = std::thread::spawn({
+            let db = db.clone();
+            let stop = stop.clone();
+            move || {
+                let mut torn = 0usize;
+                while !stop.load(Ordering::Relaxed) {
+                    if read_store(&db, DEFAULT_SPAM_THRESHOLD).is_err() {
+                        torn += 1;
+                    }
+                }
+                torn
+            }
+        });
+        for _ in 0..30 {
+            write_store(&store, &db).expect("save");
+        }
+        stop.store(true, Ordering::Relaxed);
+        let torn = reader.join().expect("reader thread");
+        assert_eq!(torn, 0, "a reader observed {torn} unreadable snapshots");
+        assert_eq!(read_store(&db, DEFAULT_SPAM_THRESHOLD).unwrap().len(), 250);
+
+        // The temp file is renamed, never left behind.
+        let stem = path.file_name().unwrap().to_string_lossy().into_owned();
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(&format!("{stem}.tmp-")))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
         std::fs::remove_file(&path).ok();
     }
 
