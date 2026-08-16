@@ -1,7 +1,8 @@
 # astrx-suite — Rust engine workspace. One language for the whole suite.
 # Each engine is a crate; crawlcore is the shared library. Zero third-party
 # dependencies by default (stdlib only), matching the suite's austere ethos:
-# `crawlcore` is stdlib-only, and `torrentds` with its default (empty) feature
+# `crawlcore` is stdlib-only in its default build (its `net` feature adds tokio,
+# for the shared async HTTP reader), and `torrentds` with its default (empty) feature
 # set is too — the live node's two vetted deps (tokio, getrandom) are pulled in
 # only by the opt-in `net`/`rand` features. `cargo tree --no-default-features`
 # over torrentds is asserted empty in CI, so the claim stays true, not aspirational.

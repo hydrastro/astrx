@@ -7,7 +7,8 @@ third-party dependencies by default (stdlib only), matching AstrX's austere,
 auditable ethos, and `#![forbid(unsafe_code)]` across the tree.
 
 "Zero deps by default" is literal and machine-checked: `crawlcore` is
-stdlib-only, and `torrentds` builds its entire pure wire core with **no**
+stdlib-only in its default build (its `net` feature adds tokio, for the shared
+async HTTP reader), and `torrentds` builds its entire pure wire core with **no**
 third-party crates under its default (empty) feature set. Live networking is
 opt-in behind the `net`/`rand` features, which pull in the only two vetted
 dependencies — `tokio` and `getrandom`. CI asserts `cargo tree

@@ -5,6 +5,20 @@ edition = "2021"
 rust-version = "1.80"
 license = "MIT"
 repository = "https://github.com/hydrastro/astrx"
-description = "Shared crawl library: robots glob, SimHash dedup, recrawl scheduling, trap predicates, hashing (SHA-1/256, MD5, BLAKE2b), INFLATE."
+description = "Shared crawl library: robots glob, SimHash dedup, recrawl scheduling, trap predicates, hashing (SHA-1/256, MD5, BLAKE2b), INFLATE, HTTP/1.1 wire layer."
 
 [dependencies]
+# The ONLY dependency, and it is optional: the streaming half of `http` reads a
+# response body off a socket, which needs `tokio::io::AsyncRead`. Everything else
+# in the crate — including the pure half of `http` (request building, head and
+# chunked-body parsing, decompression) — is stdlib-only, so the default build
+# still resolves to zero third-party crates. Gated exactly like the engines'
+# net tiers (`net = ["dep:tokio"]`), and only `io-util` is enabled: crawlcore
+# never spawns, sleeps, or opens a socket of its own. Declared here rather than
+# via `[workspace.dependencies]` so the manifest parses on pre-1.64 Cargo — see
+# the root Cargo.toml note.
+tokio = { version = "1", features = ["io-util"], optional = true }
+
+[features]
+default = []
+net = ["dep:tokio"]

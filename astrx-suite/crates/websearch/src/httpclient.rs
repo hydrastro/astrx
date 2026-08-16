@@ -1,26 +1,46 @@
 //! The clearnet HTTP/1.1 fetcher — where the SSRF gate reaches a socket.
 //!
-//! This module holds the **pure** wire helpers — HTTP request building, response
-//! head / chunked-body parsing, `Content-Encoding` decompression (via the
-//! dependency-free [`crawlcore::inflate`]), `Content-Type` parsing, body charset
-//! decoding, the allow-list authority check, and — the crown jewel — the
+//! What lives here is what is *clearnet-specific*: the crown jewel, the
 //! [`vet_addrs`] SSRF gate that turns a list of resolved addresses into
-//! [`SafeIp`]s (or refuses the whole host). The async socket orchestration
-//! (a TTL DNS cache, the pinned SSRF-checked connect, `perform_request`, the
-//! redirect-following `fetch`, and the keep-alive `Fetcher`) lands with the net
-//! tier, on top of these helpers.
+//! [`SafeIp`]s (or refuses the whole host), the operator allow-list check
+//! [`authority_exempt`], the crawler's request defaults, and [`FetchResult`].
+//! The async socket orchestration on top of them — a TTL DNS cache, the pinned
+//! SSRF-checked connect, the redirect-following `fetch`, the keep-alive
+//! `Fetcher` — lands with the net tier in [`crate::fetcher`].
+//!
+//! The HTTP/1.1 **wire layer** is deliberately no longer here. Request building,
+//! status-line / header / chunked-body parsing, `Content-Encoding` decompression,
+//! `Content-Type` parsing and body charset decoding are shared with
+//! `onioncrawler` in [`crawlcore::http`]: they were two independently-maintained
+//! copies until four framing / injection defects had each been found and fixed
+//! twice, once per copy (that module's doc names all four). Everything moved is
+//! re-exported below, so this module's public surface — and the import paths in
+//! `tests/xcheck_httpclient.rs` — are unchanged.
 //!
 //! The Python reference (`websearch/httpclient.py`) speaks HTTP through the
-//! stdlib `http.client`; the response-side wire helpers here reproduce that
-//! client's behaviour and are unit-tested, while the hand-rolled Python helpers
-//! (`_parse_content_type`, `_decompress`, `_authority_exempt`, the
+//! stdlib `http.client`, which the shared wire layer reproduces; the hand-rolled
+//! Python helpers (`_parse_content_type`, `_decompress`, `_authority_exempt`, the
 //! `_ip_is_internal` / `_resolve_checked` SSRF gate) are cross-checked
 //! byte-identical in `tests/xcheck_httpclient.rs`.
 
 use crate::ssrf::SafeIp;
-use crawlcore::inflate::{inflate_gzip, inflate_raw, inflate_zlib};
 use std::fmt;
 use std::net::IpAddr;
+
+/// The shared HTTP/1.1 wire layer, at this crate's historical paths.
+pub use crawlcore::http::{
+    build_request, decode_body, decode_chunked, parse_content_type, parse_headers,
+    parse_status_line, Headers, HttpError, HttpResponse,
+};
+
+/// This crate's `Content-Encoding` convention, which is the one thing about the
+/// wire layer the two engines genuinely disagreed on: a body that fails to
+/// decode is returned **as-is** rather than failing the fetch, and the output is
+/// capped at `max_bytes + 1` so the caller detects truncation as
+/// `len > max_bytes` — matching the Python `_one`. (`onioncrawler` treats an
+/// undecodable declared encoding as a protocol error; see
+/// [`crawlcore::http::decompress_checked`].)
+pub use crawlcore::http::decompress_or_raw as decompress;
 
 /// The crawler's default User-Agent.
 pub const DEFAULT_UA: &str = "astrx-websearch/1.0 (+https://example.invalid/bot)";
@@ -37,18 +57,6 @@ pub fn default_port(scheme: &str) -> u16 {
         80
     }
 }
-
-/// An HTTP protocol / framing error.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpError(pub String);
-
-impl fmt::Display for HttpError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for HttpError {}
 
 // ---- the SSRF gate --------------------------------------------------------
 
@@ -125,336 +133,7 @@ pub fn authority_exempt(host: &str, port: u16, allow_hosts: &[String]) -> bool {
     forms.iter().any(|f| allow.contains(f))
 }
 
-// ---- Content-Type / decompression / body decode ---------------------------
-
-/// Parse a `Content-Type` header value into `(media_type, charset)`.
-///
-/// The media type is lower-cased and stripped; the charset (if a `charset=`
-/// parameter is present) is unquoted and lower-cased. Mirrors the Python
-/// `_parse_content_type`.
-#[must_use]
-pub fn parse_content_type(value: &str) -> (String, Option<String>) {
-    let mut parts = value.split(';');
-    let ctype = parts.next().unwrap_or("").trim().to_lowercase();
-    let mut charset = None;
-    for p in parts {
-        let p = p.trim();
-        if p.to_lowercase().starts_with("charset=") {
-            // split on the first '=' of the *original* fragment (case preserved)
-            let eq = p.find('=').expect("startswith charset= implies an '='");
-            let raw = p[eq + 1..]
-                .trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_lowercase();
-            charset = Some(raw);
-        }
-    }
-    (ctype, charset)
-}
-
-/// Decompress a response body per its `Content-Encoding`, capping the output at
-/// `max_bytes + 1` (so the caller can detect truncation as `len > max_bytes`,
-/// exactly like the Python `_one`). `gzip` uses the gzip wrapper; `deflate` /
-/// `zlib` try the zlib wrapper first, then raw DEFLATE; anything else (identity /
-/// unknown) passes through unchanged. A body that fails to decode is returned
-/// as-is (never an error), matching the Python `_decompress`.
-#[must_use]
-pub fn decompress(raw: &[u8], enc: &str, max_bytes: usize) -> Vec<u8> {
-    let limit = max_bytes + 1;
-    match enc {
-        "gzip" => inflate_gzip(raw, limit).map_or_else(|_| raw.to_vec(), |(b, _)| b),
-        "deflate" | "zlib" => match inflate_zlib(raw, limit) {
-            Ok((b, _)) => b,
-            Err(_) => inflate_raw(raw, limit).map_or_else(|_| raw.to_vec(), |(b, _)| b),
-        },
-        _ => raw.to_vec(),
-    }
-}
-
-/// Decode a response body to `String`, preferring an explicit `charset`, then a
-/// sniffed `charset=` marker in the first 2 KiB, then UTF-8, then latin-1.
-///
-/// Faithful to the Python `decode_body`'s **sniffing logic**; the actual byte→text
-/// step only reproduces the encodings the stdlib decodes natively (UTF-8, ASCII,
-/// latin-1 / ISO-8859-1) — an exotic label falls through to the UTF-8/latin-1
-/// tail rather than pulling in an encodings dependency. Lossy (`replace`)
-/// decoding matches Python's `errors="replace"`.
-#[must_use]
-pub fn decode_body(body: &[u8], charset: Option<&str>) -> String {
-    if let Some(cs) = charset {
-        if let Some(s) = decode_with(body, cs) {
-            return s;
-        }
-    }
-    let head: Vec<u8> = body
-        .iter()
-        .take(2048)
-        .map(|b| b.to_ascii_lowercase())
-        .collect();
-    for marker in [b"charset=".as_slice(), b"charset =".as_slice()] {
-        if let Some(i) = find_bytes(&head, marker) {
-            let frag = &head[i + marker.len()..(i + marker.len() + 40).min(head.len())];
-            let cleaned: Vec<u8> = frag
-                .iter()
-                .copied()
-                .filter(|c| !b" \"';>".contains(c))
-                .collect();
-            let label = cleaned.rsplit(|&b| b == b'/').next().unwrap_or(&cleaned);
-            // Python decodes the label as ascii/ignore — non-ASCII bytes drop.
-            let cs: String = label
-                .iter()
-                .filter(|&&b| b.is_ascii())
-                .map(|&b| b as char)
-                .collect();
-            if !cs.is_empty() {
-                if let Some(s) = decode_with(body, &cs) {
-                    return s;
-                }
-                break;
-            }
-        }
-    }
-    match std::str::from_utf8(body) {
-        Ok(s) => s.to_string(),
-        Err(_) => latin1_decode(body),
-    }
-}
-
-/// Decode `body` under a charset *label* if it is one the stdlib reproduces
-/// exactly; `None` otherwise (the caller then falls through). UTF-8 is lossy
-/// (`replace`); latin-1 family is total.
-fn decode_with(body: &[u8], charset: &str) -> Option<String> {
-    match charset.trim().to_lowercase().as_str() {
-        "utf-8" | "utf8" | "us-ascii" | "ascii" => Some(String::from_utf8_lossy(body).into_owned()),
-        "latin-1" | "latin1" | "iso-8859-1" | "iso8859-1" | "8859-1" | "cp819" => {
-            Some(latin1_decode(body))
-        }
-        _ => None,
-    }
-}
-
-// ---- HTTP/1.1 wire helpers (reproduce stdlib http.client on the response) --
-
-/// Response headers: lowercased keys, insertion-ordered, duplicate keys joined
-/// with `, ` — matching `http.client`'s message semantics.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Headers(Vec<(String, String)>);
-
-impl Headers {
-    /// The value for `name` (case-insensitive), or `None`.
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<&str> {
-        let lname = name.to_lowercase();
-        self.0
-            .iter()
-            .find(|(k, _)| *k == lname)
-            .map(|(_, v)| v.as_str())
-    }
-
-    /// The header pairs, in insertion order.
-    #[must_use]
-    pub fn pairs(&self) -> &[(String, String)] {
-        &self.0
-    }
-}
-
-fn latin1_decode(bytes: &[u8]) -> String {
-    bytes.iter().map(|&b| b as char).collect()
-}
-
-/// Strip the bytes that would end a header field early. A value can arrive here
-/// from STORAGE — a previous response's `ETag`/`Last-Modified` is replayed as
-/// `If-None-Match`/`If-Modified-Since` — so an origin that plants a CR or LF in
-/// one would otherwise inject a header line into every later conditional GET,
-/// on every subsequent crawl.
-fn header_safe(v: &str) -> String {
-    v.chars()
-        .filter(|c| !matches!(c, '\r' | '\n' | '\0'))
-        .collect()
-}
-
-/// Percent-encode a request target so it is guaranteed to be a single ASCII
-/// token. Paths arrive canonicalised, i.e. already percent-encoded, so existing
-/// `%XX` and reserved characters pass through untouched; what gets escaped is
-/// exactly what may not appear literally in a request line — SP, the CTLs (CR
-/// and LF above all) and every non-ASCII byte.
-///
-/// Writing the code point out with `c as u8` instead — what this did before —
-/// TRUNCATED it: U+010D became a raw CR and U+010A a raw LF, so a crawled
-/// `<a href="/x\u{010d}\u{010a}X-Injected: 1">` injected a header line, and a
-/// doubled pair smuggled a whole second request onto a keep-alive socket. It
-/// also silently mangled every non-Latin-1 IRI.
-fn encode_request_target(path: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut out = String::with_capacity(path.len());
-    for b in path.bytes() {
-        if b > 0x20 && b < 0x7f {
-            out.push(b as char);
-        } else {
-            out.push('%');
-            out.push(HEX[(b >> 4) as usize] as char);
-            out.push(HEX[(b & 0x0f) as usize] as char);
-        }
-    }
-    out
-}
-
-fn trim_ascii(b: &[u8]) -> &[u8] {
-    let start = b
-        .iter()
-        .position(|c| !c.is_ascii_whitespace())
-        .unwrap_or(b.len());
-    let end = b
-        .iter()
-        .rposition(|c| !c.is_ascii_whitespace())
-        .map_or(start, |p| p + 1);
-    &b[start..end]
-}
-
-fn find_bytes(buf: &[u8], needle: &[u8]) -> Option<usize> {
-    find_sub(buf, 0, needle)
-}
-
-fn find_sub(buf: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || buf.len() < needle.len() {
-        return None;
-    }
-    let last = buf.len() - needle.len();
-    (from..=last).find(|&i| &buf[i..i + needle.len()] == needle)
-}
-
-/// Build a request: request-line + `Host` + extra headers (in order) + blank
-/// line. An empty `path` becomes `/`.
-#[must_use]
-pub fn build_request(
-    method: &str,
-    path: &str,
-    host: &str,
-    extra_headers: &[(String, String)],
-) -> Vec<u8> {
-    let path = if path.is_empty() { "/" } else { path };
-    let mut s = String::with_capacity(path.len() + host.len() + 64);
-    s.push_str(&header_safe(method));
-    s.push(' ');
-    s.push_str(&encode_request_target(path));
-    s.push_str(" HTTP/1.1\r\nHost: ");
-    s.push_str(&header_safe(host));
-    s.push_str("\r\n");
-    for (k, v) in extra_headers {
-        s.push_str(&header_safe(k));
-        s.push_str(": ");
-        s.push_str(&header_safe(v));
-        s.push_str("\r\n");
-    }
-    s.push_str("\r\n");
-    s.into_bytes()
-}
-
-/// Parse a status line into `(version, status, reason)`.
-///
-/// # Errors
-/// [`HttpError`] if the line lacks a numeric status or does not begin with
-/// `HTTP/`.
-pub fn parse_status_line(line: &[u8]) -> Result<(String, u16, String), HttpError> {
-    let decoded = latin1_decode(line);
-    let s = decoded.trim_end_matches(['\r', '\n']);
-    let mut parts = s.splitn(3, ' ');
-    let version = parts.next().unwrap_or("").to_string();
-    let status = parts
-        .next()
-        .and_then(|p| p.parse::<u16>().ok())
-        .ok_or_else(|| HttpError(format!("bad status line: {line:?}")))?;
-    let reason = parts.next().unwrap_or("").to_string();
-    if !version.to_uppercase().starts_with("HTTP/") {
-        return Err(HttpError(format!("not an HTTP response: {line:?}")));
-    }
-    Ok((version, status, reason))
-}
-
-/// Parse a header block into [`Headers`]. Lines without a `:` are skipped;
-/// duplicate keys are joined with `, `.
-#[must_use]
-pub fn parse_headers(block: &[u8]) -> Headers {
-    let mut headers = Headers::default();
-    let text = latin1_decode(block);
-    // `at` maps a header name to its slot so a duplicate is joined in O(1). The
-    // scan used to be linear per header, making a head O(headers²): an origin
-    // filling the head cap with tens of thousands of one-byte headers cost about
-    // a second of crawler CPU per response, free, on every page it served. It
-    // lives here rather than inside `Headers` so the struct — which is held
-    // across `.await` points all down the fetch path — does not grow (widening
-    // it overflowed a debug-build future's stack).
-    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    // Split on LF and drop a trailing CR, rather than splitting on CRLF: a
-    // header line terminated by a BARE LF used to leave that LF *inside* the
-    // preceding value, and values like `ETag` are stored and replayed on the
-    // next conditional GET — a persistent, cross-run header injection.
-    for raw in text.split('\n') {
-        let raw = raw.strip_suffix('\r').unwrap_or(raw);
-        if raw.is_empty() || !raw.contains(':') {
-            continue;
-        }
-        let (k, v) = raw.split_once(':').unwrap();
-        let (key, value) = (k.trim().to_lowercase(), v.trim());
-        match at.get(&key) {
-            // Duplicate keys are joined with `, `, matching `http.client`.
-            Some(&i) => {
-                let slot = &mut headers.0[i].1;
-                slot.push_str(", ");
-                slot.push_str(value);
-            }
-            None => {
-                at.insert(key.clone(), headers.0.len());
-                headers.0.push((key, value.to_string()));
-            }
-        }
-    }
-    headers
-}
-
-/// Decode a complete `Transfer-Encoding: chunked` body buffer into
-/// `(bytes, truncated)`, capping the decoded output at `max_bytes`.
-///
-/// # Errors
-/// [`HttpError`] on a missing delimiter, a bad chunk size, or a short chunk.
-pub fn decode_chunked(buf: &[u8], max_bytes: usize) -> Result<(Vec<u8>, bool), HttpError> {
-    let mut out: Vec<u8> = Vec::new();
-    let mut truncated = false;
-    let mut i = 0;
-    loop {
-        let line_end = find_sub(buf, i, b"\r\n")
-            .ok_or_else(|| HttpError("chunk size: no CRLF".to_string()))?;
-        let size_line = trim_ascii(&buf[i..line_end]);
-        i = line_end + 2;
-        let size_hex = trim_ascii(size_line.split(|&b| b == b';').next().unwrap_or(&[]));
-        let size = std::str::from_utf8(size_hex)
-            .ok()
-            .and_then(|s| usize::from_str_radix(s, 16).ok())
-            .ok_or_else(|| HttpError(format!("bad chunk size: {size_line:?}")))?;
-        if size == 0 {
-            break;
-        }
-        // NB: `i + size + 2 > buf.len()` would OVERFLOW on a huge declared size
-        // and wrap into an inverted `buf[i..i + size]` range below. Compare
-        // against the bytes that actually remain.
-        if size > buf.len().saturating_sub(i).saturating_sub(2) {
-            return Err(HttpError("chunk data shorter than declared".to_string()));
-        }
-        let data = &buf[i..i + size];
-        i += size + 2;
-        if out.len() < max_bytes {
-            out.extend_from_slice(data);
-            if out.len() >= max_bytes {
-                truncated = true;
-                out.truncate(max_bytes);
-            }
-        } else {
-            truncated = true;
-        }
-    }
-    Ok((out, truncated))
-}
+// ---- the shape a completed fetch takes ------------------------------------
 
 /// The outcome of a fetch (after following redirects). Mirrors the Python
 /// `FetchResult`.
@@ -507,250 +186,48 @@ impl FetchResult {
     }
 }
 
-/// A single parsed HTTP response (one hop, before redirect handling).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpResponse {
-    /// Status code.
-    pub status: u16,
-    /// Reason phrase.
-    pub reason: String,
-    /// Response headers.
-    pub headers: Headers,
-    /// Decompressed body (bounded, possibly truncated).
-    pub body: Vec<u8>,
-    /// Whether the body (or a compressed body's output) was capped.
-    pub truncated: bool,
-    /// Whether the connection can be safely reused (HTTP/1.1, framed, drained).
-    pub reusable: bool,
-}
-
-impl HttpResponse {
-    /// A header value by name (case-insensitive).
-    #[must_use]
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(name)
-    }
-}
-
-/// Cap on the response head (status line + headers) size. Used by the async
-/// reader in `perform_request` (net tier).
+/// Send one request on `stream` and read one response, under this crate's
+/// `Content-Encoding` convention (see [`decompress`]).
+///
+/// The framing itself — the head cap, the chunked reader with its
+/// [`crawlcore::budget::Budget`]-bounded chunk sizes, the content-length and
+/// read-to-EOF paths, the keep-alive decision — is
+/// [`crawlcore::http::perform_request`], shared with `onioncrawler`, so a
+/// framing fix lands once. The caller owns the stream lifecycle and has already
+/// taken it through the SSRF gate ([`vet_addrs`] → a pinned connect).
+///
+/// This returns the shared future rather than `await`ing it inside an `async fn`
+/// of its own, and that is not a style choice: this fetch path is already several
+/// async layers deep, a debug-build future nests its callee's state inline, and
+/// wrapping it in one more `async fn` was enough to abort
+/// `net_multiworker::keep_alive_reuses_connections` with "thread has overflowed
+/// its stack". Forwarding the future keeps the frame exactly the size it was
+/// before the wire layer moved.
+///
+/// # Errors
+/// [`HttpError`] on I/O failure or a malformed response.
 #[cfg(feature = "net")]
-const MAX_HEAD: usize = 256 * 1024;
-
-#[cfg(feature = "net")]
-mod net_io {
-    use super::{
-        build_request, decompress, find_sub, parse_headers, parse_status_line, trim_ascii, Headers,
-        HttpError, HttpResponse, MAX_HEAD,
-    };
-    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-
-    const READ_CHUNK: usize = 65536;
-
-    /// A buffered reader over an async stream.
-    struct Reader<'a, S> {
-        stream: &'a mut S,
-        buf: Vec<u8>,
-        eof: bool,
-    }
-
-    impl<'a, S: AsyncRead + Unpin> Reader<'a, S> {
-        fn new(stream: &'a mut S) -> Self {
-            Reader {
-                stream,
-                buf: Vec::new(),
-                eof: false,
-            }
-        }
-
-        async fn fill(&mut self) -> Result<usize, HttpError> {
-            if self.eof {
-                return Ok(0);
-            }
-            let mut tmp = [0u8; READ_CHUNK];
-            let n = self
-                .stream
-                .read(&mut tmp)
-                .await
-                .map_err(|e| HttpError(format!("read: {e}")))?;
-            if n == 0 {
-                self.eof = true;
-                return Ok(0);
-            }
-            self.buf.extend_from_slice(&tmp[..n]);
-            Ok(n)
-        }
-
-        async fn read_until(&mut self, sep: &[u8], cap: usize) -> Result<Vec<u8>, HttpError> {
-            loop {
-                if let Some(i) = find_sub(&self.buf, 0, sep) {
-                    return Ok(self.buf.drain(..i + sep.len()).collect());
-                }
-                if self.buf.len() > cap {
-                    return Err(HttpError("delimiter not found within cap".to_string()));
-                }
-                if self.fill().await? == 0 {
-                    return Err(HttpError("connection closed before delimiter".to_string()));
-                }
-            }
-        }
-
-        async fn read_n(&mut self, n: usize) -> Result<Vec<u8>, HttpError> {
-            while self.buf.len() < n {
-                if self.fill().await? == 0 {
-                    return Err(HttpError(format!("connection closed before {n} bytes")));
-                }
-            }
-            Ok(self.buf.drain(..n).collect())
-        }
-
-        async fn read_all(&mut self, cap: usize) -> Vec<u8> {
-            while !self.eof && self.buf.len() <= cap {
-                if self.fill().await.unwrap_or(0) == 0 {
-                    break;
-                }
-            }
-            let take = self.buf.len().min(cap);
-            self.buf.drain(..take).collect()
-        }
-    }
-
-    /// Read a `Transfer-Encoding: chunked` body, capping decoded output at
-    /// `max_bytes`.
-    async fn read_chunked<S: AsyncRead + Unpin>(
-        r: &mut Reader<'_, S>,
-        max_bytes: usize,
-    ) -> Result<(Vec<u8>, bool), HttpError> {
-        let mut out: Vec<u8> = Vec::new();
-        let mut truncated = false;
-        loop {
-            let line = r.read_until(b"\r\n", 16 * 1024).await?;
-            let stripped = trim_ascii(&line[..line.len().saturating_sub(2)]);
-            let size_hex = trim_ascii(stripped.split(|&b| b == b';').next().unwrap_or(&[]));
-            let size = std::str::from_utf8(size_hex)
-                .ok()
-                .and_then(|s| usize::from_str_radix(s, 16).ok())
-                .ok_or_else(|| HttpError(format!("bad chunk size: {stripped:?}")))?;
-            if size == 0 {
-                let _ = r.read_until(b"\r\n", 16 * 1024).await; // trailers / final CRLF
-                break;
-            }
-            // NB: `out.len() + size > max_bytes` would OVERFLOW. `size` is the
-            // origin's hex chunk header and can be usize::MAX, whose sum wraps
-            // to a small value that passes the check — and `read_n` is then
-            // handed an unbounded length (measured: 3 MB of wire turning into
-            // 529 MB RSS in 0.6 s). Compare against the room that is left.
-            let want = max_bytes.saturating_sub(out.len());
-            if size > want {
-                out.extend_from_slice(&r.read_n(want).await?);
-                truncated = true;
-                break;
-            }
-            let data = r.read_n(size).await?;
-            r.read_n(2).await?; // trailing CRLF
-            out.extend_from_slice(&data);
-        }
-        Ok((out, truncated))
-    }
-
-    /// Send one request on `stream` and read one response. The caller owns the
-    /// stream lifecycle (and has already vetted + connected it through the SSRF
-    /// gate). Body reads are bounded by `max_bytes`.
-    ///
-    /// # Errors
-    /// [`HttpError`] on I/O failure or a malformed response.
-    pub async fn perform_request<S: AsyncRead + AsyncWrite + Unpin>(
-        stream: &mut S,
-        method: &str,
-        host: &str,
-        path: &str,
-        headers: &[(String, String)],
-        max_bytes: usize,
-    ) -> Result<HttpResponse, HttpError> {
-        let req = build_request(method, path, host, headers);
-        stream
-            .write_all(&req)
-            .await
-            .map_err(|e| HttpError(format!("write: {e}")))?;
-
-        let mut reader = Reader::new(stream);
-        let head = reader.read_until(b"\r\n\r\n", MAX_HEAD).await?;
-        let head = &head[..head.len().saturating_sub(4)];
-        let (status_line, header_block) = match find_sub(head, 0, b"\r\n") {
-            Some(i) => (&head[..i], &head[i + 2..]),
-            None => (head, &head[head.len()..]),
-        };
-        let (version, status, reason) = parse_status_line(status_line)?;
-        let hdrs: Headers = parse_headers(header_block);
-
-        let conn = hdrs.get("connection").unwrap_or("").to_lowercase();
-        let keep_alive = version.eq_ignore_ascii_case("HTTP/1.1") && !conn.contains("close");
-
-        if method.eq_ignore_ascii_case("HEAD")
-            || status == 204
-            || status == 304
-            || (100..200).contains(&status)
-        {
-            return Ok(HttpResponse {
-                status,
-                reason,
-                headers: hdrs,
-                body: Vec::new(),
-                truncated: false,
-                reusable: keep_alive,
-            });
-        }
-
-        let te = hdrs.get("transfer-encoding").unwrap_or("").to_lowercase();
-        let (raw_body, mut truncated, framed) = if te.contains("chunked") {
-            let (b, t) = read_chunked(&mut reader, max_bytes).await?;
-            (b, t, true)
-        } else if let Some(cl) = hdrs.get("content-length") {
-            let length: usize = cl
-                .trim()
-                .parse()
-                .map_err(|_| HttpError("invalid content-length".to_string()))?;
-            let (want, trunc) = if length > max_bytes {
-                (max_bytes, true)
-            } else {
-                (length, false)
-            };
-            (reader.read_n(want).await?, trunc, true)
-        } else {
-            let b = reader.read_all(max_bytes).await;
-            let trunc = !reader.eof;
-            (b, trunc, false)
-        };
-
-        // Decompress per Content-Encoding (bounded); a body over `max_bytes` after
-        // decompression is truncated, matching the Python `_one`.
-        let enc = hdrs
-            .get("content-encoding")
-            .unwrap_or("")
-            .trim()
-            .to_lowercase();
-        let body = decompress(&raw_body, &enc, max_bytes);
-        let body = if body.len() > max_bytes {
-            truncated = true;
-            body[..max_bytes].to_vec()
-        } else {
-            body
-        };
-        let reusable = keep_alive && framed && !truncated;
-
-        Ok(HttpResponse {
-            status,
-            reason,
-            headers: hdrs,
-            body,
-            truncated,
-            reusable,
-        })
-    }
+pub fn perform_request<'a, S>(
+    stream: &'a mut S,
+    method: &'a str,
+    host: &'a str,
+    path: &'a str,
+    headers: &'a [(String, String)],
+    max_bytes: usize,
+) -> impl std::future::Future<Output = Result<HttpResponse, HttpError>> + 'a
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'a,
+{
+    crawlcore::http::perform_request(
+        stream,
+        method,
+        host,
+        path,
+        headers,
+        max_bytes,
+        crawlcore::http::ContentEncodingPolicy::OrRaw,
+    )
 }
-
-#[cfg(feature = "net")]
-pub use net_io::perform_request;
 
 #[cfg(test)]
 mod tests {
@@ -801,11 +278,14 @@ mod tests {
         assert!(!authority_exempt("intranet", 8080, &[]));
     }
 
+    /// The re-exported wire layer keeps this crate's observable behaviour: a body
+    /// that does not decode comes back verbatim rather than as an error.
     #[test]
     fn decompress_identity_and_unknown() {
         assert_eq!(decompress(b"hello", "", 100), b"hello");
         assert_eq!(decompress(b"hello", "identity", 100), b"hello");
         assert_eq!(decompress(b"hello", "br", 100), b"hello"); // unknown → as-is
+        assert_eq!(decompress(b"not gzip", "gzip", 100), b"not gzip"); // undecodable → as-is
     }
 
     #[test]
@@ -837,87 +317,6 @@ mod tests {
         assert_eq!(
             decode_body(b"<meta charset=utf-8>\xc3\xa9", None),
             "<meta charset=utf-8>é"
-        );
-    }
-}
-
-#[cfg(test)]
-mod audit_regression {
-    use super::*;
-
-    /// `out.len() + size > max_bytes` OVERFLOWS: `size` is the origin's hex
-    /// chunk header, so `ffffffffffffffff` wraps the sum to a small value that
-    /// PASSES the check, and the reader is then handed an unbounded length
-    /// (measured: 3 MB of wire became 529 MB RSS in 0.6 s).
-    #[test]
-    fn a_chunk_size_near_usize_max_cannot_bypass_the_body_cap() {
-        let mut buf = b"1\r\nA\r\nffffffffffffffff\r\n".to_vec();
-        buf.extend_from_slice(&b"B".repeat(4096));
-        buf.extend_from_slice(b"\r\n0\r\n\r\n");
-        // Must refuse rather than wrap into an inverted slice range.
-        assert!(decode_chunked(&buf, 1024).is_err());
-    }
-
-    /// `latin1_encode`'s `c as u8` TRUNCATED code points: U+010D became a raw CR
-    /// and U+010A a raw LF, so a crawled href injected a header line and a
-    /// doubled pair smuggled a second request onto a keep-alive socket.
-    #[test]
-    fn a_request_target_can_never_inject_a_header_line() {
-        let req = build_request("GET", "/x\u{010d}\u{010a}X-Injected: 1", "example.com", &[]);
-        let text = String::from_utf8_lossy(&req);
-        assert!(!text.contains("X-Injected: 1\r\n"), "injected: {text:?}");
-        assert!(text.starts_with("GET /x%C4%8D%C4%8A"), "{text:?}");
-        // The head must contain exactly one CRLFCRLF — i.e. one request.
-        assert_eq!(text.matches("\r\n\r\n").count(), 1, "{text:?}");
-    }
-
-    /// A stored `ETag` is replayed as `If-None-Match` on the next conditional
-    /// GET, so a CR/LF planted in one is a persistent, cross-run injection.
-    #[test]
-    fn a_stored_header_value_cannot_inject_on_replay() {
-        let hs = vec![(
-            "If-None-Match".to_string(),
-            "\"x\"\r\nX-Evil: 1".to_string(),
-        )];
-        let req = build_request("GET", "/", "example.com", &hs);
-        let text = String::from_utf8_lossy(&req);
-        // The CR/LF are stripped, so the whole thing collapses into ONE header
-        // value — no line of the request may begin with the smuggled name.
-        assert!(
-            !text.lines().any(|l| l.starts_with("X-Evil:")),
-            "smuggled a header line: {text:?}"
-        );
-        assert!(
-            text.contains("If-None-Match: \"x\"X-Evil: 1\r\n"),
-            "{text:?}"
-        );
-        assert_eq!(text.matches("\r\n\r\n").count(), 1, "{text:?}");
-    }
-
-    /// A header line terminated by a BARE LF used to leave that LF inside the
-    /// preceding value, which is then stored and replayed.
-    #[test]
-    fn a_bare_lf_terminates_a_header_line() {
-        let h = parse_headers(b"ETag: \"a\"\nX-Next: b\r\n");
-        assert_eq!(h.get("etag"), Some("\"a\""));
-        assert_eq!(h.get("x-next"), Some("b"));
-    }
-
-    /// Parsing a head was O(headers²): an origin filling the head cap with tens
-    /// of thousands of one-byte headers cost ~1 s of crawler CPU per response.
-    #[test]
-    fn many_headers_parse_in_linear_time() {
-        let mut block = String::new();
-        for i in 0..20_000 {
-            block.push_str(&format!("h{i}: v\r\n"));
-        }
-        let t = std::time::Instant::now();
-        let h = parse_headers(block.as_bytes());
-        assert_eq!(h.pairs().len(), 20_000);
-        assert!(
-            t.elapsed() < std::time::Duration::from_secs(2),
-            "quadratic header parse: {:?}",
-            t.elapsed()
         );
     }
 }

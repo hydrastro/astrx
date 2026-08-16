@@ -9,8 +9,9 @@ description = "Clearnet search engine: SSRF-safe crawler (the guard as a type), 
 
 [dependencies]
 # First-party shared crawl library (SimHash bit-math, scheduler, traps, hashing,
-# INFLATE). Not a third-party dependency — the zero-dep-by-default guarantee is
-# about crates.io deps; crawlcore is itself stdlib-only.
+# INFLATE, and the HTTP/1.1 wire layer this crate shares with onioncrawler). Not
+# a third-party dependency — the zero-dep-by-default guarantee is about crates.io
+# deps; crawlcore is itself stdlib-only in its default build.
 crawlcore = { path = "../crawlcore" }
 # The networking tier (SSRF-checked HTTP client, crawler, no-JS server) lives
 # behind the opt-in `net`/`rand` features and pulls in only the two vetted deps
@@ -22,7 +23,10 @@ getrandom = { version = "0.2", optional = true }
 [features]
 default = []
 rand = ["dep:getrandom"]
-net = ["dep:tokio", "rand"]
+# `crawlcore/net` turns on the streaming half of the shared HTTP/1.1 wire layer
+# (`crawlcore::http::perform_request`), which is where this crate's async
+# `perform_request` reads a response body off a socket.
+net = ["dep:tokio", "rand", "crawlcore/net"]
 
 # The `websearch` command-line entrypoint (crawl / serve / stats / backup),
 # porting the Python `python3 -m websearch` CLI. Gated on `net` via

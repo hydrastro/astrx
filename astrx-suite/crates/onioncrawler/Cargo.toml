@@ -9,8 +9,9 @@ description = "Darknet (.onion/.i2p) crawler: the anti-leak host gate expressed 
 
 [dependencies]
 # First-party shared crawl library (globmatch, dedup/SimHash, scheduler, traps,
-# hashing incl. BLAKE2b). Not a third-party dependency — the zero-dep-by-default
-# guarantee is about crates.io deps; crawlcore is itself stdlib-only.
+# hashing incl. BLAKE2b, and the HTTP/1.1 wire layer this crate shares with
+# websearch). Not a third-party dependency — the zero-dep-by-default guarantee is
+# about crates.io deps; crawlcore is itself stdlib-only in its default build.
 crawlcore = { path = "../crawlcore" }
 # The networking tier (SOCKS5 client, HTTP fetcher, no-JS search server) lives
 # behind the opt-in `net`/`rand` features and pulls in only the two vetted deps
@@ -23,7 +24,10 @@ getrandom = { version = "0.2", optional = true }
 [features]
 default = []
 rand = ["dep:getrandom"]
-net = ["dep:tokio", "rand"]
+# `crawlcore/net` turns on the streaming half of the shared HTTP/1.1 wire layer
+# (`crawlcore::http::perform_request`), which is where this crate's async
+# `perform_request` reads a response body off a SOCKS-tunnelled socket.
+net = ["dep:tokio", "rand", "crawlcore/net"]
 
 # The `onioncrawler` command-line entrypoint (crawl / search / stats / submit /
 # reseed / backup / authority / cluster / recrawl), porting the Python
