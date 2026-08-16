@@ -479,6 +479,58 @@ mod net_impl {
             self.core.stats.clone()
         }
 
+        /// Pages this crawler has taken through its per-URL processing so far — the
+        /// counter [`Crawler::run`]'s budget is measured against.
+        ///
+        /// Only the single-worker path maintains it (the multi-worker path runs a
+        /// shared page budget per call instead), so a driver that wants a
+        /// mode-independent measure of progress should read
+        /// [`CrawlStats::fetched`].
+        #[must_use]
+        pub fn pages_fetched(&self) -> u64 {
+            self.pages_fetched
+        }
+
+        /// Crawl at most `pages` MORE pages, then return.
+        ///
+        /// # Why this exists
+        ///
+        /// [`Crawler::run`] runs to exhaustion and its caller then saves. That is
+        /// fine when saving costs a corpus rewrite and you therefore only do it
+        /// once — and it is exactly what makes a `SIGKILL` mid-run lose the whole
+        /// run. A segmented store's commits are cheap, so the driver wants to
+        /// crawl a little, commit, and repeat; this is the "a little" that makes
+        /// the crash window a number an operator sets rather than the run length.
+        ///
+        /// It exists as a method because the two run modes take their budget
+        /// differently and a caller should not have to know: [`Crawler::run`]
+        /// measures its `max_pages` against the cumulative `pages_fetched`, while
+        /// the multi-worker path allocates a fresh page budget per call. Both
+        /// mean "stop after `pages` more" once the argument is computed right, and
+        /// getting it wrong in the caller means either one slice and then silence,
+        /// or an unbounded crawl.
+        ///
+        /// Returns the run-to-date statistics, exactly as [`Crawler::run`] does;
+        /// they accumulate across slices, so the final slice's return value is the
+        /// whole run's.
+        pub async fn run_slice(&mut self, pages: u64) -> CrawlStats {
+            // Compute the budget, THEN make exactly one call. Two `self.run(…)`
+            // calls in two branches of an `async fn` give the generated state
+            // machine room for two copies of `run`'s future, and `run`'s future is
+            // enormous in a debug build (it holds the whole fetch/parse/index
+            // pipeline). That doubling was measured overflowing a test thread's
+            // stack before this was one call.
+            let budget = if self.cfg.workers > 1 {
+                // The multi-worker path allocates a fresh page budget per call,
+                // so its argument is already "this many more".
+                pages
+            } else {
+                // `run` measures its argument against the cumulative counter.
+                self.pages_fetched.saturating_add(pages)
+            };
+            self.run(Some(budget)).await
+        }
+
         /// Multi-worker crawl: move the shared state behind an `Arc<Mutex<Core>>`,
         /// spawn `cfg.workers` worker tasks that share it plus a global page
         /// [`Budget`], join them, then move the state back so [`index`](Self::index)

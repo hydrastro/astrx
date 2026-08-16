@@ -41,6 +41,41 @@ use std::path::{Path, PathBuf};
 /// temp file is removed before returning, and `path` is left untouched — so a
 /// failed write costs you the new data, never the old.
 pub fn write_atomic(path: impl AsRef<Path>, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic_with(path, |w| w.write_all(bytes))
+}
+
+/// The same durable-publish dance as [`write_atomic`], but the caller *streams*
+/// the contents into a writer instead of handing over a finished `&[u8]`.
+///
+/// # Why this exists
+///
+/// [`write_atomic`] requires the whole file in memory before the first byte
+/// reaches the disk, so publishing an N-byte file costs N bytes of RSS on top of
+/// whatever produced it. That is fine for a manifest and wrong for anything
+/// corpus-sized: [`crate::segstore`]'s compaction folds several segments into one
+/// and would otherwise have to buffer the entire merged segment — reintroducing,
+/// inside the very component built to remove it, the "a save briefly doubles
+/// memory" problem. Here the merge writes record by record and peak memory is one
+/// record plus the `BufWriter`.
+///
+/// The atomicity story is identical (temp sibling → flush → `sync_all` →
+/// `rename` → directory fsync), and it is identical *because it is the same
+/// code*: [`write_atomic`] is a one-line wrapper over this function. A second,
+/// hand-rolled copy of the sequence is exactly how the fsync gets forgotten.
+///
+/// `fill` is handed a `&mut dyn Write` (not a generic writer) so this function
+/// monomorphises once no matter how many record types call it.
+///
+/// # Errors
+/// Any I/O error from creating, writing, flushing, syncing or renaming the temp
+/// file, plus anything `fill` itself returns. In every failure case the temp file
+/// is removed and `path` is left untouched — a failed write costs you the new
+/// data, never the old. Note that `fill` may already have written bytes when it
+/// fails; they die with the temp file and are never published.
+pub fn write_atomic_with<F>(path: impl AsRef<Path>, fill: F) -> std::io::Result<()>
+where
+    F: FnOnce(&mut dyn Write) -> std::io::Result<()>,
+{
     let dst = path.as_ref();
     let dir = match dst.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
@@ -49,8 +84,14 @@ pub fn write_atomic(path: impl AsRef<Path>, bytes: &[u8]) -> std::io::Result<()>
     };
     let tmp = temp_sibling(dst, dir);
 
-    let written = std::fs::File::create(&tmp).and_then(|mut f| {
-        f.write_all(bytes)?;
+    let written = std::fs::File::create(&tmp).and_then(|f| {
+        let mut w = std::io::BufWriter::new(f);
+        fill(&mut w)?;
+        // `into_inner` flushes; taking the File back is what lets us fsync the
+        // real descriptor rather than just the userspace buffer.
+        let f = w
+            .into_inner()
+            .map_err(std::io::IntoInnerError::into_error)?;
         // Durable BEFORE the rename publishes it. Without this the metadata
         // operation can reach disk first and a power cut publishes a file of
         // zeroes — which looks exactly like a successful save until you reload.

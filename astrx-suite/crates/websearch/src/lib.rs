@@ -40,6 +40,11 @@ pub mod pdftext;
 pub mod query;
 pub mod ranking;
 pub mod robots;
+// The segmented, incremental persistence path for `index::Index` — immutable
+// segments plus a manifest over `crawlcore::segstore`, chosen with
+// `--store=segments`. Stdlib-only, so it builds in the default feature set
+// alongside the blob `snapshot`/`restore` it sits beside.
+pub mod segindex;
 pub mod serve;
 pub mod ssrf;
 pub mod structured;
@@ -74,6 +79,7 @@ pub use pdftext::{extract_text as extract_pdf_text, extract_title as extract_pdf
 pub use query::{parse_query, Query};
 pub use ranking::{search, SearchOpts, SearchResponse, SearchResult};
 pub use robots::{parse as parse_robots, Robots};
+pub use segindex::{load_index as load_segmented_index, FlushStats, IndexRecord, SegmentedIndex};
 pub use serve::{Resp, SearchServer};
 pub use ssrf::{ip_is_internal, SafeIp};
 pub use structured::{

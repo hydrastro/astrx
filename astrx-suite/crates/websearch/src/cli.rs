@@ -12,6 +12,24 @@
 //! job is to refetch what is already indexed ([`Crawler::enqueue_recrawls`]); that
 //! run extends the restored index rather than replacing it.
 //!
+//! # `--store=blob` (default) versus `--store=segments`
+//!
+//! Everything above describes `--store=blob`, which is unchanged and is what a
+//! command line that does not mention `--store` gets, byte for byte.
+//!
+//! `--store=segments` makes `--db` a **directory** ([`crate::segindex`] over
+//! [`crawlcore::segstore`]) instead of a snapshot file, and changes two things:
+//!
+//! * the crawl commits a segment every `--flush-every` pages instead of saving
+//!   once at the end, so an interrupted run loses that many pages rather than all
+//!   of them ([`segindex::crawl_into`]);
+//! * a plain `crawl` **resumes** the directory instead of replacing it, because
+//!   resuming is the reason the layout exists — see the `StoreKind` docs below.
+//!
+//! `serve`, `stats` and `backup` take the same flag and read whichever layout it
+//! names; `backup --out` is always a single snapshot file, so it is also the way
+//! back out of a segmented store.
+//!
 //! `serve` builds the server with [`SearchServer::new`], i.e. WITHOUT a frontier
 //! handle, so its `/about` page omits the Frontier table: `--db` is an
 //! [`Index::snapshot`], and that format carries documents only — the frontier
@@ -38,6 +56,7 @@ use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 
 use crate::crawler::PDF_TYPE;
+use crate::segindex::{self, SegmentedIndex};
 use crate::serve::serve;
 use crate::{canonicalize, host_of, CrawlConfig, CrawlStats, Crawler, Index, SearchServer};
 
@@ -46,6 +65,44 @@ const PROG: &str = "websearch";
 // ---------------------------------------------------------------------------
 // Parsed command surface
 // ---------------------------------------------------------------------------
+
+/// Which persistence layout `--db` names.
+///
+/// The two are genuinely different things on disk and behave differently, so
+/// this is a mode, not a tuning knob:
+///
+/// * `Blob` — `--db` is a FILE holding one [`Index::snapshot`]. Written once, at
+///   the end of the run, by rename. Simple, and every existing test, golden and
+///   deployment speaks it, which is why it stays the default.
+/// * `Segments` — `--db` is a DIRECTORY of immutable segments plus a manifest
+///   ([`websearch::segindex`]). Written continuously, a batch at a time, so a
+///   `SIGKILL` costs one batch instead of the run; and a crawl over an existing
+///   directory RESUMES it rather than replacing it.
+///
+/// That last difference is deliberate and is the reason the flag exists: a
+/// segmented crawl that threw the store away on every start would be a blob store
+/// with extra files. `--store=blob` keeps the old "a plain crawl overwrites `--db`"
+/// behaviour exactly, byte for byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StoreKind {
+    /// One file, one blob, written once.
+    #[default]
+    Blob,
+    /// A directory of segments, written incrementally.
+    Segments,
+}
+
+impl StoreKind {
+    fn parse(value: &str, flag: &str) -> Result<StoreKind, CliError> {
+        match value {
+            "blob" => Ok(StoreKind::Blob),
+            "segments" => Ok(StoreKind::Segments),
+            other => Err(CliError::Usage(format!(
+                "error: {flag} expects 'blob' or 'segments', got {other:?}"
+            ))),
+        }
+    }
+}
 
 /// A fully parsed subcommand invocation.
 #[derive(Debug, PartialEq)]
@@ -87,6 +144,13 @@ struct CrawlArgs {
     shard_id: Option<String>,
     shards: Option<String>,
     verbose: bool,
+    /// Persistence layout for `--db`.
+    store: StoreKind,
+    /// Pages between segment flushes, under `--store=segments`. This number IS
+    /// the crash window: kill the crawl and you lose at most this many pages of
+    /// work. Smaller means more, smaller segments (and more folding); larger
+    /// means a cheaper crawl and a more expensive accident.
+    flush_every: u64,
 }
 
 /// `serve` — the no-JS UI + JSON API server.
@@ -104,19 +168,29 @@ struct ServeArgs {
     /// `None` keeps the built-in default.
     site_name: Option<String>,
     verbose: bool,
+    /// Persistence layout for `--db`.
+    store: StoreKind,
 }
 
 /// `stats` — print index statistics.
 #[derive(Debug, PartialEq)]
 struct StatsArgs {
     db: String,
+    /// Persistence layout for `--db`.
+    store: StoreKind,
 }
 
 /// `backup` — write a fresh snapshot of `--db` to `--out`.
+///
+/// `--out` is always a blob file, whatever `--store` says the source is: a backup
+/// wants to be one file you can copy, and this is also the migration path OUT of
+/// a segmented store.
 #[derive(Debug, PartialEq)]
 struct BackupArgs {
     db: String,
     out: String,
+    /// Persistence layout for `--db`.
+    store: StoreKind,
 }
 
 /// A parse outcome that is not a runnable command: either a help request (print
@@ -305,6 +379,8 @@ fn parse_crawl(toks: &[String]) -> Result<CrawlArgs, CliError> {
         shard_id: None,
         shards: None,
         verbose: false,
+        store: StoreKind::default(),
+        flush_every: 200,
     };
     let mut i = 0;
     while i < toks.len() {
@@ -384,6 +460,14 @@ fn parse_crawl(toks: &[String]) -> Result<CrawlArgs, CliError> {
                 i += 1;
                 a.shards = Some(need(toks, i, "--shards")?.to_string());
             }
+            "--store" => {
+                i += 1;
+                a.store = StoreKind::parse(need(toks, i, "--store")?, "--store")?;
+            }
+            "--flush-every" => {
+                i += 1;
+                a.flush_every = parse_u64(need(toks, i, "--flush-every")?, "--flush-every")?.max(1);
+            }
             "--verbose" => a.verbose = true,
             s if s.starts_with("--") => {
                 return Err(CliError::Usage(format!(
@@ -405,6 +489,7 @@ fn parse_serve(toks: &[String]) -> Result<ServeArgs, CliError> {
         base_url: None,
         site_name: None,
         verbose: false,
+        store: StoreKind::default(),
     };
     let mut i = 0;
     while i < toks.len() {
@@ -430,6 +515,10 @@ fn parse_serve(toks: &[String]) -> Result<ServeArgs, CliError> {
                 i += 1;
                 a.site_name = Some(need(toks, i, "--site-name")?.to_string());
             }
+            "--store" => {
+                i += 1;
+                a.store = StoreKind::parse(need(toks, i, "--store")?, "--store")?;
+            }
             "--verbose" => a.verbose = true,
             s if s.starts_with("--") => {
                 return Err(CliError::Usage(format!(
@@ -449,6 +538,7 @@ fn parse_serve(toks: &[String]) -> Result<ServeArgs, CliError> {
 
 fn parse_stats(toks: &[String]) -> Result<StatsArgs, CliError> {
     let mut db = "web.db".to_string();
+    let mut store = StoreKind::default();
     let mut i = 0;
     while i < toks.len() {
         match toks[i].as_str() {
@@ -456,6 +546,10 @@ fn parse_stats(toks: &[String]) -> Result<StatsArgs, CliError> {
             "--db" => {
                 i += 1;
                 db = need(toks, i, "--db")?.to_string();
+            }
+            "--store" => {
+                i += 1;
+                store = StoreKind::parse(need(toks, i, "--store")?, "--store")?;
             }
             s if s.starts_with("--") => {
                 return Err(CliError::Usage(format!(
@@ -470,12 +564,13 @@ fn parse_stats(toks: &[String]) -> Result<StatsArgs, CliError> {
         }
         i += 1;
     }
-    Ok(StatsArgs { db })
+    Ok(StatsArgs { db, store })
 }
 
 fn parse_backup(toks: &[String]) -> Result<BackupArgs, CliError> {
     let mut db = "web.db".to_string();
     let mut out: Option<String> = None;
+    let mut store = StoreKind::default();
     let mut i = 0;
     while i < toks.len() {
         match toks[i].as_str() {
@@ -483,6 +578,10 @@ fn parse_backup(toks: &[String]) -> Result<BackupArgs, CliError> {
             "--db" => {
                 i += 1;
                 db = need(toks, i, "--db")?.to_string();
+            }
+            "--store" => {
+                i += 1;
+                store = StoreKind::parse(need(toks, i, "--store")?, "--store")?;
             }
             "--out" => {
                 i += 1;
@@ -503,7 +602,7 @@ fn parse_backup(toks: &[String]) -> Result<BackupArgs, CliError> {
     }
     let out =
         out.ok_or_else(|| CliError::Usage("error: backup requires --out DEST".to_string()))?;
-    Ok(BackupArgs { db, out })
+    Ok(BackupArgs { db, out, store })
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +785,49 @@ fn read_index(db: &str) -> Result<Index, String> {
     }
 }
 
+/// Load an index from a segment directory. A directory that does not exist yet
+/// yields a fresh empty index, exactly as a missing snapshot file does.
+///
+/// `open_recovering`, not `open`: recovery is the whole point of this layout, and
+/// refusing to start because the last crash tore a segment would waste the
+/// intact 99 % of it. What was lost is *printed* — a repair an operator is not
+/// told about is a data-loss bug wearing a success message.
+fn read_segmented_index(db: &str) -> Result<Index, String> {
+    let path = Path::new(db);
+    if !path.exists() {
+        // Reading must never CREATE the store. `stats` on a never-crawled path
+        // leaving an empty directory behind is the kind of side effect that later
+        // gets mistaken for "the crawl ran and found nothing".
+        return Ok(Index::new());
+    }
+    if !path.is_dir() {
+        // Overwhelmingly the likeliest mistake: an operator with an existing blob
+        // `web.db` adds `--store=segments`. Say what is wrong, rather than letting
+        // `create_dir_all` report "File exists" and leaving them to guess.
+        return Err(format!(
+            "error: {db} is a file, but --store=segments expects a directory \
+             (use --store=blob for a snapshot file)"
+        ));
+    }
+    let (seg, recovery) =
+        SegmentedIndex::open_recovering(db).map_err(|e| segindex::describe(&e))?;
+    for msg in &recovery.rejected_manifests {
+        eprintln!("note: {db}: ignoring unusable manifest ({msg})");
+    }
+    for (id, lost) in &recovery.repaired_segments {
+        eprintln!("warning: {db}: segment {id} was torn; {lost} record(s) could not be recovered");
+    }
+    seg.load().map_err(|e| segindex::describe(&e))
+}
+
+/// Load an index the way `--store` says to.
+fn read_index_for(db: &str, store: StoreKind) -> Result<Index, String> {
+    match store {
+        StoreKind::Blob => read_index(db),
+        StoreKind::Segments => read_segmented_index(db),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Command wiring (ports of `cmd_crawl` / `cmd_serve` / `cmd_stats` / `cmd_backup`)
 // ---------------------------------------------------------------------------
@@ -716,18 +858,66 @@ async fn run_crawl(a: CrawlArgs) -> ExitCode {
     }
 
     let mut crawler = Crawler::new(cfg);
+    // A segmented store is opened up front and kept for the whole run: it is
+    // written to continuously, not at the end. Under `--store=blob` there is
+    // nothing to open — the file appears at the end or not at all.
+    let mut segmented = match a.store {
+        StoreKind::Blob => None,
+        StoreKind::Segments => match SegmentedIndex::open_recovering(&a.db) {
+            Ok((seg, recovery)) => {
+                for msg in &recovery.rejected_manifests {
+                    eprintln!("note: {}: ignoring unusable manifest ({msg})", a.db);
+                }
+                for (id, lost) in &recovery.repaired_segments {
+                    eprintln!(
+                        "warning: {}: segment {id} was torn; {lost} record(s) lost",
+                        a.db
+                    );
+                }
+                Some(seg)
+            }
+            Err(e) => {
+                eprintln!("{}", segindex::describe(&e));
+                return ExitCode::from(1);
+            }
+        },
+    };
     // The Python crawls straight into the persistent SQLite database, so its
     // recrawl due-list is simply "what is already indexed". Here the index is a
     // snapshot file, so `--recrawl` has to load it into the crawler before asking
     // what is due — and the run then extends that index instead of replacing it.
-    if a.recrawl {
-        match read_index(&a.db) {
+    //
+    // A SEGMENTED crawl always loads, `--recrawl` or not: resuming is the point of
+    // the layout (see [`StoreKind`]), and a run that discarded the store on every
+    // start would be a blob save with more files. `--store=blob` keeps the old
+    // "a plain crawl replaces --db" behaviour untouched.
+    if a.recrawl || segmented.is_some() {
+        match read_index_for(&a.db, a.store) {
             Ok(ix) => *crawler.index_mut() = ix,
             Err(msg) => {
                 eprintln!("{msg}");
                 return ExitCode::from(1);
             }
         }
+        if let Some(seg) = segmented.as_ref() {
+            if crawler.index().doc_count() > 0 {
+                println!(
+                    "resuming {} ({} docs, generation {}, {} segment(s))",
+                    a.db,
+                    crawler.index().doc_count(),
+                    seg.generation(),
+                    seg.segment_count()
+                );
+            }
+        }
+    }
+    // Change tracking has to be on BEFORE the crawl writes anything, or the first
+    // flush has nothing to say and the batch is silently lost. `read_index_for`
+    // already turned it on with an EMPTY log (what it loaded is already durable);
+    // turning it on again here would mark the whole resumed corpus dirty and make
+    // the first flush rewrite it, so only do it if it is somehow off.
+    if segmented.is_some() && !crawler.index().is_tracking_changes() {
+        crawler.index_mut().track_changes(true);
     }
     let seed_refs: Vec<&str> = seeds.iter().map(String::as_str).collect();
     let added = if seeds.is_empty() {
@@ -750,17 +940,59 @@ async fn run_crawl(a: CrawlArgs) -> ExitCode {
     }
 
     let t0 = Instant::now();
-    let stats = crawler.run(None).await;
+    let stats = match segmented.as_mut() {
+        // One call, one terminal save. Everything indexed is held in memory for
+        // the whole run and nothing is durable until it ends.
+        None => crawler.run(None).await,
+        // Sliced: crawl `--flush-every` pages, commit a segment, repeat. The
+        // commit is proportional to the slice, not to the corpus, which is the
+        // only reason doing it this often is affordable — and doing it this often
+        // is what makes the crash window `--flush-every` pages wide instead of
+        // "the whole run".
+        Some(seg) => {
+            match segindex::crawl_into(&mut crawler, seg, a.max_pages, a.flush_every).await {
+                Ok(st) => st,
+                Err(e) => {
+                    eprintln!("{}", segindex::describe(&e));
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    };
     // Finalise the ranking signals (incoming counts, PageRank, host authority),
-    // then persist the whole index — mirrors the Python `index.finalize` + commit.
+    // then persist — mirrors the Python `index.finalize` + commit.
     crawler.index_mut().finalize();
-    let blob = crawler.index().snapshot();
-    // Published by rename, not truncate-then-write: a crash or a full disk
-    // partway through `fs::write` left a truncated blob, `Index::restore`
-    // correctly refused it, and the previous good index was already gone.
-    if let Err(e) = crawlcore::atomicfile::write_atomic(&a.db, &blob) {
-        eprintln!("error: cannot write index to {}: {e}", a.db);
-        return ExitCode::from(1);
+    match segmented.as_mut() {
+        None => {
+            let blob = crawler.index().snapshot();
+            // Published by rename, not truncate-then-write: a crash or a full disk
+            // partway through `fs::write` left a truncated blob, `Index::restore`
+            // correctly refused it, and the previous good index was already gone.
+            if let Err(e) = crawlcore::atomicfile::write_atomic(&a.db, &blob) {
+                eprintln!("error: cannot write index to {}: {e}", a.db);
+                return ExitCode::from(1);
+            }
+        }
+        Some(seg) => {
+            // The ranking pass touched every document's scores; as `Rank` records
+            // that is a few tens of bytes each, not a corpus rewrite.
+            // Sweep as part of the terminal flush: the crawl is this store's
+            // writer, and housekeeping is the writer's job (reads never mutate
+            // the store, so nobody else will clear a killed run's debris).
+            if let Err(e) = seg
+                .flush(crawler.index_mut())
+                .and_then(|_| seg.maybe_compact(segindex::DEFAULT_MAX_SEGMENTS))
+                .and_then(|_| seg.sweep())
+            {
+                eprintln!("{}", segindex::describe(&e));
+                return ExitCode::from(1);
+            }
+            println!(
+                "index store: generation {}, {} segment(s)",
+                seg.generation(),
+                seg.segment_count()
+            );
+        }
     }
     let dt = t0.elapsed().as_secs_f64();
     println!("crawl done in {dt:.1}s: {}", fmt_stats(&stats));
@@ -776,7 +1008,7 @@ async fn run_serve(a: ServeArgs) -> ExitCode {
     if !Path::new(&a.db).exists() {
         eprintln!("note: {} does not exist; serving an empty index", a.db);
     }
-    let index = match read_index(&a.db) {
+    let index = match read_index_for(&a.db, a.store) {
         Ok(ix) => ix,
         Err(msg) => {
             eprintln!("{msg}");
@@ -827,7 +1059,7 @@ fn run_stats(a: &StatsArgs) -> ExitCode {
     if !Path::new(&a.db).exists() {
         eprintln!("note: {} does not exist; reporting an empty index", a.db);
     }
-    let index = match read_index(&a.db) {
+    let index = match read_index_for(&a.db, a.store) {
         Ok(ix) => ix,
         Err(msg) => {
             eprintln!("{msg}");
@@ -878,7 +1110,7 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
         eprintln!("error: backup failed: source {} does not exist", a.db);
         return ExitCode::from(1);
     }
-    let index = match read_index(&a.db) {
+    let index = match read_index_for(&a.db, a.store) {
         Ok(ix) => ix,
         Err(msg) => {
             eprintln!("{msg}");
@@ -946,6 +1178,14 @@ options:
                           --db first, so the run refreshes that index in place;
                           may be used with no seeds at all)
   --recrawl-interval SEC  recrawl age threshold in seconds (default 604800 = 7 days)
+  --store KIND            'blob' (default) writes --db as ONE snapshot file at the
+                          end of the run; 'segments' makes --db a DIRECTORY of
+                          immutable segments written as the crawl goes, so an
+                          interrupted crawl loses at most --flush-every pages and
+                          a later crawl RESUMES it instead of replacing it
+  --flush-every N         pages between segment commits with --store=segments
+                          (default: 200). This is the crash window: kill the
+                          crawl and you lose at most this many pages of work
   --shard-id ID           this node's shard id (fleet mode)
   --shards IDS            comma-separated set of ALL shard ids
   --verbose               log the resolved crawl config to stderr
@@ -962,7 +1202,8 @@ usage: {PROG} serve [options]
 serve the no-JS search UI + JSON API over the restored index.
 
 options:
-  --db PATH        snapshot database path (default: web.db)
+  --db PATH        snapshot database path, or segment directory (default: web.db)
+  --store KIND     'blob' (default) or 'segments' — how --db is laid out
   --host HOST      bind address (default: 127.0.0.1)
   --port PORT      bind port (default: 8803)
   --base-url URL   self-describing base URL (default: http://<host>:<port>)
@@ -981,7 +1222,8 @@ usage: {PROG} stats [options]
 print index statistics.
 
 options:
-  --db PATH   snapshot database path (default: web.db)
+  --db PATH    snapshot database path, or segment directory (default: web.db)
+  --store KIND 'blob' (default) or 'segments' — how --db is laid out
 "
     )
 }
@@ -994,7 +1236,10 @@ usage: {PROG} backup --out DEST [options]
 write a fresh snapshot of the index database to a new local file.
 
 options:
-  --db PATH    source snapshot database (default: web.db)
+  --db PATH    source snapshot database, or segment directory (default: web.db)
+  --store KIND 'blob' (default) or 'segments' — how --db is laid out. --out is
+               always a single snapshot FILE, so this is also the way out of a
+               segmented store
   --out DEST   destination path (local file; must not already exist) [required]
 "
     )
@@ -1194,6 +1439,111 @@ mod tests {
         // No seeds and no --recrawl is still an error at run time; the scope of a
         // seedless run is BROAD, as in the Python.
         assert_eq!(compute_scope(&a, &[]), None);
+    }
+
+    #[test]
+    fn store_kind_parses_on_every_subcommand() {
+        // Default everywhere: adding the flag must not move anyone's cheese.
+        assert_eq!(crawl_of(&["crawl", "http://x/"]).store, StoreKind::Blob);
+        assert_eq!(crawl_of(&["crawl", "http://x/"]).flush_every, 200);
+
+        let a = crawl_of(&["crawl", "--store=segments", "--flush-every=25", "http://x/"]);
+        assert_eq!(a.store, StoreKind::Segments);
+        assert_eq!(a.flush_every, 25);
+        // A zero flush interval would be an infinite loop of empty commits.
+        assert_eq!(
+            crawl_of(&["crawl", "--flush-every=0", "http://x/"]).flush_every,
+            1
+        );
+
+        for (argv_, kind) in [("blob", StoreKind::Blob), ("segments", StoreKind::Segments)] {
+            let s = match parse_args(&argv(&["serve", "--store", argv_])) {
+                Ok(Command::Serve(s)) => s,
+                other => panic!("expected serve, got {other:?}"),
+            };
+            assert_eq!(s.store, kind);
+        }
+        let st = match parse_args(&argv(&["stats", "--store=segments"])) {
+            Ok(Command::Stats(s)) => s,
+            other => panic!("expected stats, got {other:?}"),
+        };
+        assert_eq!(st.store, StoreKind::Segments);
+        let bk = match parse_args(&argv(&["backup", "--store=segments", "--out", "d.db"])) {
+            Ok(Command::Backup(b)) => b,
+            other => panic!("expected backup, got {other:?}"),
+        };
+        assert_eq!(bk.store, StoreKind::Segments);
+
+        // Anything else is a usage error naming the two valid values, not a
+        // silent fallback to blob — which would persist the run somewhere the
+        // operator is not looking.
+        match parse_args(&argv(&["crawl", "--store=sqlite", "http://x/"])) {
+            Err(CliError::Usage(m)) => {
+                assert!(m.contains("blob") && m.contains("segments"), "{m}");
+            }
+            other => panic!("expected a usage error, got {other:?}"),
+        }
+    }
+
+    /// `--store=segments` reads a DIRECTORY, and reads it the same way
+    /// `--store=blob` reads a file: a missing one is an empty index, a present
+    /// one round-trips.
+    #[test]
+    fn read_index_for_reads_both_layouts() {
+        let dir = std::env::temp_dir().join(format!("websearch-cli-store-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut ix = Index::new();
+        ix.upsert_document(
+            "http://a.example/one",
+            DocFields {
+                title: "t",
+                body: "b",
+                host: "a.example",
+                fetched_at: 1_000.0,
+                http_status: 200,
+                ..DocFields::default()
+            },
+        );
+
+        // Blob.
+        let blob_path = dir.join("web.db");
+        std::fs::write(&blob_path, ix.snapshot()).unwrap();
+        let from_blob = read_index_for(blob_path.to_str().unwrap(), StoreKind::Blob).unwrap();
+        assert_eq!(from_blob.doc_count(), 1);
+
+        // Segments.
+        let seg_dir = dir.join("segments");
+        let mut seg = SegmentedIndex::open(&seg_dir).unwrap();
+        seg.write_whole(&mut ix).unwrap();
+        let from_seg = read_index_for(seg_dir.to_str().unwrap(), StoreKind::Segments).unwrap();
+        assert_eq!(from_seg.doc_count(), 1);
+        assert_eq!(from_seg.stats(), from_blob.stats());
+        assert!(from_seg.get_doc("http://a.example/one").is_some());
+        // And a resumed load comes back ready to persist deltas, not the world.
+        assert!(from_seg.is_tracking_changes());
+
+        // A store directory that does not exist yet is an empty index, exactly as
+        // a missing snapshot file is — so `serve`/`stats` before the first crawl
+        // still work — and reading must not bring it into existence.
+        let missing = dir.join("never-crawled");
+        assert_eq!(
+            read_index_for(missing.to_str().unwrap(), StoreKind::Segments)
+                .unwrap()
+                .doc_count(),
+            0
+        );
+        assert!(!missing.exists(), "reading the store created it");
+
+        // The likely operator slip: an existing blob file with --store=segments.
+        // It must say so, not report "File exists" from deep inside mkdir.
+        match read_index_for(blob_path.to_str().unwrap(), StoreKind::Segments) {
+            Err(msg) => assert!(msg.contains("directory"), "{msg}"),
+            Ok(_) => panic!("a blob file was accepted as a segment directory"),
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

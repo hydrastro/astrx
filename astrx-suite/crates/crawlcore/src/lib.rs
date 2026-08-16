@@ -37,5 +37,6 @@ pub mod json;
 pub mod logfmt;
 pub mod metrics;
 pub mod scheduler;
+pub mod segstore;
 pub mod traps;
 pub mod urlparse;

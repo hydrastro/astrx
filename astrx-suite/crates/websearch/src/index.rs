@@ -32,7 +32,7 @@ use crate::htmlparse::Image;
 use crate::structured::Video;
 use crawlcore::budget::Budget;
 use crawlcore::hash::{sha256, to_hex};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// The content hash used for exact-duplicate detection: SHA-256 over each part
@@ -305,6 +305,62 @@ pub(crate) struct Derived {
     pub(crate) vocab: BTreeMap<String, u32>,
 }
 
+/// Which keys have been written since the last flush — the *change*, so a
+/// segmented store can persist it without persisting the corpus.
+///
+/// # Why this exists
+///
+/// `snapshot()` answers "what does the index hold?". Nothing answered "what has
+/// changed since you last asked?", so the only honest way to persist was to write
+/// everything — which is why a crawl that adds 100 documents to a million-document
+/// index rewrites a million documents, and why saves are therefore rare, and why a
+/// crash between them costs the whole run. This log is the missing question.
+///
+/// The sets are of *keys*, not of records: the records are read out of the index
+/// at flush time. So the log costs a `BTreeSet` entry per touched key and is
+/// emptied by [`Index::drain_changes`] on every flush — its size is a batch, not a
+/// corpus.
+///
+/// Ranking signals are tracked **separately** from document text
+/// ([`DirtyLog::ranks`] vs [`DirtyLog::docs`]) and that separation is the point:
+/// `finalize()` changes `incoming`/`rank`/`host_rank` on every document in the
+/// corpus. If those rode along in the document record, every finalize would
+/// rewrite every document body — a full snapshot by another name. Split out, a
+/// finalize writes ~40 bytes per document instead of a page of text.
+#[derive(Default)]
+pub(crate) struct DirtyLog {
+    /// Documents whose stored fields changed (`d|url` records).
+    pub(crate) docs: BTreeSet<i64>,
+    /// Documents whose ranking signals changed (`r|id` records).
+    pub(crate) ranks: BTreeSet<i64>,
+    /// Link edges added (`l|src|dst` records). Edges are never removed, so this
+    /// never needs a tombstone.
+    pub(crate) links: BTreeSet<(String, String)>,
+    /// Hosts whose authority entry was *touched*, which includes being dropped:
+    /// `compute_host_authority` clears the map and rebuilds it, so a host that
+    /// stops being reachable must be tombstoned, not merely not-rewritten.
+    pub(crate) hosts: BTreeSet<String>,
+    /// Documents whose harvested image rows were replaced (`i|id`); an empty
+    /// replacement becomes a tombstone.
+    pub(crate) images: BTreeSet<i64>,
+    /// Documents whose harvested video rows were replaced (`v|id`).
+    pub(crate) videos: BTreeSet<i64>,
+    /// Whether `next_id` moved and the `m` record needs rewriting.
+    pub(crate) meta: bool,
+}
+
+impl DirtyLog {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.docs.is_empty()
+            && self.ranks.is_empty()
+            && self.links.is_empty()
+            && self.hosts.is_empty()
+            && self.images.is_empty()
+            && self.videos.is_empty()
+            && !self.meta
+    }
+}
+
 /// A dependency-free document store + link graph.
 #[derive(Default)]
 pub struct Index {
@@ -317,6 +373,13 @@ pub struct Index {
     images: Vec<StoredImage>,               // harvested <img> metadata rows
     videos: Vec<StoredVideo>,               // harvested video-signal rows
     next_id: i64,
+    /// Whether writes append to [`Index::dirty`]. Off unless someone asked for it
+    /// with [`Index::track_changes`], so the blob path — which has no use for a
+    /// change log — pays one predictable branch per write and not a `BTreeSet`
+    /// insert.
+    tracking: bool,
+    /// The pending change set; meaningful only while `tracking`.
+    dirty: DirtyLog,
     /// Bumped by every write that changes document TEXT, and only by those. The
     /// ranking signals (`incoming`, `rank`, `host_rank`) and `fetched_at` are
     /// deliberately NOT covered: readers take them straight off the [`Document`],
@@ -394,6 +457,71 @@ impl Index {
         self.generation = self.generation.wrapping_add(1);
     }
 
+    // ---- incremental persistence: the change log ---------------------------
+
+    /// Start (or stop) recording which keys each write touches, so
+    /// [`crate::segindex`] can persist the change rather than the corpus.
+    ///
+    /// Off by default. Turning it on marks **everything currently in the index**
+    /// dirty, which is the only safe answer: a store that started tracking
+    /// half-way through would flush a batch that silently omitted whatever came
+    /// before it, and the omission would only surface as a document that stopped
+    /// being findable after a restart. Turning it off clears the log.
+    ///
+    /// This changes no observable behaviour of any read — `snapshot`, `search`,
+    /// `stats` and the goldens are untouched by it.
+    pub fn track_changes(&mut self, on: bool) {
+        self.tracking = on;
+        self.dirty = DirtyLog::default();
+        if on {
+            self.dirty.docs = self.docs.keys().copied().collect();
+            self.dirty.ranks.clone_from(&self.dirty.docs);
+            self.dirty.links = self.links.keys().cloned().collect();
+            self.dirty.hosts = self.host_authority.keys().cloned().collect();
+            self.dirty.images = self.images.iter().map(|r| r.doc_id).collect();
+            self.dirty.videos = self.videos.iter().map(|r| r.doc_id).collect();
+            self.dirty.meta = true;
+        }
+    }
+
+    /// Whether change tracking is on.
+    #[must_use]
+    pub fn is_tracking_changes(&self) -> bool {
+        self.tracking
+    }
+
+    /// Take the pending change set, leaving an empty one behind.
+    pub(crate) fn drain_changes(&mut self) -> DirtyLog {
+        std::mem::take(&mut self.dirty)
+    }
+
+    /// Peek at the pending change set (for tests and for a flush that wants to
+    /// know whether it has anything to do).
+    pub(crate) fn pending_changes(&self) -> &DirtyLog {
+        &self.dirty
+    }
+
+    /// Note that document `id`'s stored fields changed.
+    fn mark_doc(&mut self, id: i64) {
+        if self.tracking {
+            self.dirty.docs.insert(id);
+        }
+    }
+
+    /// Note that document `id`'s ranking signals changed.
+    fn mark_rank(&mut self, id: i64) {
+        if self.tracking {
+            self.dirty.ranks.insert(id);
+        }
+    }
+
+    /// Note that the whole corpus's ranking signals were recomputed.
+    fn mark_all_ranks(&mut self) {
+        if self.tracking {
+            self.dirty.ranks.extend(self.docs.keys().copied());
+        }
+    }
+
     /// Insert or update the document for `url`; returns its rowid.
     pub fn upsert_document(&mut self, url: &str, f: DocFields) -> i64 {
         self.invalidate_derived();
@@ -415,10 +543,15 @@ impl Index {
             d.last_modified = f.last_modified.to_string();
             d.content_type = f.content_type.to_string();
             d.simhash = f.simhash;
+            self.mark_doc(id);
             id
         } else {
             let id = self.next_id;
             self.next_id += 1;
+            if self.tracking {
+                self.dirty.docs.insert(id);
+                self.dirty.meta = true;
+            }
             self.docs.insert(
                 id,
                 Document {
@@ -493,6 +626,11 @@ impl Index {
                     d.last_modified = lm.to_string();
                 }
             }
+            // A 304 changes stored fields (`fetched_at`, validators) and so must
+            // reach the segmented store: skip this and a resumed crawl refetches
+            // every revalidated page, which is exactly the work the validators
+            // exist to avoid.
+            self.mark_doc(id);
         }
     }
 
@@ -529,13 +667,26 @@ impl Index {
     /// not depend on every caller remembering it.
     pub fn add_links(&mut self, src: &str, edges: &[(String, bool)]) -> usize {
         let mut budget = Budget::new(MAX_EDGES_PER_CALL);
+        // Disjoint field borrows, so the change log can be written from inside the
+        // `entry` match without cloning the key twice.
+        let tracking = self.tracking;
+        let dirty = &mut self.dirty;
+        let links = &mut self.links;
         for (dst, internal) in edges {
             if budget.take(1) == 0 {
                 break;
             }
-            self.links
-                .entry((src.to_string(), dst.clone()))
-                .or_insert(*internal);
+            if let std::collections::hash_map::Entry::Vacant(slot) =
+                links.entry((src.to_string(), dst.clone()))
+            {
+                // Only a NEW edge is a change: `INSERT OR IGNORE` semantics mean a
+                // repeat writes nothing, and flushing it would put an identical
+                // record in every segment for no reason.
+                if tracking {
+                    dirty.links.insert(slot.key().clone());
+                }
+                slot.insert(*internal);
+            }
         }
         edges.len().saturating_sub(budget.spent())
     }
@@ -557,6 +708,7 @@ impl Index {
             .collect();
         for (id, c) in updates {
             self.docs.get_mut(&id).expect("doc exists").incoming = c;
+            self.mark_rank(id);
         }
     }
 
@@ -617,6 +769,14 @@ impl Index {
     /// (normalised so the max is 1). No edges → every rank is 0. Mirrors the
     /// Python `compute_pagerank`.
     pub fn compute_pagerank(&mut self, damping: f64, iterations: usize, tol: f64) {
+        // Every document's `rank` is (re)written by this pass — including to zero
+        // on the no-edges paths below — so mark them all up front rather than at
+        // each of the three assignment sites. Marking at entry cannot miss a
+        // branch, and an O(n) set insert is invisible beside an O(n × iterations)
+        // power iteration. Ranks are a SEPARATE record from the document, so this
+        // costs the segmented store one small record per document, not a rewrite
+        // of every body.
+        self.mark_all_ranks();
         let urls: Vec<String> = self.docs.values().map(|d| d.url.clone()).collect();
         let n = urls.len();
         if n == 0 {
@@ -694,6 +854,15 @@ impl Index {
     /// cross-domain edges → every `host_rank` is 0. Mirrors the Python
     /// `compute_host_authority`.
     pub fn compute_host_authority(&mut self, damping: f64, iterations: usize, tol: f64) {
+        // Same reasoning as `compute_pagerank` for `host_rank`; plus every host
+        // already in the map, because this pass CLEARS it and a host that no
+        // longer appears must be tombstoned in the segmented store rather than
+        // left behind as a stale authority score from a previous crawl.
+        self.mark_all_ranks();
+        if self.tracking {
+            let existing: Vec<String> = self.host_authority.keys().cloned().collect();
+            self.dirty.hosts.extend(existing);
+        }
         let mut adj: HashMap<String, HashMap<String, f64>> = HashMap::new();
         let mut hosts: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         let mut keys: Vec<&(String, String)> = self.links.keys().collect();
@@ -777,6 +946,9 @@ impl Index {
         }
         let top = normalizer(&pr);
         for (i, h) in nodes.iter().enumerate() {
+            if self.tracking {
+                self.dirty.hosts.insert(h.clone());
+            }
             self.host_authority.insert(h.clone(), pr[i] / top);
         }
         let updates: Vec<(i64, f64)> = self
@@ -807,6 +979,9 @@ impl Index {
         host: &str,
         images: &[Image],
     ) -> usize {
+        if self.tracking {
+            self.dirty.images.insert(doc_id);
+        }
         self.images.retain(|r| r.doc_id != doc_id);
         let mut added = 0usize;
         for im in images {
@@ -844,6 +1019,9 @@ impl Index {
         host: &str,
         videos: &[Video],
     ) -> usize {
+        if self.tracking {
+            self.dirty.videos.insert(doc_id);
+        }
         self.videos.retain(|r| r.doc_id != doc_id);
         let mut added = 0usize;
         for v in videos {
@@ -1201,6 +1379,87 @@ impl Index {
 
         Some(ix)
     }
+
+    // ---- segmented persistence: read and rebuild ---------------------------
+    //
+    // The narrow, crate-private seam [`crate::segindex`] uses to take the index
+    // apart into records and put it back together from them. Deliberately not
+    // `pub`: `snapshot`/`restore` remain THE public persistence API — the binary,
+    // the tests and the goldens all speak it and none of them change — and these
+    // are field-level accessors that would be a maintenance liability as public
+    // surface. They set stored state verbatim, with no rowid allocation and no
+    // recomputation, because a restore must reproduce what was persisted rather
+    // than derive something adjacent to it.
+
+    /// A single link edge's `internal` flag.
+    pub(crate) fn link_internal(&self, edge: &(String, String)) -> Option<bool> {
+        self.links.get(edge).copied()
+    }
+
+    /// A document by rowid.
+    pub(crate) fn doc_by_id(&self, id: i64) -> Option<&Document> {
+        self.docs.get(&id)
+    }
+
+    /// The harvested image rows for one document, in stored order.
+    pub(crate) fn images_of(&self, doc_id: i64) -> impl Iterator<Item = &StoredImage> {
+        self.images.iter().filter(move |r| r.doc_id == doc_id)
+    }
+
+    /// The harvested video rows for one document, in stored order.
+    pub(crate) fn videos_of(&self, doc_id: i64) -> impl Iterator<Item = &StoredVideo> {
+        self.videos.iter().filter(move |r| r.doc_id == doc_id)
+    }
+
+    /// The next rowid `upsert_document` would hand out.
+    pub(crate) fn next_rowid(&self) -> i64 {
+        self.next_id
+    }
+
+    /// Force the next rowid. Only meaningful while rebuilding.
+    pub(crate) fn set_next_rowid(&mut self, next: i64) {
+        self.next_id = next.max(1);
+    }
+
+    /// Install a document exactly as stored, ranking signals included.
+    pub(crate) fn put_stored_doc(&mut self, d: Document) {
+        self.url_to_id.insert(d.url.clone(), d.id);
+        self.next_id = self.next_id.max(d.id + 1);
+        self.docs.insert(d.id, d);
+    }
+
+    /// Overlay the ranking signals for an already-installed document. A rank
+    /// record for a document that is not present is *dropped*, not an error: the
+    /// only way to reach that state is a store whose document record was
+    /// tombstoned after the rank was written, and a dangling score is not worth
+    /// refusing to start over.
+    pub(crate) fn put_stored_rank(&mut self, id: i64, incoming: i64, rank: f64, host_rank: f64) {
+        if let Some(d) = self.docs.get_mut(&id) {
+            d.incoming = incoming;
+            d.rank = rank;
+            d.host_rank = host_rank;
+        }
+    }
+
+    /// Install a link edge as stored.
+    pub(crate) fn put_stored_link(&mut self, src: String, dst: String, internal: bool) {
+        self.links.insert((src, dst), internal);
+    }
+
+    /// Install a host-authority score as stored.
+    pub(crate) fn put_stored_host_authority(&mut self, host: String, value: f64) {
+        self.host_authority.insert(host, value);
+    }
+
+    /// Append harvested image rows as stored.
+    pub(crate) fn put_stored_images(&mut self, rows: Vec<StoredImage>) {
+        self.images.extend(rows);
+    }
+
+    /// Append harvested video rows as stored.
+    pub(crate) fn put_stored_videos(&mut self, rows: Vec<StoredVideo>) {
+        self.videos.extend(rows);
+    }
 }
 
 /// Snapshot format version. Bump on any breaking change to the field layout so a
@@ -1212,8 +1471,13 @@ const INDEX_SNAPSHOT_VERSION: u8 = 1;
 /// the dependency-free snapshot codec (mirrors the `onioncrawler` store codec).
 /// Native `f64` timestamps/ranks are carried as IEEE-754 bits, `i64` verbatim,
 /// strings length-prefixed, so every field round-trips exactly.
+///
+/// Crate-visible (not public) because [`crate::segindex`] encodes its records
+/// with the same codec: one field encoding for the whole engine means a
+/// `Document` written into a segment and a `Document` written into a snapshot
+/// have identical field semantics, and a fix to either is a fix to both.
 #[derive(Default)]
-struct Writer {
+pub(crate) struct Writer {
     buf: Vec<u8>,
 }
 
@@ -1222,37 +1486,43 @@ impl Writer {
         Writer::default()
     }
 
-    fn into_bytes(self) -> Vec<u8> {
+    /// Encode into a buffer the caller already owns, so a record encoder that is
+    /// handed an `&mut Vec<u8>` can append without an intermediate allocation.
+    pub(crate) fn from_vec(buf: Vec<u8>) -> Self {
+        Writer { buf }
+    }
+
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.buf
     }
 
-    fn u8(&mut self, x: u8) {
+    pub(crate) fn u8(&mut self, x: u8) {
         self.buf.push(x);
     }
 
-    fn i64(&mut self, x: i64) {
+    pub(crate) fn i64(&mut self, x: i64) {
         self.buf.extend_from_slice(&x.to_le_bytes());
     }
 
     /// Write a length or count as an unsigned 64-bit value.
-    fn len(&mut self, x: usize) {
+    pub(crate) fn len(&mut self, x: usize) {
         self.buf.extend_from_slice(&(x as u64).to_le_bytes());
     }
 
-    fn f64(&mut self, x: f64) {
+    pub(crate) fn f64(&mut self, x: f64) {
         self.buf.extend_from_slice(&x.to_bits().to_le_bytes());
     }
 
-    fn bool(&mut self, x: bool) {
+    pub(crate) fn bool(&mut self, x: bool) {
         self.buf.push(u8::from(x));
     }
 
-    fn str(&mut self, s: &str) {
+    pub(crate) fn str(&mut self, s: &str) {
         self.len(s.len());
         self.buf.extend_from_slice(s.as_bytes());
     }
 
-    fn opt_i64(&mut self, x: Option<i64>) {
+    pub(crate) fn opt_i64(&mut self, x: Option<i64>) {
         match x {
             Some(v) => {
                 self.u8(1);
@@ -1266,14 +1536,21 @@ impl Writer {
 /// Bounds-checked little-endian reader — the decoder half of the snapshot codec.
 /// Every accessor returns `None` on an out-of-range read, so a truncated or
 /// corrupt blob yields `None` from [`Index::restore`] rather than a panic.
-struct Reader<'a> {
+pub(crate) struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
 }
 
 impl<'a> Reader<'a> {
-    fn new(buf: &'a [u8]) -> Self {
+    pub(crate) fn new(buf: &'a [u8]) -> Self {
         Reader { buf, pos: 0 }
+    }
+
+    /// Whether every byte has been consumed — the check a fixed-shape record
+    /// decoder wants at the end, so trailing junk is a decode failure rather than
+    /// something silently ignored.
+    pub(crate) fn is_at_end(&self) -> bool {
+        self.pos == self.buf.len()
     }
 
     fn take(&mut self, n: usize) -> Option<&'a [u8]> {
@@ -1283,42 +1560,42 @@ impl<'a> Reader<'a> {
         Some(slice)
     }
 
-    fn u8(&mut self) -> Option<u8> {
+    pub(crate) fn u8(&mut self) -> Option<u8> {
         Some(self.take(1)?[0])
     }
 
-    fn i64(&mut self) -> Option<i64> {
+    pub(crate) fn i64(&mut self) -> Option<i64> {
         let b = self.take(8)?;
         let mut a = [0u8; 8];
         a.copy_from_slice(b);
         Some(i64::from_le_bytes(a))
     }
 
-    fn len(&mut self) -> Option<usize> {
+    pub(crate) fn len(&mut self) -> Option<usize> {
         let b = self.take(8)?;
         let mut a = [0u8; 8];
         a.copy_from_slice(b);
         usize::try_from(u64::from_le_bytes(a)).ok()
     }
 
-    fn f64(&mut self) -> Option<f64> {
+    pub(crate) fn f64(&mut self) -> Option<f64> {
         let b = self.take(8)?;
         let mut a = [0u8; 8];
         a.copy_from_slice(b);
         Some(f64::from_bits(u64::from_le_bytes(a)))
     }
 
-    fn bool(&mut self) -> Option<bool> {
+    pub(crate) fn bool(&mut self) -> Option<bool> {
         Some(self.u8()? != 0)
     }
 
-    fn str(&mut self) -> Option<String> {
+    pub(crate) fn str(&mut self) -> Option<String> {
         let n = self.len()?;
         let b = self.take(n)?;
         String::from_utf8(b.to_vec()).ok()
     }
 
-    fn opt_i64(&mut self) -> Option<Option<i64>> {
+    pub(crate) fn opt_i64(&mut self) -> Option<Option<i64>> {
         match self.u8()? {
             0 => Some(None),
             1 => Some(Some(self.i64()?)),
