@@ -1,224 +1,132 @@
-# astrx-suite — one-command Tor deployment (Rust engines).
+# AstrX — the whole project, one command.
 #
-#   cp deploy/.env.example .env      # optional: profiles / image tag
-#   docker compose up -d             # builds + starts the published stack
-#   docker compose exec tor sh -c 'cat /var/lib/tor/*/hostname'   # your .onions
+#   cp .env.example .env      # set the database secrets (compose fails without)
+#   docker compose up -d      # PHP app + all five Rust engines + Tor
 #
-# PRIVACY POSTURE
-#   * No app port is published to the host — there is NO `ports:` mapping
-#     anywhere below. The only ingress is Tor, which reaches each service over
-#     an INTERNAL Docker network that has no route to the host or the internet.
-#   * `tor` is dual-homed: the `internal` network (to reach the app containers
-#     and to offer SOCKS to the crawler) and the `egress` network (so Tor — and
-#     only Tor and the opt-in clearnet crawlers — can reach the outside world).
-#   * Each stateful service keeps its database / repos in a named volume, and
-#     Tor keeps its hidden-service keys in `tor-keys`, so the generated .onion
-#     addresses are STABLE across restarts.
+# This file was, until recently, ONLY the Rust suite's stack. Commit 15f8436
+# landed `astrx-suite/docker-compose.yml` at the repository root as well as in
+# its own directory, overwriting the PHP application's compose file — so
+# `docker/nginx/Dockerfile`, `docker/php/Dockerfile` and `docker/mysql/Dockerfile`
+# had nothing building them at all, and `docker compose up` in a fresh clone
+# brought up the engines and no website. Nothing caught it because nothing tests
+# the deployment. This file restores the application stack and *composes* the two
+# rather than one clobbering the other.
 #
-# THE IMAGES
-#   Every engine is a statically-linked musl binary. Four of the five run
-#   `FROM scratch` — no shell, no libc, no package manager, nothing to escalate
-#   with. `gitweb` is the documented exception (alpine + the real `git` binary,
-#   which it execs argv-only). One `docker compose build` compiles the Cargo
-#   workspace ONCE and cuts every image from the same builder layer.
+# THE TWO STACKS
+#   The Rust engines keep their own self-contained deployment at
+#   `astrx-suite/docker-compose.yml`, which still works standalone
+#   (`cd astrx-suite && docker compose up -d`) — that is the right thing to run
+#   if you want the engines without the CMS. This file `include:`s it, so there
+#   is exactly one definition of those services and no copy to drift.
+#
+# HOW THEY REACH EACH OTHER
+#   The suite's `internal` network deliberately has no route to the host or the
+#   internet; the engines publish NO ports. `phpfpm` therefore joins that network
+#   directly and addresses each engine by its service name, which is both simpler
+#   and safer than punching ports through to the host:
+#
+#       gitweb:8801  onioncrawler-search:8802  websearch-serve:8803
+#       torrentds-search:8804  suitedash:8806
+#
+#   Point the bridge configs at those names — `resources/config/GitBrowse.config.php`,
+#   `SuiteDash.config.php`, `WebSearch.config.php`, `OnionSearch.config.php`,
+#   `TorrentSearch.config.php` — instead of `127.0.0.1:88xx`, which is only
+#   correct when you run the engines directly on the host. See
+#   `docs/suite-search-modules.md`.
 
-name: astrx-suite
+name: astrx
 
-# --- shared config for the always-on, published app services ---------------
-x-app-published: &app-published
-  restart: unless-stopped
-  networks: [internal]
-  # Hardening: these are static binaries serving HTTP; they need no Linux
-  # capabilities and must never gain privileges.
-  security_opt: ["no-new-privileges:true"]
-  cap_drop: ["ALL"]
-  read_only: true
-
-networks:
-  # No route to the host or the internet. Tor bridges into it for ingress.
-  # The subnet is pinned because deploy/torrc's SocksPolicy allows exactly this
-  # CIDR to use SOCKS and rejects the egress bridge + host. Keep the two in sync.
-  internal:
-    internal: true
-    ipam:
-      config:
-        - subnet: 10.63.0.0/24
-  # Outbound-only bridge for Tor's own traffic and the opt-in clearnet crawlers.
-  egress:
-    driver: bridge
-
-volumes:
-  gitweb-repos:        # git repositories served read-only by gitweb
-  onioncrawler-data:   # onioncrawler crawl.db (+ seeds/blocklists)
-  websearch-data:      # websearch web.db (+ seeds)
-  torrentds-data:      # torrentds torrentds.db (+ tracker peer store)
-  tor-keys:            # /var/lib/tor — hidden-service keys => STABLE .onions
+# One definition of the engine services, pulled in rather than copied. Requires
+# Docker Compose >= 2.20; if yours is older, run the two stacks separately as
+# described above.
+include:
+  - path: astrx-suite/docker-compose.yml
 
 services:
-  # ---------------------------------------------------------------- gitweb --
-  gitweb:
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: gitweb
-    image: astrx/gitweb:${IMAGE_TAG:-latest}
-    command: ["--root", "/repos", "--host", "0.0.0.0", "--port", "8801",
-              "--quiet", "--auth", "${GITWEB_AUTH:-}"]
-    volumes:
-      - gitweb-repos:/repos
-    expose: ["8801"]
-
-  # -------------------------------------------------------- onioncrawler ----
-  onioncrawler-search:
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: onioncrawler
-    image: astrx/onioncrawler:${IMAGE_TAG:-latest}
-    command: ["search", "--db", "/data/crawl.db",
-              "--host", "0.0.0.0", "--port", "8802"]
-    volumes:
-      - onioncrawler-data:/data
-    expose: ["8802"]
-
-  # The darknet crawler. Its ONLY route out is Tor's SOCKS port on the internal
-  # network — it is deliberately NOT attached to `egress`, so a bug cannot leak
-  # a clearnet request. Opt in with COMPOSE_PROFILES=crawl-onion.
-  onioncrawler-crawl:
-    profiles: ["crawl-onion"]
+  # ------------------------------------------------------------------ nginx --
+  nginx:
+    tty: true
     restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-    cap_drop: ["ALL"]
-    read_only: true
+    container_name: astrx.nginx
     build:
       context: .
-      dockerfile: deploy/Dockerfile
-      target: onioncrawler
-    image: astrx/onioncrawler:${IMAGE_TAG:-latest}
-    command: ["crawl", "--db", "/data/crawl.db", "--seeds", "/data/seeds.txt",
-              "--tor-host", "tor", "--tor-port", "9050"]
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      # Loopback only, so the site is reachable by the host's tor daemon or a
+      # local reverse proxy but NOT published on the host's clearnet
+      # interfaces — a plain "80:80" listens on 0.0.0.0.
+      - "127.0.0.1:80:80"
     volumes:
-      - onioncrawler-data:/data
-    networks: [internal]
-    depends_on: [tor]
+      - ./public:/app/public
+      - ./src:/app/src
+      - ./resources:/app/resources
+      - ./build:/app/build
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [php-network]
+    depends_on: [phpfpm]
 
-  # ------------------------------------------------------------ websearch ---
-  websearch-serve:
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: websearch
-    image: astrx/websearch:${IMAGE_TAG:-latest}
-    command: ["serve", "--db", "/data/web.db",
-              "--host", "0.0.0.0", "--port", "8803"]
-    volumes:
-      - websearch-data:/data
-    expose: ["8803"]
-
-  # The clearnet crawler needs real egress. Opt in with
-  # COMPOSE_PROFILES=crawl-web.
-  websearch-crawl:
-    profiles: ["crawl-web"]
+  # ----------------------------------------------------------------- php-fpm --
+  phpfpm:
+    tty: true
     restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-    cap_drop: ["ALL"]
-    read_only: true
+    container_name: astrx.phpfpm
     build:
       context: .
-      dockerfile: deploy/Dockerfile
-      target: websearch
-    image: astrx/websearch:${IMAGE_TAG:-latest}
-    command: ["crawl", "--db", "/data/web.db", "--seeds", "/data/seeds.txt",
-              "--broad"]
+      dockerfile: docker/php/Dockerfile
     volumes:
-      - websearch-data:/data
-    networks: [egress]
+      - ./public:/app/public
+      - ./src:/app/src
+      - ./resources:/app/resources
+      - ./build:/app/build
+      # tools/ holds the CLI entry points (e.g. the search crawler). Without
+      # this mount /app/tools does not exist in the container, so both
+      # `php /app/tools/search_index.php` AND the admin "Rebuild now" button
+      # (which exec()s that same path) fail — the job then wedges in 'running'.
+      - ./tools:/app/tools
+    networks:
+      - php-network
+      # The suite's no-egress network, so the CMS bridge pages can reach the
+      # engines by service name without any engine publishing a port.
+      - internal
 
-  # ------------------------------------------------------------ torrentds ---
-  torrentds-search:
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: torrentds
-    image: astrx/torrentds:${IMAGE_TAG:-latest}
-    command: ["search", "--db", "/data/torrentds.db",
-              "--host", "0.0.0.0", "--port", "8804"]
-    volumes:
-      - torrentds-data:/data
-    expose: ["8804"]
-
-  # The BitTorrent trackers (HTTP published via Tor; UDP is LAN/egress only,
-  # since v3 onions are TCP-only). Opt in with COMPOSE_PROFILES=tracker.
-  torrentds-tracker:
-    profiles: ["tracker"]
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: torrentds
-    image: astrx/torrentds:${IMAGE_TAG:-latest}
-    command: ["tracker", "--db", "/data/torrentds.db",
-              "--host", "0.0.0.0", "--http-port", "8805"]
-    volumes:
-      - torrentds-data:/data
-    expose: ["8805"]
-
-  # The DHT harvester needs real egress (UDP to the global DHT). Opt in with
-  # COMPOSE_PROFILES=index-dht.
-  torrentds-index:
-    profiles: ["index-dht"]
+  # ---------------------------------------------------------------- mariadb --
+  mariadb:
+    tty: true
     restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-    cap_drop: ["ALL"]
-    read_only: true
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: torrentds
-    image: astrx/torrentds:${IMAGE_TAG:-latest}
-    command: ["index", "--db", "/data/torrentds.db"]
+    container_name: astrx.mariadb
+    image: mariadb
+    # The database stays on the internal compose network; do NOT publish it to
+    # the host — needless attack surface on a hidden-service box. Uncomment only
+    # for local debugging, never in production.
+    # ports:
+    #   - '3306:3306'
     volumes:
-      - torrentds-data:/data
-    networks: [egress]
+      - ./src/setup/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - mariadb-data:/var/lib/mysql
+    networks: [php-network]
+    environment:
+      # No default weak secret in the repo — the committed value here used to be
+      # the MariaDB hash of 'password'. Supply it via .env; compose fails fast if
+      # it is unset rather than starting with something guessable.
+      MARIADB_ROOT_PASSWORD_HASH: "${MARIADB_ROOT_PASSWORD_HASH:?set MARIADB_ROOT_PASSWORD_HASH in .env}"
+      # The application account is provisioned through the official MariaDB
+      # entrypoint rather than a hardcoded CREATE USER / GRANT ALL in init.sql,
+      # so it is granted rights on THAT database only — no wildcard ALL
+      # PRIVILEGES on *.*. NB: the running app reads its own
+      # resources/config/PDO.config.php; keep its db_name/db_username/db_password
+      # in sync with these values.
+      MARIADB_DATABASE: "${DB_NAME:-content_manager}"
+      MARIADB_USER: "${DB_USER:?set DB_USER in .env}"
+      MARIADB_PASSWORD: "${DB_PASSWORD:?set a strong DB_PASSWORD in .env}"
 
-  # ------------------------------------------------------------ suitedash ---
-  # The status dashboard. It polls the other services over the internal network
-  # and is itself the suite's health monitor — which is why the scratch images
-  # above carry no HEALTHCHECK of their own (they have no shell to run one).
-  suitedash:
-    <<: *app-published
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: suitedash
-    image: astrx/suitedash:${IMAGE_TAG:-latest}
-    command: ["--host", "0.0.0.0", "--port", "8806",
-              "--service", "gitweb=http://gitweb:8801",
-              "--service", "onioncrawler=http://onioncrawler-search:8802",
-              "--service", "websearch=http://websearch-serve:8803",
-              "--service", "torrentds=http://torrentds-search:8804"]
-    expose: ["8806"]
+networks:
+  php-network:
+    driver: bridge
+  # `internal` itself is defined by the included suite compose (internal: true,
+  # pinned subnet); naming it here only joins it.
 
-  # ------------------------------------------------------------------ tor ---
-  tor:
-    build:
-      context: ./deploy
-      dockerfile: Dockerfile.tor
-    image: astrx/tor:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
-    volumes:
-      - tor-keys:/var/lib/tor
-    # Dual-homed: `internal` to reach the app containers and offer SOCKS to the
-    # onion crawler; `egress` so Tor itself can reach the network.
-    networks: [internal, egress]
-    depends_on:
-      - gitweb
-      - onioncrawler-search
-      - websearch-serve
-      - torrentds-search
-      - suitedash
+volumes:
+  # The database used to live in an unmounted container layer, so `docker
+  # compose down -v` silently destroyed every board, page and account. It now
+  # has a named volume like every other stateful service in the project.
+  mariadb-data:
