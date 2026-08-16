@@ -2166,11 +2166,35 @@ impl Commit {
     }
 }
 
+/// Normalise a strict-ISO timestamp from git's `%aI`/`%cI` to ONE form.
+///
+/// git renders a zero UTC offset as `+00:00` up to 2.43 and as the RFC 3339 `Z`
+/// designator on newer releases. Both name the same instant, but these strings
+/// are a public contract — they reach the JSON API, the CMS bridge and the Atom
+/// feeds, and they are what the byte-identity goldens pin — so the crate's
+/// output must not shift under the operator's `git` upgrade. Everything is
+/// emitted in the reference's form, `+00:00`.
+///
+/// This is a real failure, not a hypothetical: `commit_meta_matches_python`
+/// asserted `2020-01-02T00:00:00+00:00` and got `2020-01-02T00:00:00Z` purely
+/// because the machine running it had a newer git than the machine that froze
+/// the golden.
+#[must_use]
+pub fn normalize_iso_date(date: &str) -> String {
+    match date.strip_suffix('Z') {
+        Some(head) => format!("{head}+00:00"),
+        None => date.to_string(),
+    }
+}
+
 /// Parse the 13-field `git show -s --format=…` record of [`commit_meta`].
 ///
 /// `%b` (body) is placed before the two signature fields; neither the body nor
 /// the signature fields ever contain the [`FIELD_SEP`] byte, so positional
 /// splitting stays unambiguous.
+///
+/// Both timestamps pass through [`normalize_iso_date`], so the parsed record is
+/// the same whatever version of git produced it.
 #[must_use]
 pub fn parse_commit_record(out: &[u8]) -> Option<Commit> {
     if out.is_empty() {
@@ -2187,10 +2211,10 @@ pub fn parse_commit_record(out: &[u8]) -> Option<Commit> {
         short: fields[1].to_string(),
         author_name: fields[2].to_string(),
         author_email: fields[3].to_string(),
-        author_date: fields[4].to_string(),
+        author_date: normalize_iso_date(fields[4]),
         committer_name: fields[5].to_string(),
         committer_email: fields[6].to_string(),
-        committer_date: fields[7].to_string(),
+        committer_date: normalize_iso_date(fields[7]),
         parents: split_whitespace_maxsplit(fields[8], usize::MAX)
             .into_iter()
             .map(str::to_string)
@@ -3643,5 +3667,63 @@ mod tests {
         data[0] = 0;
         assert!(is_binary(&data));
         assert!(!is_binary(b""));
+    }
+}
+
+#[cfg(test)]
+mod git_version_regression {
+    use super::*;
+
+    /// git renders a zero UTC offset as `+00:00` up to 2.43 and as the RFC 3339
+    /// `Z` on newer releases, so `commit_meta`'s output — a public contract that
+    /// reaches the JSON API, the CMS bridge and the Atom feeds — used to change
+    /// under the operator's git upgrade. `commit_meta_matches_python` failed for
+    /// exactly this reason on a newer host: expected `2020-01-02T00:00:00+00:00`,
+    /// got `2020-01-02T00:00:00Z`.
+    #[test]
+    fn a_utc_commit_date_is_the_same_string_on_every_git_version() {
+        assert_eq!(
+            normalize_iso_date("2020-01-02T00:00:00Z"),
+            "2020-01-02T00:00:00+00:00"
+        );
+        assert_eq!(
+            normalize_iso_date("2020-01-02T00:00:00+00:00"),
+            "2020-01-02T00:00:00+00:00"
+        );
+        // A real non-UTC offset is untouched, and so is anything unexpected.
+        assert_eq!(
+            normalize_iso_date("2020-01-02T00:00:00+01:00"),
+            "2020-01-02T00:00:00+01:00"
+        );
+        assert_eq!(
+            normalize_iso_date("2020-01-02T00:00:00-05:30"),
+            "2020-01-02T00:00:00-05:30"
+        );
+        assert_eq!(normalize_iso_date(""), "");
+    }
+
+    /// The normalisation must run on BOTH dates of a parsed record, whichever
+    /// form the local git emitted.
+    #[test]
+    fn both_commit_dates_are_normalised_whatever_git_emitted() {
+        let rec = [
+            "sha",
+            "sh",
+            "An",
+            "a@e",
+            "2020-01-01T00:00:00Z", // author, new-git form
+            "Cn",
+            "c@e",
+            "2020-01-02T00:00:00Z", // committer, new-git form
+            "",
+            "subject",
+            "",
+            "N",
+            "",
+        ]
+        .join(&FIELD_SEP.to_string());
+        let c = parse_commit_record(rec.as_bytes()).expect("parses");
+        assert_eq!(c.author_date, "2020-01-01T00:00:00+00:00");
+        assert_eq!(c.committer_date, "2020-01-02T00:00:00+00:00");
     }
 }
