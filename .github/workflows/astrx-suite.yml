@@ -153,6 +153,57 @@ jobs:
       # install path is broken, whatever the rest of this file says.
       - run: bash install_rust_suite.sh --ci
 
+  # ------------------- the boundary between the two halves of the project
+  boundary:
+    name: repo boundary rules
+    runs-on: ubuntu-latest
+    # `docs/repository-structure.md` records why astrx-suite lives in this
+    # repository rather than its own. That answer only holds while the boundary
+    # is real, and it stopped being real once already: the suite's compose file
+    # got extracted to the repository ROOT as well, overwriting the PHP
+    # application's stack, and for several commits `docker compose up` started
+    # five engines and no website. Nothing noticed. This job notices.
+    defaults: { run: { working-directory: . } }
+    steps:
+      - uses: actions/checkout@v4
+      - name: The suite depends on nothing outside itself
+        run: |
+          set -euo pipefail
+          if grep -rn -E '\.\./\.\./src/AstrX|resources/config|/app/src' \
+               astrx-suite/crates astrx-suite/deploy 2>/dev/null; then
+            echo "::error::a crate reached outside astrx-suite/ — see docs/repository-structure.md rule 1"
+            exit 1
+          fi
+          echo "ok: no crate reaches outside the suite"
+      - name: The suite's compose still runs standalone
+        run: |
+          set -euo pipefail
+          # It must not `include:` anything, or it stops being independently
+          # useful — which is the whole reason a split is unnecessary.
+          if grep -qE '^include:' astrx-suite/docker-compose.yml; then
+            echo "::error::astrx-suite/docker-compose.yml is no longer standalone — rule 2"
+            exit 1
+          fi
+          echo "ok: the suite deploys on its own"
+      - name: The root compose composes, it does not copy
+        run: |
+          set -euo pipefail
+          if diff -q docker-compose.yml astrx-suite/docker-compose.yml >/dev/null 2>&1; then
+            echo "::error::the root compose IS the suite's again — rule 3, and this exact regression already happened once"
+            exit 1
+          fi
+          grep -q 'astrx-suite/docker-compose.yml' docker-compose.yml \
+            || { echo "::error::the root compose no longer includes the suite's"; exit 1; }
+          echo "ok: one definition of the engine services, included not copied"
+      - name: Every PHP Dockerfile is actually built by something
+        run: |
+          set -euo pipefail
+          fail=0
+          for d in docker/nginx/Dockerfile docker/php/Dockerfile; do
+            grep -q "$d" docker-compose.yml || { echo "::error::$d is orphaned — nothing builds it"; fail=1; }
+          done
+          exit "$fail"
+
   # ------------------------------------------------------------- supply chain
   deny:
     name: cargo-deny
