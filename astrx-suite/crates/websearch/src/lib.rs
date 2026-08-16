@@ -32,6 +32,10 @@ pub mod frontier;
 pub mod htmlparse;
 pub mod httpclient;
 pub mod index;
+// This process's request counters (uptime, requests, statuses, errors) and the
+// route->action classifier that bounds their label cardinality. Stdlib-only, so
+// it is not behind `net` — `/metrics` renders in the default build too.
+pub mod metrics;
 pub mod pdftext;
 pub mod query;
 pub mod ranking;
@@ -43,6 +47,13 @@ pub mod suggest;
 
 #[cfg(feature = "net")]
 pub mod fetcher;
+
+// The command line, shared by the standalone `websearch` binary and by
+// `astrx websearch …`. Behind `net` because every runnable subcommand ends in a
+// socket, matching the `[[bin]]` `required-features` — the default build stays a
+// pure, zero-dependency library.
+#[cfg(feature = "net")]
+pub mod cli;
 
 pub use atom::{render as render_atom, FeedMeta};
 pub use canonical::{canonicalize, host_of, in_scope, is_http_url};

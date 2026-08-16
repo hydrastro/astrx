@@ -1238,14 +1238,29 @@ offline. Text only; no scripts or media.</p>\
         )
     }
 
+    /// `/metrics` — Prometheus text exposition.
+    ///
+    /// The store's index/frontier/host gauges keep their exact
+    /// `onioncrawler_<name>` spellings and their sorted order, because
+    /// `suitedash`'s default configuration surfaces `onioncrawler_pages`,
+    /// `onioncrawler_hosts` and `onioncrawler_frontier_queued` by name. The
+    /// request block every engine shares ([`crawlcore::metrics`]) is appended
+    /// after them — before it, this endpoint could say how big the index was but
+    /// not whether anyone could reach it.
     fn metrics(&self) -> Resp {
-        let store = self.store.lock().expect("store lock");
-        let mut entries: Vec<(&str, i64)> = store.metrics().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(b.0));
         let mut out = String::new();
-        for (k, v) in entries {
-            out.push_str(&format!("onioncrawler_{k} {v}\n"));
+        {
+            let store = self.store.lock().expect("store lock");
+            let mut entries: Vec<(&str, i64)> = store.metrics().into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (k, v) in entries {
+                out.push_str(&format!("onioncrawler_{k} {v}\n"));
+            }
         }
+        // Rendered outside the store lock: `/metrics` is what a monitor scrapes
+        // when the engine is already struggling, and holding the store mutex
+        // across it would make the scrape itself a source of contention.
+        out.push_str(&crate::metrics::registry().render(crate::metrics::PREFIX));
         Resp::text(200, "text/plain; version=0.0.4; charset=utf-8", out)
     }
 
@@ -1570,6 +1585,10 @@ pub async fn handle_conn_from(
             break pos;
         }
         if buf.len() > MAX_HEAD {
+            // Counted so an oversized-head flood shows up somewhere: it never
+            // reaches `route`, so without this it is invisible in every counter
+            // and the server just looks idle while it is being hammered.
+            crate::metrics::registry().reject();
             let _ = write_resp(
                 &mut stream,
                 &Resp::json(400, "{\"error\":\"header too large\"}".into()),
@@ -1622,7 +1641,25 @@ pub async fn handle_conn_from(
     }
     let body_str = String::from_utf8_lossy(&body).to_string();
 
+    let started = std::time::Instant::now();
+    crate::metrics::registry().begin();
     let resp = server.route_limited(client, &method, &target, &body_str, auth.as_deref());
+    let elapsed = started.elapsed().as_secs_f64();
+    let action = crate::metrics::action_of(&target);
+    crate::metrics::registry().end(resp.status, action, elapsed);
+    crawlcore::logfmt::access(
+        crate::metrics::PREFIX,
+        &crawlcore::logfmt::Request {
+            method: &method,
+            path: &target,
+            status: resp.status,
+            duration_ms: elapsed * 1000.0,
+            // `client` is `"-"` on the plain `handle_conn` path, which has no
+            // peer to charge the rate limiter to.
+            peer: client,
+            action,
+        },
+    );
     write_resp(&mut stream, &resp).await
 }
 

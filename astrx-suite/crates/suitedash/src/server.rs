@@ -38,7 +38,7 @@
 //! compact `peer "METHOD TARGET" status` rather than the Common Log Format.
 
 use crate::config::Config;
-use crate::exporter::{render_federated_metrics, CONTENT_TYPE as METRICS_CONTENT_TYPE};
+use crate::exporter::CONTENT_TYPE as METRICS_CONTENT_TYPE;
 use crate::metrics::Results;
 use crate::monitor::Monitor;
 use crate::pycompat;
@@ -303,7 +303,7 @@ impl Dashboard {
                 200,
                 render_status_json(results, Some(&self.monitor.snapshot()), now),
             ),
-            Route::Metrics => Resp::metrics(render_federated_metrics(results)),
+            Route::Metrics => Resp::metrics(crate::exporter::render_metrics_page(results)),
             Route::Health => Resp::text(200, "ok\n"),
             Route::Favicon => Resp {
                 status: 204,
@@ -511,14 +511,42 @@ mod net_impl {
             return;
         };
         let (method, target) = request_line(&head);
+        let started = std::time::Instant::now();
+        crate::exporter::registry().begin();
         let resp = dash.handle(&method, &target).await;
+        let elapsed = started.elapsed().as_secs_f64();
+        let action = crate::exporter::action_of(&target);
+        crate::exporter::registry().end(resp.status, action, elapsed);
         if dash.config().verbose {
-            eprintln!(
-                "{peer} \"{} {}\" {}",
-                log_token(&method),
-                log_token(&target),
-                resp.status
-            );
+            if crawlcore::logfmt::format().is_json() {
+                eprintln!(
+                    "{}",
+                    crawlcore::logfmt::request_line(
+                        crate::exporter::PREFIX,
+                        &crawlcore::logfmt::Request {
+                            method: &method,
+                            // Raw, not `log_token`-sanitised: the JSON encoder
+                            // escapes the control characters `log_token` had to
+                            // strip, so the machine-readable form can keep the
+                            // exact bytes the peer sent without the forged-line
+                            // risk that motivated `log_token` in the first place.
+                            path: &target,
+                            status: resp.status,
+                            duration_ms: elapsed * 1000.0,
+                            peer,
+                            action,
+                        }
+                    )
+                );
+            } else {
+                // Byte-identical to what this server has always printed.
+                eprintln!(
+                    "{peer} \"{} {}\" {}",
+                    log_token(&method),
+                    log_token(&target),
+                    resp.status
+                );
+            }
         }
         // The write budget starts here, so a slow sweep never eats it.
         let deadline = Instant::now() + RESPONSE_WRITE_TIMEOUT;
@@ -552,6 +580,10 @@ mod net_impl {
         loop {
             let (sock, peer) = listener.accept().await?;
             let Ok(permit) = Arc::clone(&slots).try_acquire_owned() else {
+                // Counted before the drop: a dashboard refusing connections at
+                // its `max_workers` bound and a dashboard nobody is asking for
+                // look identical in every other counter.
+                crate::exporter::registry().reject();
                 drop(sock); // over the connection bound: refuse, never queue
                 continue;
             };

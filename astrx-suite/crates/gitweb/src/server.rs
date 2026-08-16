@@ -2847,12 +2847,30 @@ mod net_impl {
                 } else {
                     routed.action
                 };
-                eprintln!(
-                    "method={method} path=\"{target}\" status={} action={action} \
-                     dur_ms={:.1} client={peer}",
-                    routed.resp.status,
-                    started.elapsed().as_secs_f64() * 1000.0,
-                );
+                let dur_ms = started.elapsed().as_secs_f64() * 1000.0;
+                if crawlcore::logfmt::format().is_json() {
+                    eprintln!(
+                        "{}",
+                        crawlcore::logfmt::request_line(
+                            "gitweb",
+                            &crawlcore::logfmt::Request {
+                                method: &method,
+                                path: &target,
+                                status: routed.resp.status,
+                                duration_ms: dur_ms,
+                                peer,
+                                action: routed.action,
+                            }
+                        )
+                    );
+                } else {
+                    // Byte-identical to what this server has always printed.
+                    eprintln!(
+                        "method={method} path=\"{target}\" status={} action={action} \
+                         dur_ms={dur_ms:.1} client={peer}",
+                        routed.resp.status,
+                    );
+                }
             }
             let close = routed.resp.close || !keep_alive;
             if write_resp(&mut conn.sock, routed.resp, head_only)

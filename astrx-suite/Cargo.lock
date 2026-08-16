@@ -3,6 +3,18 @@
 version = 3
 
 [[package]]
+name = "astrx"
+version = "0.1.0"
+dependencies = [
+ "crawlcore",
+ "gitweb",
+ "onioncrawler",
+ "suitedash",
+ "torrentds",
+ "websearch",
+]
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

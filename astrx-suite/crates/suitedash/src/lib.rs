@@ -50,6 +50,13 @@ pub mod server;
 #[cfg(feature = "net")]
 pub mod poller;
 
+// The command line, shared by the standalone `suitedash` binary and by
+// `astrx suitedash …`. Behind `net` because every runnable subcommand ends in a
+// socket, matching the `[[bin]]` `required-features` — the default build stays a
+// pure, zero-dependency library.
+#[cfg(feature = "net")]
+pub mod cli;
+
 mod pycompat;
 
 pub use alerts::{AlertEngine, AlertEvent, AlertState, AlertView};

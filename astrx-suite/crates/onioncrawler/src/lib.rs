@@ -29,6 +29,13 @@ pub mod abuse;
 pub mod canonical;
 pub mod entities;
 pub mod extract;
+
+// The command line, shared by the standalone `onioncrawler` binary and by
+// `astrx onioncrawler …`. Behind `net` because every runnable subcommand ends in a
+// socket, matching the `[[bin]]` `required-features` — the default build stays a
+// pure, zero-dependency library.
+#[cfg(feature = "net")]
+pub mod cli;
 // The crawl orchestration loop (net tier): lease → fetch → extract → store.
 #[cfg(feature = "net")]
 pub mod crawler;
@@ -38,6 +45,10 @@ pub mod fetcher;
 pub mod http;
 pub mod i2p;
 pub mod lang;
+// This process's request counters (uptime, requests, statuses, errors) and the
+// route->action classifier that bounds their label cardinality. Stdlib-only, so
+// it is not behind `net` — `/metrics` renders in the default build too.
+pub mod metrics;
 pub mod onion;
 pub mod ratelimit;
 pub mod robots;

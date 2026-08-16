@@ -518,6 +518,50 @@ pub fn render_federated_metrics(results: &Results) -> String {
     text
 }
 
+/// The metric-name prefix for this engine.
+pub const PREFIX: &str = "suitedash";
+
+/// This process's own request counters, shared by the accept loop and
+/// `/metrics`.
+///
+/// suitedash's `/metrics` used to be *entirely* federated: it reported on the
+/// services it polls and said nothing about itself beyond `suitedash_up 1`. When
+/// the dashboard is the thing that is slow or erroring — which is what an
+/// operator suspects the moment every card goes red at once — there was no
+/// number anywhere to confirm it or rule it out.
+#[must_use]
+pub fn registry() -> &'static crawlcore::metrics::Requests {
+    static REG: std::sync::OnceLock<crawlcore::metrics::Requests> = std::sync::OnceLock::new();
+    REG.get_or_init(crawlcore::metrics::Requests::new)
+}
+
+/// Classify a request target into a stable action label.
+#[must_use]
+pub fn action_of(target: &str) -> &'static str {
+    let path = target.split(['?', '#']).next().unwrap_or(target);
+    match path {
+        "" | "/" => "page",
+        "/api/status" => "status",
+        "/metrics" => "metrics",
+        "/health" | "/healthz" => "health",
+        "/favicon.ico" => "favicon",
+        _ => "other",
+    }
+}
+
+/// [`render_federated_metrics`] plus this process's own request block.
+///
+/// Kept separate from [`render_federated_metrics`] so that function stays a pure
+/// function of `results`: it is cross-checked byte-identical against the retired
+/// Python exporter by `tests/xcheck_exporter.rs`, and folding a process-global
+/// counter into it would make that contract impossible to state.
+#[must_use]
+pub fn render_metrics_page(results: &Results) -> String {
+    let mut text = render_federated_metrics(results);
+    text.push_str(&registry().render(PREFIX));
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

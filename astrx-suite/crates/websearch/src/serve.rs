@@ -1195,14 +1195,48 @@ impl SearchServer {
         Resp::suggestions(200, suggestions_json(&q, &terms))
     }
 
+    /// `/metrics` — Prometheus text exposition.
+    ///
+    /// Index gauges, the frontier depth, then the request block every engine in
+    /// the suite shares ([`crawlcore::metrics`]). `websearch_docs` and
+    /// `websearch_hosts` keep their exact names and values because `suitedash`'s
+    /// default configuration and the dashboards key on them.
+    /// `websearch_searches_total` is the third name that configuration asks for
+    /// (`suitedash::config::default_services`) and that nothing used to emit —
+    /// the dashboard has been rendering a permanent blank for it.
     fn metrics(&self) -> Resp {
         let (docs, hosts) = {
             let ix = self.index.lock().expect("index mutex");
             let st = ix.stats();
             (st.docs, st.hosts)
         };
-        let body =
-            format!("# astrx-websearch metrics\nwebsearch_docs {docs}\nwebsearch_hosts {hosts}\n");
+        let mut body = String::from("# astrx-websearch metrics\n");
+        body.push_str("# HELP websearch_docs Documents in the index.\n");
+        body.push_str("# TYPE websearch_docs gauge\n");
+        body.push_str(&format!("websearch_docs {docs}\n"));
+        body.push_str("# HELP websearch_hosts Distinct hosts in the index.\n");
+        body.push_str("# TYPE websearch_hosts gauge\n");
+        body.push_str(&format!("websearch_hosts {hosts}\n"));
+        body.push_str("# HELP websearch_searches_total Search requests served (HTML + JSON).\n");
+        body.push_str("# TYPE websearch_searches_total counter\n");
+        body.push_str(&format!(
+            "websearch_searches_total {}\n",
+            crate::metrics::searches_total()
+        ));
+        // The frontier is only present on a server sharing one with a running
+        // crawler. A serve-only process genuinely has no queue depth, so
+        // emitting 0 would misreport "no crawler here" as "the queue is drained"
+        // — the two need very different responses at 3am.
+        if let Some(counts) = self.frontier_counts() {
+            body.push_str("# HELP websearch_frontier URLs in the crawl frontier by status.\n");
+            body.push_str("# TYPE websearch_frontier gauge\n");
+            for (status, n) in &counts {
+                // `status` comes from the frontier's own fixed status set, never
+                // from a request, so the label value needs no escaping.
+                body.push_str(&format!("websearch_frontier{{status=\"{status}\"}} {n}\n"));
+            }
+        }
+        body.push_str(&crate::metrics::registry().render(crate::metrics::PREFIX));
         Resp::text(200, &body)
     }
 }
@@ -1299,13 +1333,23 @@ mod net_impl {
                 // the only safe reading — an unbounded accept loop is the bug.
                 Err(_) => return Ok(()),
             };
-            let (sock, _) = listener.accept().await?;
+            let (sock, peer) = listener.accept().await?;
             let srv = server.clone();
             tokio::spawn(async move {
                 // The permit is released when this task ends — including on the
                 // timeout path, which drops `sock` and so closes the fd.
                 let _permit = permit;
-                let _ = tokio::time::timeout(limits.request_timeout, handle_conn(sock, srv)).await;
+                let peer = peer.to_string();
+                if tokio::time::timeout(limits.request_timeout, handle_conn(sock, srv, &peer))
+                    .await
+                    .is_err()
+                {
+                    // Counted, not just dropped: a server whose requests are all
+                    // timing out looks identical to an idle one in
+                    // `websearch_requests_total` unless the abandoned ones are
+                    // recorded somewhere.
+                    crate::metrics::registry().reject();
+                }
             });
         }
     }
@@ -1313,7 +1357,7 @@ mod net_impl {
     /// One request/response round-trip. Runs entirely inside the caller's
     /// [`ServeLimits::request_timeout`], so a peer that stalls mid-head, mid-route
     /// or mid-write is cut off rather than owning the task for good.
-    async fn handle_conn(mut sock: TcpStream, srv: Arc<SearchServer>) {
+    async fn handle_conn(mut sock: TcpStream, srv: Arc<SearchServer>, peer: &str) {
         let mut buf = Vec::new();
         let mut tmp = [0u8; 4096];
         // read the request head
@@ -1324,7 +1368,23 @@ mod net_impl {
             }
         }
         let (method, target) = parse_request_line(&buf);
+        let started = std::time::Instant::now();
+        crate::metrics::registry().begin();
         let resp = srv.route(&method, &target);
+        let elapsed = started.elapsed().as_secs_f64();
+        let action = crate::metrics::action_of(&target);
+        crate::metrics::registry().end(resp.status, action, elapsed);
+        crawlcore::logfmt::access(
+            crate::metrics::PREFIX,
+            &crawlcore::logfmt::Request {
+                method: &method,
+                path: &target,
+                status: resp.status,
+                duration_ms: elapsed * 1000.0,
+                peer,
+                action,
+            },
+        );
         let _ = write_resp(&mut sock, &resp).await;
     }
 

@@ -25,6 +25,10 @@ members = [
     "crates/websearch",
     "crates/gitweb",
     "crates/suitedash",
+    # The single `astrx` entrypoint. Depends on the five engine crates and calls
+    # each one's `cli::run`, so it adds no third-party dependency of its own; it
+    # is listed last because it is the only member that depends on the others.
+    "crates/astrx",
 ]
 # `fuzz/` is a cargo-fuzz project with its own manifest; it is not a workspace
 # member and is built only via `cargo +nightly fuzz`.

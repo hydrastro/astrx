@@ -1008,6 +1008,18 @@ impl SearchServer {
         sw
     }
 
+    /// The exact body `/metrics` returns.
+    ///
+    /// Public so the suite-wide exposition contract can be asserted without a
+    /// socket: `astrx/tests/metrics_contract.rs` feeds this to
+    /// `suitedash::metrics::parse_metrics`, the parser that actually consumes it
+    /// in production. `route` itself stays private because the rest of its
+    /// surface (`Resp`, `Params`) is internal.
+    #[must_use]
+    pub fn metrics_text(&self) -> String {
+        String::from_utf8_lossy(&self.metrics()).into_owned()
+    }
+
     fn route(&self, method: &str, target: &str, headers: &Params, body: &str) -> Resp {
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
         let p = parse_qs(query);
@@ -1291,6 +1303,13 @@ impl SearchServer {
         )
     }
 
+    /// `/metrics` — Prometheus text exposition.
+    ///
+    /// The store gauges keep their exact `torrentds_<name>` spellings and their
+    /// order, because the dashboards key on them. The request block every engine
+    /// shares ([`crawlcore::metrics`]) is appended after them: before it, this
+    /// endpoint could report how many torrents were indexed but not whether the
+    /// search server was answering anyone.
     fn metrics(&self) -> Vec<u8> {
         let s = self.store.lock().unwrap().stats();
         let mut lines = vec![
@@ -1306,7 +1325,9 @@ impl SearchServer {
             let ps = ps.lock().unwrap();
             lines.push(format!("torrentds_tracker_swarms {}", ps.swarm_count()));
         }
-        (lines.join("\n") + "\n").into_bytes()
+        let mut out = lines.join("\n") + "\n";
+        out.push_str(&crate::metrics::registry().render(crate::metrics::PREFIX));
+        out.into_bytes()
     }
 
     fn do_block(&self, qs: &Params, body: &str, headers: &Params) -> Resp {
@@ -1409,7 +1430,11 @@ fn hex20(s: &str) -> Option<[u8; 20]> {
 
 // --- async HTTP/1.1 server -------------------------------------------------
 
-async fn handle_conn(mut stream: TcpStream, server: SearchServer) -> std::io::Result<()> {
+async fn handle_conn(
+    mut stream: TcpStream,
+    server: SearchServer,
+    peer: &str,
+) -> std::io::Result<()> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 2048];
     let read_head = async {
@@ -1478,7 +1503,23 @@ async fn handle_conn(mut stream: TcpStream, server: SearchServer) -> std::io::Re
     body.truncate(content_length.max(rest.len().min(content_length)));
     let body_str = String::from_utf8_lossy(&body[..content_length.min(body.len())]).into_owned();
 
+    let started = std::time::Instant::now();
+    crate::metrics::registry().begin();
     let resp = server.route(method, target, &headers, &body_str);
+    let elapsed = started.elapsed().as_secs_f64();
+    let action = crate::metrics::action_of(target);
+    crate::metrics::registry().end(resp.status, action, elapsed);
+    crawlcore::logfmt::access(
+        crate::metrics::PREFIX,
+        &crawlcore::logfmt::Request {
+            method,
+            path: target,
+            status: resp.status,
+            duration_ms: elapsed * 1000.0,
+            peer,
+            action,
+        },
+    );
     let mut out = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
         resp.status,
@@ -1516,10 +1557,10 @@ pub async fn serve_search(
     let handle = tokio::spawn(async move {
         loop {
             match listener.accept().await {
-                Ok((stream, _)) => {
+                Ok((stream, peer)) => {
                     let server = server.clone();
                     tokio::spawn(async move {
-                        let _ = handle_conn(stream, server).await;
+                        let _ = handle_conn(stream, server, &peer.to_string()).await;
                     });
                 }
                 Err(_) => tokio::time::sleep(Duration::from_millis(5)).await,

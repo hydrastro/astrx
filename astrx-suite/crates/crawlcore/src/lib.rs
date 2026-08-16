@@ -34,6 +34,8 @@ pub mod hash;
 pub mod http;
 pub mod inflate;
 pub mod json;
+pub mod logfmt;
+pub mod metrics;
 pub mod scheduler;
 pub mod traps;
 pub mod urlparse;

@@ -54,6 +54,13 @@ pub mod metrics;
 pub mod server;
 pub mod views;
 
+// The command line, shared by the standalone `gitweb` binary and by
+// `astrx gitweb …`. Behind `net` because every runnable subcommand ends in a
+// socket, matching the `[[bin]]` `required-features` — the default build stays a
+// pure, zero-dependency library.
+#[cfg(feature = "net")]
+pub mod cli;
+
 mod deflate;
 mod pycompat;
 

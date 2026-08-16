@@ -33,6 +33,10 @@
 // --- Subsystem groupings (private on-disk parents; re-exported flat below) ---
 mod enrich;
 pub mod metadata;
+// This process's request counters (uptime, requests, statuses, errors) and the
+// route->action classifier that bounds their label cardinality. Stdlib-only, so
+// it is not behind `net` — `/metrics` renders in the default build too.
+pub mod metrics;
 pub mod store;
 mod wire;
 
@@ -42,6 +46,13 @@ mod dht;
 pub mod indexer;
 #[cfg(feature = "net")]
 pub mod search;
+
+// The command line, shared by the standalone `torrentds` binary and by
+// `astrx torrentds …`. Behind `net` because every runnable subcommand ends in a
+// socket, matching the `[[bin]]` `required-features` — the default build stays a
+// pure, zero-dependency library.
+#[cfg(feature = "net")]
+pub mod cli;
 #[cfg(feature = "rand")]
 mod tracker;
 

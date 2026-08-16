@@ -1,0 +1,50 @@
+[package]
+name = "astrx"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/hydrastro/astrx"
+description = "The single astrx entrypoint: dispatches to the five suite engines, plus `astrx doctor` for operator diagnostics."
+
+# This crate is a multiplexer and a diagnostic tool; it owns no engine logic of
+# its own. It depends on the five engine crates and calls each one's
+# `cli::run(args)`, so `astrx gitweb --root /repos` and `gitweb --root /repos`
+# execute the *same* parser and produce byte-identical output. Nothing is
+# re-implemented here, so nothing can drift.
+#
+# Third-party dependency count is still zero: every dependency below is a
+# first-party path dependency, and the two vetted crates (tokio, getrandom) come
+# in only through the engines' own opt-in `net`/`rand` features, exactly as they
+# did before this crate existed. Versions are not declared via
+# `[workspace.dependencies]` so the manifest parses on pre-1.64 Cargo — see the
+# root Cargo.toml note.
+[dependencies]
+crawlcore = { path = "../crawlcore" }
+gitweb = { path = "../gitweb" }
+onioncrawler = { path = "../onioncrawler" }
+suitedash = { path = "../suitedash" }
+torrentds = { path = "../torrentds" }
+websearch = { path = "../websearch" }
+
+# `net` fans out to every engine's `net` feature, because that is the tier in
+# which each engine's `cli` module exists at all. There is deliberately no
+# per-engine feature: an `astrx` that could dispatch to three of five engines
+# would be worse than no `astrx`, since an operator cannot tell from the name
+# which build they have.
+[features]
+default = []
+net = [
+    "gitweb/net",
+    "onioncrawler/net",
+    "suitedash/net",
+    "torrentds/net",
+    "websearch/net",
+]
+
+# The one binary the suite installs. Gated on `net` like every engine binary it
+# dispatches to — without `net` the engines have no `cli` module to call.
+[[bin]]
+name = "astrx"
+path = "src/bin/astrx.rs"
+required-features = ["net"]

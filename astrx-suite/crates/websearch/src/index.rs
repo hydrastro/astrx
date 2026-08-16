@@ -310,6 +310,8 @@ pub(crate) struct Derived {
 pub struct Index {
     docs: BTreeMap<i64, Document>,
     url_to_id: HashMap<String, i64>,
+    /// Corpus tokenisations performed, for [`Index::derived_rebuilds`].
+    derived_rebuilds: std::sync::atomic::AtomicU64,
     links: HashMap<(String, String), bool>, // (src, dst) → internal
     host_authority: HashMap<String, f64>,   // cross-domain host PageRank (0..1)
     images: Vec<StoredImage>,               // harvested <img> metadata rows
@@ -340,6 +342,18 @@ impl Index {
     ///
     /// Returns an `Arc` rather than a borrow so the internal lock is released
     /// before the caller uses it — the guard must never be held across a search.
+    /// How many times THIS index has rebuilt its derived cache — one per corpus
+    /// tokenisation. A query that finds the cache valid does not increment it,
+    /// which is what makes "the corpus is not re-tokenised per request" a
+    /// deterministic assertion rather than a stopwatch reading. Per-index and
+    /// not a process-wide static, because the test suite shares one process and
+    /// runs in parallel: a global counter would move under unrelated tests.
+    #[must_use]
+    pub fn derived_rebuilds(&self) -> u64 {
+        self.derived_rebuilds
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub(crate) fn derived(&self) -> Arc<Derived> {
         let mut slot = self.derived.lock().expect("derived cache mutex");
         if let Some(d) = slot.as_ref() {
@@ -347,6 +361,12 @@ impl Index {
                 return Arc::clone(d);
             }
         }
+        // Counted, not timed. Whether the corpus is re-tokenised per request is
+        // a fact about control flow; asserting it with a stopwatch made the
+        // test flake at 366 ms vs 360 ms on a loaded machine, because ten
+        // cached queries and one uncached one are the same order of magnitude.
+        self.derived_rebuilds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut docs: HashMap<i64, DocDerived> = HashMap::with_capacity(self.docs.len());
         let mut vocab: BTreeMap<String, u32> = BTreeMap::new();
         for d in self.docs.values() {
@@ -2007,21 +2027,35 @@ mod audit_regression {
             put(&mut ix, &format!("http://h{i}/p"), "Lorem page", &body);
         }
 
-        let t0 = std::time::Instant::now();
+        let before = ix.derived_rebuilds();
         assert_eq!(search(&ix, "lorem", &SearchOpts::default()).total, 100);
-        let cold = t0.elapsed();
+        let after_first = ix.derived_rebuilds();
+        assert_eq!(
+            after_first - before,
+            1,
+            "the first query must tokenise the corpus exactly once"
+        );
 
-        let t1 = std::time::Instant::now();
         for _ in 0..10 {
             assert_eq!(search(&ix, "lorem", &SearchOpts::default()).total, 100);
             assert!(!ix.vocab_prefix("lor", 10).is_empty());
         }
-        let warm = t1.elapsed();
+        assert_eq!(
+            ix.derived_rebuilds(),
+            after_first,
+            "ten more searches and ten more /suggest lookups re-tokenised the \
+             corpus: before the memo each of them paid for the whole corpus \
+             again (measured: /search?q=lorem 790 ms and /suggest?q=lor 923 ms \
+             on a 200-document x 100 kB corpus, per request, under the index lock)"
+        );
 
-        assert!(
-            warm < cold,
-            "ten warm queries ({warm:?}) cost more than the one cold query ({cold:?}): \
-             the corpus is being re-tokenised per request"
+        // …and a write must invalidate it, or the cache would serve stale results.
+        put(&mut ix, "http://new/p", "Lorem page", &body);
+        assert_eq!(search(&ix, "lorem", &SearchOpts::default()).total, 101);
+        assert_eq!(
+            ix.derived_rebuilds() - after_first,
+            1,
+            "a write must invalidate the cache exactly once"
         );
     }
 }
