@@ -12,6 +12,7 @@
 #![cfg(feature = "net")]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -335,6 +336,66 @@ async fn fetch_of_a_dead_port_is_refused_fast() {
     assert_eq!(err, ProbeError::Refused);
     assert!(err.is_fatal());
     assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[tokio::test]
+async fn a_smuggled_probe_path_never_reaches_the_wire() {
+    // `health_path`/`metrics_path` are interpolated into the request line, so a
+    // CRLF in one makes a single probe emit TWO complete HTTP requests — the
+    // second one written entirely by whoever wrote the config value. The config
+    // loader rejects such a path, but `ServiceConfig` is public, so `fetch`
+    // refuses too — before it opens a socket.
+    let accepts = Arc::new(AtomicUsize::new(0));
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind counter");
+    let port = listener.local_addr().expect("counter addr").port();
+    let seen = Arc::clone(&accepts);
+    let counter = tokio::spawn(async move {
+        while listener.accept().await.is_ok() {
+            seen.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    let base = format!("http://127.0.0.1:{port}");
+
+    for path in [
+        "/health HTTP/1.1\r\nHost: attacker\r\n\r\nGET /admin",
+        "/metrics\r\nX-Forged: 1",
+        "/a b",
+    ] {
+        let err = fetch(&base, path, Duration::from_secs(2))
+            .await
+            .expect_err("a smuggling path must be refused");
+        assert!(
+            matches!(err, ProbeError::Value(_)),
+            "expected a refusal, got {err:?}"
+        );
+        assert!(err.is_fatal());
+    }
+    // A hostile base_url path lands in the same request line and is refused too.
+    let err = fetch(
+        &format!("{base}/x HTTP/1.1\r\nHost: attacker\r\n\r\nGET /admin"),
+        "/health",
+        Duration::from_secs(2),
+    )
+    .await
+    .expect_err("a smuggling base_url must be refused");
+    assert!(matches!(err, ProbeError::Value(_)), "got {err:?}");
+
+    // The whole probe degrades to a visible DOWN rather than smuggling…
+    let cfg = ServiceConfig {
+        health_path: "/health HTTP/1.1\r\nHost: attacker\r\n\r\nGET /admin".to_string(),
+        ..ServiceConfig::new("alpha", &base)
+    };
+    let r = probe_service(&cfg, Duration::from_secs(2)).await;
+    assert!(!r.up);
+    assert!(
+        r.error.unwrap_or_default().contains("request path"),
+        "the card must say why"
+    );
+    // …and nothing ever connected to the target.
+    assert_eq!(accepts.load(Ordering::SeqCst), 0);
+    counter.abort();
 }
 
 #[tokio::test]
@@ -846,6 +907,96 @@ async fn sparklines_appear_once_history_has_samples() {
 
     dash.stop();
     f.stop();
+}
+
+/// One request attempt against the dashboard: `None` when the server closed the
+/// connection without answering, i.e. every connection slot was taken.
+async fn try_get(port: u16) -> Option<u16> {
+    let mut sock = TcpStream::connect(("127.0.0.1", port)).await.ok()?;
+    sock.write_all(b"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .await
+        .ok()?;
+    let mut raw = Vec::new();
+    sock.read_to_end(&mut raw).await.ok()?;
+    if raw.is_empty() {
+        return None; // refused: the accept loop had no permit and dropped us
+    }
+    String::from_utf8_lossy(&raw)
+        .split(' ')
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+}
+
+#[tokio::test]
+async fn a_slowloris_client_cannot_hold_a_connection_slot_open() {
+    // `max_workers = 1` makes one held connection the whole server; the default
+    // of 16 just means the attack needs 16 sockets.
+    let config = Config {
+        host: "127.0.0.1".to_string(),
+        port: 0,
+        max_workers: 1,
+        verbose: false,
+        services: Vec::new(), // /healthz never polls; keep the test about the socket
+        ..Config::default()
+    };
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind dashboard");
+    let port = listener.local_addr().expect("dashboard addr").port();
+    let dash = DashboardHandle(tokio::spawn(serve(
+        listener,
+        Arc::new(Dashboard::new(config)),
+    )));
+
+    // The attack: open a request head and never terminate it, sending one more
+    // header every 3 s — comfortably inside the 10 s window that used to be
+    // restarted on every single read, so the lease renewed itself forever.
+    let mut slow = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("slowloris connect");
+    slow.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n")
+        .await
+        .expect("slowloris head");
+    let dribbler = tokio::spawn(async move {
+        for i in 0..100 {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if slow
+                .write_all(format!("X-Pad-{i}: a\r\n").as_bytes())
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+    });
+
+    // While it is held, the dashboard is offline for everyone else.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        try_get(port).await,
+        None,
+        "the slow client should be holding the only connection slot"
+    );
+
+    // The total head deadline must give the slot back regardless.
+    let give_up = Instant::now() + suitedash::server::HEAD_READ_TIMEOUT + Duration::from_secs(5);
+    let mut served = None;
+    while Instant::now() < give_up {
+        if let Some(status) = try_get(port).await {
+            served = Some(status);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert_eq!(
+        served,
+        Some(200),
+        "a Slowloris client held its connection slot past the head deadline: \
+         the dashboard was offline for every other client"
+    );
+
+    dribbler.abort();
+    dash.stop();
 }
 
 #[tokio::test]

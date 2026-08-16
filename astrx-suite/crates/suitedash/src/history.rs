@@ -4,8 +4,14 @@
 //! A [`Ring`] is a fixed-capacity buffer of recent numeric samples; [`History`]
 //! keeps one ring per `(service, metric)` and evicts the least-recently-updated
 //! series once `max_series` distinct pairs exist, so memory is doubly bounded
-//! (capacity × series). History is purely in-memory and resets on restart — that
-//! is intentional; suitedash is a live status view, not a TSDB.
+//! (capacity × series). Retention is bounded **per service** as well
+//! ([`MAX_SERIES_PER_SERVICE`]) and eviction always takes from the service
+//! holding the most rings, so one service whose metric *names* churn cannot push
+//! another service's history out — least of all a DOWN service's, whose rings
+//! stop being refreshed the moment it goes down and are therefore exactly what a
+//! global least-recently-updated rule would delete first. History is purely
+//! in-memory and resets on restart — that is intentional; suitedash is a live
+//! status view, not a TSDB.
 //!
 //! [`sparkline_svg`] renders a tiny `<svg><polyline/></svg>` from a point list
 //! *by hand* — no external library, no script. Every numeric input is filtered
@@ -15,7 +21,7 @@
 //! invalid XML or an exploding path. Cross-checked byte-identical to Python by
 //! `tests/xcheck_history.rs`.
 
-use crate::metrics::{OrderedMap, Results};
+use crate::metrics::{OrderedMap, Results, MAX_METRIC_NAME};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
@@ -25,6 +31,19 @@ pub const MIN_CAPACITY: i64 = 2;
 pub const MAX_CAPACITY: i64 = 10_000;
 /// Upper clamp for the number of distinct `(service, metric)` rings.
 pub const MAX_SERIES: i64 = 100_000;
+
+/// Cap on the rings retained for any single service.
+///
+/// The metric names on a card come from the service's own `/metrics` body, so a
+/// service that emits a *fresh* name every sweep (six auto-surfaced keys of
+/// `metric_<sweep>_<j>`) mints new permanent ring keys forever. Without a
+/// per-service cap it simply grew until the global `max_series` bound, then kept
+/// going by evicting the globally least-recently-updated ring — which belongs to
+/// whichever service has *not* been updated lately, i.e. the one that just went
+/// DOWN and whose sparklines the operator is looking at. 64 distinct metrics per
+/// service is far more than any suite service surfaces (`AUTO_LIMIT` is 6, and
+/// the shipped configs name three).
+pub const MAX_SERIES_PER_SERVICE: i64 = 64;
 
 /// Values are clamped to ± this before range math so `max - min` can never
 /// overflow to `+Inf` (e.g. `1e308 - (-1e308)`) and poison the coordinate
@@ -93,6 +112,8 @@ pub struct History {
     pub capacity: i64,
     /// Maximum number of distinct series.
     pub max_series: i64,
+    /// Maximum number of distinct series for any one service.
+    pub max_series_per_service: i64,
     rings: HashMap<(String, String), (u64, Ring)>,
     next_seq: u64,
 }
@@ -108,9 +129,11 @@ impl History {
     /// clamped, so a direct constructor call stays bounded).
     #[must_use]
     pub fn new(capacity: i64, max_series: i64) -> Self {
+        let max_series = max_series.clamp(1, MAX_SERIES);
         History {
             capacity: capacity.clamp(MIN_CAPACITY, MAX_CAPACITY),
-            max_series: max_series.clamp(1, MAX_SERIES),
+            max_series,
+            max_series_per_service: max_series.min(MAX_SERIES_PER_SERVICE),
             rings: HashMap::new(),
             next_seq: 0,
         }
@@ -135,8 +158,17 @@ impl History {
                     entry.1.push(fv);
                     continue;
                 }
-                if self.rings.len() >= self.max_series as usize {
-                    self.evict_oldest();
+                // A ring key lives until it is evicted, so it is retained memory
+                // an untrusted `/metrics` body chose. The parsers already cap the
+                // name (`MAX_METRIC_NAME`); `record` is public and takes any
+                // `Results`, so re-check rather than trust the caller.
+                if metric.len() > MAX_METRIC_NAME {
+                    continue;
+                }
+                if self.service_len(name) >= self.max_series_per_service as usize {
+                    self.evict_oldest_of(name);
+                } else if self.rings.len() >= self.max_series as usize {
+                    self.evict_from_the_largest_holder();
                 }
                 let mut ring = Ring::new(self.capacity);
                 ring.push(fv);
@@ -145,14 +177,53 @@ impl History {
         }
     }
 
-    fn evict_oldest(&mut self) {
-        if let Some(oldest) = self
+    /// How many rings `service` currently holds.
+    fn service_len(&self, service: &str) -> usize {
+        self.rings.keys().filter(|(svc, _)| svc == service).count()
+    }
+
+    /// Drop the least-recently-updated ring belonging to `service`.
+    fn evict_oldest_of(&mut self, service: &str) {
+        let victim = self
             .rings
             .iter()
+            .filter(|((svc, _), _)| svc == service)
             .min_by_key(|(_, (seq, _))| *seq)
-            .map(|(k, _)| k.clone())
-        {
-            self.rings.remove(&oldest);
+            .map(|(k, _)| k.clone());
+        if let Some(k) = victim {
+            self.rings.remove(&k);
+        }
+    }
+
+    /// Make room by dropping the least-recently-updated ring **of the service
+    /// that holds the most rings**.
+    ///
+    /// Evicting the global LRU instead is what let one misbehaving service
+    /// delete everyone else's history: its rings are refreshed every sweep, so
+    /// they are never the global LRU, while a service that went DOWN stops being
+    /// updated at all and its rings sort oldest immediately. With the default
+    /// 256-series budget and a service rotating six auto-surfaced names per
+    /// sweep, the budget is full after ~43 sweeps and every eviction from then on
+    /// takes a ring from whoever has *stopped* reporting — the DOWN service whose
+    /// sparklines are the reason the page is open. Taking from the largest holder
+    /// means a service can only ever evict its own series, or one belonging to a
+    /// service consuming even more of the budget than it is.
+    fn evict_from_the_largest_holder(&mut self) {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for (svc, _) in self.rings.keys() {
+            *counts.entry(svc.as_str()).or_insert(0) += 1;
+        }
+        let Some(most) = counts.values().copied().max() else {
+            return;
+        };
+        let victim = self
+            .rings
+            .iter()
+            .filter(|((svc, _), _)| counts.get(svc.as_str()) == Some(&most))
+            .min_by_key(|(_, (seq, _))| *seq)
+            .map(|(k, _)| k.clone());
+        if let Some(k) = victim {
+            self.rings.remove(&k);
         }
     }
 
@@ -386,6 +457,67 @@ mod tests {
     #[test]
     fn capacity_is_clamped_to_a_sane_minimum() {
         assert!(History::new(0, 256).capacity >= 2);
+    }
+
+    /// One sweep of a service whose metric NAMES rotate (`m_<sweep>_<j>`), the
+    /// shape a hostile `/metrics` body produces against auto-surfaced keys.
+    fn churn_sweep(sweep: usize) -> Results {
+        let names: Vec<String> = (0..6).map(|j| format!("m_{sweep}_{j}")).collect();
+        let pairs: Vec<(&str, Option<f64>)> =
+            names.iter().map(|n| (n.as_str(), Some(1.0))).collect();
+        results(&[("churn", true, &pairs)])
+    }
+
+    /// A service that mints six new metric names every sweep must not be able to
+    /// delete another service's history — least of all one that is DOWN, whose
+    /// rings are never refreshed again and so sort oldest under a global
+    /// least-recently-updated rule. Measured before the fix: `beta`'s three
+    /// sparklines were gone well inside 64 sweeps.
+    #[test]
+    fn a_churning_service_cannot_evict_a_down_services_history() {
+        let mut h = History::new(10, 8);
+        h.record(&results(&[(
+            "beta",
+            true,
+            &[("b1", Some(1.0)), ("b2", Some(2.0)), ("b3", Some(3.0))],
+        )]));
+        // beta then goes DOWN and stops reporting entirely.
+        for sweep in 0..64 {
+            h.record(&churn_sweep(sweep));
+        }
+        assert_eq!(h.series("beta", "b1"), vec![1.0]);
+        assert_eq!(h.series("beta", "b2"), vec![2.0]);
+        assert_eq!(h.series("beta", "b3"), vec![3.0]);
+        assert!(h.len() <= 8, "the global bound still holds: {}", h.len());
+    }
+
+    /// …and the churner itself is bounded per service, not merely globally: with
+    /// a generous `max_series` it retained 384 names after 64 sweeps.
+    #[test]
+    fn retained_series_are_bounded_per_service() {
+        let mut h = History::new(10, MAX_SERIES);
+        for sweep in 0..64 {
+            h.record(&churn_sweep(sweep));
+        }
+        assert_eq!(h.len(), MAX_SERIES_PER_SERVICE as usize);
+        // The survivors are the most recent names, not the first ones seen.
+        assert!(h.series("churn", "m_0_0").is_empty());
+        assert_eq!(h.series("churn", "m_63_0"), vec![1.0]);
+    }
+
+    /// A 150 000-byte metric name never becomes a permanent ring key, even when
+    /// `record` is called directly with results the capped parsers never made.
+    #[test]
+    fn an_over_long_metric_name_is_never_retained() {
+        let huge = "a".repeat(150_000);
+        let mut h = History::new(10, 256);
+        h.record(&results(&[(
+            "svc",
+            true,
+            &[(huge.as_str(), Some(1.0)), ("ok", Some(2.0))],
+        )]));
+        assert_eq!(h.len(), 1);
+        assert_eq!(h.series("svc", "ok"), vec![2.0]);
     }
 
     #[test]

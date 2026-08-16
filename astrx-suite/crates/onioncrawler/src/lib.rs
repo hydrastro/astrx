@@ -67,7 +67,7 @@ pub use onion::{
 };
 pub use ratelimit::TokenBucket;
 pub use robots::{parse_robots, RobotsRules};
-pub use serve::{SearchServer, ServeConfig};
+pub use serve::{RateLimits, SearchServer, ServeConfig};
 pub use simhash::simhash64;
 pub use sitemap::{parse_sitemap, SitemapDoc, SitemapKind};
 pub use store::{

@@ -8,7 +8,9 @@
 //! trailing timestamp is tolerated, and a labelled series is stored under both
 //! its full token and its bare base name (first series wins) so a config key
 //! resolves whether or not it carries labels. Non-finite values (NaN/`±Inf`) are
-//! deliberately dropped, so the `/api/status` JSON stays strictly valid.
+//! deliberately dropped, so the `/api/status` JSON stays strictly valid, and a
+//! metric *name* longer than [`MAX_METRIC_NAME`] is dropped too, so an untrusted
+//! body cannot mint permanent history keys of arbitrary size.
 //!
 //! Everything here is a function of its arguments — the SSRF-conscious HTTP
 //! probing that *produces* the bodies is the `net` tier and is not in this
@@ -41,6 +43,30 @@ use std::collections::HashMap;
 /// When a service surfaces no explicit metric keys, show at most this many
 /// (Python `probe.AUTO_LIMIT`).
 pub const AUTO_LIMIT: usize = 6;
+
+/// Longest metric NAME kept from a parsed body, in bytes.
+///
+/// A `/metrics` body is untrusted — it is whatever the polled service, or
+/// whoever owns it now, chose to return — and nothing bounded the *key* length.
+/// A name parsed here is promoted by [`surface`] onto the card, used by
+/// [`crate::history::History::record`] as a permanent ring key, and deep-copied
+/// by `Monitor::snapshot()` on **every** request to `/` and `/api/status`.
+/// Measured: six lines of `("a" × 150 000)_<sweep>_<j> 1` — a 900 KB body, well
+/// inside the 1 MiB [`crate::probe::MAX_BODY`] fetch cap — with the names rotated
+/// each sweep produced 256 retained series holding 36.6 MiB of key strings after
+/// 64 sweeps, re-copied per request.
+///
+/// 256 bytes is many times the longest metric name any real exposition uses
+/// (Prometheus's own conventions land under 80). A labelled series whose *full*
+/// token `name{label="value",…}` exceeds this is still recorded under its bare
+/// base name; only the exact-token alias is dropped.
+pub const MAX_METRIC_NAME: usize = 256;
+
+/// Whether `name` is short enough to retain (see [`MAX_METRIC_NAME`]).
+#[must_use]
+fn name_fits(name: &str) -> bool {
+    name.len() <= MAX_METRIC_NAME
+}
 
 /// An insertion-ordered `String -> V` map with Python `dict` semantics: a
 /// re-inserted key keeps its original position, iteration is in insertion order,
@@ -217,8 +243,14 @@ pub fn parse_prometheus(text: &str) -> MetricMap {
             continue;
         };
         let base = name.split_once('{').map_or(name, |(b, _)| b);
+        // An over-long name is dropped rather than retained forever: see
+        // MAX_METRIC_NAME (a 150 000-byte name is not a metric, it is a memory
+        // amplifier aimed at the history rings and every snapshot copy).
+        if !name_fits(base) {
+            continue;
+        }
         out.set_default(base, num);
-        if name.contains('{') {
+        if name.contains('{') && name_fits(name) {
             out.insert(name, num);
         }
     }
@@ -239,6 +271,11 @@ pub fn flatten_json(obj: &Value) -> MetricMap {
         return out;
     };
     for (key, v) in items {
+        // Same cap as the Prometheus path: a JSON body can carry a 150 KB key
+        // just as easily as a text one.
+        if !name_fits(key) {
+            continue;
+        }
         match v {
             Value::Bool(b) => out.insert(key.clone(), f64::from(u8::from(*b))),
             Value::Int(i) => out.insert(key.clone(), *i as f64),
@@ -251,6 +288,9 @@ pub fn flatten_json(obj: &Value) -> MetricMap {
             Value::Object(inner) => {
                 for (k2, v2) in inner {
                     let sub = format!("{key}_{k2}");
+                    if !name_fits(&sub) {
+                        continue;
+                    }
                     match v2 {
                         Value::Bool(b) => out.insert(sub, f64::from(u8::from(*b))),
                         Value::Int(i) => out.insert(sub, *i as f64),
@@ -306,7 +346,11 @@ pub fn parse_metrics(body: &[u8], content_type: &str) -> MetricMap {
 pub fn surface(metrics: &MetricMap, keys: &[String]) -> SurfacedMetrics {
     let mut out = SurfacedMetrics::new();
     if keys.is_empty() {
-        let mut names: Vec<&str> = metrics.keys().collect();
+        // Auto-picked names come from the parsed (untrusted) body, so they are
+        // re-checked here too: `surface` is public, and an embedder can hand it a
+        // `MetricMap` it built itself rather than one the capped parsers produced.
+        // Configured keys are the operator's own and are never filtered.
+        let mut names: Vec<&str> = metrics.keys().filter(|k| name_fits(k)).collect();
         names.sort_unstable();
         for k in names.into_iter().take(AUTO_LIMIT) {
             out.insert(k, metrics.get(k).copied());
@@ -534,6 +578,31 @@ mod tests {
         );
         assert_eq!(parse_metrics(br#"{"a": 5}"#, ""), m(&[("a", 5.0)]));
         assert!(parse_metrics(b"", "text/plain").is_empty());
+    }
+
+    /// The measured attack: six lines whose NAME is 150 000 bytes (a 900 KB
+    /// body, inside the 1 MiB fetch cap), rotated every sweep. Each name used to
+    /// become a permanent history ring key and was deep-copied into every
+    /// snapshot — 36.6 MiB of key strings after 64 sweeps.
+    #[test]
+    fn hostile_metric_names_are_capped_by_both_parsers() {
+        let huge = "a".repeat(150_000);
+        let text = format!("{huge}_1 1\n{huge}_2 2\nshort_total 3\n");
+        let prom = parse_prometheus(&text);
+        assert_eq!(prom, m(&[("short_total", 3.0)]));
+
+        // A labelled series keeps its short base name even when the full token is
+        // over the cap; only the exact-token alias is dropped.
+        let labelled = parse_prometheus(&format!("r_total{{pad=\"{huge}\"}} 7\n"));
+        assert_eq!(labelled, m(&[("r_total", 7.0)]));
+
+        let json = format!(r#"{{"{huge}": 1, "ok": 2, "nested": {{"{huge}": 3, "k": 4}}}}"#);
+        let flat = parse_metrics(json.as_bytes(), "application/json");
+        assert_eq!(flat, m(&[("ok", 2.0), ("nested_k", 4.0)]));
+
+        for out in [&prom, &labelled, &flat] {
+            assert!(out.keys().all(|k| k.len() <= MAX_METRIC_NAME));
+        }
     }
 
     #[test]

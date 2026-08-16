@@ -156,4 +156,11 @@ impl<'a> Reader<'a> {
             _ => None,
         }
     }
+
+    /// Bytes not yet consumed — the ceiling on anything the rest of this blob
+    /// can still describe. Used to sanity-check a count read off the wire
+    /// *before* it reaches an allocation (see `Store::restore`).
+    pub fn remaining(&self) -> usize {
+        self.buf.len() - self.pos
+    }
 }

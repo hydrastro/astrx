@@ -652,3 +652,65 @@ fn snapshot_round_trips() {
     assert!(Store::restore(&[]).is_none());
     assert!(Store::restore(&[99]).is_none());
 }
+
+/// A snapshot prefix that is valid up to the entity section, whose per-page
+/// entity count is then whatever the caller says.
+fn blob_with_entity_count(count: usize) -> Vec<u8> {
+    let mut w = super::codec::Writer::new();
+    w.u8(SNAPSHOT_VERSION);
+    w.len(0); // meta
+    w.i64(1); // next_frontier_id
+    w.i64(1); // next_page_id
+    w.len(0); // hosts
+    w.len(0); // frontier
+    w.len(0); // pages
+    w.len(1); // entities: one page's list …
+    w.i64(7); // … for page id 7 …
+    w.len(count); // … claiming this many (key, value) pairs
+    w.into_bytes()
+}
+
+#[test]
+fn a_hostile_entity_count_is_refused_before_it_is_reserved() {
+    // 65 bytes of file claiming 2^64-1 entity pairs. `Vec::with_capacity` on a
+    // count read straight from the blob turns that into a request for
+    // `usize::MAX * 48` bytes — a capacity-overflow panic that unwinds out of
+    // `restore`, which is documented (and relied on by `read_store`) to answer
+    // `None` for any corrupt input instead. A count of one *fits*, so the check
+    // has to be against the bytes actually left, not a fixed ceiling.
+    let blob = blob_with_entity_count(usize::MAX);
+    assert!(blob.len() < 128);
+    assert!(Store::restore(&blob).is_none());
+
+    // and the tight bound: each pair is two length-prefixed strings, so 16
+    // bytes minimum — one pair needs 16 bytes that are not there either.
+    assert!(Store::restore(&blob_with_entity_count(1)).is_none());
+    assert!(Store::restore(&blob_with_entity_count(1_000_000_000)).is_none());
+
+    // a genuine snapshot with real entities still restores
+    let mut s = Store::new();
+    s.ensure_host(H, 1.0);
+    s.store_page(
+        "http://site.onion/a",
+        H,
+        Some("t"),
+        Some("pay 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2 now"),
+        Some("h"),
+        Some(200),
+        Some("text/html"),
+        None,
+        10.0,
+        false,
+        None,
+        None,
+        None,
+    );
+    let good = s.snapshot();
+    assert_eq!(
+        Store::restore(&good)
+            .expect("valid snapshot")
+            .find_by_entity("btc", "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", 5, 0)
+            .len(),
+        1
+    );
+}

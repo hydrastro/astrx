@@ -101,6 +101,10 @@ struct ServeArgs {
     /// [`SearchServer`] takes this explicitly; Python derives it internally, hence
     /// the extra `--base-url` flag. Defaults to `http://<host>:<port>`.
     base_url: Option<String>,
+    /// The name this node calls itself in the OpenSearch descriptor a browser
+    /// adds to its address bar, in the `rel=search` link, and in the Atom feeds.
+    /// `None` keeps the built-in default.
+    site_name: Option<String>,
     verbose: bool,
 }
 
@@ -374,6 +378,7 @@ fn parse_serve(toks: &[String]) -> Result<ServeArgs, CliError> {
         host: "127.0.0.1".to_string(),
         port: 8803,
         base_url: None,
+        site_name: None,
         verbose: false,
     };
     let mut i = 0;
@@ -395,6 +400,10 @@ fn parse_serve(toks: &[String]) -> Result<ServeArgs, CliError> {
             "--base-url" => {
                 i += 1;
                 a.base_url = Some(need(toks, i, "--base-url")?.to_string());
+            }
+            "--site-name" => {
+                i += 1;
+                a.site_name = Some(need(toks, i, "--site-name")?.to_string());
             }
             "--verbose" => a.verbose = true,
             s if s.starts_with("--") => {
@@ -626,8 +635,16 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 /// A one-line rendering of a [`CrawlStats`] for the crawl summary.
 fn fmt_stats(s: &CrawlStats) -> String {
     format!(
-        "fetched={} indexed={} skipped={} errors={} robots_blocked={} dups={} unchanged={}",
-        s.fetched, s.indexed, s.skipped, s.errors, s.robots_blocked, s.dups, s.unchanged
+        "fetched={} indexed={} skipped={} errors={} robots_blocked={} dups={} unchanged={} \
+links_dropped={}",
+        s.fetched,
+        s.indexed,
+        s.skipped,
+        s.errors,
+        s.robots_blocked,
+        s.dups,
+        s.unchanged,
+        s.links_dropped
     )
 }
 
@@ -749,10 +766,11 @@ async fn run_serve(a: ServeArgs) -> ExitCode {
     // `new`, not `with_frontier`: there is no frontier to pass. `--db` is an
     // index snapshot and that format stores documents only, so `/about` here
     // omits the Frontier table (see the module docs).
-    let server = Arc::new(SearchServer::new(
-        Arc::new(Mutex::new(index)),
-        base.as_str(),
-    ));
+    let mut server = SearchServer::new(Arc::new(Mutex::new(index)), base.as_str());
+    if let Some(name) = a.site_name.as_deref() {
+        server = server.with_site_name(name);
+    }
+    let server = Arc::new(server);
     let addr = format!("{}:{}", a.host, a.port);
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -919,6 +937,7 @@ options:
   --host HOST      bind address (default: 127.0.0.1)
   --port PORT      bind port (default: 8803)
   --base-url URL   self-describing base URL (default: http://<host>:<port>)
+  --site-name NAME name shown by browsers adding this engine (default: astrx search)
   --verbose        log the bound address to stderr
 "
     )

@@ -171,6 +171,11 @@ pub struct CrawlConfig {
     pub query_param_cap: usize,
     /// Max allowed path depth (trap guard).
     pub max_path_depth: usize,
+    /// Links harvested from ONE page (0 = unlimited, which is what the crawler
+    /// effectively had). `htmlparse` deliberately extracts every `<a href>` — its
+    /// output is pinned byte-identical by the goldens — so the cap belongs here,
+    /// between extraction and the frontier/link-graph writes that retain memory.
+    pub max_links_per_page: usize,
     /// Lease duration (seconds).
     pub lease_seconds: f64,
     /// Refuse hosts resolving to internal addresses (the SSRF guard).
@@ -225,6 +230,7 @@ impl Default for CrawlConfig {
             segment_repeat_cap: 3,
             query_param_cap: 3,
             max_path_depth: 24,
+            max_links_per_page: 1000,
             lease_seconds: 120.0,
             block_internal_ips: true,
             allow_hosts: Vec::new(),
@@ -270,6 +276,11 @@ pub struct CrawlStats {
     pub dups: u64,
     /// Unchanged (304) revalidations.
     pub unchanged: u64,
+    /// Links discarded by the per-page cap ([`CrawlConfig::max_links_per_page`]
+    /// or [`crate::index::MAX_EDGES_PER_CALL`]). Reported rather than dropped
+    /// silently: a non-zero count is how an operator learns a host is serving
+    /// link bombs, and how they know the crawl's coverage of that page is partial.
+    pub links_dropped: u64,
 }
 
 #[cfg(feature = "net")]
@@ -810,15 +821,33 @@ mod net_impl {
             depth: i64,
             follow: bool,
         ) {
+            // The cap covers ACCEPTED links (canonical, in-scheme, not already
+            // seen on this page); the loop stops the moment it is spent, so a
+            // page of 100 000 `<a href=/N>` costs neither the canonicalisation of
+            // the tail nor the 100 000 frontier rows and graph edges it used to
+            // produce (+13 MB RSS for one page; ~6.5 GB over a 500-page host).
+            // (`crawlcore::budget::Budget` in full: this module has its own
+            // `Budget`, the atomic *page* budget shared by the workers.)
+            let mut budget = crawlcore::budget::Budget::new(if cfg.max_links_per_page == 0 {
+                usize::MAX
+            } else {
+                cfg.max_links_per_page
+            });
             let mut edges: Vec<(String, bool)> = Vec::new();
             let mut seen: HashMap<String, ()> = HashMap::new();
-            for href in &ex.links {
+            let mut dropped = 0u64;
+            for (i, href) in ex.links.iter().enumerate() {
+                if budget.is_exhausted() {
+                    dropped = (ex.links.len() - i) as u64;
+                    break;
+                }
                 let Some(tgt) = canonicalize(href, Some(base)) else {
                     continue;
                 };
                 if !cfg.scheme_allowed(&tgt) || seen.contains_key(&tgt) {
                     continue;
                 }
+                budget.take(1);
                 seen.insert(tgt.clone(), ());
                 let internal = in_scope(&tgt, cfg.scope_hosts.as_deref());
                 edges.push((tgt.clone(), internal));
@@ -836,8 +865,9 @@ mod net_impl {
                 }
             }
             if !edges.is_empty() {
-                self.ix.add_links(src_url, &edges);
+                dropped += self.ix.add_links(src_url, &edges) as u64;
             }
+            self.stats.links_dropped += dropped;
         }
     }
 
@@ -1097,6 +1127,78 @@ mod net_impl {
         let res = route_fetch(fetcher, url, &opts, Some(&allow)).await;
         // Apply the whole result atomically under one lock (shared tail).
         lock_core(shared).finish_fetch(cfg, url, depth, &host, delay, res);
+    }
+
+    #[cfg(test)]
+    mod audit_regression {
+        use super::*;
+
+        fn page_of_links(n: usize) -> Extracted {
+            Extracted {
+                links: (0..n).map(|i| format!("/{i}")).collect(),
+                ..Extracted::default()
+            }
+        }
+
+        /// AUDIT REGRESSION (MEDIUM). `enqueue_links` recorded EVERY extracted
+        /// edge and queued every in-scope one, whatever the page's size: a single
+        /// 1.9 MB page of `<a href=/N>` produced 100 000 frontier rows and 100 000
+        /// graph edges for +13 MB of RSS — and with the default `per_host_budget`
+        /// of 500 pages, ~6.5 GB from one host. Nothing about scope, depth, the
+        /// trap guards or federation bounds this, because the edge is recorded
+        /// before any of them are consulted.
+        #[test]
+        fn a_page_of_a_hundred_thousand_links_is_capped_and_counted() {
+            let cfg = CrawlConfig {
+                scope_hosts: Some(vec!["ex.example".to_string()]),
+                max_links_per_page: 1000,
+                ..CrawlConfig::default()
+            };
+            let mut core = Core::default();
+            core.enqueue_links(
+                &cfg,
+                "http://ex.example/p",
+                "http://ex.example/p",
+                &page_of_links(100_000),
+                0,
+                true,
+            );
+
+            assert_eq!(
+                core.ix.stats().links,
+                1000,
+                "the link graph took every edge on the page"
+            );
+            assert!(
+                core.fr.counts().get("queued").copied().unwrap_or(0) <= 1000,
+                "the frontier queued more than the per-page cap"
+            );
+            assert_eq!(
+                core.stats.links_dropped, 99_000,
+                "the discarded links were not counted"
+            );
+        }
+
+        /// An ordinary page is untouched by the cap: every link is kept, nothing
+        /// is reported dropped, and the edges are the same ones as before.
+        #[test]
+        fn an_ordinary_page_is_unaffected() {
+            let cfg = CrawlConfig {
+                scope_hosts: Some(vec!["ex.example".to_string()]),
+                ..CrawlConfig::default()
+            };
+            let mut core = Core::default();
+            core.enqueue_links(
+                &cfg,
+                "http://ex.example/p",
+                "http://ex.example/p",
+                &page_of_links(120),
+                0,
+                true,
+            );
+            assert_eq!(core.ix.stats().links, 120);
+            assert_eq!(core.stats.links_dropped, 0);
+        }
     }
 }
 

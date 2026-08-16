@@ -61,7 +61,7 @@ use onioncrawler::abuse::{load_abuse_filter, AbuseFilter};
 use onioncrawler::canonical::canonicalize;
 use onioncrawler::crawler::{CrawlConfig, Crawler};
 use onioncrawler::fetcher::Fetcher;
-use onioncrawler::serve::{json_str, serve, SearchServer, ServeConfig};
+use onioncrawler::serve::{json_str, serve, RateLimits, SearchServer, ServeConfig};
 use onioncrawler::store::{Caps, Enqueued, Reseed, Store};
 use onioncrawler::submit::submit_many;
 
@@ -157,6 +157,13 @@ struct SearchArgs {
     /// The OpenSearch descriptor's base URL. Python derives it internally; the
     /// Rust [`SearchServer`] takes it explicitly.
     base_url: Option<String>,
+    /// Sustained GETs/s and burst per client (`ServeConfig::rate_limits`).
+    read_rate: f64,
+    read_burst: f64,
+    /// Sustained POSTs/s and burst per client. A write also costs a full
+    /// snapshot fsync, so this is the tighter of the two.
+    write_rate: f64,
+    write_burst: f64,
 }
 
 /// `stats` — frontier / pages / host statistics.
@@ -545,6 +552,10 @@ fn parse_search(toks: &[String]) -> Result<SearchArgs, CliError> {
         admin_token: None,
         allow_public_submit: false,
         base_url: None,
+        read_rate: RateLimits::default().read_rate,
+        read_burst: RateLimits::default().read_burst,
+        write_rate: RateLimits::default().write_rate,
+        write_burst: RateLimits::default().write_burst,
     };
     let mut i = 0;
     while i < toks.len() {
@@ -575,6 +586,22 @@ fn parse_search(toks: &[String]) -> Result<SearchArgs, CliError> {
             "--base-url" => {
                 i += 1;
                 a.base_url = Some(need(toks, i, "--base-url")?.to_string());
+            }
+            "--read-rate" => {
+                i += 1;
+                a.read_rate = parse_f64(need(toks, i, "--read-rate")?, "--read-rate")?;
+            }
+            "--read-burst" => {
+                i += 1;
+                a.read_burst = parse_f64(need(toks, i, "--read-burst")?, "--read-burst")?;
+            }
+            "--write-rate" => {
+                i += 1;
+                a.write_rate = parse_f64(need(toks, i, "--write-rate")?, "--write-rate")?;
+            }
+            "--write-burst" => {
+                i += 1;
+                a.write_burst = parse_f64(need(toks, i, "--write-burst")?, "--write-burst")?;
             }
             s if s.starts_with('-') => return Err(unknown_option(s, "search")),
             other => return Err(unexpected_arg(other, "search")),
@@ -1283,6 +1310,17 @@ async fn run_search(a: SearchArgs) -> ExitCode {
             admin_token: admin_token.clone(),
             allow_public_submit: a.allow_public_submit,
             allow_i2p: a.enable_i2p,
+            // The write endpoints commit here. Without it `/purge` would edit
+            // only this process's memory and the next `search --db` would serve
+            // every purged page again, un-blocked.
+            store_path: Some(a.db.clone()),
+            rate_limits: RateLimits {
+                read_rate: a.read_rate,
+                read_burst: a.read_burst,
+                write_rate: a.write_rate,
+                write_burst: a.write_burst,
+                ..RateLimits::default()
+            },
             ..ServeConfig::default()
         })
         .with_abuse(Arc::new(build_abuse(&a.blocklists)));
@@ -1608,6 +1646,11 @@ options:
                              (unset => the write endpoints answer 403)
   --allow-public-submit      allow POST /add without auth (off by default)
   --base-url URL             OpenSearch base URL (default: http://<host>:<port>)
+  --read-rate N              GETs/s per client (default: 20)
+  --read-burst N             GET burst per client (default: 60)
+  --write-rate N             POSTs/s per client; each write fsyncs the whole
+                             snapshot, so keep it low (default: 1)
+  --write-burst N            POST burst per client (default: 10)
   --blocklist-hosts FILE     host blocklist (default: blocklist_hosts.txt)
   --blocklist-keywords FILE  keyword blocklist (default: blocklist_keywords.txt)
   --blocklist-media FILE     media blocklist (default: blocklist_media.txt)
@@ -1890,6 +1933,9 @@ mod tests {
         assert_eq!(d.admin_token, None);
         assert!(!d.allow_public_submit);
         assert_eq!(d.base_url, None);
+        // the served rate limits default to `RateLimits::default()`
+        assert_eq!(d.read_rate, RateLimits::default().read_rate);
+        assert_eq!(d.write_rate, RateLimits::default().write_rate);
 
         let a = match parse_args(&argv(&[
             "search",
@@ -1901,10 +1947,18 @@ mod tests {
             "--allow-public-submit",
             "--base-url=http://pub.example",
             "--blocklist-hosts=h.txt",
+            "--read-rate=3.5",
+            "--read-burst=7",
+            "--write-rate=0.25",
+            "--write-burst=2",
         ])) {
             Ok(Command::Search(a)) => a,
             other => panic!("expected search, got {other:?}"),
         };
+        assert_eq!(a.read_rate, 3.5);
+        assert_eq!(a.read_burst, 7.0);
+        assert_eq!(a.write_rate, 0.25);
+        assert_eq!(a.write_burst, 2.0);
         assert_eq!(a.db, "s.db");
         assert_eq!(a.host, "0.0.0.0");
         assert_eq!(a.port, 9002);

@@ -58,10 +58,12 @@ pub use config::{
     ConfigError, ServiceConfig, ALLOWED_OPS, MAX_RULES,
 };
 pub use exporter::{render_federated_metrics, CONTENT_TYPE, MAX_FEDERATE_LINES};
-pub use history::{sparkline_svg, History, Ring, SPARK_HEIGHT, SPARK_WIDTH};
+pub use history::{
+    sparkline_svg, History, Ring, MAX_SERIES_PER_SERVICE, SPARK_HEIGHT, SPARK_WIDTH,
+};
 pub use metrics::{
     flatten_json, num_out, parse_metrics, parse_prometheus, summarize, surface, MetricMap, NumOut,
-    OrderedMap, Results, ServiceResult, Summary, SurfacedMetrics, AUTO_LIMIT,
+    OrderedMap, Results, ServiceResult, Summary, SurfacedMetrics, AUTO_LIMIT, MAX_METRIC_NAME,
 };
 pub use monitor::Monitor;
 pub use probe::{health_candidates, HEALTH_FALLBACKS, MAX_BODY, MAX_FEDERATE_BODY};
@@ -73,4 +75,4 @@ pub use poller::{default_workers, poll_all, POLL_SLACK};
 #[cfg(feature = "net")]
 pub use probe::{fetch, probe_service, FetchResult, ProbeError, USER_AGENT};
 #[cfg(feature = "net")]
-pub use server::{serve, serve_config};
+pub use server::{serve, serve_config, HEAD_READ_TIMEOUT, RESPONSE_WRITE_TIMEOUT};

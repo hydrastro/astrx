@@ -9,10 +9,18 @@
 //! keys to surface on its card.
 //!
 //! Loading is **bounded and validating**: rule counts, history sizes and
-//! debounce windows are clamped, every `[[alert]]` gets a unique id (an
-//! auto-assigned id can never collide with an explicit one — a collision would
-//! merge two rules in the engine and silently drop an alert), and a malformed
-//! entry is a hard [`ConfigError`] rather than a half-applied config.
+//! debounce windows are clamped, TOML nesting is capped at [`toml::MAX_DEPTH`],
+//! every `[[alert]]` gets a unique id (an auto-assigned id can never collide
+//! with an explicit one — a collision would merge two rules in the engine and
+//! silently drop an alert), every `[[service]]` name is unique (a duplicate
+//! would silently drop a service from every sweep), probe paths cannot smuggle a
+//! second request into the request line, and a malformed entry is a hard
+//! [`ConfigError`] rather than a half-applied config.
+//!
+//! Two of those are **deliberate divergences from the Python reference**, which
+//! accepted both inputs: the nesting cap (a bomb aborted the process here where
+//! CPython raised a catchable `RecursionError` — see [`toml::MAX_DEPTH`]) and the
+//! duplicate-name rejection (see the note in [`parse_config`]).
 
 use crate::pycompat;
 use std::fmt;
@@ -283,13 +291,34 @@ impl Default for Config {
 /// (including `inf`/`nan`), booleans, arrays (nested, multi-line, trailing
 /// comma) and inline tables.
 ///
-/// **Documented divergence:** TOML's four date/time types are rejected with a
+/// **Documented divergences:** TOML's four date/time types are rejected with a
 /// parse error instead of being decoded — `suitedash` has no date-valued
 /// setting, and CPython would hand back a `datetime` that every consumer here
-/// (`str()`/`int()`/`float()`) treats as an error anyway.
+/// (`str()`/`int()`/`float()`) treats as an error anyway. Nesting deeper than
+/// [`toml::MAX_DEPTH`] is rejected as well (see that constant).
 pub mod toml {
     use super::pycompat;
     use std::fmt;
+
+    /// How deep the parser will nest before refusing the document.
+    ///
+    /// Nested arrays and inline tables (`parse_value`), dotted keys
+    /// (`insert_path`) and dotted table headers (`table_at`) each cost one level,
+    /// and each level is one stack frame.
+    ///
+    /// **Documented divergence from the reference.** CPython's `tomllib` has no
+    /// explicit limit; it recurses until the interpreter raises a *catchable*
+    /// `RecursionError` at roughly a thousand frames, so a nesting bomb there is
+    /// just another `TOMLDecodeError`. Rust has no such backstop: `a = ` followed
+    /// by 50 000 `[` — a 50 KB config file — recursed once per bracket and killed
+    /// the process with `fatal runtime error: stack overflow, aborting`, in
+    /// release. That is an **abort**, so neither `#![forbid(unsafe_code)]` nor the
+    /// `Result` plumbing below can turn it back into a [`ConfigError`]; the only
+    /// place to stop it is before the recursion happens. A real suitedash config
+    /// nests three levels at most (`[[service]]` → `metrics_keys` → a string).
+    ///
+    /// [`ConfigError`]: super::ConfigError
+    pub const MAX_DEPTH: usize = 64;
 
     /// A parsed TOML value.
     #[derive(Clone, Debug, PartialEq)]
@@ -430,6 +459,11 @@ pub mod toml {
 
     fn err<T>(msg: &str) -> PResult<T> {
         Err(TomlError(msg.to_string()))
+    }
+
+    /// The [`MAX_DEPTH`] refusal, shared by the three recursive descents.
+    fn too_deep<T>() -> PResult<T> {
+        err(&format!("nesting deeper than {MAX_DEPTH} levels"))
     }
 
     impl P {
@@ -700,7 +734,14 @@ pub mod toml {
             .map_or_else(|| err(&format!("invalid integer {tok:?}")), Ok)
     }
 
-    fn parse_value(p: &mut P) -> PResult<Value> {
+    /// Parse one value. `depth` is the nesting level: an array element and an
+    /// inline-table value each recurse one level deeper, and [`MAX_DEPTH`] stops
+    /// the descent before the stack does (see that constant — the alternative is
+    /// an abort, not an error).
+    fn parse_value(p: &mut P, depth: usize) -> PResult<Value> {
+        if depth > MAX_DEPTH {
+            return too_deep();
+        }
         p.skip_inline_ws();
         match p.peek() {
             Some('"') => Ok(Value::Str(parse_basic_string(p)?)),
@@ -714,7 +755,7 @@ pub mod toml {
                         p.i += 1;
                         return Ok(Value::Array(items));
                     }
-                    items.push(parse_value(p)?);
+                    items.push(parse_value(p, depth + 1)?);
                     p.skip_ws_and_comments();
                     match p.peek() {
                         Some(',') => p.i += 1,
@@ -741,8 +782,8 @@ pub mod toml {
                         return err("expected '=' in an inline table");
                     }
                     p.i += 1;
-                    let value = parse_value(p)?;
-                    insert_path(&mut table, &key, value)?;
+                    let value = parse_value(p, depth + 1)?;
+                    insert_path(&mut table, &key, value, depth + 1)?;
                     p.skip_inline_ws();
                     match p.peek() {
                         Some(',') => {
@@ -762,7 +803,19 @@ pub mod toml {
     }
 
     /// Insert `value` at the dotted `path` inside `table`.
-    fn insert_path(table: &mut Vec<(String, Value)>, path: &[String], value: Value) -> PResult<()> {
+    ///
+    /// One stack frame per dotted key part, so `MAX_DEPTH` bounds this descent
+    /// too: `a.a.a…a = 1` with 50 000 parts is a 100 KB file that would otherwise
+    /// overflow the stack exactly like the bracket bomb.
+    fn insert_path(
+        table: &mut Vec<(String, Value)>,
+        path: &[String],
+        value: Value,
+        depth: usize,
+    ) -> PResult<()> {
+        if depth > MAX_DEPTH {
+            return too_deep();
+        }
         let (head, rest) = path.split_first().expect("a key always has one part");
         if rest.is_empty() {
             if table.iter().any(|(k, _)| k == head) {
@@ -773,22 +826,29 @@ pub mod toml {
         }
         if let Some((_, existing)) = table.iter_mut().find(|(k, _)| k == head) {
             match existing {
-                Value::Table(inner) => return insert_path(inner, rest, value),
+                Value::Table(inner) => return insert_path(inner, rest, value, depth + 1),
                 _ => return err(&format!("cannot extend non-table key {head:?}")),
             }
         }
         let mut inner = Vec::new();
-        insert_path(&mut inner, rest, value)?;
+        insert_path(&mut inner, rest, value, depth + 1)?;
         table.push((head.clone(), Value::Table(inner)));
         Ok(())
     }
 
     /// Navigate to (creating as needed) the table a `[header]` names.
+    ///
+    /// One stack frame per dotted header part; `MAX_DEPTH` bounds it for the same
+    /// reason as [`insert_path`] (`[a.a.a…a]` is the same bomb in header form).
     fn table_at<'a>(
         root: &'a mut Vec<(String, Value)>,
         path: &[String],
         array: bool,
+        depth: usize,
     ) -> PResult<&'a mut Vec<(String, Value)>> {
+        if depth > MAX_DEPTH {
+            return too_deep();
+        }
         let (head, rest) = path.split_first().expect("a header always has one part");
         if !root.iter().any(|(k, _)| k == head) {
             let fresh = if rest.is_empty() && array {
@@ -824,9 +884,9 @@ pub mod toml {
             };
         }
         match slot {
-            Value::Table(t) => table_at(t, rest, array),
+            Value::Table(t) => table_at(t, rest, array, depth + 1),
             Value::Array(items) => match items.last_mut() {
-                Some(Value::Table(t)) => table_at(t, rest, array),
+                Some(Value::Table(t)) => table_at(t, rest, array, depth + 1),
                 _ => err("array of tables holds a non-table"),
             },
             _ => err(&format!("cannot extend non-table key {head:?}")),
@@ -862,7 +922,7 @@ pub mod toml {
                 }
                 p.i += close.len();
                 p.finish_line()?;
-                table_at(&mut root, &path, array)?;
+                table_at(&mut root, &path, array, 0)?;
                 current = path;
                 continue;
             }
@@ -872,13 +932,13 @@ pub mod toml {
                 return err("expected '=' after a key");
             }
             p.i += 1;
-            let value = parse_value(&mut p)?;
+            let value = parse_value(&mut p, 0)?;
             p.finish_line()?;
             if current.is_empty() {
-                insert_path(&mut root, &key, value)?;
+                insert_path(&mut root, &key, value, 0)?;
             } else {
-                let t = table_at(&mut root, &current, false)?;
-                insert_path(t, &key, value)?;
+                let t = table_at(&mut root, &current, false, 0)?;
+                insert_path(t, &key, value, 0)?;
             }
         }
     }
@@ -939,6 +999,40 @@ fn clamp(v: i64, lo: i64, hi: i64) -> i64 {
     v.max(lo).min(hi)
 }
 
+/// Reject a probe path that could not be safely pasted into a request line.
+///
+/// [`crate::probe::fetch`] builds `GET {base_path}{path} HTTP/1.1\r\n…` by
+/// interpolation, and unlike `base_url` these two paths never go through
+/// `urlsplit`. So
+/// `health_path = "/health HTTP/1.1\r\nHost: attacker\r\n\r\nGET /admin"` makes a
+/// single probe put **two complete HTTP requests** on the wire — request
+/// smuggling against whatever fronts the service. A bare space is enough on its
+/// own: it terminates the request target and the rest becomes the HTTP version.
+///
+/// An empty path is allowed and means "not configured": an empty `health_path`
+/// falls straight through to [`crate::probe::HEALTH_FALLBACKS`].
+fn check_path(what: &str, value: &str, service: &str) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    let named = Toml::Str(service.to_string()).py_repr();
+    if !value.starts_with('/') {
+        return Err(ConfigError(format!(
+            "{what} for service {named} must start with '/'"
+        )));
+    }
+    if let Some(c) = value
+        .chars()
+        .find(|c| *c == ' ' || (*c as u32) < 0x20 || *c as u32 == 0x7f)
+    {
+        return Err(ConfigError(format!(
+            "{what} for service {named} may not contain {}",
+            Toml::Str(c.to_string()).py_repr()
+        )));
+    }
+    Ok(())
+}
+
 fn as_service(entry: &Toml) -> Result<ServiceConfig, ConfigError> {
     let name = pycompat::strip(&str_or_empty(entry.get("name"))).to_string();
     let base = pycompat::rstrip_chars(pycompat::strip(&str_or_empty(entry.get("base_url"))), "/")
@@ -960,15 +1054,19 @@ fn as_service(entry: &Toml) -> Result<ServiceConfig, ConfigError> {
             )))
         }
     };
+    let health_path = entry
+        .get("health_path")
+        .map_or_else(|| "/health".to_string(), Toml::py_str);
+    let metrics_path = entry
+        .get("metrics_path")
+        .map_or_else(|| "/metrics".to_string(), Toml::py_str);
+    check_path("health_path", &health_path, &name)?;
+    check_path("metrics_path", &metrics_path, &name)?;
     Ok(ServiceConfig {
         name,
         base_url: base,
-        health_path: entry
-            .get("health_path")
-            .map_or_else(|| "/health".to_string(), Toml::py_str),
-        metrics_path: entry
-            .get("metrics_path")
-            .map_or_else(|| "/metrics".to_string(), Toml::py_str),
+        health_path,
+        metrics_path,
         metrics_keys: keys,
         label: entry.get("label").map(Toml::py_str).unwrap_or_default(),
     })
@@ -1172,7 +1270,28 @@ pub fn parse_config(text: &str, base: Option<Config>) -> Result<Config, ConfigEr
                 "[[service]] must be an array of tables".to_string(),
             ));
         };
-        cfg.services = items.iter().map(as_service).collect::<Result<_, _>>()?;
+        let services: Vec<ServiceConfig> =
+            items.iter().map(as_service).collect::<Result<_, _>>()?;
+        // The service NAME is the primary key of the whole pipeline: `poll_all`
+        // keys its sweep by it, and so do the alert engine, the history rings and
+        // the `/api/status` payload. Two `[[service]]` blocks both named "gitweb"
+        // therefore left `cfg.services.len() == 2` but a sweep of ONE result, and
+        // `/api/status` reported `"total": 1` — the second block silently
+        // overwrote the first, so one of the two machines was never probed and
+        // could be down for weeks without the dashboard ever saying so. That is
+        // failing *open* in a monitoring tool, so it is a hard error here even
+        // though the Python reference accepted it (a deliberate, documented
+        // divergence: the reference had the same bug).
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for s in &services {
+            if !seen.insert(s.name.as_str()) {
+                return Err(ConfigError(format!(
+                    "duplicate [[service]] name {} — service names are the dashboard's keys and must be unique",
+                    Toml::Str(s.name.clone()).py_repr()
+                )));
+            }
+        }
+        cfg.services = services;
     }
 
     if let Some(alerts) = data.get("alert").filter(|v| v.truthy()) {
@@ -1422,9 +1541,17 @@ mod tests {
         assert!(toml::parse("when = 1979-05-27T07:32:00Z\n").is_err());
     }
 
-    /// A malformed config must be a clean [`ConfigError`], never a panic or a
-    /// hang. Deterministic soup drawn from TOML's own metacharacters (an LCG, so
-    /// no dependency and no flake).
+    /// A malformed config must be a clean [`ConfigError`], never a panic, a hang
+    /// or an abort. Deterministic soup drawn from TOML's own metacharacters (an
+    /// LCG, so no dependency and no flake).
+    ///
+    /// Ninety random characters cannot express the input that actually killed
+    /// this parser, and a long run tacked onto the *end* of malformed soup is
+    /// never even reached (parsing stops at the first error). So every tenth
+    /// document **opens** with a 20 000–40 000 long run in a position that
+    /// recurses — a nested array, a nested inline table, a dotted key or a dotted
+    /// header — and the soup follows it as the tail. Without the depth cap this
+    /// aborts with `fatal runtime error: stack overflow`.
     #[test]
     fn hostile_documents_never_panic() {
         let alphabet: Vec<char> = "ab[]{}\"'=.,# \t\n\r019+-_eE\\:élinf".chars().collect();
@@ -1433,12 +1560,107 @@ mod tests {
             seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
             (seed >> 33) as usize
         };
-        for _ in 0..500 {
+        for round in 0..500 {
             let len = next() % 90;
-            let text: String = (0..len)
+            let mut text: String = (0..len)
                 .map(|_| alphabet[next() % alphabet.len()])
                 .collect();
+            if round % 10 == 0 {
+                let n = 20_000 + next() % 20_000;
+                text = match next() % 4 {
+                    0 => format!("a = {}{text}", "[".repeat(n)),
+                    1 => format!("a = {}{text}", "{x=".repeat(n)),
+                    2 => format!("{}k = 1\n{text}", "a.".repeat(n)),
+                    _ => format!("[{}a]\n{text}", "a.".repeat(n)),
+                };
+            }
             let _ = parse_config(&text, None);
         }
+    }
+
+    /// `a = ` plus 50 000 `[` is a 50 KB file. Every nesting form must come back
+    /// as a [`ConfigError`]: before the [`toml::MAX_DEPTH`] cap each one recursed
+    /// once per character and the process died with `fatal runtime error: stack
+    /// overflow, aborting` — an abort no `Result` can catch, where the Python
+    /// reference raised a catchable `RecursionError`.
+    #[test]
+    fn a_nesting_bomb_is_a_config_error_not_a_stack_overflow() {
+        let bombs = [
+            format!("a = {}", "[".repeat(50_000)),     // nested arrays
+            format!("a = {}", "{x=".repeat(50_000)),   // nested inline tables
+            format!("{}a = 1\n", "a.".repeat(50_000)), // a dotted key
+            format!("[{}a]\n", "a.".repeat(50_000)),   // a dotted table header
+            format!("[[{}a]]\nk = 1\n", "a.".repeat(25_000)), // …as an array of tables
+        ];
+        for bomb in &bombs {
+            let err = parse_config(bomb, None).expect_err("a nesting bomb must be rejected");
+            assert!(
+                err.0.contains("nesting"),
+                "expected a depth refusal, got {err}"
+            );
+        }
+        // The legitimate shallow nesting a real config uses still parses.
+        assert!(toml::parse("a = [[1, 2], [3]]\nb = { x = { y = 1 } }\n").is_ok());
+    }
+
+    /// Two `[[service]]` blocks with the same name used to leave
+    /// `cfg.services.len() == 2` while a sweep produced ONE result (both keyed by
+    /// the same name), so `/api/status` said `"total": 1` and the second machine
+    /// was never probed — an outage on it could never be reported.
+    #[test]
+    fn duplicate_service_names_are_rejected() {
+        let err = load(concat!(
+            "[[service]]\nname = \"gitweb\"\nbase_url = \"http://a:1\"\n\n",
+            "[[service]]\nname = \"  gitweb  \"\nbase_url = \"http://b:2\"\n"
+        ))
+        .expect_err("a duplicate service name must be rejected");
+        assert!(err.0.contains("duplicate"), "got {err}");
+        assert!(err.0.contains("gitweb"), "got {err}");
+        // Distinct names are of course still fine, and stay in file order.
+        let cfg = load(concat!(
+            "[[service]]\nname = \"a\"\nbase_url = \"http://a:1\"\n\n",
+            "[[service]]\nname = \"b\"\nbase_url = \"http://b:2\"\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            cfg.services
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+    }
+
+    /// `health_path`/`metrics_path` are interpolated straight into the request
+    /// line, so a CRLF in one makes a probe emit two complete HTTP requests.
+    #[test]
+    fn a_probe_path_cannot_smuggle_a_second_request() {
+        let bad = [
+            "/health HTTP/1.1\\r\\nHost: attacker\\r\\n\\r\\nGET /admin",
+            "/a b",
+            "/a\\u0000b",
+            "/a\\u007f",
+            "health", // no leading slash: pasted after the base path
+        ];
+        for path in bad {
+            for key in ["health_path", "metrics_path"] {
+                let text = format!(
+                    "[[service]]\nname = \"x\"\nbase_url = \"http://x\"\n{key} = \"{path}\"\n"
+                );
+                assert!(
+                    load(&text).is_err(),
+                    "{key} = {path:?} must be rejected at parse time"
+                );
+            }
+        }
+        // Empty means "not configured" (the health fallbacks handle it), and the
+        // ordinary paths keep working.
+        let cfg = load(concat!(
+            "[[service]]\nname = \"x\"\nbase_url = \"http://x\"\n",
+            "health_path = \"\"\nmetrics_path = \"/api/stats?verbose=1\"\n"
+        ))
+        .unwrap();
+        assert_eq!(cfg.services[0].health_path, "");
+        assert_eq!(cfg.services[0].metrics_path, "/api/stats?verbose=1");
     }
 }

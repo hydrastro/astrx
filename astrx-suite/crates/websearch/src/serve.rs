@@ -13,7 +13,15 @@
 //! [`SearchServer::with_frontier`] adds an OPTIONAL second handle, read for the
 //! `/about` Frontier table alone.
 //!
-//! Routes: `/` + `/search` (HTML results, `?type=news|files` verticals),
+//! The query language the search box accepts lives in [`crate::query`]
+//! (phrases, `+`/`-` terms, `site:`/`-site:`/`filetype:`/`before:`/`after:` …);
+//! whatever it parsed out of the box is echoed back on the results page as the
+//! "Filters:" line, so a mistyped operator looks like a filter and not like a
+//! query that found nothing.
+//!
+//! Routes: `/` + `/search` (HTML results, `?type=news|files` verticals,
+//! `&format=atom` for the same results as a subscribable Atom 1.0 feed —
+//! [`crate::atom`]),
 //! `/images` + `/videos` (the media verticals, `?q=`), `/api/search` (JSON, the
 //! endpoint the PHP bridge calls; `?limit=`/`?page_size=`/`?sort=` supported),
 //! `/suggest` (OpenSearch Suggestions JSON typeahead, `?q=`), `/about` +
@@ -39,6 +47,17 @@
 //! - **`/similar`** — the `more_like_this` "related pages" route, deferred.
 //!
 //! [`SearchServer::route`] therefore never returns `401` or `429`.
+//!
+//! # What the accept loop DOES bound
+//!
+//! Two resource limits are enforced here rather than at the proxy, because
+//! without them a single client kills the process rather than merely outrunning
+//! it (see [`ServeLimits`]): a **concurrent-connection cap**, whose permit is
+//! taken *before* `accept()` so excess connections stay in the kernel backlog
+//! instead of becoming spawned tasks holding file descriptors, and a **total
+//! per-request deadline** covering the head read, the route and the write, so a
+//! half-open request (`GET / HTTP/1.1\r\n` and then silence) cannot park a task
+//! and its socket forever.
 
 use crate::frontier::Frontier;
 use crate::index::{ImageResult, Index, Stats, VideoResult};
@@ -198,6 +217,15 @@ impl Resp {
             body,
         }
     }
+    /// An Atom 1.0 feed. The media type is the registered one; a reader that
+    /// gets `text/xml` here may refuse to treat the response as a feed.
+    fn atom(body: String) -> Self {
+        Resp {
+            status: 200,
+            ctype: "application/atom+xml; charset=utf-8",
+            body,
+        }
+    }
     fn suggestions(status: u16, body: String) -> Self {
         Resp {
             status,
@@ -276,16 +304,41 @@ figure.imgcard .imghost { display:block; color:#0a7d33; }
 }
 "#;
 
-fn wrap_page(title: &str, body: &str) -> String {
+/// The page shell.
+///
+/// `site_name` is config-derived and appears in the `rel=search` link's `title`,
+/// which is the name a browser offers when adding this engine to its address
+/// bar; `extra_head` carries the per-page `rel=alternate` feed link so a reader
+/// can discover the Atom version of a results page without any JavaScript.
+fn wrap_page(site_name: &str, title: &str, extra_head: &str, body: &str) -> String {
     format!(
         "<!doctype html><html lang=en><head><meta charset=utf-8>\
 <meta name=viewport content='width=device-width, initial-scale=1'>\
 <title>{}</title><link rel=stylesheet href=/style.css>\
-<link rel=search type='application/opensearchdescription+xml' title='astrx search' href=/opensearch.xml></head>\
+<link rel=search type='application/opensearchdescription+xml' title='{}' href=/opensearch.xml>\
+{}</head>\
 <body>{}</body></html>",
         esc(title),
+        esc(site_name),
+        extra_head,
         body
     )
+}
+
+/// The `<link rel=alternate>` that advertises a results page's Atom feed.
+fn feed_link(q: &str, active: &str) -> String {
+    format!(
+        "<link rel=alternate type='application/atom+xml' title='astrx search feed' href='/search?{}'>",
+        esc(&feed_href(q, active))
+    )
+}
+
+/// The query string of the Atom feed for a results page (same `q` and vertical,
+/// plus `format=atom`), percent-encoded.
+fn feed_href(q: &str, active: &str) -> String {
+    let mut pg = pager_params(q, active);
+    pg.push(("format".to_string(), "atom".to_string()));
+    urlencode(&pg)
 }
 
 fn header(q: &str) -> String {
@@ -299,16 +352,28 @@ fn header(q: &str) -> String {
     )
 }
 
-fn opensearch_xml(base: &str) -> String {
-    let b = esc(base);
+/// The OpenSearch description document served at `/opensearch.xml` and pointed
+/// at by every page's `<head>`, so a browser can add this engine to its address
+/// bar (and, through the suggestions URL, complete queries while typing there).
+///
+/// Both variables are config-derived — the operator's site name and the base URL
+/// the node describes itself with — and both go through the XML escaper, not the
+/// HTML one: `ShortName` is displayed by the browser and a `&` in it would
+/// otherwise make the document unparseable and the engine silently unavailable.
+/// `{searchTerms}` is OpenSearch's own placeholder and must survive verbatim.
+fn opensearch_xml(base: &str, site_name: &str) -> String {
+    let b = crate::atom::xml_text(base.trim_end_matches('/'));
+    let name = crate::atom::xml_text(site_name);
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <OpenSearchDescription xmlns=\"http://a9.com/-/spec/opensearch/1.1/\">\n\
-  <ShortName>astrx search</ShortName>\n\
+  <ShortName>{name}</ShortName>\n\
   <Description>Zero-dependency clearnet search engine (crawler + inverted index + BM25).</Description>\n\
   <InputEncoding>UTF-8</InputEncoding>\n\
   <Url type=\"text/html\" method=\"get\" template=\"{b}/search?q={{searchTerms}}\"/>\n\
   <Url type=\"application/json\" method=\"get\" template=\"{b}/api/search?q={{searchTerms}}\"/>\n\
+  <Url type=\"application/x-suggestions+json\" method=\"get\" template=\"{b}/suggest?q={{searchTerms}}\"/>\n\
+  <Url type=\"application/atom+xml\" method=\"get\" template=\"{b}/search?q={{searchTerms}}&amp;format=atom\"/>\n\
 </OpenSearchDescription>\n"
     )
 }
@@ -336,10 +401,16 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// The "Filters:" line under the tabs — what the query language actually did
+/// with what was typed. Without it a mistyped operator looks like a query that
+/// found nothing, rather than a filter that excluded everything.
 fn active_filters(q: &Query) -> String {
     let mut bits: Vec<String> = Vec::new();
     if let Some(s) = &q.site {
         bits.push(format!("site:{s}"));
+    }
+    for s in &q.not_site {
+        bits.push(format!("-site:{s}"));
     }
     if let Some(l) = &q.lang {
         bits.push(format!("lang:{l}"));
@@ -356,6 +427,12 @@ fn active_filters(q: &Query) -> String {
     if let Some(b) = q.before {
         bits.push(format!("before:{}", fmt_date(b)));
     }
+    for p in &q.phrases {
+        bits.push(format!("\"{}\"", p.join(" ")));
+    }
+    for e in &q.excluded {
+        bits.push(format!("-{e}"));
+    }
     if bits.is_empty() {
         String::new()
     } else {
@@ -363,14 +440,33 @@ fn active_filters(q: &Query) -> String {
     }
 }
 
+/// Whether a stored URL may become an `href`/`src` in a rendered page.
+///
+/// Escaping is not enough on its own: `javascript:alert(1)` passes through
+/// [`esc`] unchanged and renders as `href='javascript:alert(1)'`, which is live
+/// script the moment a user clicks the result. The crawler only stores
+/// canonicalised http(s) URLs, so nothing reaches this today — but the whole
+/// defence otherwise sits upstream of the renderer, and [`crate::federation`]
+/// takes result URLs from other shards verbatim. This is the output-side half.
+fn renderable_url(url: &str) -> bool {
+    crate::canonical::is_http_url(url)
+}
+
+/// `text` linked to `url`, or `text` alone when the URL is not http(s): the
+/// anchor is dropped, never the content.
+fn anchor(url: &str, text: &str, attrs: &str) -> String {
+    if renderable_url(url) {
+        format!("<a href='{}'{attrs}>{text}</a>", esc(url))
+    } else {
+        text.to_string()
+    }
+}
+
 fn result_row(r: &SearchResult) -> String {
     let mut s = String::from("<div class=result>");
     s.push_str(&format!("<div class=url>{}</div>", esc(&r.url)));
-    s.push_str(&format!(
-        "<h2><a href='{}'>{}</a></h2>",
-        esc(&r.url),
-        esc(if r.title.is_empty() { &r.url } else { &r.title })
-    ));
+    let label = esc(if r.title.is_empty() { &r.url } else { &r.title });
+    s.push_str(&format!("<h2>{}</h2>", anchor(&r.url, &label, "")));
     if !r.snippet.is_empty() {
         s.push_str(&format!("<div class=snippet>{}</div>", r.snippet));
     }
@@ -483,15 +579,24 @@ fn render_images(q: &str, images: &[ImageResult]) -> String {
             } else {
                 &im.src
             };
+            // A non-http(s) `src` would be a `data:`/`javascript:` URL in an
+            // attribute the browser fetches; it becomes the same "no image"
+            // placeholder an absent thumbnail gets, so the card and its caption
+            // still render.
+            let media = if renderable_url(&im.src) {
+                format!(
+                    "<img class=thumb loading=lazy referrerpolicy=no-referrer src='{src}' alt='{alt}'>",
+                    src = esc(&im.src),
+                    alt = esc(&im.alt),
+                )
+            } else {
+                "<div class='thumb noimg'>image</div>".to_string()
+            };
             s.push_str(&format!(
-                "<figure class=imgcard>\
-<a href='{page}' rel='noreferrer nofollow'>\
-<img class=thumb loading=lazy referrerpolicy=no-referrer src='{src}' alt='{alt}'></a>\
+                "<figure class=imgcard>{link}\
 <figcaption>{cap}<span class=imghost>{host}</span></figcaption>\
 </figure>",
-                page = esc(&im.page_url),
-                src = esc(&im.src),
-                alt = esc(&im.alt),
+                link = anchor(&im.page_url, &media, " rel='noreferrer nofollow'"),
                 cap = esc(cap_src),
                 host = esc(&im.host),
             ));
@@ -537,13 +642,16 @@ fn render_videos(q: &str, videos: &[VideoResult]) -> String {
             } else {
                 "video"
             };
-            let media = if v.thumbnail_url.is_empty() {
-                "<div class='thumb noimg'>video</div>".to_string()
-            } else {
+            // A thumbnail that is absent OR not an http(s) URL gets the same
+            // placeholder — the browser must never be handed a `data:`/
+            // `javascript:` `src` that a shard supplied.
+            let media = if renderable_url(&v.thumbnail_url) {
                 format!(
                     "<img class=thumb loading=lazy referrerpolicy=no-referrer src='{}' alt=''>",
                     esc(&v.thumbnail_url)
                 )
+            } else {
+                "<div class='thumb noimg'>video</div>".to_string()
             };
             let host = esc(&v.host);
             let mut bits: Vec<String> = Vec::new();
@@ -563,11 +671,10 @@ fn render_videos(q: &str, videos: &[VideoResult]) -> String {
                 all.join(" &middot; ")
             };
             s.push_str(&format!(
-                "<figure class=imgcard>\
-<a href='{page}' rel='noreferrer nofollow'>{media}</a>\
+                "<figure class=imgcard>{link}\
 <figcaption>{cap}<span class=imghost>{sub}</span></figcaption>\
 </figure>",
-                page = esc(&v.page_url),
+                link = anchor(&v.page_url, &media, " rel='noreferrer nofollow'"),
                 cap = esc(cap_src),
             ));
         }
@@ -581,8 +688,10 @@ fn render_home() -> String {
     "<main><div class=wrap><p class=meta>A from-scratch crawler + inverted index + \
 explicit ranking. Enter a query above. Supports <code>\"exact phrase\"</code>, \
 <code>+required</code>, <code>-excluded</code> terms and the <code>site:</code>, \
-<code>lang:</code>, <code>filetype:</code>, <code>intitle:</code>, \
-<code>before:</code>/<code>after:</code> operators.</p>\
+<code>-site:</code>, <code>lang:</code>, <code>filetype:</code>, \
+<code>intitle:</code>, <code>before:</code>/<code>after:</code> operators.</p>\
+<p class=meta>Every search is also a feed: add <code>&amp;format=atom</code> to a \
+results URL to subscribe to it.</p>\
 <footer><a href='/about'>About &amp; stats</a></footer></div></main>"
         .to_string()
 }
@@ -729,7 +838,11 @@ pub struct SearchServer {
     index: Arc<Mutex<Index>>,
     frontier: Option<Arc<Mutex<Frontier>>>,
     base_url: String,
+    site_name: String,
 }
+
+/// The site name used when the operator has not set one.
+const DEFAULT_SITE_NAME: &str = "astrx search";
 
 fn now_secs() -> f64 {
     std::time::SystemTime::now()
@@ -755,7 +868,21 @@ impl SearchServer {
             index,
             frontier: None,
             base_url: base_url.into(),
+            site_name: DEFAULT_SITE_NAME.to_string(),
         }
+    }
+
+    /// Set the site name this node calls itself — the OpenSearch `ShortName` a
+    /// browser shows when adding the engine, the `rel=search` link title, and the
+    /// Atom feed's `<title>`/`<author>`. Config-derived, because a fleet of nodes
+    /// all called "astrx search" is indistinguishable in a browser's engine list.
+    #[must_use]
+    pub fn with_site_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        if !name.trim().is_empty() {
+            self.site_name = name;
+        }
+        self
     }
 
     /// A new server that ALSO reads `frontier`, so `/about` renders the Frontier
@@ -773,6 +900,7 @@ impl SearchServer {
             index,
             frontier: Some(frontier),
             base_url: base_url.into(),
+            site_name: DEFAULT_SITE_NAME.to_string(),
         }
     }
 
@@ -803,7 +931,7 @@ impl SearchServer {
                 body: String::new(),
             },
             "/metrics" => self.metrics(),
-            "/opensearch.xml" => Resp::xml(opensearch_xml(&self.base_url)),
+            "/opensearch.xml" => Resp::xml(opensearch_xml(&self.base_url, &self.site_name)),
             "/images" => self.images_html(&params),
             "/videos" => self.videos_html(&params),
             "/api/search" => self.api_search(&params),
@@ -817,7 +945,9 @@ impl SearchServer {
                 Resp::html(
                     200,
                     wrap_page(
+                        &self.site_name,
                         "astrx search - stats",
+                        "",
                         &(header("") + &render_about(&st, counts.as_ref())),
                     ),
                 )
@@ -826,7 +956,9 @@ impl SearchServer {
             _ => Resp::html(
                 404,
                 wrap_page(
+                    &self.site_name,
                     "Not found",
+                    "",
                     &(header("") + "<main><div class=wrap><p>Not found.</p></div></main>"),
                 ),
             ),
@@ -849,10 +981,27 @@ impl SearchServer {
             _ => ("relevance", false, "web"),
         };
         let (q, page) = Self::query_and_page(params);
+        let as_atom = param(params, "format") == Some("atom");
         if q.is_empty() {
+            // A reader that asked for a feed must get a feed, even of nothing:
+            // handing it the HTML home page under a feed request is what makes a
+            // subscription "break" rather than simply stay empty.
+            if as_atom {
+                let empty = crate::ranking::SearchResponse {
+                    results: Vec::new(),
+                    total: 0,
+                    query: crate::query::parse_query(""),
+                };
+                return self.search_atom("", active, &empty, now_secs());
+            }
             return Resp::html(
                 200,
-                wrap_page("astrx search", &(header("") + &render_home())),
+                wrap_page(
+                    &self.site_name,
+                    "astrx search",
+                    "",
+                    &(header("") + &render_home()),
+                ),
             );
         }
         let opts = SearchOpts {
@@ -863,9 +1012,41 @@ impl SearchServer {
             only_files,
         };
         let (resp, elapsed) = self.timed_search(&q, &opts);
+        // `format=atom` renders the SAME search through the feed renderer. The
+        // saved search is the URL: no accounts, no stored queries, no JavaScript.
+        if as_atom {
+            return self.search_atom(&q, active, &resp, opts.now);
+        }
         let title = format!("{q} - astrx search");
         let body = header(&q) + &render_results(&q, &resp, page, active, elapsed);
-        Resp::html(200, wrap_page(&title, &body))
+        Resp::html(
+            200,
+            wrap_page(&self.site_name, &title, &feed_link(&q, active), &body),
+        )
+    }
+
+    /// One page of results as an Atom 1.0 feed. The links are absolute (a feed
+    /// reader has no page to resolve them against), built from the configured
+    /// `base_url`.
+    fn search_atom(
+        &self,
+        q: &str,
+        active: &str,
+        resp: &crate::ranking::SearchResponse,
+        now: f64,
+    ) -> Resp {
+        let base = self.base_url.trim_end_matches('/');
+        let self_url = format!("{base}/search?{}", feed_href(q, active));
+        let html_url = format!("{base}/search?{}", urlencode(&pager_params(q, active)));
+        let meta = crate::atom::FeedMeta {
+            site_name: &self.site_name,
+            base_url: base,
+            query: q,
+            self_url: &self_url,
+            html_url: &html_url,
+            now,
+        };
+        Resp::atom(crate::atom::render(&meta, &resp.results))
     }
 
     /// Run a search and return it with its wall-clock duration in seconds — the
@@ -896,7 +1077,12 @@ impl SearchServer {
         };
         Resp::html(
             200,
-            wrap_page(&title, &(header(&q) + &render_images(&q, &images))),
+            wrap_page(
+                &self.site_name,
+                &title,
+                "",
+                &(header(&q) + &render_images(&q, &images)),
+            ),
         )
     }
 
@@ -915,7 +1101,12 @@ impl SearchServer {
         };
         Resp::html(
             200,
-            wrap_page(&title, &(header(&q) + &render_videos(&q, &videos))),
+            wrap_page(
+                &self.site_name,
+                &title,
+                "",
+                &(header(&q) + &render_videos(&q, &videos)),
+            ),
         )
     }
 
@@ -957,7 +1148,8 @@ impl SearchServer {
         let results: Vec<String> = resp.results.iter().map(result_json).collect();
         let payload = format!(
             "{{\"query\":{},\"parsed\":{{\"optional\":{},\"required\":{},\"excluded\":{},\
-\"phrases\":[{}],\"intitle\":{},\"site\":{},\"lang\":{},\"filetype\":{},\"after\":{},\"before\":{}}},\
+\"phrases\":[{}],\"intitle\":{},\"site\":{},\"not_site\":{},\"lang\":{},\"filetype\":{},\
+\"after\":{},\"before\":{}}},\
 \"page\":{},\"page_size\":{},\"total\":{},\"elapsed_seconds\":{},\"results\":[{}]}}",
             jq(&q),
             json_str_array(&parsed.optional),
@@ -966,6 +1158,7 @@ impl SearchServer {
             phrases.join(","),
             json_str_array(&parsed.intitle),
             json_opt_str(&parsed.site),
+            json_str_array(&parsed.not_site),
             json_opt_str(&parsed.lang),
             json_opt_str(&parsed.filetype),
             json_opt_num(parsed.after),
@@ -1035,39 +1228,104 @@ fn round6(n: f64) -> String {
 }
 
 #[cfg(feature = "net")]
-pub use net_impl::serve;
+pub use net_impl::{serve, serve_with_limits, ServeLimits};
 
 #[cfg(feature = "net")]
 mod net_impl {
     use super::{Resp, SearchServer};
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::Semaphore;
 
-    /// Accept and serve connections until the listener errors. Each request is one
-    /// `Connection: close` round-trip through [`SearchServer::route`].
+    /// The resource limits the accept loop enforces.
+    ///
+    /// Both exist because of a measured failure, not as belt-and-braces: with
+    /// neither in place, 500 connections that send `GET / HTTP/1.1\r\n` and then
+    /// nothing were still open after 2 s, having taken the process to 1311 file
+    /// descriptors, with no path in the code that would ever reap them — one
+    /// client, no rate limit needed, and the server is out of descriptors.
+    #[derive(Clone, Copy, Debug)]
+    pub struct ServeLimits {
+        /// Connections served at once. The permit is taken BEFORE `accept()`, so
+        /// connection 513 waits in the listen backlog rather than becoming a
+        /// spawned task holding an fd; the kernel's backlog is a bounded queue,
+        /// `tokio::spawn` is not.
+        pub max_connections: usize,
+        /// Total deadline for one connection: head read + route + write. A
+        /// half-open request never sends the blank line, so the head read alone
+        /// would otherwise await forever.
+        pub request_timeout: Duration,
+    }
+
+    impl Default for ServeLimits {
+        fn default() -> Self {
+            ServeLimits {
+                max_connections: 512,
+                request_timeout: Duration::from_secs(30),
+            }
+        }
+    }
+
+    /// Accept and serve connections until the listener errors, under the default
+    /// [`ServeLimits`]. Each request is one `Connection: close` round-trip through
+    /// [`SearchServer::route`].
     ///
     /// # Errors
     /// Propagates a fatal `accept()` error.
     pub async fn serve(listener: TcpListener, server: Arc<SearchServer>) -> std::io::Result<()> {
+        serve_with_limits(listener, server, ServeLimits::default()).await
+    }
+
+    /// [`serve`] with explicit limits (the knob tests and embedders need).
+    ///
+    /// # Errors
+    /// Propagates a fatal `accept()` error.
+    pub async fn serve_with_limits(
+        listener: TcpListener,
+        server: Arc<SearchServer>,
+        limits: ServeLimits,
+    ) -> std::io::Result<()> {
+        let sem = Arc::new(Semaphore::new(limits.max_connections.max(1)));
         loop {
-            let (mut sock, _) = listener.accept().await?;
+            // Acquired BEFORE accept(): while we are at the cap this future is
+            // parked, so pending connections stay in the kernel backlog and are
+            // never turned into tasks. Acquiring after accept() would still spawn
+            // (and hold an fd for) every connection ever offered.
+            let permit = match Arc::clone(&sem).acquire_owned().await {
+                Ok(p) => p,
+                // The semaphore is never closed; if that ever changes, stopping is
+                // the only safe reading — an unbounded accept loop is the bug.
+                Err(_) => return Ok(()),
+            };
+            let (sock, _) = listener.accept().await?;
             let srv = server.clone();
             tokio::spawn(async move {
-                let mut buf = Vec::new();
-                let mut tmp = [0u8; 4096];
-                // read the request head
-                while find(&buf, b"\r\n\r\n").is_none() && buf.len() < 64 * 1024 {
-                    match sock.read(&mut tmp).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => buf.extend_from_slice(&tmp[..n]),
-                    }
-                }
-                let (method, target) = parse_request_line(&buf);
-                let resp = srv.route(&method, &target);
-                let _ = write_resp(&mut sock, &resp).await;
+                // The permit is released when this task ends — including on the
+                // timeout path, which drops `sock` and so closes the fd.
+                let _permit = permit;
+                let _ = tokio::time::timeout(limits.request_timeout, handle_conn(sock, srv)).await;
             });
         }
+    }
+
+    /// One request/response round-trip. Runs entirely inside the caller's
+    /// [`ServeLimits::request_timeout`], so a peer that stalls mid-head, mid-route
+    /// or mid-write is cut off rather than owning the task for good.
+    async fn handle_conn(mut sock: TcpStream, srv: Arc<SearchServer>) {
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 4096];
+        // read the request head
+        while find(&buf, b"\r\n\r\n").is_none() && buf.len() < 64 * 1024 {
+            match sock.read(&mut tmp).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => buf.extend_from_slice(&tmp[..n]),
+            }
+        }
+        let (method, target) = parse_request_line(&buf);
+        let resp = srv.route(&method, &target);
+        let _ = write_resp(&mut sock, &resp).await;
     }
 
     fn find(b: &[u8], sep: &[u8]) -> Option<usize> {
@@ -1620,5 +1878,401 @@ mod tests {
             "http://x",
         );
         assert!(!srv.route("GET", "/about").body.contains("Frontier"));
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+    use crate::ranking::SearchResult;
+
+    fn result_with_url(url: &str) -> SearchResult {
+        SearchResult {
+            url: url.to_string(),
+            title: "Click me".to_string(),
+            description: String::new(),
+            snippet: "a snippet".to_string(),
+            host: "evil.example".to_string(),
+            fetched_at: 1_700_000_000.0,
+            score: 1.0,
+            lang: "en".to_string(),
+            simhash: 0,
+        }
+    }
+
+    /// AUDIT REGRESSION (LOW). `href`/`src` were HTML-escaped but never scheme-
+    /// checked, so a stored `page_url` of `javascript:alert(1)` rendered verbatim
+    /// as `href='javascript:alert(1)'` — escaping does nothing to a URL scheme.
+    /// Unreachable through today's crawler (it canonicalises to http(s)), but
+    /// `federation.rs` takes shard-supplied URLs as given, and the whole defence
+    /// otherwise sits upstream of the renderer.
+    #[test]
+    fn a_javascript_url_is_not_rendered_as_a_link() {
+        for bad in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "vbscript:msgbox(1)",
+            "file:///etc/passwd",
+        ] {
+            let row = result_row(&result_with_url(bad));
+            assert!(
+                !row.contains("<a href="),
+                "{bad} was rendered as a link: {row}"
+            );
+            // The content survives — only the anchor is dropped.
+            assert!(row.contains("Click me"), "{bad} lost its title: {row}");
+            assert!(row.contains("a snippet"));
+        }
+        // An ordinary result is still a link, unchanged.
+        let ok = result_row(&result_with_url("https://ex.com/p"));
+        assert!(ok.contains("<h2><a href='https://ex.com/p'>Click me</a></h2>"));
+    }
+
+    /// The media verticals put remote URLs in `src` as well as `href`; both are
+    /// gated, and a refused thumbnail degrades to the "no image" placeholder
+    /// rather than taking the card with it.
+    #[test]
+    fn media_cards_refuse_non_http_srcs_but_keep_the_card() {
+        let imgs = vec![ImageResult {
+            src: "javascript:alert(1)".into(),
+            alt: "pic".into(),
+            title: String::new(),
+            page_url: "javascript:alert(2)".into(),
+            host: "evil.example".into(),
+        }];
+        let html = render_images("cats", &imgs);
+        assert!(!html.contains("javascript:"), "{html}");
+        assert!(html.contains("<div class='thumb noimg'>image</div>"));
+        assert!(
+            html.contains("pic"),
+            "the caption was dropped with the link"
+        );
+
+        let vids = vec![VideoResult {
+            video_url: String::new(),
+            embed_url: String::new(),
+            watch_url: String::new(),
+            title: "clip".into(),
+            thumbnail_url: "data:image/svg+xml,<svg onload=alert(1)>".into(),
+            source: String::new(),
+            duration: None,
+            page_url: "javascript:alert(3)".into(),
+            host: "evil.example".into(),
+        }];
+        let html = render_videos("dogs", &vids);
+        assert!(
+            !html.contains("javascript:") && !html.contains("data:"),
+            "{html}"
+        );
+        assert!(html.contains("<div class='thumb noimg'>video</div>"));
+        assert!(html.contains("clip"));
+    }
+}
+
+/// Feature tests for the query language, the OpenSearch descriptor and the Atom
+/// feeds — the three things a user can point a browser or a reader at.
+#[cfg(test)]
+mod feature_tests {
+    use super::*;
+    use crate::index::{DocFields, Index};
+
+    fn server() -> SearchServer {
+        let mut ix = Index::new();
+        for (url, title, body, host, ct, fa) in [
+            (
+                "http://good.example/rust",
+                "Rust guide",
+                "learning rust programming today",
+                "good.example",
+                "text/html",
+                1_700_000_000.0,
+            ),
+            (
+                "http://blog.spam.example/rust",
+                "Rust spam",
+                "learning rust programming today",
+                "blog.spam.example",
+                "text/html",
+                1_600_000_000.0,
+            ),
+            (
+                "http://good.example/paper.pdf",
+                "Rust paper",
+                "a rust paper about programming",
+                "good.example",
+                "application/pdf",
+                1_650_000_000.0,
+            ),
+        ] {
+            ix.upsert_document(
+                url,
+                DocFields {
+                    title,
+                    body,
+                    host,
+                    lang: "en",
+                    content_type: ct,
+                    fetched_at: fa,
+                    http_status: 200,
+                    ..DocFields::default()
+                },
+            );
+        }
+        SearchServer::new(Arc::new(Mutex::new(ix)), "http://s.example/").with_site_name("Nodetest")
+    }
+
+    // ---- 9: the query language, end to end through the search box ----------
+
+    #[test]
+    fn the_search_box_accepts_the_operators() {
+        let srv = server();
+
+        // site: narrows to the host and its subdomains.
+        let only_good = srv.route("GET", "/search?q=rust+site%3Agood.example");
+        assert!(only_good.body.contains("http://good.example/rust"));
+        assert!(!only_good.body.contains("http://blog.spam.example/rust"));
+
+        // -site: removes a host (and everything under it) and leaves the rest.
+        let no_spam = srv.route("GET", "/search?q=rust+-site%3Aspam.example");
+        assert!(no_spam.body.contains("http://good.example/rust"));
+        assert!(
+            !no_spam.body.contains("http://blog.spam.example/rust"),
+            "-site: did not exclude a subdomain of the named host"
+        );
+
+        // filetype: uses the recorded content type.
+        let pdfs = srv.route("GET", "/search?q=rust+filetype%3Apdf");
+        assert!(pdfs.body.contains("paper.pdf"));
+        assert!(!pdfs.body.contains("http://good.example/rust\""));
+
+        // A phrase must appear in order and adjacent.
+        let phrase = srv.route("GET", "/search?q=%22rust+programming%22");
+        assert!(phrase.body.contains("http://good.example/rust"));
+        let absent = srv.route("GET", "/search?q=%22programming+rust%22");
+        assert!(absent.body.contains("No pages matched"));
+
+        // Date bounds are on the crawl date.
+        let recent = srv.route("GET", "/search?q=rust+after%3A2023-01-01");
+        assert!(recent.body.contains("http://good.example/rust"));
+        assert!(!recent.body.contains("http://blog.spam.example/rust"));
+    }
+
+    /// The parse is shown back to the user. Without it, `-site:typo` looks
+    /// exactly like a query that happened to find nothing.
+    #[test]
+    fn the_results_page_shows_the_active_filters() {
+        let srv = server();
+        let r = srv.route(
+            "GET",
+            "/search?q=rust+site%3Agood.example+-site%3Aspam.example+filetype%3Apdf+-java+%22rust+paper%22",
+        );
+        let b = &r.body;
+        assert!(b.contains("Filters:"), "no filter line: {b}");
+        assert!(b.contains("site:good.example"));
+        assert!(b.contains("-site:spam.example"));
+        assert!(b.contains("filetype:pdf"));
+        assert!(
+            b.contains("&quot;rust paper&quot;"),
+            "phrase not shown: {b}"
+        );
+        assert!(b.contains("-java"));
+        // A query with no operators shows no filter line at all.
+        assert!(!srv.route("GET", "/search?q=rust").body.contains("Filters:"));
+    }
+
+    /// The box is repopulated with what was typed, operators and all, so the
+    /// query can be edited rather than retyped.
+    #[test]
+    fn the_search_box_keeps_the_raw_query() {
+        let srv = server();
+        let r = srv.route("GET", "/search?q=rust+-site%3Aspam.example");
+        assert!(
+            r.body.contains("value='rust -site:spam.example'"),
+            "{}",
+            r.body
+        );
+    }
+
+    /// The JSON API reports the negative host filter alongside the positive one.
+    #[test]
+    fn the_api_reports_the_parsed_filters() {
+        let srv = server();
+        let r = srv.route("GET", "/api/search?q=rust+-site%3Aspam.example");
+        assert!(r.body.contains("\"site\":null"));
+        assert!(r.body.contains("\"not_site\":[\"spam.example\"]"));
+        assert!(!r.body.contains("blog.spam.example"));
+    }
+
+    // ---- 10: the OpenSearch descriptor --------------------------------------
+
+    #[test]
+    fn opensearch_is_complete_and_config_derived() {
+        let srv = server();
+        let r = srv.route("GET", "/opensearch.xml");
+        assert_eq!(r.status, 200);
+        assert_eq!(
+            r.ctype,
+            "application/opensearchdescription+xml; charset=utf-8"
+        );
+        let b = &r.body;
+        assert!(b.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
+        assert!(b.contains("<ShortName>Nodetest</ShortName>"), "{b}");
+        // The base URL is the configured one, with its trailing slash normalised.
+        assert!(
+            b.contains("template=\"http://s.example/search?q={searchTerms}\""),
+            "{b}"
+        );
+        assert!(b.contains("template=\"http://s.example/api/search?q={searchTerms}\""));
+        // The suggestions endpoint the address bar completes from.
+        assert!(
+            b.contains(
+                "<Url type=\"application/x-suggestions+json\" method=\"get\" \
+template=\"http://s.example/suggest?q={searchTerms}\"/>"
+            ),
+            "no suggestions URL: {b}"
+        );
+        assert!(b.contains("type=\"application/atom+xml\""));
+        assert!(b.ends_with("</OpenSearchDescription>\n"));
+    }
+
+    /// Every page links the descriptor with the right `rel`/`type`, which is how
+    /// a browser discovers it — and the link's title is the configured name.
+    #[test]
+    fn every_page_links_the_descriptor() {
+        let srv = server();
+        for path in ["/", "/search?q=rust", "/about", "/images?q=rust", "/nope"] {
+            let b = srv.route("GET", path).body;
+            assert!(
+                b.contains(
+                    "<link rel=search type='application/opensearchdescription+xml' \
+title='Nodetest' href=/opensearch.xml>"
+                ),
+                "{path} does not advertise the descriptor: {b}"
+            );
+        }
+    }
+
+    /// A site name with XML metacharacters cannot break the descriptor — it is a
+    /// config value, and a `&` in it would otherwise make the document
+    /// unparseable and the engine silently un-addable.
+    #[test]
+    fn a_hostile_site_name_cannot_break_the_descriptor() {
+        let srv = SearchServer::new(Arc::new(Mutex::new(Index::new())), "http://s/&<>")
+            .with_site_name("A & B </ShortName><script>");
+        let b = srv.route("GET", "/opensearch.xml").body;
+        assert!(!b.contains("<script>"), "{b}");
+        assert!(b.contains("A &amp; B &lt;/ShortName&gt;&lt;script&gt;"));
+        assert_eq!(b.matches("</OpenSearchDescription>").count(), 1);
+    }
+
+    // ---- 11: saved searches as Atom feeds -----------------------------------
+
+    #[test]
+    fn a_search_can_be_subscribed_to_as_atom() {
+        let srv = server();
+        let r = srv.route("GET", "/search?q=rust&format=atom");
+        assert_eq!(r.status, 200);
+        assert_eq!(r.ctype, "application/atom+xml; charset=utf-8");
+        let b = &r.body;
+        assert!(
+            b.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<feed "),
+            "{b}"
+        );
+        assert!(b.contains("<title>Nodetest — rust</title>"));
+        // Absolute links: a reader has no page to resolve against.
+        assert!(b.contains(
+            "<link rel=\"self\" type=\"application/atom+xml\" \
+href=\"http://s.example/search?q=rust&amp;format=atom\"/>"
+        ));
+        assert!(b.contains(
+            "<link rel=\"alternate\" type=\"text/html\" href=\"http://s.example/search?q=rust\"/>"
+        ));
+        // One entry per result, each identified by its document URL.
+        assert_eq!(b.matches("<entry>").count(), 3);
+        assert!(b.contains("<id>http://good.example/rust</id>"));
+        // <updated> is the newest crawled document, not now().
+        assert!(b.contains("<updated>2023-11-14T22:13:20Z</updated>"));
+        assert!(b.ends_with("</feed>\n"));
+    }
+
+    /// The feed honours the same query language and vertical as the HTML page —
+    /// it is the same search, rendered differently.
+    #[test]
+    fn the_feed_is_the_same_search() {
+        let srv = server();
+        let html = srv.route("GET", "/search?q=rust+-site%3Aspam.example");
+        let atom = srv.route("GET", "/search?q=rust+-site%3Aspam.example&format=atom");
+        assert!(html.body.contains("http://good.example/rust"));
+        assert!(atom.body.contains("<id>http://good.example/rust</id>"));
+        assert!(!atom.body.contains("blog.spam.example"));
+
+        // A vertical carries into the feed's own self link, so subscribing to
+        // "Files" stays subscribed to Files.
+        let files = srv.route("GET", "/search?q=rust&type=files&format=atom");
+        assert!(files.body.contains("type=files"), "{}", files.body);
+        assert!(files.body.contains("paper.pdf"));
+        assert!(!files.body.contains("<id>http://good.example/rust</id>"));
+    }
+
+    /// A results page advertises its feed in `<head>`, which is how a no-JS
+    /// browser or reader offers to subscribe.
+    #[test]
+    fn the_results_page_advertises_its_feed() {
+        let srv = server();
+        let b = srv.route("GET", "/search?q=rust").body;
+        assert!(
+            b.contains(
+                "<link rel=alternate type='application/atom+xml' title='astrx search feed' \
+href='/search?q=rust&amp;format=atom'>"
+            ),
+            "{b}"
+        );
+        // The home page has no query, so it advertises no feed.
+        assert!(!srv.route("GET", "/").body.contains("application/atom+xml"));
+
+        // …but a feed request for an empty query is still a feed, not the HTML
+        // home page: an empty subscription must stay empty, not break.
+        let empty = srv.route("GET", "/search?q=&format=atom");
+        assert_eq!(empty.ctype, "application/atom+xml; charset=utf-8");
+        assert!(empty.body.contains("<feed "));
+        assert!(!empty.body.contains("<entry>"));
+    }
+
+    /// The two renderers are independent: HTML escaping in the page, XML escaping
+    /// in the feed, and neither leaks the other's rules.
+    #[test]
+    fn the_html_and_atom_renderers_do_not_share_escaping() {
+        let mut ix = Index::new();
+        ix.upsert_document(
+            "http://x.example/p?a=1&b=2",
+            DocFields {
+                title: "Tom & Jerry <b>\u{2}</b>",
+                body: "rust content here",
+                host: "x.example",
+                lang: "en",
+                fetched_at: 1_700_000_000.0,
+                http_status: 200,
+                ..DocFields::default()
+            },
+        );
+        let srv = SearchServer::new(Arc::new(Mutex::new(ix)), "http://s.example");
+
+        let html = srv.route("GET", "/search?q=rust").body;
+        assert!(html.contains("Tom &amp; Jerry &lt;b&gt;"));
+        assert!(!html.contains("<b>\u{2}</b>"));
+
+        let atom = srv.route("GET", "/search?q=rust&format=atom").body;
+        assert!(
+            atom.contains("<title>Tom &amp; Jerry &lt;b&gt;&lt;/b&gt;</title>"),
+            "{atom}"
+        );
+        // The C0 control is REMOVED, not escaped: XML has no way to carry it, and
+        // a feed containing one is rejected outright by every reader.
+        assert!(!atom.contains('\u{2}'));
+        assert!(!atom.contains("&#x2;"));
+        // HTML's `&#x27;` form never appears in the feed; XML's `&apos;` is used.
+        assert!(!atom.contains("&#x27;"));
+        assert!(atom.contains("<id>http://x.example/p?a=1&amp;b=2</id>"));
     }
 }

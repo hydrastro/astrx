@@ -35,7 +35,7 @@
 //!   matching the `websearch` CLI's guards.
 #![forbid(unsafe_code)]
 
-use std::io::{ErrorKind, Write};
+use std::io::ErrorKind;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::process::ExitCode;

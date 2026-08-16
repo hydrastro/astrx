@@ -27,13 +27,16 @@ use crate::entities::extract as extract_entities;
 use crate::lang::guess_lang;
 use crate::onion::normalize_host;
 use crate::simhash::{hamming, simhash64};
+use crawlcore::budget::Budget;
 use crawlcore::scheduler::backoff_interval;
 
 mod codec;
 mod search;
 use codec::{Reader, Writer};
 
-pub use search::{Facets, SearchHit, SearchOpts, SearchResults};
+pub use search::{
+    Facets, SearchHit, SearchOpts, SearchResults, MAX_QUERY_PHRASES, MAX_QUERY_TERMS,
+};
 
 /// Host lifecycle state. `active` hosts are the only ones the frontier will
 /// lease from; `trapped` / `blocked` / `dead` are hidden and never fetched.
@@ -1289,6 +1292,20 @@ impl Store {
 /// Snapshot format version. Bump on any breaking change to the field layout.
 const SNAPSHOT_VERSION: u8 = 1;
 
+/// Bytes one `Writer::len` prefix occupies (a `u64`).
+const LEN_BYTES: usize = 8;
+
+/// Whether the blob could still hold `count` elements of `min_bytes_each`.
+///
+/// The point is that `count` came off the wire, so the check must not be
+/// `count * min <= remaining` written by hand: that product overflows for a
+/// large `count` and wraps to a small number that passes. A [`Budget`] over what
+/// is left never exposes the arithmetic — `saturating_mul` pins an absurd count
+/// at `usize::MAX`, which fits in no budget.
+fn fits_remaining(r: &Reader<'_>, count: usize, min_bytes_each: usize) -> bool {
+    Budget::new(r.remaining()).fits(count.saturating_mul(min_bytes_each))
+}
+
 impl Store {
     /// Serialize the entire store to a self-describing binary blob — the whole
     /// persistence unit (no database file). Collections are emitted in a stable
@@ -1546,6 +1563,17 @@ impl Store {
         for _ in 0..n {
             let pid = r.i64()?;
             let m = r.len()?;
+            // `m` is a u64 the *blob* named, and the next statement reserves it.
+            // An 89-byte file whose entity count says 2^61 asked for 2^61 × 32
+            // bytes of `Vec` in one go: the allocator fails and `restore`
+            // aborts the process, so a hostile (or bit-rotted) snapshot is a
+            // crash rather than the `None` the codec promises. Each element is
+            // two length-prefixed strings — 16 bytes even when both are empty —
+            // so any count that cannot fit in what is left is a lie, and we can
+            // say so before reserving anything.
+            if !fits_remaining(&r, m, 2 * LEN_BYTES) {
+                return None;
+            }
             let mut ents = Vec::with_capacity(m);
             for _ in 0..m {
                 let k = r.str()?;

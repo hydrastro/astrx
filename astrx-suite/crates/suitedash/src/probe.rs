@@ -7,9 +7,10 @@
 //!   async analogue of Python's bare `http.client.HTTPConnection`: it **never
 //!   follows redirects** (the `follow_location = 0` posture the AstrX PHP bridge
 //!   uses for SSRF hardening), targets an explicit host/port taken *only* from
-//!   config, restricts the scheme to `http`/`https`, and caps the response body —
-//!   so a hostile or huge endpoint can neither make the dashboard chase a
-//!   redirect off-box nor buffer unbounded data.
+//!   config, restricts the scheme to `http`/`https`, refuses to emit a request
+//!   line whose target or host could smuggle a second request into it, and caps
+//!   the response body — so a hostile or huge endpoint can neither make the
+//!   dashboard chase a redirect off-box nor buffer unbounded data.
 //!
 //! * **Liveness is tolerant.** Services disagree on where health lives
 //!   (`/health` vs `/healthz` vs nothing). The configured path is tried first,
@@ -212,6 +213,31 @@ mod net_impl {
         crate::config::toml::Value::Str(s.to_string()).py_repr()
     }
 
+    /// Refuse a request-line field that would end the field and start another.
+    ///
+    /// The request is built by interpolation — `GET {target} HTTP/1.1\r\nHost:
+    /// {host}\r\n…` — so a space or a control byte in either field is not a
+    /// strange path, it is a second request: `health_path = "/health HTTP/1.1\r\n
+    /// Host: attacker\r\n\r\nGET /admin"` puts two complete HTTP requests on the
+    /// wire from one probe. [`crate::config::parse_config`] rejects such a path
+    /// when it loads one, but [`ServiceConfig`] is a public struct an embedder can
+    /// fill in directly (and `base_url`'s own path lands in the same line), so the
+    /// emitter refuses as well. Checked before `connect`, so a bad target never
+    /// even opens a socket.
+    fn check_request_field(what: &str, value: &str) -> Result<(), ProbeError> {
+        if let Some(c) = value
+            .chars()
+            .find(|c| *c == ' ' || (*c as u32) < 0x20 || *c as u32 == 0x7f)
+        {
+            return Err(ProbeError::Value(format!(
+                "{what} may not contain {}: {}",
+                py_repr(&c.to_string()),
+                py_repr(value)
+            )));
+        }
+        Ok(())
+    }
+
     /// Epoch seconds (Python `time.time()`).
     fn now_secs() -> f64 {
         SystemTime::now()
@@ -410,8 +436,10 @@ mod net_impl {
     /// following**.
     ///
     /// The scheme must be `http` (see the module's HTTPS note), the host comes
-    /// from the operator's config, the body is capped at [`MAX_BODY`], and the
-    /// header block *and* body share one wall-clock deadline.
+    /// from the operator's config, the assembled request target and host carry no
+    /// byte that could smuggle a second request (see `check_request_field`), the
+    /// body is capped at [`MAX_BODY`], and the header block *and* body share one
+    /// wall-clock deadline.
     ///
     /// # Errors
     /// A [`ProbeError`] describing the transport failure; the caller maps it to a
@@ -462,6 +490,8 @@ mod net_impl {
             full.push('/');
         }
         full.push_str(path);
+        check_request_field("request path", &full)?;
+        check_request_field("host", &host)?;
 
         let started = Instant::now();
         let deadline = started + timeout;

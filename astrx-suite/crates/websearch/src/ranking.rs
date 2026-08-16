@@ -1,9 +1,10 @@
 //! Query parsing, scoring, snippets, and full-text search over the [`Index`].
 //!
-//! A port of the Python `websearch.ranking`. The **pure** pieces — `parse_query`
-//! (the query language: quoted phrases, `+required` / `-excluded` / optional
-//! terms, and `site:`/`host:`/`lang:`/`filetype:`/`intitle:`/`before:`/`after:`/
-//! `date:`/`boost:`/`penalize:` operators), the scoring components
+//! A port of the Python `websearch.ranking`. The **pure** pieces — the query
+//! language (now [`crate::query`], re-exported here: quoted phrases,
+//! `+required` / `-excluded` / optional terms, and `site:`/`-site:`/`host:`/
+//! `lang:`/`filetype:`/`intitle:`/`before:`/`after:`/`date:`/`boost:`/
+//! `penalize:` operators), the scoring components
 //! ([`freshness`], [`proximity_bonus`], [`content_quality`]), and [`make_snippet`]
 //! (query-biased, HTML-escaped, `<mark>`-highlighted) — are cross-checked
 //! byte-identical to Python in `tests/xcheck_ranking.rs`.
@@ -15,8 +16,13 @@
 //! field-weighted Okapi BM25 over the in-memory index — **behaviourally faithful,
 //! not bit-identical** (the stdlib has no FTS5), like the other engines' search.
 
-use crate::index::{Document, Index};
+use crate::index::{DocDerived, Document, Index};
 use std::collections::{HashMap, HashSet};
+
+// The query language lives in [`crate::query`]; it is re-exported here because
+// `parse_query` / `Query` / `parse_date` have been part of this module's public
+// surface since the port, and `tests/xcheck_ranking.rs` addresses them here.
+pub use crate::query::{host_in_site, parse_date, parse_query, Query};
 
 // ---- tunable weights (documented in the README) ---------------------------
 
@@ -65,265 +71,6 @@ pub fn words(text: &str) -> Vec<String> {
         out.push(cur);
     }
     out
-}
-
-/// Split a raw query into tokens: a `"quoted string"` (possibly with spaces) or a
-/// run of non-whitespace — the Python `_TOKEN = "[^"]*"|\S+`.
-fn tokenize_query(raw: &str) -> Vec<String> {
-    let chars: Vec<char> = raw.chars().collect();
-    let n = chars.len();
-    let mut i = 0;
-    let mut out = Vec::new();
-    while i < n {
-        if chars[i].is_whitespace() {
-            i += 1;
-            continue;
-        }
-        if chars[i] == '"' {
-            // A complete "..." (quoted alternative) is tried first; it may hold
-            // spaces. If there is no closing quote, fall through to the \S+ run.
-            if let Some(close) = (i + 1..n).find(|&j| chars[j] == '"') {
-                out.push(chars[i..=close].iter().collect());
-                i = close + 1;
-                continue;
-            }
-        }
-        let start = i;
-        while i < n && !chars[i].is_whitespace() {
-            i += 1;
-        }
-        out.push(chars[start..i].iter().collect());
-    }
-    out
-}
-
-// ---- query -----------------------------------------------------------------
-
-/// A parsed query.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Query {
-    /// The raw input.
-    pub raw: String,
-    /// Plain terms (an OR group).
-    pub optional: Vec<String>,
-    /// `+term` (required).
-    pub required: Vec<String>,
-    /// `-term` (excluded).
-    pub excluded: Vec<String>,
-    /// Quoted phrases (each a list of words).
-    pub phrases: Vec<Vec<String>>,
-    /// Every positive word, for snippet highlighting (order-preserving unique).
-    pub highlight: Vec<String>,
-    /// `intitle:` terms.
-    pub intitle: Vec<String>,
-    /// `site:` / `host:` host-suffix filter.
-    pub site: Option<String>,
-    /// `lang:` two-letter filter.
-    pub lang: Option<String>,
-    /// `filetype:` extension/type filter.
-    pub filetype: Option<String>,
-    /// `after:` / `date:` lower bound (epoch seconds).
-    pub after: Option<f64>,
-    /// `before:` / `date:` upper bound (epoch seconds).
-    pub before: Option<f64>,
-    /// `boost:host` ranking optic.
-    pub boost: Vec<String>,
-    /// `penalize:host` ranking optic.
-    pub penalize: Vec<String>,
-}
-
-impl Query {
-    /// True if there is nothing to text-match on.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.optional.is_empty()
-            && self.required.is_empty()
-            && self.phrases.is_empty()
-            && self.intitle.is_empty()
-    }
-
-    /// True if any structured filter is set.
-    #[must_use]
-    pub fn has_filter(&self) -> bool {
-        self.site.is_some()
-            || self.lang.is_some()
-            || self.filetype.is_some()
-            || self.after.is_some()
-            || self.before.is_some()
-    }
-}
-
-const OPERATORS: &[&str] = &[
-    "site", "host", "lang", "filetype", "intitle", "before", "after", "date", "boost", "penalize",
-];
-
-/// Parse `YYYY-MM-DD` into UTC epoch seconds, or `None`.
-#[must_use]
-pub fn parse_date(value: &str) -> Option<f64> {
-    let v = value.trim();
-    let parts: Vec<&str> = v.split('-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let y: i64 = parts[0].parse().ok()?;
-    let m: i64 = parts[1].parse().ok()?;
-    let d: i64 = parts[2].parse().ok()?;
-    if parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
-        return None;
-    }
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
-    Some((days_from_civil(y, m, d) * 86400) as f64)
-}
-
-/// Days since the Unix epoch for a proleptic-Gregorian date (Hinnant's algorithm).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400; // [0, 399]
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1; // [0, 365]
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
-    era * 146097 + doe - 719468
-}
-
-fn apply_operator(q: &mut Query, key: &str, value: &str) {
-    let key = key.to_lowercase();
-    let value = value.trim();
-    if value.is_empty() {
-        return;
-    }
-    match key.as_str() {
-        "site" | "host" => {
-            q.site = Some(
-                value
-                    .to_lowercase()
-                    .trim_matches('/')
-                    .trim_start_matches('.')
-                    .to_string(),
-            );
-        }
-        "lang" => {
-            if let Some(w) = words(value).into_iter().next() {
-                q.lang = Some(w.chars().take(8).collect());
-            }
-        }
-        "filetype" => {
-            if let Some(ft) = words(value).into_iter().next() {
-                q.filetype = Some(ft);
-            }
-        }
-        "intitle" => {
-            for w in words(value) {
-                q.intitle.push(w.clone());
-                q.highlight.push(w);
-            }
-        }
-        "before" => {
-            if let Some(ts) = parse_date(value) {
-                q.before = Some(ts);
-            }
-        }
-        "after" => {
-            if let Some(ts) = parse_date(value) {
-                q.after = Some(ts);
-            }
-        }
-        "date" => {
-            let (lo, hi) = match value.split_once("..") {
-                Some((a, b)) => (a, Some(b)),
-                None => (value, None),
-            };
-            if let Some(a) = parse_date(lo) {
-                q.after = Some(a);
-            }
-            if let Some(h) = hi {
-                if !h.is_empty() {
-                    if let Some(b) = parse_date(h) {
-                        q.before = Some(b + 86400.0);
-                    }
-                }
-            }
-        }
-        "boost" | "penalize" => {
-            let h = value
-                .to_lowercase()
-                .trim_matches('/')
-                .trim_start_matches('.')
-                .to_string();
-            if !h.is_empty() {
-                if key == "boost" {
-                    q.boost.push(h);
-                } else {
-                    q.penalize.push(h);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-fn split_operator(tok: &str) -> Option<(&str, &str)> {
-    let (key, value) = tok.split_once(':')?;
-    if value.is_empty() {
-        return None;
-    }
-    if OPERATORS.contains(&key.to_lowercase().as_str()) {
-        Some((key, value))
-    } else {
-        None
-    }
-}
-
-/// Parse a user query into a structured [`Query`]. All free text is reduced to
-/// word tokens (no user input can reach a matcher as an operator).
-#[must_use]
-pub fn parse_query(raw: &str) -> Query {
-    let mut q = Query {
-        raw: raw.to_string(),
-        ..Query::default()
-    };
-    for tok in tokenize_query(raw) {
-        if tok.starts_with('"') && tok.ends_with('"') && tok.chars().count() >= 2 {
-            let ws = words(&tok);
-            if ws.len() >= 2 {
-                q.highlight.extend(ws.iter().cloned());
-                q.phrases.push(ws);
-            } else if let Some(w) = ws.into_iter().next() {
-                q.required.push(w.clone());
-                q.highlight.push(w);
-            }
-            continue;
-        }
-        if let Some((key, value)) = split_operator(&tok) {
-            apply_operator(&mut q, key, value);
-            continue;
-        }
-        let mut t = tok.as_str();
-        let sign = t.chars().next().filter(|c| *c == '+' || *c == '-');
-        if sign.is_some() {
-            t = &t[1..];
-        }
-        let ws = words(t);
-        if ws.is_empty() {
-            continue;
-        }
-        match sign {
-            Some('-') => q.excluded.extend(ws),
-            Some('+') => {
-                q.highlight.extend(ws.iter().cloned());
-                q.required.extend(ws);
-            }
-            _ => {
-                q.highlight.extend(ws.iter().cloned());
-                q.optional.extend(ws);
-            }
-        }
-    }
-    // de-duplicate highlight while preserving order
-    let mut seen = HashSet::new();
-    q.highlight.retain(|w| seen.insert(w.clone()));
-    q
 }
 
 // ---- scoring components ----------------------------------------------------
@@ -445,16 +192,67 @@ fn find_space(chars: &[char], from: usize, to: usize) -> Option<usize> {
     (from..to).find(|&i| chars[i] == ' ')
 }
 
+/// How much of a document body [`make_snippet`] will scan for term hits.
+///
+/// A snippet is `width` (280) characters wide, so a hit 64 kB into the body can
+/// never be rendered anyway — but the hit scan used to run over the whole
+/// uncapped body, once per result row, ten rows per page, while holding the
+/// index mutex. Capping the region bounds the two `Vec<char>` allocations at
+/// 256 kB each and the scan at a fixed cost, whatever the crawler stored.
+const SNIPPET_SCAN_CHARS: usize = 64 * 1024;
+
+/// The start of the best snippet window: the EARLIEST hit position maximising
+/// the number of hits in `[h, h + width)`.
+///
+/// `hits` must be ascending (it is: [`word_spans`] emits spans left to right).
+/// Two pointers over that order make this O(hits); the obvious nested form —
+/// `for &h in &hits { hits.iter().filter(…).count() }` — is O(hits²), which on a
+/// body of `"a "` repeated measured 7 ms at 4 kB, 854 ms at 64 kB and **12.85 s
+/// at 256 kB**, per result row, under the global index lock.
+fn best_window_start(hits: &[usize], width: usize) -> usize {
+    let mut best_pos = hits[0];
+    let mut best_count = 0usize;
+    // `lo`/`hi` bracket the half-open window; both only ever move forward,
+    // because `h` is non-decreasing.
+    let (mut lo, mut hi) = (0usize, 0usize);
+    for &h in hits {
+        // `h + width` on a wire-derived width would overflow; saturating keeps
+        // the window "to the end of the body", which is what a huge width means.
+        let end = h.saturating_add(width);
+        while lo < hits.len() && hits[lo] < h {
+            lo += 1;
+        }
+        if hi < lo {
+            hi = lo;
+        }
+        while hi < hits.len() && hits[hi] < end {
+            hi += 1;
+        }
+        let c = hi - lo;
+        if c > best_count {
+            best_count = c;
+            best_pos = h;
+        }
+    }
+    best_pos
+}
+
 /// A query-biased, HTML-safe snippet with matched `terms` wrapped in `<mark>`.
 /// The text is HTML-escaped first, then whole-word matches highlighted. Mirrors
-/// the Python `make_snippet` (window selection quirks included).
+/// the Python `make_snippet` (window selection quirks included), over the first
+/// [`SNIPPET_SCAN_CHARS`] characters of `body`.
 #[must_use]
 pub fn make_snippet(body: &str, terms: &[String], width: usize) -> String {
     if body.is_empty() {
         return String::new();
     }
     let termset: HashSet<String> = terms.iter().map(|t| t.to_lowercase()).collect();
-    let chars: Vec<char> = body.chars().collect();
+    // Only the scanned prefix is materialised: `body` is whatever the crawler
+    // stored (up to `max_bytes`, 2 MB by default), and `Vec<char>` is 4 bytes a
+    // character — collecting the whole of it, twice, per rendered row, is how a
+    // results page came to cost hundreds of megabytes and seconds of CPU.
+    let scan = SNIPPET_SCAN_CHARS.max(width.saturating_mul(2));
+    let chars: Vec<char> = body.chars().take(scan).collect();
     let low = lower1(&chars);
     let spans = word_spans(&low);
 
@@ -466,17 +264,7 @@ pub fn make_snippet(body: &str, terms: &[String], width: usize) -> String {
             .map(|&(s, _)| s)
             .collect();
         if !hits.is_empty() {
-            let mut best_pos = hits[0];
-            let mut best_count = 0usize;
-            for &h in &hits {
-                let (lo, hi) = (h, h + width);
-                let c = hits.iter().filter(|&&x| lo <= x && x < hi).count();
-                if c > best_count {
-                    best_count = c;
-                    best_pos = h;
-                }
-            }
-            start = best_pos.saturating_sub(width / 4);
+            start = best_window_start(&hits, width).saturating_sub(width / 4);
         }
     }
 
@@ -635,75 +423,60 @@ const FILETYPE_CT: &[(&str, &str)] = &[
     ("xml", "application/xml"),
 ];
 
+/// A document paired with its memoised text derivation. The [`Document`] itself
+/// is read LIVE, so `incoming` / `host_rank` / `fetched_at` reflect the latest
+/// `finalize()`; only the tokenisation comes from the cache.
 struct DocTokens<'a> {
     doc: &'a Document,
-    title_words: Vec<String>,
-    desc_words: Vec<String>,
-    body_words: Vec<String>,
-    all: HashSet<String>,
-    title_set: HashSet<String>,
-    title_low: String,
-    desc_low: String,
-    body_low: String,
+    d: &'a DocDerived,
 }
 
-impl<'a> DocTokens<'a> {
-    fn new(doc: &'a Document) -> Self {
-        let title_words = words(&doc.title);
-        let desc_words = words(&doc.description);
-        let body_words = words(&doc.body);
-        let mut all: HashSet<String> = HashSet::new();
-        all.extend(title_words.iter().cloned());
-        all.extend(desc_words.iter().cloned());
-        all.extend(body_words.iter().cloned());
-        let title_set: HashSet<String> = title_words.iter().cloned().collect();
-        DocTokens {
-            doc,
-            title_words,
-            desc_words,
-            body_words,
-            all,
-            title_set,
-            title_low: doc.title.to_lowercase(),
-            desc_low: doc.description.to_lowercase(),
-            body_low: doc.body.to_lowercase(),
-        }
-    }
-
+impl DocTokens<'_> {
     fn matches(&self, q: &Query) -> bool {
         for t in &q.required {
-            if !self.all.contains(t) {
+            if !self.d.all.contains(t) {
                 return false;
             }
         }
         for t in &q.excluded {
-            if self.all.contains(t) {
+            if self.d.all.contains(t) {
                 return false;
             }
         }
-        if !q.optional.is_empty() && !q.optional.iter().any(|t| self.all.contains(t)) {
+        if !q.optional.is_empty() && !q.optional.iter().any(|t| self.d.all.contains(t)) {
             return false;
         }
         for t in &q.intitle {
-            if !self.title_set.contains(t) {
+            if !self.d.title_tf.contains_key(t) {
                 return false;
             }
         }
-        for phrase in &q.phrases {
-            let needle = phrase.join(" ");
-            if !(self.title_low.contains(&needle)
-                || self.desc_low.contains(&needle)
-                || self.body_low.contains(&needle))
-            {
-                return false;
+        // A phrase is a SUBSTRING test on the lower-cased field, so it needs the
+        // text, not the tokens. The caseless copies are built here — once, and
+        // only for a query that actually carries a phrase. Building them for
+        // every document on every query is most of what made `/search?q=lorem`
+        // cost 790 ms on a 200-document × 100 kB corpus.
+        if !q.phrases.is_empty() {
+            let title_low = self.doc.title.to_lowercase();
+            let desc_low = self.doc.description.to_lowercase();
+            let body_low = self.doc.body.to_lowercase();
+            for phrase in &q.phrases {
+                let needle = phrase.join(" ");
+                if !(title_low.contains(&needle)
+                    || desc_low.contains(&needle)
+                    || body_low.contains(&needle))
+                {
+                    return false;
+                }
             }
         }
         true
     }
 }
 
-fn tf(words: &[String], term: &str) -> f64 {
-    words.iter().filter(|w| w.as_str() == term).count() as f64
+/// The frequency of `term` in a field, from the memoised per-field count map.
+fn tf(field: &HashMap<String, u32>, term: &str) -> f64 {
+    f64::from(field.get(term).copied().unwrap_or(0))
 }
 
 /// Field-weighted Okapi BM25 relevance (positive; larger = better) — the
@@ -723,16 +496,16 @@ fn bm25(
             continue;
         }
         let idf = (1.0 + (n as f64 - d as f64 + 0.5) / (d as f64 + 0.5)).ln();
-        for (weight, fwords, avglen) in [
-            (W_TITLE, &dt.title_words, avg.0),
-            (W_DESC, &dt.desc_words, avg.1),
-            (W_BODY, &dt.body_words, avg.2),
+        for (weight, fcounts, flen, avglen) in [
+            (W_TITLE, &dt.d.title_tf, dt.d.title_len, avg.0),
+            (W_DESC, &dt.d.desc_tf, dt.d.desc_len, avg.1),
+            (W_BODY, &dt.d.body_tf, dt.d.body_len, avg.2),
         ] {
-            let f = tf(fwords, t);
+            let f = tf(fcounts, t);
             if f == 0.0 {
                 continue;
             }
-            let len = fwords.len() as f64;
+            let len = flen as f64;
             let denom = f + BM25_K1 * (1.0 - BM25_B + BM25_B * len / avglen.max(1.0));
             score += weight * idf * (f * (BM25_K1 + 1.0)) / denom;
         }
@@ -742,9 +515,14 @@ fn bm25(
 
 fn passes_filters(doc: &Document, q: &Query, only_files: bool) -> bool {
     if let Some(site) = &q.site {
-        if !(doc.host == *site || doc.host.ends_with(&format!(".{site}"))) {
+        if !host_in_site(&doc.host, site) {
             return false;
         }
+    }
+    // `-site:` excludes the host and everything under it, so blocking a forum
+    // blocks its subdomains too — the same scope rule as the positive form.
+    if q.not_site.iter().any(|s| host_in_site(&doc.host, s)) {
+        return false;
     }
     if let Some(lang) = &q.lang {
         if doc.lang != *lang {
@@ -829,18 +607,31 @@ pub fn search(index: &Index, raw_query: &str, opts: &SearchOpts) -> SearchRespon
         };
     }
 
-    let toks: Vec<DocTokens> = index.all_docs().map(DocTokens::new).collect();
+    // The tokenisation is memoised on the index and invalidated by text writes,
+    // so a query pays for it only after a crawl has changed something. The `Arc`
+    // is held for the whole search, which is what keeps `&'a DocDerived` valid.
+    let derived = index.derived();
+    let toks: Vec<DocTokens> = index
+        .all_docs()
+        .map(|doc| DocTokens {
+            doc,
+            d: derived
+                .docs
+                .get(&doc.id)
+                .expect("derived cache covers every document"),
+        })
+        .collect();
     let n = toks.len();
 
     // Corpus stats for BM25 over the highlight terms.
     let mut df: HashMap<&str, usize> = HashMap::new();
     let (mut sum_t, mut sum_d, mut sum_b) = (0.0, 0.0, 0.0);
     for dt in &toks {
-        sum_t += dt.title_words.len() as f64;
-        sum_d += dt.desc_words.len() as f64;
-        sum_b += dt.body_words.len() as f64;
+        sum_t += dt.d.title_len as f64;
+        sum_d += dt.d.desc_len as f64;
+        sum_b += dt.d.body_len as f64;
         for t in &q.highlight {
-            if dt.all.contains(t) {
+            if dt.d.all.contains(t) {
                 *df.entry(t.as_str()).or_insert(0) += 1;
             }
         }
@@ -1064,5 +855,132 @@ mod tests {
         assert!(s.contains("&lt;script&gt;"));
         assert!(s.contains("<mark>target</mark>"));
         assert!(!s.contains("<script>"));
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// The window search exactly as it was written before the fix: for every hit,
+    /// count every hit inside `[h, h + width)` and keep the first maximum. Kept
+    /// here as the differential oracle — the goldens pin the chosen snippet, so
+    /// the replacement must agree with this on every input, not merely be faster.
+    fn best_window_start_quadratic(hits: &[usize], width: usize) -> usize {
+        let mut best_pos = hits[0];
+        let mut best_count = 0usize;
+        for &h in hits {
+            let (lo, hi) = (h, h + width);
+            let c = hits.iter().filter(|&&x| lo <= x && x < hi).count();
+            if c > best_count {
+                best_count = c;
+                best_pos = h;
+            }
+        }
+        best_pos
+    }
+
+    /// A deterministic xorshift64* — no `rand` crate, and a failure reproduces.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % (n as u64).max(1)) as usize
+        }
+    }
+
+    /// AUDIT REGRESSION (HIGH). The linear two-pointer window must choose the
+    /// SAME start as the quadratic loop it replaced, over many hit shapes:
+    /// clustered, sparse, single, all-identical-gap, and widths from 0 to wider
+    /// than the whole hit range.
+    #[test]
+    fn the_linear_window_picks_the_same_start_as_the_quadratic_one() {
+        let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+        for case in 0..2000u32 {
+            let n = 1 + rng.below(40);
+            let spread = 1 + rng.below(4) * 30; // dense clusters .. sparse hits
+            let mut hits = Vec::with_capacity(n);
+            let mut pos = rng.below(50);
+            for _ in 0..n {
+                hits.push(pos);
+                pos += 1 + rng.below(spread);
+            }
+            for width in [0usize, 1, 2, 7, 30, 60, 280, 1000, 100_000] {
+                let fast = best_window_start(&hits, width);
+                let slow = best_window_start_quadratic(&hits, width);
+                assert_eq!(
+                    fast, slow,
+                    "case {case} width {width} disagreed on hits {hits:?}"
+                );
+            }
+        }
+    }
+
+    /// The same equivalence at the level the goldens actually pin: the rendered
+    /// snippet string, over random bodies and term sets.
+    #[test]
+    fn the_rendered_snippet_is_unchanged_for_normal_bodies() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let vocab = ["alpha", "beta", "gamma", "delta", "eps", "zeta", "x", "yy"];
+        for _ in 0..400 {
+            let words: Vec<&str> = (0..1 + rng.below(300))
+                .map(|_| vocab[rng.below(vocab.len())])
+                .collect();
+            let body = words.join(" ");
+            let terms: Vec<String> = (0..1 + rng.below(3))
+                .map(|_| vocab[rng.below(vocab.len())].to_string())
+                .collect();
+            let width = [40usize, 60, 280][rng.below(3)];
+
+            // Reproduce the pre-fix pipeline: full body, quadratic window.
+            let termset: HashSet<String> = terms.iter().map(|t| t.to_lowercase()).collect();
+            let chars: Vec<char> = body.chars().collect();
+            let low = lower1(&chars);
+            let spans = word_spans(&low);
+            let hits: Vec<usize> = spans
+                .iter()
+                .filter(|&&(s, e)| termset.contains(&low[s..e].iter().collect::<String>()))
+                .map(|&(s, _)| s)
+                .collect();
+            let expected_start = if hits.is_empty() {
+                0
+            } else {
+                best_window_start_quadratic(&hits, width).saturating_sub(width / 4)
+            };
+            let got_start = if hits.is_empty() {
+                0
+            } else {
+                best_window_start(&hits, width).saturating_sub(width / 4)
+            };
+            assert_eq!(expected_start, got_start, "body {body:?} terms {terms:?}");
+            // …and the function as a whole still renders something anchored there.
+            let s = make_snippet(&body, &terms, width);
+            assert_eq!(s.starts_with("&hellip; "), expected_start > 0);
+        }
+    }
+
+    /// AUDIT REGRESSION (HIGH). 256 kB of `"a "` with `a` as the term is 128k hit
+    /// positions; the quadratic window took **12.85 s** on it, ten times per
+    /// results page, holding the index mutex throughout. The linear window plus
+    /// the scan cap put it in single-digit milliseconds — the bound below is two
+    /// orders of magnitude above that and still an order of magnitude below the
+    /// old cost of the CAPPED region alone.
+    #[test]
+    fn a_body_of_nothing_but_hits_is_not_quadratic() {
+        let body = "a ".repeat(128 * 1024);
+        let terms = vec!["a".to_string()];
+        let t0 = std::time::Instant::now();
+        let s = make_snippet(&body, &terms, 280);
+        let dt = t0.elapsed();
+        assert!(s.contains("<mark>a</mark>"));
+        assert!(
+            dt < std::time::Duration::from_millis(300),
+            "make_snippet over a 256 kB all-hits body took {dt:?}; the window search is quadratic again"
+        );
     }
 }

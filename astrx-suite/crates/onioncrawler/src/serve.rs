@@ -17,12 +17,36 @@
 //! (submit onion seeds through the abuse filter + `add_seed` caps), `/purge`
 //! (block a host + delete its pages), `/recrawl` (requeue due pages). The crawl
 //! orchestration loop is the remaining increment.
+//!
+//! # The write endpoints are durable
+//!
+//! `/purge`, `/add` and `/recrawl` mutate the shared [`Store`] **and commit it**
+//! to [`ServeConfig::store_path`] through `crawlcore::atomicfile::write_atomic`,
+//! under the same lock as the mutation. Each answers with `"persisted"` saying
+//! whether the change reached disk, and a failed write is a `500`. Leaving
+//! `store_path` unset is a supported in-memory deployment, and then
+//! `"persisted":false` says exactly that.
+//!
+//! # What bounds a hostile client
+//!
+//! * **Rate limits** — [`SearchServer::route_limited`] charges every request to
+//!   a per-client [`TokenBucket`] before it reaches the store, in two classes
+//!   (reads, writes) with [`RateLimits`] configurable per endpoint class;
+//!   `/health` and `/metrics` are exempt. This is on the network path
+//!   ([`serve`]); the pure [`SearchServer::route`] deliberately has no limiter,
+//!   as it has no client to key on.
+//! * **A total per-request deadline** — [`ServeLimits::request_timeout`] covers
+//!   the head read, the route and the response write together, so a byte-at-a-
+//!   time client cannot hold a task and a file descriptor open indefinitely.
+//! * **A header cap and a body budget** — see `handle_conn_from`.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::abuse::AbuseFilter;
 use crate::lang::known_languages;
 use crate::onion::normalize_host;
+use crate::ratelimit::TokenBucket;
 use crate::store::{Caps, Facets, SearchHit, Store};
 use crate::submit::{submit_many, SubmitResult, SubmitSummary};
 use crawlcore::urlparse::{parse_qsl, urlencode};
@@ -44,6 +68,45 @@ pub struct ServeConfig {
     pub allow_i2p: bool,
     /// Fallback recrawl interval for `POST /recrawl`.
     pub recrawl_interval: f64,
+    /// The snapshot file the write endpoints commit to after every mutation.
+    ///
+    /// `None` (the default) makes `/purge`, `/add` and `/recrawl` **RAM-only**:
+    /// they change what this process serves and nothing else, and the next
+    /// `read_store` brings the purged pages straight back. Every response from a
+    /// write endpoint carries `"persisted"` saying which of the two happened, so
+    /// an operator running a takedown is never told "removed" about a change
+    /// that only exists in memory.
+    pub store_path: Option<String>,
+    /// Per-client request limits ([`RateLimits`]).
+    pub rate_limits: RateLimits,
+}
+
+/// The trap budgets a public (unauthenticated) `POST /add` submission is admitted
+/// under — the values [`ServeConfig::default`] installs in
+/// [`ServeConfig::submit_caps`].
+///
+/// These are *not* cosmetic. `submit_caps` used to default to `Caps::default()`,
+/// i.e. every field `None`, i.e. **no cap at all** on the endpoint the module doc
+/// calls "capped". With `allow_public_submit` on and no caps, one POST carrying
+/// `max_public_add_urls` (100) distinct v3 onion URLs adds 100 frontier rows and
+/// up to 100 host rows; repeated at the write rate limit (1/s) that is 360 000
+/// rows an hour, each holding a ~70-byte URL plus its template and skeleton keys,
+/// growing the frontier — and every snapshot written from it — until the process
+/// is OOM-killed. Nothing else in the path bounds it: the abuse filter only
+/// blocks *known* hosts, and a v3 onion address is 2^256 addresses' worth of
+/// distinct-looking strings to invent.
+pub mod submit_caps {
+    /// Global frontier ceiling for public submissions (checked against the
+    /// `urls_enqueued` counter). Public intake stops at 100k URLs; the crawler's
+    /// own expansion is `force`d and unaffected.
+    pub const MAX_UNIQUE_URLS: i64 = 100_000;
+    /// Per-host enqueue ceiling. A public submitter seeds a host, they do not
+    /// enumerate it — 100 URLs on one onion is already far past a seed.
+    pub const MAX_PAGES_PER_HOST: i64 = 100;
+    /// Per-(host, template) ceiling — the calendar / query-explosion backstop.
+    pub const MAX_URLS_PER_TEMPLATE: i64 = 20;
+    /// Per-skeleton ceiling — the id-parameterized page-farm backstop.
+    pub const MAX_URLS_PER_SKELETON: i64 = 50;
 }
 
 impl Default for ServeConfig {
@@ -51,11 +114,142 @@ impl Default for ServeConfig {
         ServeConfig {
             admin_token: String::new(),
             allow_public_submit: false,
-            submit_caps: Caps::default(),
+            submit_caps: Caps {
+                max_unique_urls: Some(submit_caps::MAX_UNIQUE_URLS),
+                max_pages_per_host: Some(submit_caps::MAX_PAGES_PER_HOST),
+                max_urls_per_template: Some(submit_caps::MAX_URLS_PER_TEMPLATE),
+                max_urls_per_skeleton: Some(submit_caps::MAX_URLS_PER_SKELETON),
+            },
             max_public_add_urls: 100,
             allow_v2: false,
             allow_i2p: false,
             recrawl_interval: 0.0,
+            store_path: None,
+            rate_limits: RateLimits::default(),
+        }
+    }
+}
+
+/// Per-client token-bucket limits for the served endpoints, in two classes.
+///
+/// Applied by [`SearchServer::route_limited`], which is what the accept loop
+/// calls; the buckets are shared by every clone of the server, so the limit is
+/// per client and not per connection.
+///
+/// # Why two classes
+///
+/// A read costs one bounded search; a write costs a mutation **plus a full
+/// snapshot fsync** of the whole index (see [`ServeConfig::store_path`]), so the
+/// two cannot share a budget. At the read defaults one client gets 20 searches a
+/// second; at the write defaults it gets one snapshot write a second sustained,
+/// which is also what bounds how fast a public `/add` can grow the frontier
+/// (100 URLs per request × 1 request/s) before [`ServeConfig::submit_caps`]
+/// stops it outright.
+///
+/// # The onion-service caveat
+///
+/// Behind a Tor onion service every request arrives from `127.0.0.1`, so the
+/// per-key table collapses to one shared bucket for the whole world (see the
+/// [`crate::ratelimit`] module doc). The read defaults are set for that reading —
+/// generous enough not to be a self-DoS on a busy hidden service, tight enough
+/// that one client cannot pin the store mutex.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RateLimits {
+    /// Sustained GETs per second per client (`/`, `/search`, `/api/*`, `/find`,
+    /// `/cached`, `/stats`, `/robots.txt`, `/opensearch.xml`).
+    pub read_rate: f64,
+    /// Burst of GETs a client may take at once.
+    pub read_burst: f64,
+    /// Sustained POSTs per second per client (`/add`, `/purge`, `/recrawl`).
+    pub write_rate: f64,
+    /// Burst of POSTs a client may take at once.
+    pub write_burst: f64,
+    /// Distinct clients tracked before LRU eviction (bounded memory).
+    pub max_clients: usize,
+}
+
+impl Default for RateLimits {
+    fn default() -> Self {
+        RateLimits {
+            read_rate: 20.0,
+            read_burst: 60.0,
+            write_rate: 1.0,
+            write_burst: 10.0,
+            max_clients: 4096,
+        }
+    }
+}
+
+impl RateLimits {
+    /// A configuration with no limiting at all — for an embedder that limits at
+    /// a reverse proxy, and for tests that drive thousands of requests.
+    #[must_use]
+    pub fn unlimited() -> Self {
+        RateLimits {
+            read_rate: f64::INFINITY,
+            read_burst: f64::INFINITY,
+            write_rate: f64::INFINITY,
+            write_burst: f64::INFINITY,
+            max_clients: 1,
+        }
+    }
+}
+
+/// Which limiter bucket a request is charged to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RateClass {
+    Read,
+    Write,
+    /// `/health` and `/metrics`: the monitoring scrape. Exempt on purpose — a
+    /// limiter that answers 429 to the health check makes an overloaded server
+    /// look dead to its supervisor, which restarts it, which is worse.
+    Exempt,
+}
+
+impl RateClass {
+    fn of(method: &str, path: &str) -> Self {
+        if method == "POST" {
+            return RateClass::Write;
+        }
+        match path {
+            "/health" | "/metrics" => RateClass::Exempt,
+            _ => RateClass::Read,
+        }
+    }
+}
+
+/// What a write endpoint's mutation did to durable storage.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Commit {
+    /// Written to [`ServeConfig::store_path`] and fsynced.
+    Durable,
+    /// Nothing to write: the request changed no state.
+    NoChange,
+    /// No `store_path` configured — the mutation exists only in this process.
+    RamOnly,
+    /// The snapshot write failed; the mutation exists only in this process.
+    Failed(String),
+}
+
+impl Commit {
+    /// The `"persisted":…` / `"error":…` tail of a write endpoint's JSON body.
+    fn json_fields(&self) -> String {
+        match self {
+            Commit::Durable | Commit::NoChange => ",\"persisted\":true".to_string(),
+            Commit::RamOnly => ",\"persisted\":false,\"warning\":\"no snapshot path configured; \
+change is in-memory only and will not survive a restart\""
+                .to_string(),
+            Commit::Failed(e) => format!(",\"persisted\":false,\"error\":\"{}\"", json_str(e)),
+        }
+    }
+
+    /// The HTTP status a write endpoint answers with. A failed commit is a 500:
+    /// the operator asked for a takedown, the pages are gone from RAM but will
+    /// be back on the next load, and a 200 here would say otherwise.
+    fn status(&self) -> u16 {
+        match self {
+            Commit::Failed(_) => 500,
+            _ => 200,
         }
     }
 }
@@ -152,8 +346,12 @@ fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
         _ => "OK",
     }
 }
@@ -546,6 +744,14 @@ pub struct SearchServer {
     abuse: Option<Arc<AbuseFilter>>,
     base_url: String,
     config: ServeConfig,
+    /// The two rate-limit buckets, shared by every clone of this handle — a
+    /// per-connection bucket would limit nothing, since a flood is a flood of
+    /// connections.
+    limiter: Arc<Mutex<(TokenBucket, TokenBucket)>>,
+    /// The monotonic origin the limiter's clock is measured from.
+    /// [`std::time::SystemTime`] is not usable here: an NTP step backwards makes
+    /// `now - last` negative, which *removes* tokens from every bucket.
+    started: Instant,
 }
 
 impl std::fmt::Debug for SearchServer {
@@ -565,11 +771,14 @@ impl SearchServer {
     /// public submit via [`with_config`](Self::with_config)) is set.
     #[must_use]
     pub fn new(store: Arc<Mutex<Store>>, base_url: impl Into<String>) -> Self {
+        let config = ServeConfig::default();
         SearchServer {
+            limiter: Arc::new(Mutex::new(buckets(&config.rate_limits))),
             store,
             abuse: None,
             base_url: base_url.into(),
-            config: ServeConfig::default(),
+            config,
+            started: Instant::now(),
         }
     }
 
@@ -581,10 +790,20 @@ impl SearchServer {
         self
     }
 
-    /// Replace the full serve configuration (submission policy + admin token).
+    /// Replace the full serve configuration (submission policy + admin token +
+    /// rate limits + snapshot path). Rebuilds the rate-limit buckets, so the
+    /// limits in `config` are the ones in force.
     #[must_use]
     pub fn with_config(mut self, config: ServeConfig) -> Self {
+        self.limiter = Arc::new(Mutex::new(buckets(&config.rate_limits)));
         self.config = config;
+        self
+    }
+
+    /// Commit the write endpoints to `path`, so a purge survives a restart.
+    #[must_use]
+    pub fn with_store_path(mut self, path: impl Into<String>) -> Self {
+        self.config.store_path = Some(path.into());
         self
     }
 
@@ -600,9 +819,39 @@ impl SearchServer {
     }
 
     fn admin_ok(&self, auth: Option<&str>) -> bool {
-        self.admin_enabled()
-            && auth.and_then(|a| a.strip_prefix("Bearer ")).map(str::trim)
-                == Some(self.config.admin_token.as_str())
+        let Some(given) = auth.and_then(|a| a.strip_prefix("Bearer ")).map(str::trim) else {
+            return false;
+        };
+        // Constant-time: `==` on `str` is a `memcmp` that returns at the first
+        // differing byte, so the time to reject "Bearer a…" vs "Bearer b…" leaks
+        // how many leading bytes were right. Over a loopback socket that
+        // difference is measurable, and it turns guessing a 32-byte token from
+        // 2^256 work into 32 × 256 requests.
+        self.admin_enabled() && ct_eq(given.as_bytes(), self.config.admin_token.as_bytes())
+    }
+
+    /// Persist the just-mutated store to [`ServeConfig::store_path`].
+    ///
+    /// Called with the store lock still held, so the bytes written are exactly
+    /// the state the request produced and a concurrent writer cannot interleave
+    /// a second mutation between the snapshot and the rename. `changed` is the
+    /// endpoint's own answer to "did this request alter any state" — a `/add`
+    /// that enqueued nothing must not fsync the whole index.
+    fn commit(&self, store: &Store, changed: bool) -> Commit {
+        if !changed {
+            return Commit::NoChange;
+        }
+        let Some(path) = self.config.store_path.as_deref() else {
+            return Commit::RamOnly;
+        };
+        // Published by rename (the same durable-publish the CLI's `write_store`
+        // uses): a crash midway through a plain `fs::write` would leave a
+        // truncated blob that `Store::restore` correctly refuses, i.e. a purge
+        // would destroy the whole index instead of one host.
+        match crawlcore::atomicfile::write_atomic(path, &store.snapshot()) {
+            Ok(()) => Commit::Durable,
+            Err(e) => Commit::Failed(format!("cannot write {path}: {e}")),
+        }
     }
 
     fn auth_error(&self) -> Resp {
@@ -613,10 +862,54 @@ impl SearchServer {
         }
     }
 
+    /// Charge one request to `client`'s bucket for its [`RateClass`]; `true` if
+    /// it may proceed.
+    fn rate_ok(&self, client: &str, class: RateClass) -> bool {
+        if class == RateClass::Exempt {
+            return true;
+        }
+        let now = self.started.elapsed().as_secs_f64();
+        let mut b = self.limiter.lock().expect("limiter lock");
+        let bucket = match class {
+            RateClass::Write => &mut b.1,
+            _ => &mut b.0,
+        };
+        bucket.allow(client, 1.0, now)
+    }
+
+    /// [`route`](Self::route), with the caller's [`RateLimits`] applied first.
+    ///
+    /// This is what the accept loop calls, and it is the only place the limiter
+    /// lives: `client` is the peer address, so the buckets are per client and
+    /// shared across that client's connections. Reads and writes are charged to
+    /// separate buckets ([`RateClass`]); `/health` and `/metrics` are exempt.
+    /// A request over its class's budget is answered `429` and never reaches the
+    /// store — which is the point, since the expensive part of both a search and
+    /// a purge happens under the store mutex.
+    #[must_use]
+    pub fn route_limited(
+        &self,
+        client: &str,
+        method: &str,
+        target: &str,
+        body: &str,
+        auth: Option<&str>,
+    ) -> Resp {
+        let (path, _) = split_target(target);
+        if !self.rate_ok(client, RateClass::of(method, path)) {
+            return Resp::json(429, "{\"error\":\"rate limited\"}".to_string());
+        }
+        self.route(method, target, body, auth)
+    }
+
     /// Route one request to a response. Pure and synchronous: it locks the store,
     /// computes, and unlocks before returning — safe to call from a test without
     /// any socket, and never holds the lock across an `.await`. `auth` is the raw
     /// `Authorization` header value (e.g. `"Bearer <token>"`), if present.
+    ///
+    /// **No rate limiting happens here** — it has no client to key on. The
+    /// network path goes through [`route_limited`](Self::route_limited); an
+    /// embedder calling `route` directly is doing its own limiting (or none).
     #[must_use]
     pub fn route(&self, method: &str, target: &str, body: &str, auth: Option<&str>) -> Resp {
         let (path, query) = split_target(target);
@@ -988,9 +1281,9 @@ offline. Text only; no scripts or media.</p>\
             (None, None)
         };
         let now = now_secs();
-        let summary = {
+        let (summary, commit) = {
             let mut store = self.store.lock().expect("store lock");
-            submit_many(
+            let summary = submit_many(
                 &mut store,
                 self.abuse.as_deref(),
                 urls,
@@ -999,12 +1292,28 @@ offline. Text only; no scripts or media.</p>\
                 max_urls,
                 self.config.allow_i2p,
                 now,
-            )
+            );
+            // A submission that enqueued nothing (all dup / not-onion / capped)
+            // changed no state — an unauthenticated caller must not be able to
+            // make us fsync the whole index by POSTing the same URL forever.
+            let commit = self.commit(&store, summary.ok > 0);
+            (summary, commit)
         };
-        Resp::json(200, summary_json(&summary))
+        Resp::json(
+            commit.status(),
+            summary_json(&summary, &commit.json_fields()),
+        )
     }
 
-    /// `POST /purge` — admin: block host(s) and delete their indexed pages.
+    /// `POST /purge` — admin: block host(s), delete their indexed pages, and
+    /// commit the result to disk.
+    ///
+    /// The commit is the point of the endpoint. Purge is the takedown control an
+    /// operator is legally obliged to be able to use, and without a write it
+    /// only edited this process's memory: `search --db crawl.db` reloads the
+    /// snapshot on the next start and every purged page is back, indexed and
+    /// served, with the host un-blocked. The response says which of the two
+    /// happened (`"persisted"`), and a failed write is a 500, not a 200.
     fn do_purge(&self, params: &[(String, String)], body: &str, auth: Option<&str>) -> Resp {
         if !self.admin_ok(auth) {
             return self.auth_error();
@@ -1019,33 +1328,76 @@ offline. Text only; no scripts or media.</p>\
         if hosts.is_empty() {
             return Resp::json(400, "{\"error\":\"no host provided\"}".to_string());
         }
-        let mut store = self.store.lock().expect("store lock");
-        let purged: Vec<String> = hosts
-            .iter()
-            .map(|h| {
-                let removed = store.purge_host(h);
-                format!(
-                    "{{\"host\":\"{}\",\"pages_removed\":{}}}",
-                    json_str(&normalize_host(h)),
-                    removed
-                )
-            })
-            .collect();
-        Resp::json(200, format!("{{\"purged\":[{}]}}", purged.join(",")))
+        let (purged, commit) = {
+            let mut store = self.store.lock().expect("store lock");
+            let purged: Vec<String> = hosts
+                .iter()
+                .map(|h| {
+                    let removed = store.purge_host(h);
+                    format!(
+                        "{{\"host\":\"{}\",\"pages_removed\":{}}}",
+                        json_str(&normalize_host(h)),
+                        removed
+                    )
+                })
+                .collect();
+            // Always a real change even when 0 pages were removed: the host is
+            // now `blocked`, which is what keeps it out of future crawls.
+            let commit = self.commit(&store, true);
+            (purged, commit)
+        };
+        Resp::json(
+            commit.status(),
+            format!(
+                "{{\"purged\":[{}]{}}}",
+                purged.join(","),
+                commit.json_fields()
+            ),
+        )
     }
 
-    /// `POST /recrawl` — admin: requeue every due page for recrawl.
+    /// `POST /recrawl` — admin: requeue every due page for recrawl, and commit.
     fn do_recrawl(&self, auth: Option<&str>) -> Resp {
         if !self.admin_ok(auth) {
             return self.auth_error();
         }
         let now = now_secs();
-        let n = {
+        let (n, commit) = {
             let mut store = self.store.lock().expect("store lock");
-            store.mark_recrawl_due(now, self.config.recrawl_interval)
+            let n = store.mark_recrawl_due(now, self.config.recrawl_interval);
+            // Same reasoning as /purge: the requeue is a frontier mutation, so
+            // without a commit the next restart serves a frontier that never
+            // heard about it. Nothing due ⇒ nothing to write.
+            let commit = self.commit(&store, n > 0);
+            (n, commit)
         };
-        Resp::json(200, format!("{{\"recrawl_due\":{n}}}"))
+        Resp::json(
+            commit.status(),
+            format!("{{\"recrawl_due\":{n}{}}}", commit.json_fields()),
+        )
     }
+}
+
+/// Constant-time byte equality, for the admin-token check. Compares every byte
+/// of an equal-length pair, so the time taken carries no information about how
+/// far the match got.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// The two limiter buckets ([`RateClass::Read`], [`RateClass::Write`]).
+fn buckets(limits: &RateLimits) -> (TokenBucket, TokenBucket) {
+    (
+        TokenBucket::new(limits.read_rate, limits.read_burst, limits.max_clients),
+        TokenBucket::new(limits.write_rate, limits.write_burst, limits.max_clients),
+    )
 }
 
 fn result_json(r: &SubmitResult) -> String {
@@ -1062,10 +1414,12 @@ fn result_json(r: &SubmitResult) -> String {
     )
 }
 
-fn summary_json(s: &SubmitSummary) -> String {
+/// The `/add` summary as JSON. `extra` is spliced in before the closing brace
+/// (each field already comma-prefixed) — that is where the commit status goes.
+fn summary_json(s: &SubmitSummary, extra: &str) -> String {
     let results: Vec<String> = s.results.iter().map(result_json).collect();
     format!(
-        "{{\"ok\":{},\"dup\":{},\"not-onion\":{},\"blocked\":{},\"capped\":{},\"skipped\":{},\"results\":[{}]}}",
+        "{{\"ok\":{},\"dup\":{},\"not-onion\":{},\"blocked\":{},\"capped\":{},\"skipped\":{},\"results\":[{}]{extra}}}",
         s.ok, s.dup, s.not_onion, s.blocked, s.capped, s.skipped, results.join(",")
     )
 }
@@ -1100,15 +1454,70 @@ fn opensearch(base_url: &str) -> String {
 
 // ------------------------------------------------------------ async server
 
-/// Serve the search front-end on `listener` until the process ends. Each
-/// accepted connection is handled on its own task. `net`-only.
+/// The resource limits the accept loop enforces on one connection.
+#[cfg(feature = "net")]
+#[derive(Clone, Copy, Debug)]
+pub struct ServeLimits {
+    /// Total deadline for one request: the head read, the route (which takes the
+    /// store mutex), and the response write — all of it, once, not per read.
+    ///
+    /// A per-read timeout would not help: it restarts on every byte, so a client
+    /// sending one byte every 29 s never trips it and owns the task, the socket
+    /// and its file descriptor for as long as it likes. That is Slowloris, and
+    /// the cost here is one fd + one task per connection, with nothing in the
+    /// code that ever reaps them. The write side needs the same deadline: a peer
+    /// that opens a window of 1 byte and stops reading blocks `write_all` on a
+    /// 200 KB search page just as effectively.
+    pub request_timeout: std::time::Duration,
+}
+
+#[cfg(feature = "net")]
+impl Default for ServeLimits {
+    fn default() -> Self {
+        ServeLimits {
+            // Generous for a loopback/onion round trip (a slow onion GET of a
+            // large `/cached` page still fits), decisive against a dribbler.
+            request_timeout: std::time::Duration::from_secs(30),
+        }
+    }
+}
+
+/// Serve the search front-end on `listener` until the process ends, under the
+/// default [`ServeLimits`]. Each accepted connection is handled on its own task.
+/// `net`-only.
+///
+/// # Errors
+/// Propagates a fatal `accept()` error.
 #[cfg(feature = "net")]
 pub async fn serve(listener: tokio::net::TcpListener, server: SearchServer) -> std::io::Result<()> {
+    serve_with_limits(listener, server, ServeLimits::default()).await
+}
+
+/// [`serve`] with explicit limits.
+///
+/// # Errors
+/// Propagates a fatal `accept()` error.
+#[cfg(feature = "net")]
+pub async fn serve_with_limits(
+    listener: tokio::net::TcpListener,
+    server: SearchServer,
+    limits: ServeLimits,
+) -> std::io::Result<()> {
     loop {
-        let (stream, _peer) = listener.accept().await?;
+        let (stream, peer) = listener.accept().await?;
         let srv = server.clone();
+        // The limiter keys on the peer *address*, not the connection: a client
+        // that opens 1000 connections must still get one client's budget.
+        let client = peer.ip().to_string();
         tokio::spawn(async move {
-            let _ = handle_conn(stream, srv).await;
+            // One deadline over the whole round trip. On expiry the future is
+            // dropped, which drops `stream` and closes the fd — the only thing
+            // that reclaims a slot from a peer that has stopped talking.
+            let _ = tokio::time::timeout(
+                limits.request_timeout,
+                handle_conn_from(stream, &client, srv),
+            )
+            .await;
         });
     }
 }
@@ -1116,11 +1525,33 @@ pub async fn serve(listener: tokio::net::TcpListener, server: SearchServer) -> s
 /// Read one HTTP/1.1 request from `stream`, route it, and write the response.
 /// Connection-per-request (no keep-alive) — simple and correct for a loopback
 /// admin UI. `net`-only.
+///
+/// Unrate-limited (the peer address is unknown to it); [`serve`] uses
+/// [`handle_conn_from`]. Note there is **no timeout inside**: the deadline is
+/// the caller's, so that it covers the read, the route and the write together
+/// rather than resetting per read.
+///
+/// # Errors
+/// Any socket read/write error.
 #[cfg(feature = "net")]
 pub async fn handle_conn(
-    mut stream: tokio::net::TcpStream,
+    stream: tokio::net::TcpStream,
     server: SearchServer,
 ) -> std::io::Result<()> {
+    handle_conn_from(stream, "-", server).await
+}
+
+/// [`handle_conn`], charging the request to `client`'s rate-limit buckets.
+///
+/// # Errors
+/// Any socket read/write error.
+#[cfg(feature = "net")]
+pub async fn handle_conn_from(
+    mut stream: tokio::net::TcpStream,
+    client: &str,
+    server: SearchServer,
+) -> std::io::Result<()> {
+    use crawlcore::budget::Budget;
     use tokio::io::AsyncReadExt;
 
     const MAX_HEAD: usize = 64 * 1024;
@@ -1167,25 +1598,31 @@ pub async fn handle_conn(
         if let Some((k, v)) = line.split_once(':') {
             let k = k.trim();
             if k.eq_ignore_ascii_case("content-length") {
-                content_length = v.trim().parse().unwrap_or(0).min(MAX_BODY);
+                content_length = v.trim().parse().unwrap_or(0);
             } else if k.eq_ignore_ascii_case("authorization") {
                 auth = Some(v.trim().to_string());
             }
         }
     }
-    let mut body = buf[head_end + 4..].to_vec();
-    body.truncate(MAX_BODY);
-    while body.len() < content_length {
+    // The declared length never touches an allocation or a read length directly:
+    // it is spent against a `Budget`, whose `take` saturates. So
+    // `Content-Length: 18446744073709551615` is simply a request for more than
+    // the 1 MiB that exists, and the loop ends when the budget does — no `+`/`>`
+    // on a wire number that could wrap and re-open the cap.
+    let mut budget = Budget::new(MAX_BODY);
+    let head_tail = &buf[head_end + 4..];
+    let mut body = head_tail[..budget.take(head_tail.len())].to_vec();
+    while body.len() < content_length && !budget.is_exhausted() {
         let n = stream.read(&mut tmp).await?;
         if n == 0 {
             break;
         }
-        let room = MAX_BODY - body.len();
-        body.extend_from_slice(&tmp[..n.min(room)]);
+        let keep = budget.take(n);
+        body.extend_from_slice(&tmp[..keep]);
     }
     let body_str = String::from_utf8_lossy(&body).to_string();
 
-    let resp = server.route(&method, &target, &body_str, auth.as_deref());
+    let resp = server.route_limited(client, &method, &target, &body_str, auth.as_deref());
     write_resp(&mut stream, &resp).await
 }
 
@@ -1797,6 +2234,342 @@ placeholder='search indexed .onion pages' autofocus>\
         assert!(body(&srv.route("GET", "/api/search?q=widget", "", None)).contains("\"total\":0"));
     }
 
+    // -- the write endpoints are durable ------------------------------------
+
+    fn tmp_db(tag: &str, line: u32) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "onioncrawler_serve_{tag}_{}_{line}.db",
+            std::process::id()
+        ))
+    }
+
+    /// Reload the snapshot the server committed — i.e. what a restart would see.
+    fn reload(path: &std::path::Path) -> Store {
+        let bytes = std::fs::read(path).expect("snapshot written");
+        Store::restore(&bytes).expect("snapshot parses")
+    }
+
+    #[test]
+    fn purge_survives_a_restart() {
+        let path = tmp_db("purge", line!());
+        let srv = server_with_pages()
+            .with_admin("tok")
+            .with_store_path(path.to_str().unwrap());
+        // Seed the file with the pre-purge state, exactly as `search --db` does.
+        {
+            let s = srv.store.lock().unwrap();
+            std::fs::write(&path, s.snapshot()).unwrap();
+        }
+        assert_eq!(reload(&path).page_count(), 2);
+
+        let r = srv.route("POST", "/purge", "host=a.onion", Some("Bearer tok"));
+        assert_eq!(r.status, 200);
+        assert!(body(&r).contains("\"pages_removed\":2"), "{}", body(&r));
+        // the response says the takedown reached disk …
+        assert!(body(&r).contains("\"persisted\":true"), "{}", body(&r));
+        // … and it did: a restart re-reads the file and the pages are still gone
+        // and the host still blocked. Before the fix this reload returned all 2
+        // pages, un-blocked, because /purge never wrote anything.
+        let after = reload(&path);
+        assert_eq!(after.page_count(), 0);
+        assert_eq!(
+            after.get_host("a.onion").map(|h| h.state.as_str()),
+            Some("blocked")
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn add_and_recrawl_survive_a_restart() {
+        let path = tmp_db("addrecrawl", line!());
+        let srv = server_with_pages()
+            .with_admin("tok")
+            .with_store_path(path.to_str().unwrap());
+        let host = "z".repeat(56) + ".onion";
+
+        let r = srv.route(
+            "POST",
+            "/add",
+            &format!("url=http://{host}/"),
+            Some("Bearer tok"),
+        );
+        assert_eq!(r.status, 200);
+        assert!(body(&r).contains("\"persisted\":true"), "{}", body(&r));
+        // the seed is in the frontier of the *file*, not just of this process
+        assert_eq!(reload(&path).counter("urls_enqueued"), 1);
+
+        // an /add that enqueues nothing (the same URL again → dup) must not
+        // rewrite the snapshot, but still reports the durable state truthfully
+        let r = srv.route(
+            "POST",
+            "/add",
+            &format!("url=http://{host}/"),
+            Some("Bearer tok"),
+        );
+        assert!(body(&r).contains("\"dup\":1"), "{}", body(&r));
+        assert!(body(&r).contains("\"persisted\":true"), "{}", body(&r));
+
+        // Take the seed through a crawl (lease → done → page stored) so it is a
+        // settled row that `/recrawl` has something to requeue.
+        {
+            let mut s = srv.store.lock().unwrap();
+            let lease = s.lease(1_000.0, 300.0).expect("the seed is queued");
+            s.mark_done(lease.id);
+            s.store_page(
+                &lease.url,
+                &host,
+                Some("Seeded"),
+                Some("a body"),
+                Some("hz"),
+                Some(200),
+                Some("text/html"),
+                None,
+                10.0,
+                false,
+                None,
+                None,
+                None,
+            );
+        }
+        let r = srv.route("POST", "/recrawl", "", Some("Bearer tok"));
+        assert_eq!(r.status, 200);
+        assert!(body(&r).contains("\"recrawl_due\":1"), "{}", body(&r));
+        assert!(body(&r).contains("\"persisted\":true"), "{}", body(&r));
+        // the requeue is in the file, so a restart still knows the page is due
+        assert_eq!(reload(&path).frontier_by_status().get("queued"), Some(&1));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_failed_commit_is_a_500_that_says_so() {
+        // A path under a directory that does not exist: the atomic write cannot
+        // even create its temp sibling.
+        let path = std::env::temp_dir()
+            .join(format!("onioncrawler_no_such_dir_{}", std::process::id()))
+            .join("crawl.db");
+        let srv = server_with_pages()
+            .with_admin("tok")
+            .with_store_path(path.to_str().unwrap());
+        let r = srv.route("POST", "/purge", "host=a.onion", Some("Bearer tok"));
+        // The operator is told the takedown is not durable, rather than getting
+        // a 200 for a change that a restart will undo.
+        assert_eq!(r.status, 500);
+        assert!(body(&r).contains("\"persisted\":false"), "{}", body(&r));
+        assert!(body(&r).contains("\"error\":"), "{}", body(&r));
+        // it did still take effect in RAM (strictly safer for a takedown)
+        assert!(body(&srv.route("GET", "/api/search?q=widget", "", None)).contains("\"total\":0"));
+    }
+
+    #[test]
+    fn without_a_store_path_writes_are_flagged_in_memory_only() {
+        let srv = server_with_pages().with_admin("tok");
+        let r = srv.route("POST", "/purge", "host=a.onion", Some("Bearer tok"));
+        assert_eq!(r.status, 200);
+        assert!(body(&r).contains("\"persisted\":false"), "{}", body(&r));
+        assert!(
+            body(&r).contains("no snapshot path configured"),
+            "{}",
+            body(&r)
+        );
+    }
+
+    // -- the public submit caps are real ------------------------------------
+
+    #[test]
+    fn default_submit_caps_are_set() {
+        // Before the fix every one of these was `None` — i.e. the endpoint the
+        // module doc calls "capped" admitted an unbounded public flood.
+        let c = ServeConfig::default().submit_caps;
+        assert_eq!(c.max_unique_urls, Some(submit_caps::MAX_UNIQUE_URLS));
+        assert_eq!(c.max_pages_per_host, Some(submit_caps::MAX_PAGES_PER_HOST));
+        assert_eq!(
+            c.max_urls_per_template,
+            Some(submit_caps::MAX_URLS_PER_TEMPLATE)
+        );
+        assert_eq!(
+            c.max_urls_per_skeleton,
+            Some(submit_caps::MAX_URLS_PER_SKELETON)
+        );
+        for cap in [
+            c.max_unique_urls,
+            c.max_pages_per_host,
+            c.max_urls_per_template,
+            c.max_urls_per_skeleton,
+        ] {
+            // `cap_hit` treats a non-positive cap as "no cap", so 0 would be a
+            // silent way of leaving the endpoint uncapped.
+            assert!(cap.is_some_and(|n| n > 0), "cap must be positive: {cap:?}");
+        }
+    }
+
+    #[test]
+    fn default_public_submit_caps_a_flood() {
+        let cfg = ServeConfig {
+            allow_public_submit: true,
+            ..ServeConfig::default()
+        };
+        let srv = SearchServer::new(Arc::new(Mutex::new(Store::new())), "").with_config(cfg);
+        let host = "q".repeat(56) + ".onion";
+        // One unauthenticated POST of `/0`, `/1`, … — the id-parameterized page
+        // farm the skeleton cap exists for (every one of these collapses to the
+        // skeleton `<host>/#`). With the old all-`None` defaults every URL was
+        // accepted, so a public client could grow the frontier without limit.
+        let n = submit_caps::MAX_URLS_PER_SKELETON as usize;
+        let urls: Vec<String> = (0..n + 10).map(|i| format!("http://{host}/{i}")).collect();
+        let r = srv.route("POST", "/add", &format!("urls={}", urls.join("%0A")), None);
+        let b = body(&r);
+        assert!(b.contains(&format!("\"ok\":{n}")), "{b}");
+        assert!(b.contains("\"capped\":10"), "{b}");
+        assert!(b.contains("\"status\":\"capped\""), "{b}");
+    }
+
+    // -- the rate limiter is wired to the endpoints -------------------------
+
+    fn limited_server(limits: RateLimits) -> SearchServer {
+        let cfg = ServeConfig {
+            admin_token: "tok".to_string(),
+            allow_public_submit: true,
+            rate_limits: limits,
+            ..ServeConfig::default()
+        };
+        server_with_pages().with_config(cfg)
+    }
+
+    #[test]
+    fn reads_are_rate_limited_per_client() {
+        let srv = limited_server(RateLimits {
+            read_rate: 0.0, // no refill inside the test
+            read_burst: 3.0,
+            ..RateLimits::default()
+        });
+        for i in 0..3 {
+            assert_eq!(
+                srv.route_limited("10.0.0.1", "GET", "/search?q=widget", "", None)
+                    .status,
+                200,
+                "request {i} should be inside the burst"
+            );
+        }
+        // Before the fix `ratelimit.rs` had no call site at all and this was 200:
+        // one client could hold the store mutex with back-to-back searches.
+        let r = srv.route_limited("10.0.0.1", "GET", "/search?q=widget", "", None);
+        assert_eq!(r.status, 429);
+        assert!(body(&r).contains("rate limited"));
+        // a different client has its own bucket
+        assert_eq!(
+            srv.route_limited("10.0.0.2", "GET", "/search?q=widget", "", None)
+                .status,
+            200
+        );
+    }
+
+    #[test]
+    fn writes_have_their_own_budget_and_health_is_exempt() {
+        let srv = limited_server(RateLimits {
+            read_rate: 0.0,
+            read_burst: 1.0,
+            write_rate: 0.0,
+            write_burst: 2.0,
+            max_clients: 64,
+        });
+        let h = format!("http://{}.onion/", "w".repeat(56));
+        // two writes, then the third is refused — the write bucket is charged
+        // whether or not the request is authenticated, so an unauthenticated
+        // flood on /purge is limited too
+        assert_eq!(
+            srv.route_limited("10.0.0.3", "POST", "/add", &format!("url={h}"), None)
+                .status,
+            200
+        );
+        assert_eq!(
+            srv.route_limited("10.0.0.3", "POST", "/purge", "host=a.onion", None)
+                .status,
+            401 // rejected by auth, but it did spend a token
+        );
+        assert_eq!(
+            srv.route_limited("10.0.0.3", "POST", "/recrawl", "", Some("Bearer tok"))
+                .status,
+            429
+        );
+        // the read bucket is separate and still has its single token
+        assert_eq!(
+            srv.route_limited("10.0.0.3", "GET", "/search?q=widget", "", None)
+                .status,
+            200
+        );
+        assert_eq!(
+            srv.route_limited("10.0.0.3", "GET", "/search?q=widget", "", None)
+                .status,
+            429
+        );
+        // monitoring never gets a 429 — a 429 to the health check reads as
+        // "process is dead" to a supervisor, which then restarts it
+        for _ in 0..10 {
+            assert_eq!(
+                srv.route_limited("10.0.0.3", "GET", "/health", "", None)
+                    .status,
+                200
+            );
+            assert_eq!(
+                srv.route_limited("10.0.0.3", "GET", "/metrics", "", None)
+                    .status,
+                200
+            );
+        }
+    }
+
+    #[test]
+    fn rate_limit_buckets_are_shared_across_clones() {
+        // Each accepted connection gets its own `SearchServer` clone; if the
+        // buckets were cloned with it, the limit would be per connection — i.e.
+        // no limit at all against a client that reconnects.
+        let srv = limited_server(RateLimits {
+            read_rate: 0.0,
+            read_burst: 1.0,
+            ..RateLimits::default()
+        });
+        assert_eq!(
+            srv.clone()
+                .route_limited("10.0.0.4", "GET", "/search?q=widget", "", None)
+                .status,
+            200
+        );
+        assert_eq!(
+            srv.clone()
+                .route_limited("10.0.0.4", "GET", "/search?q=widget", "", None)
+                .status,
+            429
+        );
+    }
+
+    #[test]
+    fn admin_token_comparison_is_constant_time() {
+        assert!(ct_eq(b"abc", b"abc"));
+        assert!(!ct_eq(b"abc", b"abd"));
+        assert!(!ct_eq(b"abc", b"ab"));
+        assert!(ct_eq(b"", b""));
+        // and the endpoint still discriminates correctly through it
+        let srv = server_with_pages().with_admin("s3cret");
+        assert_eq!(
+            srv.route("POST", "/recrawl", "", Some("Bearer s3cret"))
+                .status,
+            200
+        );
+        // a prefix of the token is refused (it was also refused before — what
+        // changed is that it now takes the same time as a token that shares no
+        // bytes at all)
+        assert_eq!(
+            srv.route("POST", "/recrawl", "", Some("Bearer s3cre"))
+                .status,
+            401
+        );
+        assert_eq!(
+            srv.route("POST", "/recrawl", "", Some("Bearer aaaaaa"))
+                .status,
+            401
+        );
+    }
+
     #[cfg(feature = "net")]
     #[tokio::test]
     async fn loopback_round_trip() {
@@ -1822,5 +2595,60 @@ placeholder='search indexed .onion pages' autofocus>\
         assert!(text.contains("application/json"));
         assert!(text.contains("\"total\":1"));
         assert!(text.contains("http://a.onion/1"));
+    }
+
+    /// A client that dribbles one byte per interval and never finishes the head.
+    ///
+    /// Before the deadline there was no timeout anywhere in `handle_conn`: the
+    /// head-read loop simply awaited the next byte, so this connection lived for
+    /// as long as the peer cared to keep it — one task, one socket and one file
+    /// descriptor each, with nothing in the code that would ever reap them. A
+    /// per-read timeout would not have helped either, since every dribbled byte
+    /// resets it; only a deadline over the whole round trip ends this. The
+    /// durations are scaled down so the test costs ~1 s of wall clock.
+    #[cfg(feature = "net")]
+    #[tokio::test]
+    async fn a_slowloris_client_is_cut_off_by_the_total_deadline() {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let srv = server_with_pages();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let limits = super::ServeLimits {
+            request_timeout: Duration::from_millis(300),
+        };
+        tokio::spawn(async move {
+            let _ = super::serve_with_limits(listener, srv, limits).await;
+        });
+
+        let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // never sends the blank line that ends the head
+        c.write_all(b"GET /api/search?q=widget HTTP/1.1\r\n")
+            .await
+            .unwrap();
+        for _ in 0..10 {
+            // one byte per 100 ms: under a 300 ms *per-read* timeout, forever
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if c.write_all(b"X").await.is_err() {
+                break;
+            }
+        }
+        // The server hit its deadline and dropped the connection, so this read
+        // ends (clean EOF or a reset) instead of hanging. Without the deadline
+        // it hangs and this `expect` is what fails.
+        let mut buf = Vec::new();
+        let r = tokio::time::timeout(Duration::from_secs(5), c.read_to_end(&mut buf))
+            .await
+            .expect("connection must not still be open");
+        assert!(r.is_err() || r.unwrap() == 0, "unexpected body: {buf:?}");
+
+        // and a well-behaved request on the same server is unaffected
+        let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        c.write_all(b"GET /api/search?q=widget HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        let mut resp = Vec::new();
+        c.read_to_end(&mut resp).await.unwrap();
+        assert!(String::from_utf8_lossy(&resp).contains("\"total\":1"));
     }
 }

@@ -227,3 +227,65 @@ async fn depth_cap_stops_expansion() {
     assert!(s.get_page(&format!("http://{HOST1}/b")).is_none());
     assert_eq!(s.page_count(), 2);
 }
+
+fn hostile_base(host: &str, path: &str) -> Option<String> {
+    if host == HOST1 && path == "/" {
+        // A page that declares another onion as the base for every relative
+        // link on it. `<base href>` is attacker-controlled markup on a page we
+        // fetched from a hostile hidden service.
+        Some(format!(
+            "<html><head><base href=\"http://{HOST2}/\"></head>\
+<body><a href=\"a\">A</a><a href=\"/b\">B</a></body></html>"
+        ))
+    } else if path == "/a" || path == "/b" {
+        // distinct bodies: identical text would be dropped by content dedup
+        Some(format!("<html><body>{host} page {path}</body></html>"))
+    } else {
+        None
+    }
+}
+
+/// A hostile `<base href>` must not move a page's relative links onto another
+/// host.
+///
+/// `extract_html` reports `base_href` (it is part of the byte-pinned extractor
+/// contract, `tests/xcheck_extract.rs`), but `enqueue_links` deliberately
+/// resolves every href against the *fetched* URL and ignores it. That is the
+/// safe choice and this test pins it, because the failure mode of "wire the
+/// reported base into the resolver" is silent: one `<base>` tag would redirect
+/// a page's entire link budget onto a host the operator never chose to crawl,
+/// and — since the base is used for the frontier identity as well — file every
+/// discovered URL under that host's name.
+#[tokio::test]
+async fn a_hostile_base_href_cannot_move_links_to_another_host() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(run_server(listener, hostile_base));
+
+    let (crawler, store) = direct_crawler(port, &[HOST1, HOST2], cfg());
+    crawler.add_seeds([format!("http://{HOST1}/")]);
+    crawler.run().await;
+
+    let s = store.lock().unwrap();
+    // both links resolved against the page's own URL …
+    assert!(s.get_page(&format!("http://{HOST1}/a")).is_some());
+    assert!(s.get_page(&format!("http://{HOST1}/b")).is_some());
+    // … and nothing was attributed to, or fetched from, the declared base host
+    assert!(s.get_page(&format!("http://{HOST2}/a")).is_none());
+    assert!(s.get_page(&format!("http://{HOST2}/b")).is_none());
+    assert!(s.get_host(HOST2).is_none(), "no host row for the base host");
+    assert_eq!(s.metrics()["link_edges"], 0);
+    assert_eq!(s.page_count(), 3);
+}
+
+/// The extractor still *reports* the base (the pinned contract) — what changed
+/// is only that nothing downstream resolves against it.
+#[test]
+fn extractor_still_reports_the_base_it_does_not_apply() {
+    let html = format!("<html><head><base href='http://{HOST2}/x/'></head><body></body></html>");
+    let ex = crate::extract::extract_html(html.as_bytes(), None, None);
+    assert_eq!(
+        ex.base_href.as_deref(),
+        Some(&*format!("http://{HOST2}/x/"))
+    );
+}

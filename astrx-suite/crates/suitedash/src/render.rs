@@ -15,10 +15,17 @@
 //! `float` rendering, and key order. Cross-checked by `tests/xcheck_render.rs`.
 //!
 //! **Documented divergence:** CPython passes `allow_nan=False`, so a non-finite
-//! number reaching the payload raises `ValueError`; the port emits the `repr`
-//! token instead. Every number that can reach it is filtered finite upstream
+//! number reaching the payload raises `ValueError`. The port cannot raise, and
+//! emitting the `repr` token (`nan`, `inf`) would be worse than either: those are
+//! not JSON, and PHP's `json_decode` — the AstrX bridge that consumes
+//! `/api/status` — returns `NULL` for the **whole document** when it meets one,
+//! so a single bad number blanks the entire status view. The emitter is therefore
+//! *total*: a non-finite number renders as `null` (see `J::float` /
+//! `J::from_num_out`). Every number that can reach it is filtered finite upstream
 //! (the metric parsers drop NaN/Inf, the config loader rejects a non-finite
-//! threshold), so the path is unreachable in practice.
+//! threshold), but `Config::alert_rules`, `AlertRule::threshold` and
+//! `ServiceResult::latency_ms` are public fields with no type-level invariant, so
+//! an embedder can hand this module a NaN without going through either.
 
 use crate::alerts::{AlertEvent, AlertView};
 use crate::config::Config;
@@ -392,11 +399,20 @@ impl J {
     fn int(n: usize) -> J {
         J::Num(n.to_string())
     }
+    /// A rendered metric/threshold, or `null` when it is missing **or
+    /// non-finite**: `num_out(Some(f64::NAN))` yields the token `nan`, which is
+    /// not JSON (see the module note — `json_decode` nulls the whole document).
     fn from_num_out(v: Option<f64>) -> J {
-        num_out(v).map_or(J::Null, |n| J::Num(n.to_json_token()))
+        num_out(v.filter(|f| f.is_finite())).map_or(J::Null, |n| J::Num(n.to_json_token()))
     }
+    /// A float, or `null` for NaN/±Inf — the emitter cannot be made to write an
+    /// invalid document by any caller, however it built its `Config`/`Results`.
     fn float(v: f64) -> J {
-        J::Num(pycompat::repr_f64(v))
+        if v.is_finite() {
+            J::Num(pycompat::repr_f64(v))
+        } else {
+            J::Null
+        }
     }
     fn opt_str(v: Option<&String>) -> J {
         v.map_or(J::Null, |s| J::Str(s.clone()))
@@ -689,6 +705,63 @@ mod tests {
         assert!(json.contains("\"latency_ms\": 3.25"));
         assert!(json.contains("\"checked_at\": 1723000000.5"));
         assert!(json.ends_with('}'));
+    }
+
+    /// A non-finite number must never reach the wire as a bare `nan`/`inf`
+    /// token: that is not JSON, and PHP's `json_decode` (the AstrX bridge that
+    /// reads `/api/status`) returns `NULL` for the *whole* document when it meets
+    /// one — so one NaN latency blanks every service on the page. Nothing
+    /// upstream can produce one today, but every field below is `pub` with no
+    /// finiteness invariant, so the emitter itself has to be total.
+    #[test]
+    fn non_finite_numbers_render_as_null_never_as_bare_nan() {
+        let mut r = ServiceResult::new("svc", "http://x", true);
+        r.latency_ms = Some(f64::NAN);
+        r.checked_at = f64::INFINITY;
+        let mut m = SurfacedMetrics::new();
+        m.insert("q", Some(f64::NEG_INFINITY));
+        r.metrics = m;
+        let mut results = Results::new();
+        results.insert("svc", r);
+
+        let snap = Snapshot::new(
+            vec![AlertView {
+                service: "svc".to_string(),
+                rule_id: "r".to_string(),
+                kind: "metric".to_string(),
+                severity: "warning".to_string(),
+                description: String::new(),
+                metric: "q".to_string(),
+                op: ">".to_string(),
+                threshold: f64::NAN,
+                for_polls: 1,
+                firing: true,
+                status: "firing".to_string(),
+                since: f64::INFINITY,
+                last_value: Some(f64::NAN),
+                streak: 1,
+            }],
+            OrderedMap::new(),
+            vec![AlertEvent {
+                at: f64::NAN,
+                service: "svc".to_string(),
+                rule_id: "r".to_string(),
+                status: "firing".to_string(),
+                value: Some(f64::INFINITY),
+            }],
+            1,
+        );
+
+        let json = render_status_json(&results, Some(&snap), f64::NAN);
+        assert!(
+            crawlcore::json::parse(&json).is_ok(),
+            "the payload must stay parseable JSON: {json}"
+        );
+        for token in ["nan", "inf", "Infinity", "NaN"] {
+            assert!(!json.contains(token), "{token:?} leaked into {json}");
+        }
+        assert!(json.contains("\"latency_ms\": null"));
+        assert!(json.contains("\"threshold\": null"));
     }
 
     #[test]

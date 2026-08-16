@@ -23,6 +23,7 @@
 //! opt-in behind `net`/`rand`.
 #![forbid(unsafe_code)]
 
+pub mod atom;
 pub mod canonical;
 pub mod crawler;
 pub mod dedup;
@@ -32,6 +33,7 @@ pub mod htmlparse;
 pub mod httpclient;
 pub mod index;
 pub mod pdftext;
+pub mod query;
 pub mod ranking;
 pub mod robots;
 pub mod serve;
@@ -42,6 +44,7 @@ pub mod suggest;
 #[cfg(feature = "net")]
 pub mod fetcher;
 
+pub use atom::{render as render_atom, FeedMeta};
 pub use canonical::{canonicalize, host_of, in_scope, is_http_url};
 pub use crawler::{public_resolved, trap_ok, CrawlConfig, CrawlStats};
 pub use dedup::simhash;
@@ -57,7 +60,8 @@ pub use index::{
     StoredVideo, VideoResult, FUZZY_SCAN_CAP, MAX_IMAGES_PER_DOC, MAX_VIDEOS_PER_DOC,
 };
 pub use pdftext::{extract_text as extract_pdf_text, extract_title as extract_pdf_title};
-pub use ranking::{parse_query, search, Query, SearchOpts, SearchResponse, SearchResult};
+pub use query::{parse_query, Query};
+pub use ranking::{search, SearchOpts, SearchResponse, SearchResult};
 pub use robots::{parse as parse_robots, Robots};
 pub use serve::{Resp, SearchServer};
 pub use ssrf::{ip_is_internal, SafeIp};

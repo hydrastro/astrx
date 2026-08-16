@@ -34,6 +34,7 @@
 //! trailer), so it never arises for real PDFs or for the cross-check fixtures;
 //! it is noted here for honesty rather than reproduced.
 
+use crawlcore::budget::Budget;
 use crawlcore::inflate::inflate_zlib;
 
 /// Per-stream inflated-byte ceiling (Python `_MAX_STREAM`).
@@ -200,48 +201,66 @@ fn read_literal(buf: &[u8], mut i: usize) -> (Vec<u8>, usize) {
     (out, i)
 }
 
-/// Pull text fragments from a decoded content-stream body: `(...)` literals and
-/// `<...>` hex strings, exactly as Python's `_extract_from_stream`.
-fn extract_from_stream(body: &[u8]) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut i = 0usize;
-    let n = body.len();
-    while i < n {
-        let c = body[i];
-        if c == 0x28 {
-            // (  -> literal string
-            let (s, next) = read_literal(body, i + 1);
-            i = next;
-            if !s.is_empty() {
-                parts.push(latin1(&s));
+/// The text fragments of a decoded content-stream body — `(...)` literals and
+/// `<...>` hex strings — yielded ONE AT A TIME, exactly as Python's
+/// `_extract_from_stream` produces them in order.
+///
+/// Lazy on purpose. Collecting them first and applying `extract_text`'s
+/// `max_chars` afterwards meant a stream of `(a)Tj` became one `String` per
+/// character before a single one could be refused: a 12 kB PDF inflating to 8 MB
+/// of `(a)Tj` is ~2.6 million one-character `String`s, which took peak RSS from
+/// 20 MB to 122 MB (~10 000× the input) — times `--workers`.
+struct StreamFragments<'a> {
+    body: &'a [u8],
+    i: usize,
+}
+
+impl Iterator for StreamFragments<'_> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<String> {
+        let body = self.body;
+        let n = body.len();
+        while self.i < n {
+            let c = body[self.i];
+            if c == 0x28 {
+                // (  -> literal string
+                let (s, next) = read_literal(body, self.i + 1);
+                self.i = next;
+                if !s.is_empty() {
+                    return Some(latin1(&s));
+                }
+                continue;
             }
-            continue;
+            if c == 0x3C && self.i + 1 < n && body[self.i + 1] != 0x3C {
+                // <hex> (not the << of a dict)
+                let j = find_from(body, self.i + 1, b">")?;
+                let mut hexs: Vec<u8> = body[self.i + 1..j]
+                    .iter()
+                    .copied()
+                    .filter(|&ch| !matches!(ch, b' ' | b'\r' | b'\n' | b'\t'))
+                    .collect();
+                if hexs.len() % 2 == 1 {
+                    hexs.push(b'0');
+                }
+                // .decode("ascii", "ignore") drops bytes >= 0x80 before fromhex.
+                let ascii: Vec<u8> = hexs.into_iter().filter(|&ch| ch < 0x80).collect();
+                let decoded = from_hex(&ascii);
+                self.i = j + 1;
+                if let Some(d) = decoded {
+                    return Some(latin1(&d));
+                }
+                continue;
+            }
+            self.i += 1;
         }
-        if c == 0x3C && i + 1 < n && body[i + 1] != 0x3C {
-            // <hex> (not the << of a dict)
-            let j = match find_from(body, i + 1, b">") {
-                Some(j) => j,
-                None => break,
-            };
-            let mut hexs: Vec<u8> = body[i + 1..j]
-                .iter()
-                .copied()
-                .filter(|&ch| !matches!(ch, b' ' | b'\r' | b'\n' | b'\t'))
-                .collect();
-            if hexs.len() % 2 == 1 {
-                hexs.push(b'0');
-            }
-            // .decode("ascii", "ignore") drops bytes >= 0x80 before fromhex.
-            let ascii: Vec<u8> = hexs.into_iter().filter(|&ch| ch < 0x80).collect();
-            if let Some(decoded) = from_hex(&ascii) {
-                parts.push(latin1(&decoded));
-            }
-            i = j + 1;
-            continue;
-        }
-        i += 1;
+        None
     }
-    parts
+}
+
+/// The fragments of `body`, in order.
+fn extract_from_stream(body: &[u8]) -> StreamFragments<'_> {
+    StreamFragments { body, i: 0 }
 }
 
 /// Inflate a `/FlateDecode` (zlib-wrapped) stream, capping output at `cap`
@@ -335,7 +354,10 @@ pub fn extract_text(data: &[u8], max_chars: usize) -> String {
     // text still terminates in bounded time.
     let inflate_budget = max_chars.saturating_mul(8).max(MAX_STREAM);
     let mut pieces: Vec<String> = Vec::new();
-    let mut total = 0usize;
+    // The character budget is spent AS fragments arrive — `StreamFragments` is an
+    // iterator precisely so no fragment past the cap is ever built. `+ 1` per
+    // fragment is the separating space `pieces.join(" ")` will add.
+    let mut budget = Budget::new(max_chars);
     let streams = ContentStreams {
         pdf: data,
         max_total: inflate_budget,
@@ -351,8 +373,8 @@ pub fn extract_text(data: &[u8], max_chars: usize) -> String {
             }
             let flen = frag.chars().count();
             pieces.push(frag.to_string());
-            total += flen + 1;
-            if total >= max_chars {
+            budget.take(flen + 1);
+            if budget.is_exhausted() {
                 break 'outer;
             }
         }
@@ -443,4 +465,110 @@ fn find_title_group(data: &[u8]) -> Option<&[u8]> {
         from = t + 1; // group did not close with ')': try the next '/Title'
     }
     None
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    /// A minimal PDF whose single content stream repeats `(a)Tj` `n` times.
+    fn pdf_of_tj(n: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(n * 6 + 64);
+        out.extend_from_slice(b"%PDF-1.4\n1 0 obj\n<< >>\nstream\n");
+        out.extend_from_slice(b"BT ");
+        for _ in 0..n {
+            out.extend_from_slice(b"(a)Tj ");
+        }
+        out.extend_from_slice(b"\nendstream\nendobj\n%%EOF\n");
+        out
+    }
+
+    /// AUDIT REGRESSION (LOW). `extract_from_stream` used to collect EVERY
+    /// fragment of an inflated stream into a `Vec<String>` before `extract_text`'s
+    /// `max_chars` could refuse any of them. A 12 kB PDF inflating to 8 MB of
+    /// `(a)Tj` is ~2.6 million one-character `String`s: peak RSS went 20 MB →
+    /// 122 MB, about 10 000× the input, and once per `--workers` worker.
+    ///
+    /// The observable is a ratio, not a wall-clock threshold: on the SAME PDF, an
+    /// extraction that stops at 100 characters must be several times cheaper than
+    /// one that consumes every fragment. Eagerly, the two do identical work and
+    /// the ratio collapses to ~1 (the shared cost is scanning the stream, which
+    /// both pay).
+    #[test]
+    fn the_char_cap_stops_extraction_instead_of_trimming_it_afterwards() {
+        let pdf = pdf_of_tj(400_000);
+
+        let t0 = std::time::Instant::now();
+        let text = extract_text(&pdf, 100);
+        let capped = t0.elapsed();
+        // 50 one-character fragments, space-joined, is what a 100-char budget buys.
+        assert_eq!(text, "a ".repeat(49) + "a");
+
+        let t1 = std::time::Instant::now();
+        let full = extract_text(&pdf, 100_000_000);
+        let uncapped = t1.elapsed();
+        assert_eq!(full.chars().count(), 400_000 * 2 - 1);
+
+        assert!(
+            capped * 3 < uncapped,
+            "stopping at 100 characters ({capped:?}) was not materially cheaper than \
+             extracting all 400 000 fragments ({uncapped:?}): the cap is still being \
+             applied after every fragment has been built"
+        );
+    }
+
+    /// The mechanism, asserted directly: producing one fragment must not consume
+    /// the stream. (Before the fix the function returned a `Vec` — there was no
+    /// position to inspect, because the whole body had already been walked.)
+    #[test]
+    fn one_fragment_does_not_walk_the_whole_stream() {
+        let body = b"BT (a)Tj "
+            .iter()
+            .copied()
+            .chain(std::iter::repeat(b'z').take(100_000))
+            .collect::<Vec<u8>>();
+        let mut it = extract_from_stream(&body);
+        assert_eq!(it.next().as_deref(), Some("a"));
+        assert!(
+            it.i < 32,
+            "reading the first fragment consumed {} of {} bytes",
+            it.i,
+            body.len()
+        );
+    }
+
+    /// …and the capped result is exactly what the eager version produced: the same
+    /// prefix, from the same fragments, in the same order.
+    #[test]
+    fn capping_early_yields_the_same_text_as_capping_late() {
+        for n in [1usize, 2, 7, 50, 400] {
+            let pdf = pdf_of_tj(n);
+            for cap in [1usize, 2, 3, 10, 99, 100, 101, 5_000] {
+                let got = extract_text(&pdf, cap);
+                // The eager reference: all fragments, then the same accounting.
+                let mut pieces: Vec<String> = Vec::new();
+                let mut total = 0usize;
+                let all: Vec<String> =
+                    extract_from_stream(&pdf[pdf.iter().position(|&b| b == b'B').unwrap()..])
+                        .collect();
+                for frag in all {
+                    let frag = frag.trim_matches(is_py_ws);
+                    if frag.is_empty() {
+                        continue;
+                    }
+                    pieces.push(frag.to_string());
+                    total += frag.chars().count() + 1;
+                    if total >= cap {
+                        break;
+                    }
+                }
+                let want: String = collapse_ws(&pieces.join(" "))
+                    .trim_matches(is_py_ws)
+                    .chars()
+                    .take(cap)
+                    .collect();
+                assert_eq!(got, want, "n={n} cap={cap}");
+            }
+        }
+    }
 }

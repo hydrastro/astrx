@@ -25,8 +25,10 @@
 //! accept loop binds whatever the config says — `127.0.0.1` by default; a Tor
 //! onion service or a reverse proxy is the intended front — and bounds
 //! concurrent connections to `max_workers` (the Slowloris guard Python
-//! implements with a `BoundedSemaphore`), the request head to 64 KiB, and every
-//! outbound probe to the per-service timeout.
+//! implements with a `BoundedSemaphore`), the request head to 64 KiB *and to one
+//! total deadline*, the response write to a deadline of its own, and every
+//! outbound probe to the per-service timeout. A connection therefore has a
+//! bounded lifetime, not merely a bounded idle time.
 //!
 //! **Documented divergences** from CPython's `BaseHTTPRequestHandler`: no `Date`
 //! header is emitted (the head stays a pure function of the response), the
@@ -197,6 +199,15 @@ impl Route {
     /// Whether rendering this route needs a fresh poll sweep. `/healthz` and
     /// `/favicon.ico` deliberately never probe the suite, so a liveness check
     /// can never be turned into a probe amplifier.
+    ///
+    /// The three that do poll cost one sweep — `len(services)` outbound probes —
+    /// per unauthenticated request, and the page's `<meta refresh>` makes each
+    /// open browser tab a client of its own. That is the reference's behaviour and
+    /// the goldens pin `cache_ttl = 0.0` (caching off) as the default, so the
+    /// collapse of N requests into one sweep is opt-in: set `cache_ttl` to at
+    /// least the refresh interval on any instance reachable by more than the
+    /// operator (see [`Dashboard::cached`], and the shipped
+    /// `suitedash.example.toml`).
     #[must_use]
     pub fn needs_poll(self) -> bool {
         matches!(self, Route::Page | Route::Status | Route::Metrics)
@@ -305,7 +316,7 @@ impl Dashboard {
 }
 
 #[cfg(feature = "net")]
-pub use net_impl::{serve, serve_config};
+pub use net_impl::{serve, serve_config, HEAD_READ_TIMEOUT, RESPONSE_WRITE_TIMEOUT};
 
 #[cfg(feature = "net")]
 mod net_impl {
@@ -318,12 +329,30 @@ mod net_impl {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::Semaphore;
+    use tokio::time::{timeout_at, Instant};
 
-    /// How long a client may take to send its request head before the connection
-    /// is dropped. Python relies on the bounded connection pool alone; bounding
-    /// the head read as well means a Slowloris client cannot hold a slot open
-    /// indefinitely.
-    const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(10);
+    /// The **total** wall-clock budget for reading one request head, from the
+    /// first byte to the terminating `\r\n\r\n`.
+    ///
+    /// It has to be total, not per-read. Wrapping a single `read()` in this
+    /// timeout restarted it on every byte, so a client sending one byte every
+    /// nine seconds renewed its lease forever: with `max_workers = 1`, one socket
+    /// dribbling `X-Pad-N: a\r\n` every 3 s and never terminating the head locked
+    /// every other client out of the dashboard indefinitely — and the default
+    /// `max_workers` is 16, so sixteen such sockets take it offline. Python
+    /// relies on the bounded connection pool alone; the pool is only a Slowloris
+    /// guard if the slots are guaranteed to come back.
+    pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// Budget for writing one response, head and body together.
+    ///
+    /// The mirror image of the read side: a client that completes its request and
+    /// then stops reading (advertising a zero window) leaves `write_all` pending
+    /// forever once the socket buffer fills, holding its connection permit just as
+    /// effectively as a dribbled head. Generous, because the far end may be a slow
+    /// link pulling a page with many services on it — it exists to bound the
+    /// pathological case, not to police slow readers.
+    pub const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
     /// Ceiling on the concurrent-connection bound, so an absurd `max_workers`
     /// cannot overflow the permit pool's own limit.
@@ -391,9 +420,10 @@ mod net_impl {
         (0..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
     }
 
-    /// Read one request head, bounded in size and time. `None` means the client
-    /// disconnected, overflowed the cap, or stalled.
-    async fn read_head(sock: &mut TcpStream) -> Option<String> {
+    /// Read one request head, bounded in size and by a **total** `deadline` that
+    /// spans every read. `None` means the client disconnected, overflowed the cap,
+    /// or ran out of time (see [`HEAD_READ_TIMEOUT`]).
+    async fn read_head(sock: &mut TcpStream, deadline: Instant) -> Option<String> {
         let mut buf: Vec<u8> = Vec::new();
         let mut tmp = [0u8; 4096];
         loop {
@@ -403,16 +433,30 @@ mod net_impl {
             if buf.len() > MAX_REQUEST_HEAD {
                 return None;
             }
-            match tokio::time::timeout(HEAD_READ_TIMEOUT, sock.read(&mut tmp)).await {
+            match timeout_at(deadline, sock.read(&mut tmp)).await {
                 Ok(Ok(0)) | Ok(Err(_)) | Err(_) => return None,
                 Ok(Ok(n)) => buf.extend_from_slice(&tmp[..n]),
             }
         }
     }
 
+    /// Write `bytes`, giving up at `deadline`; `false` means the write failed or
+    /// the deadline passed and the connection should be dropped.
+    async fn write_by(sock: &mut TcpStream, bytes: &[u8], deadline: Instant) -> bool {
+        matches!(
+            timeout_at(deadline, sock.write_all(bytes)).await,
+            Ok(Ok(()))
+        )
+    }
+
     /// `GET /api/status?x=1 HTTP/1.1` → `("GET", "/api/status?x=1")`.
+    ///
+    /// The request line ends at the first CR **or** LF. Splitting on `"\r\n"`
+    /// alone let a bare `\n` inside the target survive into the rest of the
+    /// handler: `GET /x\n127.0.0.1:1 "GET /admin" 200 HTTP/1.1` yielded the
+    /// target `"/x\n127.0.0.1:1"`.
     fn request_line(head: &str) -> (String, String) {
-        let line = head.split("\r\n").next().unwrap_or("");
+        let line = head.split(['\r', '\n']).next().unwrap_or("");
         let mut parts = line.split(' ').filter(|p| !p.is_empty());
         (
             parts.next().unwrap_or("GET").to_string(),
@@ -420,24 +464,74 @@ mod net_impl {
         )
     }
 
+    /// One request-log field, made safe to print.
+    ///
+    /// The log is one line per request — `peer "METHOD TARGET" status` — so a
+    /// control character in a field forges entries: the target
+    /// `/x\n127.0.0.1:1 "GET /admin" 200` printed a second, entirely
+    /// attacker-written line that no reader of the log could tell from a real
+    /// request. Controls become `\xNN`, quotes and backslashes are escaped, and
+    /// the field is truncated so a 64 KiB request line cannot become a 64 KiB log
+    /// line either.
+    fn log_token(s: &str) -> String {
+        const MAX_LOGGED: usize = 200;
+        let mut out = String::with_capacity(s.len().min(MAX_LOGGED) + 2);
+        let mut truncated = false;
+        for (i, c) in s.chars().enumerate() {
+            if i >= MAX_LOGGED {
+                truncated = true;
+                break;
+            }
+            match c {
+                '"' | '\\' => {
+                    out.push('\\');
+                    out.push(c);
+                }
+                c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                    out.push_str(&format!("\\x{:02x}", c as u32));
+                }
+                c => out.push(c),
+            }
+        }
+        if truncated {
+            out.push('…');
+        }
+        out
+    }
+
     /// Serve one connection: read the head, route it, write the reply. A `HEAD`
     /// request gets the identical headers with no body.
+    ///
+    /// Every phase is bounded in wall-clock time, so a connection cannot outlive
+    /// `HEAD_READ_TIMEOUT` + one poll sweep + `RESPONSE_WRITE_TIMEOUT` however the
+    /// peer behaves — which is what makes the `max_workers` permit pool an actual
+    /// Slowloris guard rather than a Slowloris target.
     async fn handle_conn(mut sock: TcpStream, dash: &Dashboard, peer: &str) {
-        let Some(head) = read_head(&mut sock).await else {
+        let Some(head) = read_head(&mut sock, Instant::now() + HEAD_READ_TIMEOUT).await else {
             return;
         };
         let (method, target) = request_line(&head);
         let resp = dash.handle(&method, &target).await;
         if dash.config().verbose {
-            eprintln!("{peer} \"{method} {target}\" {}", resp.status);
+            eprintln!(
+                "{peer} \"{} {}\" {}",
+                log_token(&method),
+                log_token(&target),
+                resp.status
+            );
         }
-        if sock.write_all(resp.head().as_bytes()).await.is_err() {
+        // The write budget starts here, so a slow sweep never eats it.
+        let deadline = Instant::now() + RESPONSE_WRITE_TIMEOUT;
+        if !write_by(&mut sock, resp.head().as_bytes(), deadline).await {
             return;
         }
-        if method != "HEAD" && !resp.body.is_empty() {
-            let _ = sock.write_all(resp.body.as_bytes()).await;
+        if method != "HEAD"
+            && !resp.body.is_empty()
+            && !write_by(&mut sock, resp.body.as_bytes(), deadline).await
+        {
+            return;
         }
-        let _ = sock.flush().await;
+        let _ = timeout_at(deadline, sock.flush()).await;
     }
 
     /// Accept and serve connections until the listener errors.
@@ -489,6 +583,48 @@ mod net_impl {
             );
         }
         serve(listener, Arc::new(Dashboard::new(config))).await
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{log_token, request_line, MAX_REQUEST_HEAD};
+
+        /// A bare `\n` in the target used to survive `request_line` (which split
+        /// on `"\r\n"` only) and reach `eprintln!`, where it forged a second,
+        /// entirely attacker-written line in the request log.
+        #[test]
+        fn a_bare_newline_cannot_forge_a_second_log_line() {
+            // The newline sits inside the target token itself (no space around
+            // it), so splitting the head on "\r\n" alone kept it and `eprintln!`
+            // printed `peer "GET /x` and then `127.0.0.1:1 "GET /admin" 200" 404`
+            // — a second log line nothing downstream can tell from a real request.
+            let head = "GET /x\n127.0.0.1:1 \"GET /admin\" 200 HTTP/1.1\r\nHost: h\r\n";
+            let (method, target) = request_line(head);
+            assert_eq!((method.as_str(), target.as_str()), ("GET", "/x"));
+            let line = format!("peer \"{} {}\" 404", log_token(&method), log_token(&target));
+            assert_eq!(line, "peer \"GET /x\" 404");
+            assert!(!line.contains('\n'));
+        }
+
+        #[test]
+        fn log_fields_are_escaped_and_bounded() {
+            assert_eq!(log_token("/a\r\nb\tc\u{7f}"), "/a\\x0d\\x0ab\\x09c\\x7f");
+            assert_eq!(log_token("/ok?x=1"), "/ok?x=1");
+            // A 64 KiB request line must not become a 64 KiB log line.
+            let long = log_token(&"a".repeat(MAX_REQUEST_HEAD));
+            assert_eq!(long.chars().count(), 201);
+            assert!(long.ends_with('…'));
+        }
+
+        #[test]
+        fn the_request_line_ends_at_the_first_terminator() {
+            assert_eq!(
+                request_line("GET /api/status?x=1 HTTP/1.1\r\nHost: h"),
+                ("GET".to_string(), "/api/status?x=1".to_string())
+            );
+            // No line at all, and no target: the Python defaults.
+            assert_eq!(request_line(""), ("GET".to_string(), "/".to_string()));
+        }
     }
 }
 

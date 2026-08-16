@@ -30,6 +30,21 @@ const DNS_TTL: Duration = Duration::from_secs(300);
 /// Hard bound on the DNS cache so a broad crawl cannot leak memory.
 const DNS_CACHE_MAX: usize = 4096;
 
+/// Idle keep-alive sockets one [`Fetcher`] holds at once.
+///
+/// The pool is keyed by `(scheme, host, port)`, so an unbounded pool grows with
+/// the number of AUTHORITIES a crawl touches, not with its concurrency: 300
+/// distinct authorities took the process from 310 to 910 file descriptors and
+/// held them, and a broad `--keep-alive` crawl exhausts a 1024-descriptor limit
+/// after roughly a thousand hosts. A crawl worker fetches one host at a time and
+/// revisits recent hosts, so a small pool captures nearly all the reuse.
+const POOL_MAX_IDLE: usize = 32;
+/// How long an idle pooled socket may be kept before it is closed.
+///
+/// Servers close idle keep-alives after 5–75 s; past that the entry is very
+/// likely dead anyway, and holding it costs a descriptor for nothing.
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
 type DnsMap = HashMap<(String, u16), (Instant, Vec<IpAddr>)>;
 
 fn dns_cache() -> &'static Mutex<DnsMap> {
@@ -309,7 +324,9 @@ pub async fn fetch(
 /// A keep-alive-capable fetcher with the **same** SSRF guarantees as [`fetch`].
 ///
 /// Maintains a per-instance pool of idle keep-alive connections keyed by
-/// `(scheme, host, port)`. A pooled connection is reused **only after its pinned
+/// `(scheme, host, port)`, bounded at [`POOL_MAX_IDLE`] entries (least recently
+/// used evicted first) and swept of anything idle past [`POOL_IDLE_TIMEOUT`].
+/// A pooled connection is reused **only after its pinned
 /// address re-clears the [`vet_addrs`] gate** — the crown SSRF invariant, re-run
 /// on every hop even for a reused socket — and every fresh connect (and every
 /// redirect hop) still goes through [`resolve_checked`] + a pinned connect. So a
@@ -321,9 +338,101 @@ pub async fn fetch(
 /// Python `httpclient.Fetcher`). HTTPS is refused (no stdlib TLS), like [`fetch`].
 pub struct Fetcher {
     keep_alive: bool,
-    pool: HashMap<(String, String, u16), (TcpStream, IpAddr)>,
+    pool: ConnPool<TcpStream>,
     opened: u64,
     reused: u64,
+}
+
+/// The idle-connection pool: at most [`POOL_MAX_IDLE`] entries, least-recently
+/// used evicted first, and each entry closed once it has been idle for
+/// [`POOL_IDLE_TIMEOUT`].
+///
+/// Generic over the socket type only so the eviction policy can be unit-tested
+/// without opening 300 real sockets; the crawler only ever uses `TcpStream`.
+struct ConnPool<S> {
+    entries: HashMap<(String, String, u16), PoolEntry<S>>,
+    /// Monotonic use stamp — the smallest one is the least recently used.
+    clock: u64,
+    max_idle: usize,
+    idle_timeout: Duration,
+    evicted: u64,
+    expired: u64,
+}
+
+struct PoolEntry<S> {
+    stream: S,
+    pinned: IpAddr,
+    used: u64,
+    idle_since: Instant,
+}
+
+impl<S> ConnPool<S> {
+    fn new(max_idle: usize, idle_timeout: Duration) -> Self {
+        ConnPool {
+            entries: HashMap::new(),
+            clock: 0,
+            max_idle,
+            idle_timeout,
+            evicted: 0,
+            expired: 0,
+        }
+    }
+
+    /// Take the pooled connection for `key`, dropping it instead if it has been
+    /// idle past the timeout (a socket the peer has almost certainly closed).
+    fn take(&mut self, key: &(String, String, u16), now: Instant) -> Option<(S, IpAddr)> {
+        let e = self.entries.remove(key)?;
+        if now.duration_since(e.idle_since) > self.idle_timeout {
+            self.expired += 1;
+            return None; // `e.stream` drops here: the fd is released
+        }
+        Some((e.stream, e.pinned))
+    }
+
+    /// Pool a connection, first retiring anything idle past the timeout and then,
+    /// if still at the cap, the least recently used entry. Without both, the map
+    /// only ever grows: entries were added per authority and removed only by a
+    /// same-key acquire or `close()`.
+    fn put(&mut self, key: (String, String, u16), stream: S, pinned: IpAddr, now: Instant) {
+        let timeout = self.idle_timeout;
+        let before = self.entries.len();
+        self.entries
+            .retain(|_, e| now.duration_since(e.idle_since) <= timeout);
+        self.expired += (before - self.entries.len()) as u64;
+
+        while self.entries.len() >= self.max_idle.max(1) {
+            let Some(lru) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.used)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            self.entries.remove(&lru);
+            self.evicted += 1;
+        }
+
+        self.clock += 1;
+        let used = self.clock;
+        self.entries.insert(
+            key,
+            PoolEntry {
+                stream,
+                pinned,
+                used,
+                idle_since: now,
+            },
+        );
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
 }
 
 impl Fetcher {
@@ -332,7 +441,7 @@ impl Fetcher {
     pub fn new(keep_alive: bool) -> Self {
         Fetcher {
             keep_alive,
-            pool: HashMap::new(),
+            pool: ConnPool::new(POOL_MAX_IDLE, POOL_IDLE_TIMEOUT),
             opened: 0,
             reused: 0,
         }
@@ -348,6 +457,24 @@ impl Fetcher {
     #[must_use]
     pub fn reused(&self) -> u64 {
         self.reused
+    }
+
+    /// Idle connections currently pooled — never more than [`POOL_MAX_IDLE`].
+    #[must_use]
+    pub fn pooled(&self) -> usize {
+        self.pool.len()
+    }
+
+    /// Pooled connections closed to stay under the cap (observability / tests).
+    #[must_use]
+    pub fn pool_evicted(&self) -> u64 {
+        self.pool.evicted
+    }
+
+    /// Pooled connections closed for sitting idle too long.
+    #[must_use]
+    pub fn pool_expired(&self) -> u64 {
+        self.pool.expired
     }
 
     /// Drop every pooled connection (closing the sockets). Mirrors Python `close`.
@@ -367,7 +494,7 @@ impl Fetcher {
         opts: &FetchOpts,
     ) -> Result<(TcpStream, IpAddr, bool), HttpError> {
         let key = (scheme.to_string(), host.to_string(), port);
-        if let Some((stream, pinned)) = self.pool.remove(&key) {
+        if let Some((stream, pinned)) = self.pool.take(&key, Instant::now()) {
             let exempt = authority_exempt(host, port, &opts.allow_hosts);
             // Re-run the &SafeIp gate on the pinned address before reuse: a pooled
             // socket must never skip the internal-IP check (SSRF on every hop).
@@ -493,8 +620,12 @@ impl Fetcher {
                     // body was fully drained with no peer "close" (perform_request's
                     // `reusable`), so no unread bytes remain on the wire.
                     if self.keep_alive && resp.reusable {
-                        self.pool
-                            .insert((scheme.clone(), host.clone(), port), (stream, pinned));
+                        self.pool.put(
+                            (scheme.clone(), host.clone(), port),
+                            stream,
+                            pinned,
+                            Instant::now(),
+                        );
                     }
                     return Ok(resp);
                 }
@@ -554,5 +685,89 @@ impl Fetcher {
             }
             return result_from(url, &current, resp, redirects);
         }
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+
+    fn key(n: usize) -> (String, String, u16) {
+        ("http".to_string(), format!("h{n}.example"), 80)
+    }
+
+    fn ip() -> IpAddr {
+        IpAddr::from([93, 184, 216, 34])
+    }
+
+    /// AUDIT REGRESSION (MEDIUM). The pool gained an entry per `(scheme, host,
+    /// port)` and lost one only to a same-key `acquire` or `close()`, so it grew
+    /// with the number of authorities a crawl touched: 300 distinct authorities
+    /// took the process from 310 to 910 file descriptors and held them, and a
+    /// broad `--keep-alive` crawl ran out of descriptors after ~1000 hosts.
+    #[test]
+    fn three_hundred_authorities_do_not_hold_three_hundred_sockets() {
+        let mut pool: ConnPool<u32> = ConnPool::new(POOL_MAX_IDLE, POOL_IDLE_TIMEOUT);
+        let now = Instant::now();
+        for n in 0..300usize {
+            pool.put(key(n), n as u32, ip(), now);
+            assert!(
+                pool.len() <= POOL_MAX_IDLE,
+                "pool reached {} entries (cap {POOL_MAX_IDLE})",
+                pool.len()
+            );
+        }
+        assert_eq!(pool.len(), POOL_MAX_IDLE);
+        assert_eq!(pool.evicted, 300 - POOL_MAX_IDLE as u64);
+        // The survivors are the most recent authorities — the ones a crawl
+        // working through a host is about to ask for again.
+        assert!(pool.take(&key(299), now).is_some());
+        assert!(pool.take(&key(0), now).is_none());
+    }
+
+    /// Eviction is least-recently-USED, not least-recently-inserted: an entry
+    /// that keeps being taken and re-pooled survives a flood of one-shot hosts.
+    #[test]
+    fn the_hot_authority_survives_a_flood_of_cold_ones() {
+        let mut pool: ConnPool<u32> = ConnPool::new(4, POOL_IDLE_TIMEOUT);
+        let now = Instant::now();
+        pool.put(key(1), 1, ip(), now);
+        for n in 100..120usize {
+            // Re-pooling the hot key refreshes its stamp, as a real reuse does.
+            let (s, p) = pool.take(&key(1), now).expect("hot entry still pooled");
+            pool.put(key(n), n as u32, ip(), now);
+            pool.put(key(1), s, p, now);
+        }
+        assert!(
+            pool.take(&key(1), now).is_some(),
+            "the repeatedly-reused connection was evicted before the cold ones"
+        );
+    }
+
+    /// An idle socket is closed rather than handed to a request that would then
+    /// have to discover the peer hung up: both on the take path and on the sweep
+    /// that runs before every insert.
+    #[test]
+    fn an_idle_connection_is_not_reused_and_not_kept() {
+        let mut pool: ConnPool<u32> = ConnPool::new(8, Duration::from_millis(50));
+        let t0 = Instant::now();
+        pool.put(key(1), 1, ip(), t0);
+        // Still fresh.
+        let (s, p) = pool.take(&key(1), t0 + Duration::from_millis(10)).unwrap();
+        pool.put(key(1), s, p, t0);
+        // Past the idle timeout: taking it yields nothing and the entry is gone.
+        assert!(pool
+            .take(&key(1), t0 + Duration::from_millis(200))
+            .is_none());
+        assert_eq!(pool.expired, 1);
+        assert_eq!(pool.len(), 0);
+
+        // …and an insert sweeps other entries that went idle in the meantime.
+        pool.put(key(2), 2, ip(), t0);
+        pool.put(key(3), 3, ip(), t0 + Duration::from_millis(500));
+        assert_eq!(pool.len(), 1, "the stale entry survived an insert");
+        assert!(pool
+            .take(&key(2), t0 + Duration::from_millis(500))
+            .is_none());
     }
 }

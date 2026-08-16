@@ -27,6 +27,26 @@ const BODY_WEIGHT: f64 = 1.0;
 const K1: f64 = 1.2;
 const B: f64 = 0.75;
 
+/// Hard cap on the distinct terms one query is scored with.
+///
+/// Every stage below is O(terms × docs) — the document-frequency pass scans the
+/// whole corpus once per term, and BM25 then scans each candidate once per term
+/// — and all of it runs while `SearchServer` holds the store `Mutex`, so the cost
+/// is not paid by the requester alone: every other request, including `/health`,
+/// waits behind it. The query arrives in a request line the serving layer caps
+/// at 64 KiB, which is room for roughly eight thousand distinct words, i.e. a
+/// single `GET /search?q=…` could ask for ~8000 full-corpus scans. Thirty-two
+/// terms is already far past any real query (the reference's own FTS5 default
+/// column limit is well under it); past that we score the first 32 and ignore
+/// the rest, which loosens the implicit AND slightly rather than stalling.
+pub const MAX_QUERY_TERMS: usize = 32;
+
+/// Hard cap on quoted phrases in one query. Each phrase costs its own
+/// `contains_run` sweep of every candidate's title and body, and unlike terms
+/// phrases are not deduplicated, so `"a" "a" "a" …` repeated a thousand times is
+/// a thousand sweeps of the corpus.
+pub const MAX_QUERY_PHRASES: usize = 8;
+
 /// Search parameters. [`SearchOpts::default`] mirrors the Python defaults
 /// (`limit=10`, no filters, no collapse, `simhash_threshold=3`).
 #[derive(Clone, Debug)]
@@ -157,7 +177,8 @@ impl Store {
     /// (before collapse). An empty / punctuation-only query yields no hits.
     #[must_use]
     pub fn search(&self, query: &str, opts: &SearchOpts) -> SearchResults {
-        let (phrases, loose) = parse_query(query);
+        let (mut phrases, loose) = parse_query(query);
+        phrases.truncate(MAX_QUERY_PHRASES);
         // every query token (phrase tokens + loose terms), unique, for matching
         // + BM25; a non-empty query that tokenizes to nothing matches nothing.
         let mut terms: Vec<String> = loose.clone();
@@ -172,6 +193,8 @@ impl Store {
         }
         let mut seen = HashSet::new();
         terms.retain(|t| seen.insert(t.clone()));
+        // Bounded before anything walks the corpus with it — see MAX_QUERY_TERMS.
+        terms.truncate(MAX_QUERY_TERMS);
 
         // The searchable corpus: pages not on a hidden-state host.
         let docs: Vec<Doc> = self
@@ -192,7 +215,37 @@ impl Store {
             };
         }
 
+        // Candidates FIRST: pass the filters AND contain every term, with phrases
+        // appearing consecutively in the title or the body.
+        //
+        // This runs before the corpus statistics on purpose. The `all` here
+        // short-circuits on a doc's first missing term, but the document-frequency
+        // pass below cannot short-circuit anything — it visits every doc once per
+        // term no matter what. So for the query that costs the most (many terms,
+        // matching nothing — `?q=` full of junk words), doing the cheap
+        // short-circuiting pass first means the expensive one never runs at all.
+        let candidates: Vec<&Doc> = docs
+            .iter()
+            .filter(|d| self.passes_filters(d.page, opts))
+            .filter(|d| {
+                terms
+                    .iter()
+                    .all(|t| d.title.iter().any(|x| x == t) || d.body.iter().any(|x| x == t))
+                    && phrases
+                        .iter()
+                        .all(|ph| contains_run(&d.title, ph) || contains_run(&d.body, ph))
+            })
+            .collect();
+        if candidates.is_empty() {
+            return SearchResults {
+                hits: Vec::new(),
+                total: 0,
+            };
+        }
+
         // Corpus stats for BM25: per-term document frequency + per-field avg len.
+        // Over the whole corpus (not the candidates) — that is what makes `idf`
+        // mean anything.
         let df: HashMap<&str, f64> = terms
             .iter()
             .map(|t| {
@@ -208,19 +261,8 @@ impl Store {
         let avg_body =
             (docs.iter().map(|d| d.body.len()).sum::<usize>() as f64 / n as f64).max(1.0);
 
-        // Candidates: pass the filters AND contain every term, with phrases
-        // appearing consecutively in the title or the body.
-        let mut scored: Vec<(f64, &Doc)> = docs
-            .iter()
-            .filter(|d| self.passes_filters(d.page, opts))
-            .filter(|d| {
-                terms
-                    .iter()
-                    .all(|t| d.title.iter().any(|x| x == t) || d.body.iter().any(|x| x == t))
-                    && phrases
-                        .iter()
-                        .all(|ph| contains_run(&d.title, ph) || contains_run(&d.body, ph))
-            })
+        let mut scored: Vec<(f64, &Doc)> = candidates
+            .into_iter()
             .map(|d| {
                 (
                     self.bm25(d, &terms, &df, n as f64, avg_title, avg_body, opts),
@@ -694,5 +736,69 @@ mod tests {
             },
         );
         assert_eq!(urls(&r)[0], "hi");
+    }
+
+    /// The scoring loop is O(terms × docs) under the serving layer's store lock,
+    /// and nothing between the request line and here bounded the term count: a
+    /// 64 KiB `?q=` carries ~8000 distinct words, each of which used to buy a
+    /// full sweep of the corpus for document frequency alone.
+    #[test]
+    fn query_terms_are_capped() {
+        let mut s = Store::new();
+        sp(&mut s, "a", "h.onion", "t", "widget alpha beta gamma delta");
+        // A query of MAX_QUERY_TERMS words the doc has, plus one it does not.
+        // Uncapped this is an implicit AND that the doc fails; capped, the 33rd
+        // term is never scored, so the doc still matches — which is exactly how
+        // we can observe the cap from outside.
+        let mut q: Vec<String> = (0..MAX_QUERY_TERMS).map(|i| format!("t{i}")).collect();
+        q.push("widget".to_string());
+        let body = format!("widget {}", q.join(" "));
+        sp(&mut s, "b", "h.onion", "t", &body);
+
+        let mut over = q.clone();
+        over.push("nosuchtermanywhere".to_string());
+        assert_eq!(over.len(), MAX_QUERY_TERMS + 2);
+        let r = s.search(&over.join(" "), &SearchOpts::default());
+        assert_eq!(urls(&r), vec!["b"], "capped query should still match b");
+
+        // Under the cap the AND is enforced in full: the same query minus enough
+        // words to fit finds nothing, because the absent term is now scored.
+        let under: Vec<String> = (0..MAX_QUERY_TERMS - 1)
+            .map(|i| q[i].clone())
+            .chain(std::iter::once("nosuchtermanywhere".to_string()))
+            .collect();
+        assert_eq!(under.len(), MAX_QUERY_TERMS);
+        let r = s.search(&under.join(" "), &SearchOpts::default());
+        assert!(r.hits.is_empty(), "{:?}", urls(&r));
+
+        // Phrases are capped the same way and for the same reason.
+        let phrases = "\"alpha beta\" ".repeat(MAX_QUERY_PHRASES + 40);
+        let r = s.search(&phrases, &SearchOpts::default());
+        assert_eq!(urls(&r), vec!["a"]);
+    }
+
+    /// A query that matches nothing must not pay for corpus statistics.
+    #[test]
+    fn no_candidates_skips_the_corpus_statistics_pass() {
+        let mut s = Store::new();
+        for i in 0..200 {
+            sp(
+                &mut s,
+                &format!("p{i}"),
+                "h.onion",
+                "title words here",
+                "widget alpha beta gamma delta epsilon zeta eta theta iota",
+            );
+        }
+        // Every term is absent, so the candidate set is empty on the first pass
+        // and the document-frequency sweep (MAX_QUERY_TERMS × 200 docs) is
+        // skipped entirely.
+        let junk: Vec<String> = (0..MAX_QUERY_TERMS).map(|i| format!("zzq{i}")).collect();
+        let r = s.search(&junk.join(" "), &SearchOpts::default());
+        assert_eq!(r.total, 0);
+        assert!(r.hits.is_empty());
+        // and a hit-bearing query is unaffected by the reordering
+        let r = s.search("widget alpha", &SearchOpts::default());
+        assert_eq!(r.total, 200);
     }
 }

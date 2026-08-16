@@ -156,6 +156,23 @@ fn iter_groups(text: &str) -> Vec<Group> {
     groups
 }
 
+/// The RFC 9309 §2.2.1 product token of a user-agent string, lower-cased: the
+/// leading run of `[A-Za-z_-]`, so `astrx-websearch/1.0 (+https://…)` is
+/// `astrx-websearch`.
+///
+/// Matching used to be `our_ua.contains(group_token)`, which is not a
+/// containment relation any spec defines and is wrong in the crawler's favour:
+/// `"User-agent: e\nDisallow:\nUser-agent: *\nDisallow: /"` made the one-letter
+/// group `e` "specific" for `astrx-websearch`, so the `*` group's `Disallow: /`
+/// was discarded entirely and the crawler fetched a site that had told everyone
+/// not to. Equality on both sides' product tokens is the rule the RFC states.
+fn product_token(s: &str) -> String {
+    s.chars()
+        .take_while(|c| c.is_ascii_alphabetic() || *c == '_' || *c == '-')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 /// Parse robots.txt `text` for `user_agent`.
 #[must_use]
 pub fn parse(text: &str, user_agent: &str) -> Robots {
@@ -166,10 +183,10 @@ pub fn parse(text: &str, user_agent: &str) -> Robots {
             allow_all: true,
         };
     }
-    let ua = user_agent.to_lowercase();
+    let ua = product_token(user_agent);
     let groups = iter_groups(text);
 
-    // groups whose token is a substring of our UA (specific) beat the '*' group
+    // groups whose product token equals ours (specific) beat the '*' group
     let mut specific: Vec<ChosenGroup> = Vec::new();
     let mut star: Vec<ChosenGroup> = Vec::new();
     for (agents, rules, delay) in &groups {
@@ -178,7 +195,7 @@ pub fn parse(text: &str, user_agent: &str) -> Robots {
         }
         if agents
             .iter()
-            .any(|tok| !tok.is_empty() && tok != "*" && ua.contains(tok.as_str()))
+            .any(|tok| !tok.is_empty() && tok != "*" && product_token(tok) == ua)
         {
             specific.push((rules, *delay));
         }
@@ -267,6 +284,56 @@ mod audit_regression {
         );
         assert!(!r.can_fetch("/private"), "BOM made the file allow-all");
         assert!(r.can_fetch("/public"));
+    }
+
+    /// AUDIT REGRESSION (LOW). Group selection was `our_ua.contains(group_token)`.
+    /// A one-letter group therefore matched almost every crawler: `e` is a
+    /// substring of `astrx-websearch`, so that group counted as "specific", the
+    /// `*` group was discarded, and its `Disallow: /` never applied — the crawler
+    /// then fetched a site that had told everyone not to.
+    #[test]
+    fn a_one_letter_group_does_not_capture_our_user_agent() {
+        let r = parse(
+            "User-agent: e\nDisallow:\nUser-agent: *\nDisallow: /\n",
+            "astrx-websearch",
+        );
+        assert!(
+            !r.can_fetch("/anything"),
+            "a one-letter group hijacked the '*' group's Disallow: /"
+        );
+        // The same shape with the real token still selects the specific group.
+        let mine = parse(
+            "User-agent: astrx-websearch\nDisallow:\nUser-agent: *\nDisallow: /\n",
+            "astrx-websearch",
+        );
+        assert!(mine.can_fetch("/anything"));
+    }
+
+    /// RFC 9309 §2.2.1 matching: case-insensitive equality of PRODUCT TOKENS, on
+    /// both sides — the version/comment tail of a real `User-Agent` header is not
+    /// part of the token, and a longer or shorter name is a different crawler.
+    #[test]
+    fn product_tokens_match_by_equality_on_both_sides() {
+        let deny_us = "User-agent: astrx-websearch\nDisallow: /\nUser-agent: *\nAllow: /\n";
+        // Our full UA header string reduces to the token before comparison.
+        for ua in [
+            "astrx-websearch",
+            "astrx-websearch/1.0",
+            "ASTRX-WebSearch/2.1 (+https://example/bot)",
+        ] {
+            assert!(
+                !parse(deny_us, ua).can_fetch("/x"),
+                "{ua} escaped its group"
+            );
+        }
+        // …and a crawler whose token merely CONTAINS or extends ours does not
+        // inherit our rules; it falls through to '*'.
+        for ua in ["websearch", "astrx-websearch-images", "astrx"] {
+            assert!(
+                parse(deny_us, ua).can_fetch("/x"),
+                "{ua} was captured by a different crawler's group"
+            );
+        }
     }
 
     /// Rust's f64 parser accepts "inf"/"nan"; a site serving either reserved its

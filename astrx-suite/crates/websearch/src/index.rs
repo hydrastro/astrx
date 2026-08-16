@@ -30,8 +30,10 @@
 use crate::canonical::host_of;
 use crate::htmlparse::Image;
 use crate::structured::Video;
+use crawlcore::budget::Budget;
 use crawlcore::hash::{sha256, to_hex};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 /// The content hash used for exact-duplicate detection: SHA-256 over each part
 /// followed by a NUL separator (matching the Python `content_hash(*parts)`).
@@ -145,6 +147,11 @@ pub const MAX_VIDEOS_PER_DOC: usize = 100;
 /// a long/adversarial query from provoking an unbounded vocabulary scan (Python
 /// `FUZZY_SCAN_CAP`, see [`Index::vocab_candidates`]).
 pub const FUZZY_SCAN_CAP: usize = 2000;
+/// Link-graph edges accepted by one [`Index::add_links`] call — the crawler makes
+/// exactly one call per page, so this is the per-page edge cap. Comfortably above
+/// any honest page (a large sitemap-ish index page carries a few hundred links)
+/// and far below the 100 000 one 1.9 MB `<a href=/N>` page produced.
+pub const MAX_EDGES_PER_CALL: usize = 1000;
 
 /// One stored `<img>` row (the harvested `images` table row).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -231,6 +238,73 @@ pub struct VideoResult {
     pub host: String,
 }
 
+/// Everything a query derives from ONE document's text: per-field term
+/// frequencies (what BM25 asks for), per-field lengths, and the distinct term set
+/// across all three fields.
+///
+/// Term frequencies rather than the token *lists* on purpose: the list form of a
+/// 100 kB body is ~16 000 `String`s — several times the size of the body it came
+/// from — while `tf` and the field length are the only things `bm25` ever asks of
+/// it, and the map collapses repeats.
+pub(crate) struct DocDerived {
+    pub(crate) title_tf: HashMap<String, u32>,
+    pub(crate) desc_tf: HashMap<String, u32>,
+    pub(crate) body_tf: HashMap<String, u32>,
+    pub(crate) title_len: usize,
+    pub(crate) desc_len: usize,
+    pub(crate) body_len: usize,
+    /// Distinct terms over title + description + body — the membership test for
+    /// `required` / `excluded` / `optional`, and the per-document contribution to
+    /// the suggest vocabulary.
+    pub(crate) all: HashSet<String>,
+}
+
+impl DocDerived {
+    fn of(d: &Document) -> Self {
+        let tf = |s: &str| -> (HashMap<String, u32>, usize) {
+            let ws = crate::ranking::words(s);
+            let mut m: HashMap<String, u32> = HashMap::new();
+            for w in &ws {
+                *m.entry(w.clone()).or_insert(0) += 1;
+            }
+            (m, ws.len())
+        };
+        let (title_tf, title_len) = tf(&d.title);
+        let (desc_tf, desc_len) = tf(&d.description);
+        let (body_tf, body_len) = tf(&d.body);
+        let mut all: HashSet<String> = HashSet::new();
+        all.extend(title_tf.keys().cloned());
+        all.extend(desc_tf.keys().cloned());
+        all.extend(body_tf.keys().cloned());
+        DocDerived {
+            title_tf,
+            desc_tf,
+            body_tf,
+            title_len,
+            desc_len,
+            body_len,
+            all,
+        }
+    }
+}
+
+/// The whole corpus's text-derived state, tagged with the [`Index`] generation it
+/// was built from.
+///
+/// It exists because both readers used to rebuild it per request, under the
+/// global index mutex: `build_vocab()` re-tokenised the entire corpus on EVERY
+/// `/suggest` (twice when the fuzzy pass runs), and `search()` re-tokenised and
+/// re-lowercased every document on EVERY query. On a *small* 200-document ×
+/// 100 kB corpus that measured 923 ms for `/suggest?q=lor` and 790 ms for
+/// `/search?q=lorem` — and `/suggest` is a per-keystroke typeahead with no rate
+/// limit, so one person typing costs the whole server.
+pub(crate) struct Derived {
+    generation: u64,
+    pub(crate) docs: HashMap<i64, DocDerived>,
+    /// `term -> document frequency`, the `/suggest` term dictionary.
+    pub(crate) vocab: BTreeMap<String, u32>,
+}
+
 /// A dependency-free document store + link graph.
 #[derive(Default)]
 pub struct Index {
@@ -241,6 +315,14 @@ pub struct Index {
     images: Vec<StoredImage>,               // harvested <img> metadata rows
     videos: Vec<StoredVideo>,               // harvested video-signal rows
     next_id: i64,
+    /// Bumped by every write that changes document TEXT, and only by those. The
+    /// ranking signals (`incoming`, `rank`, `host_rank`) and `fetched_at` are
+    /// deliberately NOT covered: readers take them straight off the [`Document`],
+    /// so a `finalize()` between two searches is visible immediately without
+    /// throwing away a corpus-sized tokenisation.
+    generation: u64,
+    /// The memoised [`Derived`] for `generation`, or `None`/stale.
+    derived: Mutex<Option<Arc<Derived>>>,
 }
 
 impl Index {
@@ -253,8 +335,48 @@ impl Index {
         }
     }
 
+    /// The corpus's text-derived state, rebuilt only if a write has changed
+    /// document text since it was last built.
+    ///
+    /// Returns an `Arc` rather than a borrow so the internal lock is released
+    /// before the caller uses it — the guard must never be held across a search.
+    pub(crate) fn derived(&self) -> Arc<Derived> {
+        let mut slot = self.derived.lock().expect("derived cache mutex");
+        if let Some(d) = slot.as_ref() {
+            if d.generation == self.generation {
+                return Arc::clone(d);
+            }
+        }
+        let mut docs: HashMap<i64, DocDerived> = HashMap::with_capacity(self.docs.len());
+        let mut vocab: BTreeMap<String, u32> = BTreeMap::new();
+        for d in self.docs.values() {
+            let dd = DocDerived::of(d);
+            // The vocabulary counts each term once per DOCUMENT, which is exactly
+            // the distinct-term set already computed for the match tests.
+            for t in &dd.all {
+                *vocab.entry(t.clone()).or_insert(0) += 1;
+            }
+            docs.insert(d.id, dd);
+        }
+        let built = Arc::new(Derived {
+            generation: self.generation,
+            docs,
+            vocab,
+        });
+        *slot = Some(Arc::clone(&built));
+        built
+    }
+
+    /// Declare that document TEXT changed, so the next reader rebuilds
+    /// [`Derived`]. Every write path that touches `title`/`description`/`body`
+    /// must call this; forgetting it serves stale search results.
+    fn invalidate_derived(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
     /// Insert or update the document for `url`; returns its rowid.
     pub fn upsert_document(&mut self, url: &str, f: DocFields) -> i64 {
+        self.invalidate_derived();
         let chash = f
             .content_hash
             .clone()
@@ -377,12 +499,25 @@ impl Index {
 
     /// Record outbound links: `edges` is `(dst, internal)`. Duplicate `(src, dst)`
     /// pairs are ignored (first write wins), matching `INSERT OR IGNORE`.
-    pub fn add_links(&mut self, src: &str, edges: &[(String, bool)]) {
+    ///
+    /// At most [`MAX_EDGES_PER_CALL`] edges are taken and the number REFUSED is
+    /// returned, so a caller can report what it lost. The link graph is a map of
+    /// owned URL pairs and is the one structure a single hostile page can grow
+    /// without bound: 1.9 MB of `<a href=/N>` produced 100 000 edges and +13 MB
+    /// of RSS, which at the default `per_host_budget` of 500 pages is ~6.5 GB from
+    /// one host. The cap is here as well as in the crawler because the store must
+    /// not depend on every caller remembering it.
+    pub fn add_links(&mut self, src: &str, edges: &[(String, bool)]) -> usize {
+        let mut budget = Budget::new(MAX_EDGES_PER_CALL);
         for (dst, internal) in edges {
+            if budget.take(1) == 0 {
+                break;
+            }
             self.links
                 .entry((src.to_string(), dst.clone()))
                 .or_insert(*internal);
         }
+        edges.len().saturating_sub(budget.spent())
     }
 
     /// Refresh every document's `incoming` count from the internal link graph
@@ -791,23 +926,15 @@ impl Index {
     // to SQLite on the ASCII/diacritic-free subset (diacritic folding is not
     // reproduced — the documented "behaviourally faithful" standard).
 
-    /// Build the term dictionary: `term -> document frequency`. For each document
-    /// the DISTINCT term set across `title` + `description` + `body` is taken (so a
+    /// The term dictionary: `term -> document frequency`. For each document the
+    /// DISTINCT term set across `title` + `description` + `body` is taken (so a
     /// term repeated within or across a document's fields counts that document
-    /// once), and every such term's count is incremented by one. Built per call —
-    /// the corpus stays read-only.
-    fn build_vocab(&self) -> BTreeMap<String, u32> {
-        let mut vocab: BTreeMap<String, u32> = BTreeMap::new();
-        for d in self.docs.values() {
-            let mut terms: HashSet<String> = HashSet::new();
-            for field in [d.title.as_str(), d.description.as_str(), d.body.as_str()] {
-                terms.extend(crate::ranking::words(field));
-            }
-            for t in terms {
-                *vocab.entry(t).or_insert(0) += 1;
-            }
-        }
-        vocab
+    /// once), and every such term's count is incremented by one.
+    ///
+    /// Served from the [`Derived`] memo: it used to be rebuilt from the raw corpus
+    /// on every call, and `/suggest` calls it up to twice per keystroke.
+    fn build_vocab(&self) -> Arc<Derived> {
+        self.derived()
     }
 
     /// Indexed terms beginning with `prefix`, most-frequent first — the prefix
@@ -821,7 +948,8 @@ impl Index {
         if prefix.is_empty() {
             return Vec::new();
         }
-        let vocab = self.build_vocab();
+        let derived = self.build_vocab();
+        let vocab = &derived.vocab;
         let mut rows: Vec<(String, u32)> = match prefix_upper(&prefix) {
             Some(hi) => vocab
                 .range(prefix.clone()..hi)
@@ -854,7 +982,8 @@ impl Index {
             Some(c) => c.to_string(),
             None => return Vec::new(),
         };
-        let vocab = self.build_vocab();
+        let derived = self.build_vocab();
+        let vocab = &derived.vocab;
         let mut rows: Vec<(String, u32)> = match prefix_upper(&c0) {
             Some(hi) => vocab.range(c0..hi).map(|(t, &d)| (t.clone(), d)).collect(),
             None => vocab.range(c0..).map(|(t, &d)| (t.clone(), d)).collect(),
@@ -1723,5 +1852,176 @@ mod tests {
         // An empty index round-trips to an empty index.
         let empty = Index::new().snapshot();
         assert_eq!(Index::restore(&empty).unwrap().doc_count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod audit_regression {
+    use super::*;
+    use crate::ranking::{search, SearchOpts};
+
+    fn put(ix: &mut Index, url: &str, title: &str, body: &str) {
+        ix.upsert_document(
+            url,
+            DocFields {
+                title,
+                body,
+                host: url.split('/').nth(2).unwrap_or("h"),
+                lang: "en",
+                fetched_at: 1_000_000.0,
+                http_status: 200,
+                ..DocFields::default()
+            },
+        );
+    }
+
+    /// AUDIT REGRESSION (MEDIUM). Caching the tokenisation is only safe if a write
+    /// invalidates it. Re-indexing a URL with different text must change both what
+    /// `search` matches and what the `/suggest` vocabulary offers — in the same
+    /// process, with no other signal that anything moved.
+    #[test]
+    fn a_text_change_invalidates_the_derived_cache() {
+        let mut ix = Index::new();
+        put(&mut ix, "http://a/1", "Rust guide", "learning rust today");
+        // Warm the cache through both readers.
+        assert_eq!(search(&ix, "rust", &SearchOpts::default()).total, 1);
+        assert_eq!(ix.vocab_prefix("rus", 10), vec![("rust".to_string(), 1)]);
+
+        put(&mut ix, "http://a/1", "Java guide", "learning java today");
+        assert_eq!(
+            search(&ix, "rust", &SearchOpts::default()).total,
+            0,
+            "search still matched the OLD body: the cache was not invalidated"
+        );
+        assert_eq!(search(&ix, "java", &SearchOpts::default()).total, 1);
+        assert!(
+            ix.vocab_prefix("rus", 10).is_empty(),
+            "the suggest vocabulary still holds the OLD term"
+        );
+        assert_eq!(ix.vocab_prefix("jav", 10), vec![("java".to_string(), 1)]);
+
+        // …and restoring the original text restores the original answers exactly.
+        put(&mut ix, "http://a/1", "Rust guide", "learning rust today");
+        assert_eq!(search(&ix, "rust", &SearchOpts::default()).total, 1);
+        assert_eq!(search(&ix, "java", &SearchOpts::default()).total, 0);
+        assert_eq!(ix.vocab_prefix("rus", 10), vec![("rust".to_string(), 1)]);
+    }
+
+    /// A new document added after the cache is warm must be searchable, and one
+    /// index's cache must never answer for another's — [`Index::restore`] builds a
+    /// fresh store, so it starts with a cold cache.
+    #[test]
+    fn additions_and_restore_see_their_own_corpus() {
+        let mut ix = Index::new();
+        put(&mut ix, "http://a/1", "First", "alpha content here");
+        assert_eq!(search(&ix, "beta", &SearchOpts::default()).total, 0);
+        put(&mut ix, "http://a/2", "Second", "beta content here");
+        assert_eq!(
+            search(&ix, "beta", &SearchOpts::default()).total,
+            1,
+            "a document added after the cache was warm is invisible"
+        );
+
+        let restored = Index::restore(&ix.snapshot()).expect("snapshot round-trips");
+        assert_eq!(search(&restored, "beta", &SearchOpts::default()).total, 1);
+        assert_eq!(search(&restored, "alpha", &SearchOpts::default()).total, 1);
+        assert_eq!(
+            restored.vocab_prefix("bet", 10),
+            vec![("beta".to_string(), 1)]
+        );
+    }
+
+    /// The cache covers TEXT only. `add_links` + `finalize` change `incoming` and
+    /// `host_rank`, which feed the score directly — those must be read off the
+    /// live `Document`, so the score moves even though no text changed and the
+    /// cache is (correctly) not rebuilt.
+    #[test]
+    fn link_signals_are_read_live_not_from_the_cache() {
+        let mut ix = Index::new();
+        put(&mut ix, "http://a/1", "Target", "alpha content here");
+        put(&mut ix, "http://b/1", "Source", "alpha content here");
+        let before = search(&ix, "alpha", &SearchOpts::default());
+        let score_before = before
+            .results
+            .iter()
+            .find(|r| r.url == "http://a/1")
+            .expect("target is a hit")
+            .score;
+
+        ix.add_links(
+            "http://b/1",
+            &[
+                ("http://a/1".to_string(), true),
+                ("http://a/1".to_string(), true),
+            ],
+        );
+        ix.add_links("http://a/1", &[("http://b/1".to_string(), true)]);
+        ix.finalize();
+
+        let after = search(&ix, "alpha", &SearchOpts::default());
+        let score_after = after
+            .results
+            .iter()
+            .find(|r| r.url == "http://a/1")
+            .expect("target is still a hit")
+            .score;
+        assert!(
+            score_after > score_before,
+            "an incoming link did not change the score ({score_before} -> {score_after}): \
+             the ranking signals are being served from a stale cache"
+        );
+    }
+
+    /// AUDIT REGRESSION (MEDIUM). The store's own guard against a link bomb: even
+    /// if a caller forgets its per-page cap, one `add_links` call cannot put more
+    /// than [`MAX_EDGES_PER_CALL`] owned URL pairs into the graph, and it says how
+    /// many it refused.
+    #[test]
+    fn add_links_caps_one_pages_edges_and_reports_the_refusals() {
+        let mut ix = Index::new();
+        let edges: Vec<(String, bool)> = (0..100_000)
+            .map(|i| (format!("http://x/{i}"), true))
+            .collect();
+        let dropped = ix.add_links("http://x/p", &edges);
+        assert_eq!(ix.stats().links, MAX_EDGES_PER_CALL);
+        assert_eq!(dropped, 100_000 - MAX_EDGES_PER_CALL);
+
+        // An honest page is untouched, and its refusal count is zero.
+        let mut ix2 = Index::new();
+        let few: Vec<(String, bool)> = (0..40).map(|i| (format!("http://x/{i}"), true)).collect();
+        assert_eq!(ix2.add_links("http://x/p", &few), 0);
+        assert_eq!(ix2.stats().links, 40);
+    }
+
+    /// AUDIT REGRESSION (MEDIUM). The cost of a query must not scale with the
+    /// corpus every time. This is self-calibrating rather than a wall-clock
+    /// threshold: the FIRST query pays the corpus tokenisation, and ten further
+    /// queries must together cost less than that one — before the cache each of
+    /// the ten paid it again in full (measured: `/search?q=lorem` 790 ms and
+    /// `/suggest?q=lor` 923 ms on a 200-document × 100 kB corpus, per request).
+    #[test]
+    fn repeat_queries_do_not_re_tokenise_the_corpus() {
+        let body = "lorem ipsum dolor sit amet consectetur adipiscing elit ".repeat(400); // ~21 kB
+        let mut ix = Index::new();
+        for i in 0..100 {
+            put(&mut ix, &format!("http://h{i}/p"), "Lorem page", &body);
+        }
+
+        let t0 = std::time::Instant::now();
+        assert_eq!(search(&ix, "lorem", &SearchOpts::default()).total, 100);
+        let cold = t0.elapsed();
+
+        let t1 = std::time::Instant::now();
+        for _ in 0..10 {
+            assert_eq!(search(&ix, "lorem", &SearchOpts::default()).total, 100);
+            assert!(!ix.vocab_prefix("lor", 10).is_empty());
+        }
+        let warm = t1.elapsed();
+
+        assert!(
+            warm < cold,
+            "ten warm queries ({warm:?}) cost more than the one cold query ({cold:?}): \
+             the corpus is being re-tokenised per request"
+        );
     }
 }
