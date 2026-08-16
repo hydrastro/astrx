@@ -1063,7 +1063,11 @@ fn read_store(db: &str) -> Result<Store, String> {
 /// Persist a store snapshot to `db`.
 fn write_store(store: &Store, db: &str) -> Result<usize, String> {
     let blob = store.snapshot();
-    std::fs::write(db, &blob).map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
+    // Published by rename, not truncate-then-write: a crash or a full disk
+    // partway through `fs::write` left a truncated blob, `Store::restore`
+    // correctly refused it, and the previous good index was already gone.
+    crawlcore::atomicfile::write_atomic(db, &blob)
+        .map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
     Ok(blob.len())
 }
 

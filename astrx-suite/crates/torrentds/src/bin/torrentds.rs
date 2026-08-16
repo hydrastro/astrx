@@ -674,55 +674,11 @@ fn read_store(db: &str, spam_threshold: f64) -> Result<Store, String> {
     }
 }
 
-/// Replace `path`'s contents with `bytes` atomically: write a temp file in the
-/// same directory, `sync_all` it, then `rename` it over the destination.
-///
-/// `std::fs::write` truncates the destination and only then streams into it, so
-/// anything that interrupts the write — the documented Ctrl-C shutdown, a full
-/// disk — leaves a half-written snapshot on disk. `read_store` treats a snapshot
-/// it cannot decode as a hard error, so both `index` and `search` then refuse to
-/// start and the whole index is gone: an 89 MB snapshot truncated at 5 %, 50 %
-/// and 99.9 % made `Store::restore` return `None` in all three cases. A rename
-/// within one directory is atomic, so a reader (or the next start-up) sees either
-/// the complete previous snapshot or the complete new one, never a prefix.
-fn write_atomic(path: &str, bytes: &[u8]) -> std::io::Result<()> {
-    let dst = Path::new(path);
-    let dir = match dst.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => Path::new("."),
-    };
-    let stem = dst
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("snapshot"));
-    // Unique per process and per call, so a second writer (or a retry after a
-    // failure) can never share, and truncate, an in-flight temp file.
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let mut tmp_name = stem.to_os_string();
-    tmp_name.push(format!(".tmp-{}-{nonce}", std::process::id()));
-    let tmp = dir.join(tmp_name);
-
-    let written = std::fs::File::create(&tmp).and_then(|mut f| {
-        f.write_all(bytes)?;
-        // Durable BEFORE the rename publishes it: a rename that beats the data to
-        // disk would publish a file of zeroes across a power cut.
-        f.sync_all()
-    });
-    if let Err(e) = written.and_then(|()| std::fs::rename(&tmp, dst)) {
-        let _ = std::fs::remove_file(&tmp); // never leave a temp file behind
-        return Err(e);
-    }
-    // Best effort: flush the directory entry too, so the rename itself survives a
-    // crash. Not supported on every platform, so a failure here is not fatal.
-    let _ = std::fs::File::open(dir).map(|d| d.sync_all());
-    Ok(())
-}
-
 /// Persist a store snapshot to `db`, atomically (see [`write_atomic`]).
 fn write_store(store: &Store, db: &str) -> Result<usize, String> {
     let blob = store.snapshot();
-    write_atomic(db, &blob).map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
+    crawlcore::atomicfile::write_atomic(db, &blob)
+        .map_err(|e| format!("error: cannot write store to {db}: {e}"))?;
     Ok(blob.len())
 }
 
@@ -1042,7 +998,7 @@ async fn run_tracker(a: TrackerArgs) -> ExitCode {
             .snapshot(now_secs());
         // Atomic like the store snapshot: a torn peers db is a hard error for the
         // next `tracker` start-up's `restore`, losing every live swarm.
-        if let Err(e) = write_atomic(&path, &blob) {
+        if let Err(e) = crawlcore::atomicfile::write_atomic(&path, &blob) {
             // Matches Python's `except OSError: pass` — a transient write failure
             // must not take the trackers down.
             eprintln!("warning: cannot write peers db {path}: {e}");

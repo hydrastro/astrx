@@ -713,7 +713,10 @@ async fn run_crawl(a: CrawlArgs) -> ExitCode {
     // then persist the whole index — mirrors the Python `index.finalize` + commit.
     crawler.index_mut().finalize();
     let blob = crawler.index().snapshot();
-    if let Err(e) = std::fs::write(&a.db, &blob) {
+    // Published by rename, not truncate-then-write: a crash or a full disk
+    // partway through `fs::write` left a truncated blob, `Index::restore`
+    // correctly refused it, and the previous good index was already gone.
+    if let Err(e) = crawlcore::atomicfile::write_atomic(&a.db, &blob) {
         eprintln!("error: cannot write index to {}: {e}", a.db);
         return ExitCode::from(1);
     }
@@ -837,7 +840,7 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
         }
     };
     let blob = index.snapshot();
-    if let Err(e) = std::fs::write(&a.out, &blob) {
+    if let Err(e) = crawlcore::atomicfile::write_atomic(&a.out, &blob) {
         eprintln!("error: backup failed: {e}");
         return ExitCode::from(1);
     }

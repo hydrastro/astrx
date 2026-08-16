@@ -15,6 +15,11 @@ description = "DHT torrent-metadata indexer + tracker: bencode wire codec, byte-
 # are declared here (not via `[workspace.dependencies]`) so the manifest parses
 # on pre-1.64 Cargo — see the root Cargo.toml note.
 [dependencies]
+# First-party shared library — stdlib-only, so this does not touch the
+# zero-third-party-dependency invariant. Used for the durable snapshot publish
+# (`atomicfile::write_atomic`), which every engine in the suite shares so a torn
+# write cannot destroy an index in any of them.
+crawlcore = { path = "../crawlcore" }
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros", "io-util"], optional = true }
 getrandom = { version = "0.2", optional = true }
 

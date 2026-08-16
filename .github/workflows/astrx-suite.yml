@@ -1,0 +1,164 @@
+#  The gate that already exists, run on every push.
+#
+#   `astrx-suite/install_rust_suite.sh --ci` has always been green — but nothing
+#   ran it, and that is how a whole audit's worth of fixes went missing from the
+#   remote without anyone noticing. This runs it, plus the two things a laptop
+#   cannot check: that the suite builds on the declared MSRV, and that it behaves
+#   the same across `git` versions.
+#
+#   Design notes:
+#     * Every job is `--locked`, so a lockfile drift fails the build instead of
+#       silently resolving to something new.
+#     * The zero-dependency invariant is ASSERTED, not assumed. It is the
+#       project's central claim; a claim nothing checks is a claim that decays.
+#     * The git matrix exists because a real failure came from it: git renders a
+#       zero UTC offset as `+00:00` up to 2.43 and as `Z` after, which changed
+#       `gitweb`'s public output under an operator's routine upgrade.
+name: astrx-suite
+
+on:
+  push:
+    paths: ['astrx-suite/**', '.github/workflows/astrx-suite.yml']
+  pull_request:
+    paths: ['astrx-suite/**', '.github/workflows/astrx-suite.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: astrx-suite
+
+env:
+  CARGO_TERM_COLOR: always
+  # A warning that reaches a human is a warning that gets ignored. Fail instead.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ---------------------------------------------------------------- style
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt }
+      - run: cargo fmt --all --check
+
+  # ------------------------------------------------- lints, every feature tier
+  clippy:
+    name: clippy (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The four tiers the crates actually ship. A lint clean only under
+        # --all-features says nothing about the zero-dependency build, which is
+        # the one most people will compile.
+        features: ['--no-default-features', '', '--features rand', '--features net', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+
+  # ----------------------------------------------------------------- tests
+  test:
+    name: tests (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['--no-default-features', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      - run: cargo test --workspace --locked ${{ matrix.features }}
+
+  # ------------------------------------------------------ the MSRV is a promise
+  msrv:
+    name: MSRV 1.80
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80.0
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      # Build, not test: dev-dependencies and test harnesses may legitimately
+      # want newer Rust than the shipped library does.
+      - run: cargo build --workspace --locked --all-features
+
+  # ------------------------------- the project's central claim, asserted not assumed
+  zero-deps:
+    name: zero third-party dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Every crate resolves to nothing but first-party code by default
+        run: |
+          set -euo pipefail
+          fail=0
+          for c in crawlcore torrentds onioncrawler websearch suitedash gitweb; do
+            n=$(cargo tree -p "$c" --edges normal --locked \
+                | tail -n +2 | grep -v crawlcore | grep -c . || true)
+            if [ "$n" -ne 0 ]; then
+              echo "::error::$c pulls $n third-party crate(s) in the default build"
+              cargo tree -p "$c" --edges normal --locked
+              fail=1
+            else
+              echo "$c: 0"
+            fi
+          done
+          exit "$fail"
+
+  # ---------------------------------- git's output is not a stable format
+  git-versions:
+    name: gitweb vs git ${{ matrix.git }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `gitweb` shells out to `git` and parses what comes back, so the
+        # installed git is part of its contract. This caught a real regression:
+        # `%aI` renders a zero UTC offset as `+00:00` up to 2.43 and as the RFC
+        # 3339 `Z` after it, which silently changed the crate's public output.
+        git: ['system', 'newest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      - name: Install a newer git
+        if: matrix.git == 'newest'
+        run: |
+          sudo add-apt-repository -y ppa:git-core/ppa
+          sudo apt-get update -qq && sudo apt-get install -y git
+      - run: git --version
+      - run: cargo test -p gitweb --locked --all-features
+
+  # ------------------------------------------------ the shipped installer itself
+  installer:
+    name: install_rust_suite.sh --ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: 'rustfmt, clippy' }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      # The script an operator is told to run. If it breaks, the documented
+      # install path is broken, whatever the rest of this file says.
+      - run: bash install_rust_suite.sh --ci
+
+  # ------------------------------------------------------------- supply chain
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: astrx-suite/Cargo.toml
