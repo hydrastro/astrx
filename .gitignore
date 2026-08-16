@@ -37,3 +37,14 @@ Thumbs.db
 
 # env
 .env
+
+# Scratch that accumulates at the repo root during upgrades and reviews, and
+# that `git status` would otherwise report forever. `astrx-suite.bak.*` in
+# particular: an out-of-tree upgrade script left nineteen timestamped copies of
+# the whole workspace sitting here, which is tens of gigabytes of near-duplicate
+# source and makes a real untracked file impossible to spot.
+astrx-suite.bak.*
+/install_rust_suite.sh
+/installrustsuite.sh
+/removepython.sh
+*.patch
