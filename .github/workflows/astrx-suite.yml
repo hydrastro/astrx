@@ -21,6 +21,10 @@ on:
     paths: ['astrx-suite/**', '.github/workflows/astrx-suite.yml']
   pull_request:
     paths: ['astrx-suite/**', '.github/workflows/astrx-suite.yml']
+  # A RUSTSEC advisory can land on a week nobody pushes. Without this the
+  # supply-chain check only ever runs when something else already changed.
+  schedule:
+    - cron: '17 6 * * 1'
   workflow_dispatch:
 
 defaults:
@@ -29,8 +33,11 @@ defaults:
 
 env:
   CARGO_TERM_COLOR: always
-  # A warning that reaches a human is a warning that gets ignored. Fail instead.
-  RUSTFLAGS: -D warnings
+  # NB: RUSTFLAGS is deliberately NOT set here. A workflow-level `-D warnings`
+  # applies to DEPENDENCY compilation too, so a new warning inside tokio — code
+  # this repository does not control and cannot fix — would break the build with
+  # no change to the tree. Warnings are denied where they belong: on the clippy
+  # invocations below, which are scoped to `--workspace`.
 
 jobs:
   # ---------------------------------------------------------------- style
@@ -86,9 +93,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.80.0
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: astrx-suite }
+      # `astrx-suite/rust-toolchain.toml` pins channel = "stable", and rustup
+      # honours that file over whatever toolchain an action selected — so this
+      # job used to install 1.80 and then cheerfully build with stable, passing
+      # while testing nothing. RUSTUP_TOOLCHAIN takes precedence over the file.
+      - name: Prove the toolchain really is the MSRV
+        run: rustc --version | tee /dev/stderr | grep -q '1\.80\.'
+        env: { RUSTUP_TOOLCHAIN: '1.80.0' }
       # Build, not test: dev-dependencies and test harnesses may legitimately
       # want newer Rust than the shipped library does.
       - run: cargo build --workspace --locked --all-features
+        env: { RUSTUP_TOOLCHAIN: '1.80.0' }
 
   # ------------------------------- the project's central claim, asserted not assumed
   zero-deps:
@@ -205,11 +220,31 @@ jobs:
           exit "$fail"
 
   # ------------------------------------------------------------- supply chain
+  #
+  # Split deliberately. `bans`, `licenses` and `sources` are decided entirely by
+  # this repository's own lockfile and deny.toml, so they are reproducible and
+  # they block. `advisories` reads a LIVE feed — a RUSTSEC advisory published
+  # tomorrow would fail this build with no change to the tree, and blocking a
+  # merge on someone else's publication schedule is how a red CI becomes
+  # background noise people stop reading. It runs, it reports, it does not gate;
+  # the scheduled run below is what surfaces a new advisory on a quiet day.
   deny:
-    name: cargo-deny
+    name: cargo-deny (bans, licenses, sources)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: astrx-suite/Cargo.toml
+          command: check bans licenses sources
+
+  advisories:
+    name: cargo-deny (advisories, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: astrx-suite/Cargo.toml
+          command: check advisories

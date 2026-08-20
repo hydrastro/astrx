@@ -5,7 +5,7 @@
 #   cargo deny check advisories      # just the RustSec audit
 #   cargo deny check bans licenses   # just the supply-chain / licence gates
 #
-# This is the supply-chain complement to the CI in .github/workflows/rust.yml:
+# This is the supply-chain complement to the CI in .github/workflows/astrx-suite.yml:
 # CI proves the *default* build is dependency-free, while cargo-deny governs the
 # handful of vetted crates the opt-in `rand` / `net` features are allowed to add
 # (tokio + getrandom and their small transitive closure). Run it on the full
