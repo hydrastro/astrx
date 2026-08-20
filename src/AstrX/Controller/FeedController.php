@@ -84,7 +84,7 @@ final class FeedController extends AbstractController
         $xml .= '  <link rel="self" href="' . $this->xmlAttr($selfUrl) . '" type="application/atom+xml"/>' . "\n";
         $xml .= '  <link rel="alternate" href="' . $this->xmlAttr($homeUrl) . '" type="text/html"/>' . "\n";
         $xml .= '  <updated>' . $this->xmlText($updated) . '</updated>' . "\n";
-        $xml .= '  <generator uri="https://github.com/anthropics/astrx" version="1.0">' . $this->xmlText($siteName) . '</generator>' . "\n";
+        $xml .= '  <generator uri="https://github.com/hydrastro/astrx" version="1.0">' . $this->xmlText($siteName) . '</generator>' . "\n";
 
         foreach ($items as $item) {
             $id        = is_scalar($item['id']         ?? null) ? (int)    $item['id']         : 0;
