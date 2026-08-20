@@ -1,239 +1,246 @@
 # AstrX
 
-A zero-dependency PHP 8.4 content-management framework with a built-in
-real-time chat, engineered for privacy-first deployments — Tor hidden services,
-hostile networks, JavaScript-disabled clients — where every feature must work
-with scripting off and nothing may phone home.
+A modular PHP web framework.
 
-AstrX ships no Composer packages at runtime. The framework, the CMS, the
-moderation stack, the mail/webmail layer, and the live chat are all pure PHP on
-top of MariaDB and a handful of standard extensions. There is no build step
-required to run it, no CDN dependency, and no client-side framework.
+- **Overengineered from the core** - because I'm the CEO of Overengineering
+- **No JavaScript.** - for the love of TOR sysadmins
+- **Security by structure** - paranoia is never too much
+- **Zero dependencies.** - what's composer?
+- **i18n by default.** - mamma mia
+- **Highly configurable.** - if you can't change it, it's a bug
 
-## What's distinctive
-
-- **No JavaScript required.** Every page, form, moderation control, and the live
-  chat function with scripting disabled. Navigation is server-rendered and
-  Post/Redirect/Get throughout; the chat "streams" by auto-refreshing iframes,
-  not XHR.
-- **One controller, HTML *and* JSON.** The web view and the JSON API are the
-  same code path. A page opts into the API with a flag, and per-value
-  `ContextScope` tags decide exactly what crosses into JSON — no parallel "API
-  controllers" to keep in sync.
-- **CSS-only themes.** A theme is a directory of metadata plus a stylesheet;
-  switching it changes no markup and ships no script.
-- **Errors are values, not control flow.** Operations return a `Result<T>` monad
-  carrying typed `Diagnostic` objects rather than throwing — all the way to the
-  edge, and into the API envelope.
-- **Zero runtime dependencies**, **native English/Italian i18n** enforced by a
-  parity check, and a tree that is clean at **PHPStan level 10**.
-
-## Operating modes
-
-The same application runs through three front controllers, selected at the
-web-server level:
-
-- **Server-rendered (default)** — `public/index.php`. Plain, fast HTML with PRG
-  navigation; the mode the whole framework is designed around.
-- **Experimental `/js/` browser** — a progressive-enhancement client served
-  under `/<locale>/js/`, with a same-origin API index at
-  `/<locale>/js/api.json`. Entirely optional; the site is fully usable without
-  it.
-- **Compiled bundle** — `php tools/compile.php` packs all of `src/` and the
-  read-only resources into a single `build/astrx.compiled.php` with an on-demand
-  autoloader (not naive concatenation). Serve it directly via
-  `public/compiled.php`, or benchmark it side-by-side under `/compile`
-  (`public/compile/index.php`). Config and uploaded state stay external and
-  mutable. See `docs/COMPILED_BUILD.md`.
-
-## Optional modules
-
-Several features — the imageboard, the chat, the bot-trap honeypot, site-wide
-search, and the webmail client — are **optional modules** that a deployment can
-turn off without touching core: the module's navigation disappears, its pages
-return the themed 404, and its schema can be dropped. Each module self-declares
-in a `src/AstrX/<Module>/module.php` manifest that `AstrX\Module\ModuleRegistry`
-discovers, so adding one is a manifest plus a page tag — core names no module.
-
-```
-php tools/module.php status              # each module: enabled/disabled + page count
-php tools/module.php disable chat        # nav drops, pages 404 — reversible
-php tools/module.php purge   chat        # also drop its tables (destructive)
-php tools/make_module.php forum --nav    # scaffold a new module
-php tools/check_modules.php              # CI gate: validate every manifest
-```
-
-Toggle them in `resources/config/Modules.config.php`. See `docs/MODULES.md` for
-the manifest contract and a walkthrough of writing your own.
-
-## Architecture
-
-A single front controller resolves the request through the router into a page
-record, then into a controller. Controllers are constructed by a
-reflection-based dependency injector (`AstrX\Injector`) that autowires services
-from their constructor type-hints, and configuration is bound declaratively
-through the `#[InjectConfig]` attribute — a config setter is matched to a key in
-a `*.config.php` file and invoked at wiring time.
-
-Pages live in a database table with a closure table for the hierarchy, are
-rendered through a Mustache-style template engine (escape-by-default, with
-path-traversal-guarded partial loading), and can be decorated with per-page
-meta, robots, keywords, and templates. A navbar builder assembles the menu tree
-from pinned and grouped entries. Optional modules — news, comments, the API, a
-feed, mail and IMAP webmail — hang off the same core.
-
-| Concern | Where it lives |
-|---|---|
-| Front controllers | `public/index.php`, `public/compiled.php`, `public/compile/` |
-| Routing & dispatch | `src/AstrX/Routing/`, `src/AstrX/ContentManager.php` |
-| Dependency injection | `src/AstrX/Injector/` (reflection autowiring) |
-| Configuration | `#[InjectConfig]` → `resources/config/*.config.php` |
-| Templating | `src/AstrX/Template/` (Mustache-style, escape-by-default) |
-| Result / diagnostics | `src/AstrX/Result/` |
-| Internationalization | `src/AstrX/I18n/`, `resources/lang/{en,it}/` |
-| Auth, sessions, CSRF | `src/AstrX/Auth/`, `src/AstrX/Session/`, `src/AstrX/Csrf/` |
-| Pages & hierarchy | `src/AstrX/Page/` (+ closure table) |
-| Chat | `src/AstrX/Chat/`, `src/AstrX/Controller/Chat*` |
-| Admin & moderation | `src/AstrX/Admin/`, `src/AstrX/Controller/Admin*` |
-| HTTP API | `src/AstrX/Api/` |
-| Mail & webmail | `src/AstrX/Mail/` |
-| Themes | `src/AstrX/Theme/`, `resources/template/themes/` |
-
-## The chat
-
-A real-time chat that needs no JavaScript: an auto-refreshing message stream,
-guest and member posting, private messages, per-user settings and themes, and a
-complete moderation surface. Moderators get an in-chat admin panel — live
-sessions, kick and ban routed through the shared banlist, broadcast, room topic,
-and bulk clean — plus guest-access modes with optional moderator approval before
-a guest may post. Abuse control is layered: managed **word / link / nick
-filters** with automatic kick, a user **report → moderator queue** that can turn
-a reported link into a kick filter in one action, per-identity **flood
-protection** with auto-mute, and **EXIF-stripped image attachments** (uploads
-are re-encoded through GD, so metadata and polyglot payloads are discarded and
-only pixels survive). Every limit — retention, message count, refresh interval,
-upload size and dimensions, capacity — is admin-configurable.
-
-## The HTTP API
-
-Any page becomes a JSON endpoint by setting `api_enabled = 1`; the controller
-that renders the web view serves the API unchanged. A response carries both
-structured `data` and the fully-rendered `html` in a single round trip (drop the
-HTML with `?html=0`). What appears in `data` is governed by per-value
-`ContextScope` tags, so enabling the API never blanket-exposes a controller's
-internals — an enabled page with nothing tagged returns `"data": {}`.
-
-| Scope | Web HTML | API JSON |
-|---|---|---|
-| `WEB_ONLY` (default) | yes | never |
-| `SHARED` | yes | yes |
-| `API_PUBLIC` | no | yes |
-| `API_ADMIN` | no | admin callers only |
-
-Authentication is by `astrx_`-prefixed bearer key (192-bit, scoped to one user),
-an existing session cookie, or anonymous — and permissions and policies apply
-exactly as they do on the web. Full reference in `docs/API.md`.
-
-## Security model
-
-Passwords are hashed with Argon2id and transparently rehashed on verify; a dummy
-verification runs on unknown users to flatten timing. Sessions use 128-byte
-CSPRNG identifiers stored as SHA-512 digests, with session data sealed under
-AES-256-CTR encrypt-then-HMAC using domain-separated HKDF-derived keys and a
-constant-time MAC check. CSRF protection is per-session, single-use, 256-bit, and
-compared with `hash_equals` on every state-changing POST. Authorization goes
-through a default-deny `Gate` with a permission enum and per-resource policies.
-
-The **banlist** is a first-class identity-ban engine spanning IP/CIDR, email,
-nick, and user, with penalty rounds and expiry; IPv4 is handled as IPv4-mapped
-IPv6 so v4 and v6 bans share one code path. An append-only **admin audit log**
-records significant admin actions — who did what, to which resource, from which
-address, and when — across user management, moderation, the banlist, and every
-configuration save.
-
-## Themes
-
-Themes are CSS-only. Each lives in `resources/template/themes/<name>/` as a
-`theme.config.php` (name, description, author, version) plus a stylesheet;
-selecting one swaps the stylesheet without touching markup or shipping any
-script. A site-wide default and per-user overrides are set from the admin and
-user-settings surfaces.
+---
 
 ## Requirements
 
-- PHP **8.4** with `pdo_mysql`, `gd`, `fileinfo`, and `mbstring`
-- MariaDB **10.4+** (or MySQL 8+)
-- A web server with the document root pointed at `public/`
+PHP `8.4+` with extensions: `pdo_mysql`, `openssl`, `gd`, `mbstring`.  
+A webserver with url rewriting (like nginx or Apache).  
+A SQL database (like MariaDB / MySQL).
 
-## Quick start (Docker)
+---
 
-```
-docker compose up --build
-```
+## Quick Start
 
-On first boot the MariaDB container runs `src/setup/init.sql`, which creates the
-`content_manager` database and the application user. Then open `public/setup.php`
-and follow the wizard — it installs the schema from `src/setup/tables.sql` and
-writes the config files under `resources/config/`.
-
-> The init script runs only against a fresh data directory. If you have booted
-> the stack before, reset the database volume first: `docker compose down -v`.
-
-## Manual setup
-
-1. Point the web server's document root at `public/`.
-2. Create an empty database named `content_manager` and a user that can access
-   it (see `src/setup/init.sql` for the grants the Docker path uses).
-3. Visit `public/setup.php` and complete the wizard, or initialise by hand:
-   import `src/setup/tables.sql` and fill in `resources/config/PDO.config.php`.
-4. Make the upload directories writable by the web server — the chat upload dir
-   (`upload_dir` in the chat config, default `resources/chat_uploads`) and
-   `resources/avatar`.
-
-The schema is a **single file**, `src/setup/tables.sql`; there are no
-incremental migration files. Schema changes are folded into that file, and an
-existing database is brought forward by applying the delta by hand.
-
-## Configuration
-
-Runtime configuration lives in `resources/config/*.config.php`. Each file is a
-plain PHP array bound to a typed config object via `#[InjectConfig]`, and almost
-everything is editable from the in-app admin panels (access rules, captcha,
-chat, mail, webmail, themes, system) rather than by hand-editing files. The chat
-alone exposes 60+ settings through its admin surface.
-
-## Internationalization
-
-Locale catalogs live under `resources/lang/<locale>/`, split by domain, with a
-matching pair for English (`en`) and Italian (`it`). `tools/check_lang_parity.php`
-verifies that both locales define exactly the same keys and exits non-zero on any
-divergence — run it before committing.
-
-## Development
-
-```
-php phpstan.phar analyse        # static analysis, level 10, must be clean
-php tools/check_lang_parity.php # en / it translation parity
-php tools/compile.php           # (re)build the single-file compiled bundle
+```bash
+git clone https://github.com/hydrastro/astrx.git
+cd astrx
+cp .env.example .env      # it refuses to start until you fill it in. good.
+docker compose up -d
 ```
 
-## Documentation
+Or point your web server root at `public/` with URL rewriting to `index.php`.
 
-- `docs/API.md` — the HTTP API: opt-in, context scopes, auth, response envelope.
-- `docs/COMPILED_BUILD.md` — the compiled single-file bundle and how to serve it.
-- `docs/PROFILING.md` — profiling normal vs. compiled front controllers.
+Then visit `http://localhost/setup.php` and follow the five-step wizard: requirements check → database → admin account → security → done.
 
-## Project layout
+> **Note:** the wizard locks itself on completion, but it's advised to delete `public/setup.php` afterwards anyway.
+
+For nginx:
+```nginx
+location / {
+    try_files $uri $uri/ /index.php$is_args$args;
+}
+```
+
+---
+
+## Architecture
+
+### Bootstrap & Dependency Injection
+
+`public/index.php` is the single entry point.  
+`src/bootstrap.php` defines path constants, registers the PSR-4 autoloader, and instantiates `Prelude` — the composition root.
+
+`Prelude` manually constructs the singletons of the core classes (`Config`, `Translator`, `ModuleLoader`, `Injector`, `Gate`) and registers them with the `Injector`. Everything else is resolved on demand.
+
+Config files in `resources/config/` are plain PHP arrays keyed by domain:
+
+```php
+// resources/config/Mail.config.php
+return [
+    'WebmailService' => ['mail_domain' => 'example.com', 'mailserver_is_local' => false],
+];
+```
+
+Classes declare which keys they consume with `#[InjectConfig]` attributes on setters.  
+`ModuleLoader` wires these automatically every time a class is created.
+
+```php
+#[InjectConfig('mail_domain')]
+public function setMailDomain(string $v): void { $this->mailDomain = $v; }
+```
+
+---
+
+### Result Monad & Diagnostics
+
+This is the core of the system.  
+All recoverable runtime errors flow through `Result<T>` and the `Diagnostics` channel.  
+Exceptions are reserved for programmer-contract violations — never for business logic.
+
+```php
+$ok  = Result::ok($value);
+$err = Result::err(null, Diagnostics::of($diagnostic));
+
+$result->isOk();           // bool
+$result->unwrap();         // T (throws only on programmer error)
+$result->drainTo($collector); // propagate diagnostics up the stack
+$result->map(fn($v) => $v * 2);
+$result->flatMap(fn($v) => doSomethingElse($v));
+```
+
+`Diagnostics` is an immutable, append-only collection of `DiagnosticInterface` objects.  
+Each carries a string ID (e.g. `astrx.user/wrong_password`), a `DiagnosticLevel`, and typed fields specific to that diagnostic class.
+
+`DiagnosticRenderer` turns diagnostics into human-readable strings via callable entries in the lang files:
+
+```php
+// resources/lang/en/Diagnostics/i18n.en.php
+'astrx.user/wrong_password' => fn(WrongPasswordDiagnostic $d): string =>
+    "Login failed for \"{$d->username()}\" after {$d->attempts()} attempt(s).",
+```
+
+The `DiagnosticsCollector` accumulates diagnostics across the entire request.  
+At render time, `DiagnosticRenderer` can surface them — to admins as a visible panel on the error page, to logs as structured entries, to tests as assertable values.  
+The admin panel lets you configure which severity levels are visible to which user groups and override individual diagnostic levels per deployment.
+
+---
+
+### Routing
+
+Two modes, seamlessly switchable via config:
+
+- **Rewrite mode:** `/{locale}/{page-url-id}/...` — uses the URL path as a stack.
+- **Query mode:** `/?page=main&lang=en` — classic `$_GET` style, works without server-side rewriting.
+
+Internationalization of the urls is supported.
+
+Pages live in the `page` table. Each has a `url_id` (an i18n key for localised slugs), a `file_name` (maps to a template and controller), and flags for controller, template, and comments. `ContentManager` resolves the request to a `Page` object, dispatches the controller, and renders the template. `UrlGenerator` produces fully localised, mode-aware URLs from page IDs.
+
+---
+
+### Authentication & PBAC
+
+The system implements a Policy-Based Access Control.  
+Roles (`ADMIN`, `MOD`, `USER`, `GUEST`) map to named `Permission` enum values.  
+Per-resource decisions delegate to typed `PolicyInterface` classes:
+
+```php
+// Simple permission check
+if ($this->gate->cannot(Permission::ADMIN_ACCESS)) { ... }
+
+// Resource-level — delegates to a Policy class
+if ($this->gate->cannot(Permission::EDIT_POST, $postResource)) { ... }
+```
+
+---
+
+### Session Security
+
+Sessions are database-backed and AES-256-CTR encrypted with HMAC-SHA-256 authentication.  
+Keys are derived per-session via HKDF, mixed with a server-side secret.  
+Session ID regeneration is configurable per user group (time-based) and fires unconditionally on login, logout, and admin role changes (event-based), with a grace-period handover window for in-flight requests.
+
+---
+
+### Template Engine
+
+Mustache-inspired syntax, compiled to PHP and cached on disk:
 
 ```
-public/      entry points — index.php (dev), compiled.php + compile/ (bundle),
-             setup.php, avatar/captcha endpoints
-src/AstrX/   the framework — Chat/, Controller/, Auth/, Admin/, Http/, Api/,
-             Template/, Routing/, Injector/, Result/, Mail/, News/, Comment/,
-             Theme/, Navbar/, Page/, …
-src/setup/   init.sql (database bootstrap) + tables.sql (the complete schema)
-resources/   templates (Mustache-style + themes/), lang/ (en, it), config/
-docker/      Dockerfiles and service config for the compose stack
-tools/       maintenance scripts (check_lang_parity.php, compile.php, …)
-docs/        API.md, COMPILED_BUILD.md, PROFILING.md
+{{variable}}           escaped output
+{{&unescaped}}         raw output
+{{#section}}...{{/section}}    loop / truthy block
+{{^inverted}}...{{/inverted}}  falsy block
+{{>partial}}           include partial
+{{>*dynamic}}          dynamic partial (name from variable)
+{{*dereference}}       variable dereference
+{{!comment}}           ignored at render time
+{{=<% %>=}}            custom delimiters
 ```
+
+Logic stays in PHP. Templates stay clean.
+
+---
+
+### Internationalisation
+
+Every user-facing string in the framework lives in a lang file.  
+The `Translator` loads domain files on demand and caches them for the request lifetime:
+
+```php
+$this->t->t('user.register.success');
+// → "Your account has been created."
+
+$this->t->t('http.status.404.name');
+// → "Not Found"
+```
+
+---
+
+## Modules
+
+Roughly half the feature surface is optional. Imageboard, chat, webmail, search, the bot trap, the canary, downloads, mirrors, the tip line — each one self-declares in a `src/AstrX/<Module>/module.php` manifest, and core never names any of them.
+
+```bash
+php tools/module.php status           # who's alive
+php tools/module.php disable chat     # nav entry gone, pages 404, data untouched
+php tools/module.php purge chat       # data also gone. no undo. you were warned.
+```
+
+Turning one off is not a feature flag wrapped around an `if`. The navbar entry disappears, the routes return the themed 404, and the schema can be dropped. If you don't run an imageboard, you don't ship one.
+
+---
+
+## astrx-suite
+
+The heavy lifting that has no business being in PHP lives next door in `astrx-suite/` — a Cargo workspace of five engines, in Rust, with **zero third-party crates** in the default build. Yes, that includes the HTTP stack, the DEFLATE decoder, the BLAKE2b, the JSON parser and the BitTorrent DHT. What's cargo?
+
+| | |
+|---|---|
+| `gitweb` | read-only git frontend. no JS, obviously |
+| `websearch` | clearnet crawler, BM25 + PageRank, its own query language |
+| `onioncrawler` | the same, for `.onion`, through SOCKS |
+| `torrentds` | DHT indexer, tracker, search |
+| `suitedash` | tells you which of the above is on fire |
+
+They're separate processes speaking JSON, and AstrX renders them as ordinary CMS pages in the site theme — so `/websearch` isn't an iframe, it's a page. Run them, don't run them, run them on another box; the site notices and says so politely.
+
+```bash
+cd astrx-suite && bash install_rust_suite.sh   # builds, tests, asserts the zero-dep claim
+./target/release/astrx doctor                  # what's broken, in one command
+```
+
+Why they live in this repository instead of their own is written up in [`docs/repository-structure.md`](docs/repository-structure.md), because that argument happens about once a year and I'd like to stop re-deriving it from memory.
+
+---
+
+## Other things that exist
+
+- **A JSON API that isn't a second codebase.** The same controller serves HTML and JSON; a `ContextScope` tag on each value decides what crosses over. No parallel API controllers drifting apart at leisure.
+- **A compiled build.** `php tools/compile.php` packs `src/` into one file with a real on-demand autoloader, not a `cat`. See `docs/COMPILED_BUILD.md`.
+- **An experimental `/js/` runtime**, for the three people who want it. The rest of the site doesn't know it exists, which is rather the point.
+- **CSS-only themes.** A directory, some metadata, a stylesheet. Switching one changes zero markup.
+
+---
+
+## Contributing
+
+Contributions are welcome. Before submitting a pull request:
+
+- All code must pass `phpstan --level=10` with no new suppressions.
+- No external runtime dependencies may be introduced. That one isn't a joke, despite the tone of this file.
+- New user-facing strings must go through the `Translator` — no hardcoded English.
+- Rust changes keep `cargo clippy -D warnings` clean in every feature config, and add no crate.
+
+CI runs all of that, plus the installer, plus the tests, plus a check that the Rust engines still resolve to zero third-party crates. It is not there to be pleasant.
+
+---
+
+## Roadmap
+
+- [ ] Template cache invalidation mechanism
+- [ ] Advanced template caching (segment-level)
+- [ ] REST API layer
+- [ ] phpcs / PHP-CS-Fixer integration
+- [ ] README screenshot
+- [ ] Stop adding modules at 3am

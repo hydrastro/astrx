@@ -6,6 +6,7 @@ use AstrX\Result\DiagnosticInterface;
 use AstrX\User\Diagnostic\UserDbDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidUsernameDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidPasswordDiagnostic;
+use AstrX\User\Diagnostic\UserPasswordTooShortDiagnostic;
 use AstrX\User\Diagnostic\InvalidThemeDiagnostic;
 
 return [
@@ -31,17 +32,18 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         "Le registrazioni sono attualmente chiuse.",
 
-    'astrx.user/username_taken' =>
+    // UN SOLO messaggio per le collisioni di nome utente / indirizzo / email di
+    // recupero: indicare quale dei tre è occupato rivelerebbe l'esistenza di un
+    // account a chiunque provi un indirizzo nel modulo di registrazione.
+    'astrx.user/identifier_unavailable' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        "Il nome utente è già in uso.",
+        "Questi dati non possono essere usati. Scegli un nome utente, un indirizzo email e un'email di recupero diversi.",
 
-    'astrx.user/email_taken' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        "L'email di recupero è già in uso.",
-
-    'astrx.user/mailbox_taken' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        "L'indirizzo email è già registrato.",
+    'astrx.user/password_too_short' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof UserPasswordTooShortDiagnostic);
+            return "La password deve contenere almeno " . $d->minLength() . " caratteri.";
+        },
 
     'astrx.user/invalid_username' =>
         function (DiagnosticInterface $d, Translator $t): string {
@@ -120,4 +122,15 @@ return [
             assert($d instanceof InvalidThemeDiagnostic);
             return 'Quel tema non è installato. Sceglierne un altro.';
         },
+
+    // Voci di riserva: UserService e AvatarService mappano su questi id un enum
+    // di errore non riconosciuto, quindi sono raggiungibili da qualsiasi nuovo
+    // caso aggiunto a quegli enum senza una diagnostica dedicata.
+    'astrx.user/unknown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Qualcosa è andato storto. Riprova.',
+
+    'astrx.user/avatar_unknown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        "Impossibile elaborare l'avatar. Prova con un'altra immagine.",
 ];

@@ -34,7 +34,9 @@ return [
     'board.nsfw'            => 'NSFW',
     'board.replies'         => 'replies',
     'board.images'          => 'images',
-    'board.formatting_hint' => '&gt;greentext, &gt;&gt;123 quotes, [spoiler], [code], [b] [i]',
+    // Rendered ESCAPED by board.html. Write '>' literally: an &gt; entity here
+    // would reach the page as the visible text "&gt;greentext".
+    'board.formatting_hint' => '>greentext, >>123 quotes, [spoiler], [code], [b] [i]',
     'board.no_such_board'   => 'No such board.',
     'board.error.banned'    => 'You are banned from posting here.',
     'board.captcha'         => 'Type the text shown',

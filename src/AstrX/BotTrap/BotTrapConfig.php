@@ -24,6 +24,24 @@ final class BotTrapConfig
     /** Hard ceiling on the number of maze links emitted per page. */
     public const int MAX_LINKS_PER_PAGE = 20;
 
+    /**
+     * How many requests may sit inside the tarpit sleep() at the same time.
+     *
+     * sleep() on an unauthenticated public URL pins a php-fpm worker for its
+     * whole duration. With the shipped tarpit_seconds=1 and a typical pool of
+     * 5-10 workers, a dozen concurrent GETs of /trap — which anyone can issue:
+     * no session, no captcha, no cost — occupy every worker and the SITE stops
+     * answering. The anti-bot lever was a denial-of-service lever pointed at
+     * ourselves. BotTrapController claims one of this many lock slots before
+     * sleeping and skips the delay when none is free, so the trap still wastes a
+     * crawler's time while the pool keeps a floor of free workers.
+     *
+     * A hard constant, not a config key: AdminTrapController rewrites the
+     * BotTrapConfig section whole from a fixed key list, so a new key would be
+     * silently dropped the first time an admin saved the bot-trap page.
+     */
+    public const int MAX_CONCURRENT_TARPITS = 2;
+
     private bool $enabled       = true;   // matches the shipped BotTrap.config.php + docblock (default ON)
     private int  $tarpitSeconds = 1;
     private int  $linksPerPage  = 5;

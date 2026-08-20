@@ -148,6 +148,15 @@ function tryConn(string $h, string $d, string $u, string $p, int $port): PDO|str
                 PDO::ATTR_ERRMODE                  => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_TIMEOUT                  => 5,
                 PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+                // Migrations do conditional DDL with PREPARE / EXECUTE /
+                // DEALLOCATE PREPARE — the only form of "add this index only if
+                // it is missing" that both MySQL 8 and MariaDB accept. Those
+                // three statements are rejected by MySQL's native
+                // prepared-statement protocol (ER_UNSUPPORTED_PS, 1295), which
+                // is what PDO::query() uses once emulation is off. This is the
+                // installer's connection only; the application's runtime PDO
+                // (PDO.config.php) keeps emulate_prepares = false.
+                PDO::ATTR_EMULATE_PREPARES         => true,
             ],
         );
     } catch (\PDOException $e) {
@@ -314,23 +323,240 @@ function runSQL(PDO $pdo, string $file): string
     $stmts = splitSqlStatements($sql);
 
     foreach ($stmts as $stmt) {
+        $portable = portableDdl($pdo, $stmt);
+        if ($portable === null) {
+            continue; // every clause already satisfied — nothing to do
+        }
         try {
-            $cursor = $pdo->query($stmt);
+            $cursor = $pdo->query($portable);
             if ($cursor !== false) {
                 if ($cursor->columnCount() > 0) { $cursor->fetchAll(PDO::FETCH_ASSOC); }
                 $cursor->closeCursor();
             }
         } catch (\PDOException $e) {
-            // Ignore ONLY specific "already exists" / duplicate-key SQLSTATEs so
-            // re-runs are safe. NOT '42000' (generic syntax/access-rule violation):
-            // swallowing it recorded genuinely-failed migrations as applied, and
-            // the checksum lock then blocked any clean re-run.
-            if (!in_array((string) $e->getCode(), ['42S01', '42S21', '23000'], true)) {
-                return $e->getMessage() . ' | ' . substr($stmt, 0, 200);
+            if (!sqlErrorIsBenign($e)) {
+                return $e->getMessage() . ' | ' . substr($portable, 0, 200);
             }
         }
     }
     return '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MariaDB-only DDL → portable DDL
+//
+// The schema uses `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (33 clauses) to make
+// the migrations idempotent. That syntax is a MariaDB extension. MySQL 8 rejects
+// it with ER_PARSE_ERROR (SQLSTATE 42000), which runSQL deliberately does NOT
+// swallow — so on the MySQL the README says AstrX supports, the install aborted
+// on the first such statement.
+//
+// Rather than rewrite 33 clauses across nine .sql files — which would change
+// every migration's sha256 and make runMigration() refuse to proceed on EXISTING
+// installs with "already ran with a different checksum" — the portable form is
+// produced here, at execution time, and only for servers that need it:
+// information_schema is consulted for each clause, satisfied clauses are
+// dropped, and what remains is emitted as plain ALTER TABLE. The .sql files stay
+// byte-identical, so no installed checksum moves.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Return $stmt in a form this server understands, or null when there is nothing
+ * left to execute.
+ */
+function portableDdl(PDO $pdo, string $stmt): ?string
+{
+    if (stripos($stmt, 'IF NOT EXISTS') === false || !preg_match('/^\s*ALTER\s+/i', $stmt)) {
+        return $stmt;
+    }
+    if (serverHasIfNotExistsDdl($pdo)) {
+        return $stmt;
+    }
+
+    if (preg_match('/^\s*ALTER\s+(?:ONLINE\s+|IGNORE\s+)*TABLE\s+`?([A-Za-z0-9_]+)`?\s+(.+)$/is', $stmt, $m) !== 1) {
+        return $stmt; // not a shape we rewrite; let the server judge it
+    }
+
+    $table  = $m[1];
+    $kept   = [];
+    $seenIfNotExists = false;
+
+    foreach (splitTopLevel($m[2]) as $clause) {
+        $clause = trim($clause);
+        if ($clause === '') {
+            continue;
+        }
+
+        if (preg_match(
+            '/^ADD\s+(?:COLUMN\s+)?IF\s+NOT\s+EXISTS\s+`?([A-Za-z0-9_]+)`?\s*(.*)$/is',
+            $clause,
+            $c,
+        ) === 1) {
+            $seenIfNotExists = true;
+            if (schemaObjectExists($pdo, 'COLUMNS', 'COLUMN_NAME', $table, $c[1])) {
+                continue;
+            }
+            $kept[] = 'ADD COLUMN `' . $c[1] . '` ' . trim($c[2]);
+            continue;
+        }
+
+        if (preg_match(
+            '/^ADD\s+(UNIQUE\s+)?(?:INDEX|KEY)\s+IF\s+NOT\s+EXISTS\s+`?([A-Za-z0-9_]+)`?\s*(.*)$/is',
+            $clause,
+            $i,
+        ) === 1) {
+            $seenIfNotExists = true;
+            if (schemaObjectExists($pdo, 'STATISTICS', 'INDEX_NAME', $table, $i[2])) {
+                continue;
+            }
+            $kept[] = 'ADD ' . (trim($i[1]) !== '' ? 'UNIQUE ' : '') . 'INDEX `' . $i[2] . '` ' . trim($i[3]);
+            continue;
+        }
+
+        $kept[] = $clause;
+    }
+
+    if (!$seenIfNotExists) {
+        return $stmt; // IF NOT EXISTS was inside a string literal, not a clause
+    }
+    if ($kept === []) {
+        return null;
+    }
+
+    return 'ALTER TABLE `' . $table . '` ' . implode(",\n    ", $kept);
+}
+
+/** True when the server accepts MariaDB's IF NOT EXISTS on ALTER TABLE clauses. */
+function serverHasIfNotExistsDdl(PDO $pdo): bool
+{
+    /** @var array<int,bool> $cache spl_object_id => supported */
+    static $cache = [];
+
+    $id = spl_object_id($pdo);
+    if (isset($cache[$id])) {
+        return $cache[$id];
+    }
+
+    $version = '';
+    try {
+        $v = $pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
+        if (is_string($v)) { $version = $v; }
+    } catch (\PDOException) {
+        // Driver refused to report a version; assume the stricter dialect so we
+        // take the portable path rather than emitting syntax MySQL rejects.
+    }
+
+    // MariaDB has supported it since 10.0 and stamps its name into the version
+    // string; every MySQL build does not.
+    $supported   = stripos($version, 'mariadb') !== false;
+    $cache[$id]  = $supported;
+
+    return $supported;
+}
+
+/** Does $table already have a COLUMNS.COLUMN_NAME / STATISTICS.INDEX_NAME named $name? */
+function schemaObjectExists(PDO $pdo, string $infoTable, string $nameColumn, string $table, string $name): bool
+{
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM `information_schema`.`{$infoTable}`
+              WHERE `TABLE_SCHEMA` = DATABASE() AND `TABLE_NAME` = :t AND `{$nameColumn}` = :n
+              LIMIT 1"
+        );
+        $stmt->execute([':t' => $table, ':n' => $name]);
+        $found = $stmt->fetchColumn();
+        $stmt->closeCursor();
+        return $found !== false;
+    } catch (\PDOException) {
+        // Cannot tell — emit the clause and let the server decide. A genuine
+        // duplicate then surfaces as 42S21/1061, which runSQL treats as benign.
+        return false;
+    }
+}
+
+/**
+ * Split an ALTER TABLE clause list on its TOP-LEVEL commas.
+ *
+ * Commas inside `DECIMAL(10,2)`, inside an index's column list, and inside
+ * string literals must not split — doing so would cut a clause in half and turn
+ * a working ALTER into a syntax error.
+ *
+ * @return list<string>
+ */
+function splitTopLevel(string $s): array
+{
+    $out   = [];
+    $buf   = '';
+    $depth = 0;
+    $quote = '';
+    $len   = strlen($s);
+
+    for ($i = 0; $i < $len; $i++) {
+        $c = $s[$i];
+
+        if ($quote !== '') {
+            $buf .= $c;
+            if ($c === '\\' && $i + 1 < $len) { $buf .= $s[++$i]; continue; }
+            if ($c === $quote) { $quote = ''; }
+            continue;
+        }
+
+        if ($c === "'" || $c === '"' || $c === '`') { $quote = $c; $buf .= $c; continue; }
+        if ($c === '(') { $depth++; $buf .= $c; continue; }
+        if ($c === ')') { $depth--; $buf .= $c; continue; }
+        if ($c === ',' && $depth === 0) { $out[] = $buf; $buf = ''; continue; }
+
+        $buf .= $c;
+    }
+
+    if (trim($buf) !== '') { $out[] = $buf; }
+    return $out;
+}
+
+/**
+ * Is this error the harmless "it is already there" that makes a re-run safe?
+ *
+ * SQLSTATE alone is too coarse. '23000' is "integrity constraint violation" and
+ * covers BOTH the duplicate key we want to ignore (1062) AND failures that mean
+ * the statement did not do its job:
+ *
+ *   1451 / 1452  foreign key constraint fails
+ *   1048         column cannot be null
+ *
+ * migrate_zz_content_module.sql ends with
+ *     INSERT IGNORE INTO `navbar_internal` (id, page_id)
+ *     SELECT @content_nav_id, @content_page_id …
+ * and navbar_internal has foreign keys to navbar_entry(id) and page(id). When
+ * @content_nav_id picks up a stale LAST_INSERT_ID() — the preceding
+ * `INSERT … SELECT NULL WHERE <false>` inserts no row, so LAST_INSERT_ID() still
+ * holds whatever ran before it — that INSERT fails with 1452. Swallowed as
+ * '23000', the migration was then recorded as applied and the installer printed
+ * "ok". The Content nav entry was permanently missing, and the checksum lock
+ * guaranteed the migration could never run again to create it.
+ *
+ * So: keep '42S01' (table/view exists) and '42S21' (duplicate column) whole, and
+ * inside '23000' allow only the duplicate-key family.
+ */
+function sqlErrorIsBenign(\PDOException $e): bool
+{
+    $sqlState = (string) $e->getCode();
+
+    if ($sqlState === '42S01' || $sqlState === '42S21') {
+        return true; // table/view already exists; column already exists
+    }
+
+    if ($sqlState !== '23000') {
+        return false;
+    }
+
+    // Duplicate-key family only:
+    //   1022 duplicate key, 1062 duplicate entry,
+    //   1169 duplicate entry for a unique index,
+    //   1586 duplicate entry, key named.
+    $info   = $e->errorInfo;
+    $driver = (is_array($info) && isset($info[1]) && is_numeric($info[1])) ? (int) $info[1] : 0;
+
+    return in_array($driver, [1022, 1062, 1169, 1586], true);
 }
 
 function ensureMigrationTable(PDO $pdo): string
@@ -386,6 +612,28 @@ function runMigration(PDO $pdo, string $file): string
     } catch (\PDOException $e) {
         return $e->getMessage();
     }
+}
+
+/**
+ * Current connection details from PDO.config.php, as strings, or [] when the
+ * file is absent or unreadable. Used only to pre-fill --schema-only.
+ *
+ * @return array<string,string>
+ */
+function readPDOConfig(string $configDir): array
+{
+    $file = $configDir . 'PDO.config.php';
+    if (!is_file($file)) { return []; }
+    /** @var mixed $cfg */
+    $cfg = @include $file;
+    if (!is_array($cfg) || !isset($cfg['PDO']) || !is_array($cfg['PDO'])) { return []; }
+
+    $out = [];
+    /** @var mixed $v */
+    foreach ($cfg['PDO'] as $k => $v) {
+        if (is_string($k) && is_scalar($v)) { $out[$k] = (string) $v; }
+    }
+    return $out;
 }
 
 function findSetupFile(string $root, string $name): ?string
@@ -476,6 +724,11 @@ function printUsage(): void
     Behaviour:
       --create-db            CREATE DATABASE (utf8mb4) if it doesn't exist yet
       --skip-schema          Do not run tables.sql / migrations (assume DB is ready)
+      --schema-only          ONLY (re)apply tables.sql + migrations, then stop.
+                             Writes no config file and creates no admin, and
+                             takes its connection details from PDO.config.php.
+                             This is what restores a module torn down with
+                             `php tools/module.php purge <module>`.
       --no-input             Never prompt; require values via flags or use defaults
       --help, -h             Show this help
 
@@ -498,6 +751,15 @@ $noInput = hasFlag($args, 'no-input');
 $root    = dirname(__DIR__);
 $configDir = $root . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR;
 
+// --schema-only re-applies the schema and stops: no config write, no admin, no
+// server secret, no environment change. It exists so the instruction printed by
+// `tools/module.php purge` is a command an operator can actually run — the full
+// installer would also prompt for and recreate the administrator.
+$schemaOnly = hasFlag($args, 'schema-only');
+if ($schemaOnly && hasFlag($args, 'skip-schema')) {
+    fail('--schema-only and --skip-schema are opposites; pass at most one.');
+}
+
 if (!is_dir($configDir)) {
     fail("Config directory not found: {$configDir}");
 }
@@ -507,21 +769,32 @@ if (!extension_loaded('pdo_mysql')) {
 }
 
 // Fail fast if we won't be able to write the config files we must update later.
-foreach (['PDO.config.php', 'Session.config.php', 'config.php'] as $cf) {
-    $p = $configDir . $cf;
-    if ((is_file($p) && !is_writable($p)) || (!is_file($p) && !is_writable($configDir))) {
-        fail("Config not writable: {$p} — the user running the installer must own resources/config/.");
+// --schema-only writes none of them, so it runs happily against the read-only
+// resources/config/ that secure-config.sh leaves behind.
+if (!$schemaOnly) {
+    foreach (['PDO.config.php', 'Session.config.php', 'config.php'] as $cf) {
+        $p = $configDir . $cf;
+        if ((is_file($p) && !is_writable($p)) || (!is_file($p) && !is_writable($configDir))) {
+            fail("Config not writable: {$p} — the user running the installer must own resources/config/.");
+        }
     }
 }
 
 out("AstrX CLI installer\n===================\n\n");
 
 // ── 1. Database connection ──────────────────────────────────────────────────
-$dbHost = resolve($args, 'db-host', 'Database host', 'localhost',        $noInput);
-$dbName = resolve($args, 'db-name', 'Database name', 'content_manager',  $noInput);
-$dbPort = (int) resolve($args, 'db-port', 'Database port', '3306',       $noInput);
-$dbUser = resolve($args, 'db-user', 'Database username', 'user',         $noInput);
-$dbPass = resolve($args, 'db-pass', 'Database password', null,           $noInput, required: false, hidden: true);
+// In --schema-only mode the install already exists, so PDO.config.php holds the
+// right connection details; use them as the defaults instead of making the
+// operator retype (and possibly mistype) them.
+$existing = $schemaOnly ? readPDOConfig($configDir) : [];
+
+$dbHost = resolve($args, 'db-host', 'Database host', $existing['db_host'] ?? 'localhost',           $noInput);
+$dbName = resolve($args, 'db-name', 'Database name', $existing['db_name'] ?? 'content_manager',     $noInput);
+$dbPort = (int) resolve($args, 'db-port', 'Database port', $existing['db_port'] ?? '3306',          $noInput);
+$dbUser = resolve($args, 'db-user', 'Database username', $existing['db_username'] ?? 'user',        $noInput);
+$dbPass = $schemaOnly && isset($existing['db_password']) && argVal($args, 'db-pass') === null
+    ? $existing['db_password']
+    : resolve($args, 'db-pass', 'Database password', null, $noInput, required: false, hidden: true);
 
 if (hasFlag($args, 'create-db')) {
     out("Creating database '{$dbName}' if absent... ");
@@ -537,9 +810,11 @@ if (is_string($conn)) {
 }
 out("ok\n");
 
-$err = writePDO($configDir, $dbHost, $dbName, $dbUser, $dbPass, $dbPort);
-if ($err !== '') { fail($err); }
-out("Wrote PDO.config.php\n");
+if (!$schemaOnly) {
+    $err = writePDO($configDir, $dbHost, $dbName, $dbUser, $dbPass, $dbPort);
+    if ($err !== '') { fail($err); }
+    out("Wrote PDO.config.php\n");
+}
 
 // ── 2. Schema + migrations (optional) ───────────────────────────────────────
 if (!hasFlag($args, 'skip-schema')) {
@@ -563,6 +838,11 @@ if (!hasFlag($args, 'skip-schema')) {
     }
 } else {
     out("Skipping schema (--skip-schema)\n");
+}
+
+if ($schemaOnly) {
+    out("\nSchema and migrations re-applied. Nothing else was touched (--schema-only).\n");
+    exit(0);
 }
 
 // ── 3. First administrator ──────────────────────────────────────────────────

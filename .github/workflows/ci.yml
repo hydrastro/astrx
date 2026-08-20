@@ -10,7 +10,7 @@ permissions:
 jobs:
   # ── Portable gates: no database, run on every push/PR ──────────────────────
   lint:
-    name: PHPStan + parity + module integrity
+    name: PHPStan + parity + integrity + tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +18,9 @@ jobs:
       - name: Set up PHP 8.4
         uses: shivammathur/setup-php@v2
         with:
+          # pdo_sqlite backs the in-memory PDO stand-in in tests/setup_tooling_test.php.
           php-version: '8.4'
-          extensions: pdo_mysql, gd, gettext, exif
+          extensions: pdo_mysql, pdo_sqlite, gd, gettext, exif
           coverage: none
 
       - name: Download PHPStan (pinned)
@@ -31,8 +32,32 @@ jobs:
       - name: Language parity (en/it)
         run: php tools/check_lang_parity.php
 
+      # check_lang_parity only compares en against it, so a message missing from
+      # BOTH locales is perfectly symmetric and invisible to it. This is the gate
+      # that catches an id rendering as "[FALLBACK:ERROR] astrx.x/y" on the page.
+      - name: Diagnostic catalog (every emitted id resolves in every locale)
+        run: php tools/check_diagnostics.php
+
       - name: Module integrity (manifests, contributors, guards, teardown)
         run: php tools/check_modules.php
+
+      # Section↔file routing, #[InjectConfig] keys, dead keys and write targets —
+      # catches an admin page that persists to a config file nothing loads.
+      - name: Config integrity (sections, setters, write targets)
+        run: php tools/check_config.php
+
+      # The zero-framework suite. Nothing referenced tests/ before, so none of it
+      # had ever run in CI. Each file is standalone: no bootstrap, no database.
+      # The loop keeps going after a failure so one run reports every broken file.
+      - name: Tests (portable suite)
+        run: |
+          set -uo pipefail
+          status=0
+          for t in tests/*_test.php tests/suite-bridge/*_test.php; do
+            echo "── $t"
+            php "$t" || status=1
+          done
+          exit "$status"
 
   # ── Install matrix: prove every optional module is independently toggleable ─
   module-matrix:

@@ -32,4 +32,14 @@ return [
             assert($d instanceof CaptchaDbDiagnostic);
             return "Database error in captcha: {$d->message()}.";
         },
+
+    // Raised when the "new captcha" button cannot swap the challenge text —
+    // the per-captcha regeneration cap or its cooldown blocked the UPDATE, or
+    // the write failed. Without this entry the user saw the raw
+    // "[FALLBACK:ERROR] astrx.captcha/regenerate_failed" stamp.
+    'astrx.captcha/regenerate_failed' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof CaptchaDbDiagnostic);
+            return 'Could not generate a new captcha. Please reload the page.';
+        },
 ];

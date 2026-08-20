@@ -5,6 +5,7 @@ namespace AstrX\Auth\Policy;
 
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
+use AstrX\Auth\PolicyVerdict;
 use AstrX\User\UserGroup;
 use AstrX\User\UserSession;
 
@@ -21,7 +22,16 @@ use AstrX\User\UserSession;
  */
 final class ChatPolicy implements PolicyInterface
 {
-    public function evaluate(Permission $permission, UserSession $session, object $resource): ?bool
+    /** @return list<Permission> */
+    public function governs(): array
+    {
+        return [
+            Permission::CHAT_DELETE_OWN,
+            Permission::CHAT_DELETE_ANY,
+        ];
+    }
+
+    public function evaluate(Permission $permission, UserSession $session, object $resource): PolicyVerdict
     {
         $authorTypeRaw = $resource->user_type ?? null;
         // A null/unknown author type is a GUEST message (rank 0) — NOT USER, whose
@@ -33,7 +43,9 @@ final class ChatPolicy implements PolicyInterface
         return match ($permission) {
             // Owners may delete their own messages.
             Permission::CHAT_DELETE_OWN =>
-                (isset($resource->user_id) && $resource->user_id === $session->userId()) ? true : false,
+                (isset($resource->user_id) && $resource->user_id === $session->userId())
+                    ? PolicyVerdict::Allow
+                    : PolicyVerdict::Deny,
 
             // Mods cannot delete messages by an author whose rank is >= their
             // own, unless the actor is an admin. Guest messages carry a null
@@ -41,10 +53,15 @@ final class ChatPolicy implements PolicyInterface
             Permission::CHAT_DELETE_ANY =>
                 ($authorType->rank() >= $session->userType()->rank()
                     && $session->userType() !== UserGroup::ADMIN)
-                    ? false
-                    : null,
+                    ? PolicyVerdict::Deny
+                    : PolicyVerdict::Abstain,
 
-            default => null,
+            // Unreachable while this match and governs() agree — Gate never
+            // routes anything else here. Throwing makes the drift loud instead
+            // of turning a forgotten permission into a silent allow.
+            default => throw new \LogicException(
+                'ChatPolicy::governs() lists ' . $permission->value . ' but evaluate() has no arm for it.'
+            ),
         };
     }
 }

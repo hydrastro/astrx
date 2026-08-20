@@ -179,7 +179,13 @@ CREATE TABLE `session`
     -- reads these but tolerates their absence (SELECT *), so a legacy `session`
     -- table without them still works — it just skips the handover window.
     `replaced_by` CHAR(128)    NULL DEFAULT NULL,
-    `replace_at`  INT UNSIGNED NULL DEFAULT NULL
+    `replace_at`  INT UNSIGNED NULL DEFAULT NULL,
+    -- The two columns SecureSessionHandler::gc() deletes by. Without them each
+    -- GC pass is a full table scan holding write locks, and GC fires on ~1% of
+    -- session_start() calls. (migrate_zzzz_indexes_and_content_fk.sql adds these
+    -- to installs that already exist — this CREATE only runs on a fresh one.)
+    INDEX `idx_session_timestamp`  (`timestamp`),
+    INDEX `idx_session_replace_at` (`replace_at`)
 );
 
 
@@ -258,9 +264,11 @@ CREATE TABLE `user`
     `token_type`       TINYINT      NULL,
     `token_used`       TINYINT      NOT NULL DEFAULT 0,
     `token_expires_at` TIMESTAMP    NULL,
-    INDEX idx_username (username),
-    INDEX idx_email    (email),
-    INDEX idx_mailbox  (mailbox),
+    -- username / email / mailbox are each declared UNIQUE above, which already
+    -- builds a unique B-tree on the column. The plain INDEX that used to sit
+    -- here as well was a second copy of the same tree: extra write cost on every
+    -- INSERT and UPDATE, and never chosen by the planner over the unique one.
+    -- (migrate_zzzz_indexes_and_content_fk.sql drops them where they exist.)
     INDEX idx_deleted  (deleted)
 );
 
@@ -281,7 +289,11 @@ CREATE TABLE `news`
     `title`      VARCHAR(64) NOT NULL,
     `content`    TEXT        NOT NULL,
     `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `hidden`     TINYINT     NOT NULL DEFAULT 0
+    `hidden`     TINYINT     NOT NULL DEFAULT 0,
+    -- The front page's own query: WHERE hidden = 0 ORDER BY created_at DESC,
+    -- id DESC LIMIT n. Covers the filter and both sort keys, so the LIMIT stops
+    -- early instead of scanning and filesorting the whole table every render.
+    INDEX `idx_news_hidden_created` (`hidden`, `created_at`, `id`)
 );
 
 
@@ -419,8 +431,9 @@ CREATE TABLE `diagnostic_visibility`
 (
     `code`       VARCHAR(128) NOT NULL,
     `group_name` VARCHAR(32)  NOT NULL,
-    PRIMARY KEY (`code`, `group_name`),
-    INDEX idx_code (`code`)
+    -- No separate index on `code`: it is the LEADING column of this primary key,
+    -- so the PK already serves every lookup a `code`-only index would.
+    PRIMARY KEY (`code`, `group_name`)
 );
 
 CREATE TABLE `diagnostic_level_override`

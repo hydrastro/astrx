@@ -9,6 +9,7 @@ use AstrX\Config\Diagnostic\ConfigNotFoundDiagnostic;
 use AstrX\Config\Diagnostic\ConfigFileInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic;
+use AstrX\Config\Diagnostic\ConfigNotABoolDiagnostic;
 use ReflectionObject;
 use function AstrX\Support\configDir;
 
@@ -27,9 +28,6 @@ final class Config
     /** @var array<string, true> — domains whose keys have been checked for unused */
     private array $checkedDomains = [];
 
-    /** @var array<string, true> — every domain that has been loaded via loadModuleConfig() */
-    private array $loadedDomains = [];
-
     public function __construct(
         private readonly DiagnosticSinkInterface $sink,
         ?string $configFile = null,
@@ -42,16 +40,17 @@ final class Config
             $this->configuration = $loaded;
         }
 
-        // Register a shutdown function to detect unused config keys in domains
-        // that are read via getConfig() rather than #[InjectConfig] setters.
-        // Those domains are consumed lazily during the request and can only be
-        // checked reliably at script-end, after all reads have completed.
-        // ModuleLoader handles #[InjectConfig] domains eagerly; this catches the rest.
-        register_shutdown_function(function (): void {
-            foreach (array_keys($this->loadedDomains) as $domain) {
-                $this->emitUnusedKeyDiagnostics($domain);
-            }
-        });
+        // There used to be a register_shutdown_function() here that swept every
+        // loaded domain for unused keys. It could not work, for two independent
+        // reasons: it ran at script end, while its only consumer
+        // (DefaultTemplateContext) renders diagnostics mid-page — so everything
+        // it emitted went into a collector nobody read again — and it iterated a
+        // set keyed by FILE base name, which for 25 of the 38 sections is not a
+        // section name at all (loading Mail.config.php recorded 'Mail', so the
+        // sweep looked up an empty array and checked nothing). Unused-key
+        // detection now happens where it can be acted on: ModuleLoader emits it
+        // mid-request for #[InjectConfig] classes, and tools/check_config.php
+        // does the exhaustive sweep in CI with every consumer in view.
     }
 
     public function getConfig(string $domain, string $key, mixed $fallback = null): mixed
@@ -62,6 +61,22 @@ final class Config
         }
 
         if ($fallback !== null) {
+            // A read that silently falls back is how a typo'd key, or a whole
+            // section nobody ever created, stays invisible forever: every
+            // getConfigBool/Int/String/Array supplies a default, so before this
+            // the ONLY unmatched read that said anything was one with no default
+            // at all. DEBUG, not WARNING: several of these are legitimate
+            // "optional section" reads that would otherwise put a permanent
+            // banner on every admin page. Below the default NOTICE threshold, so
+            // an operator sees them by lowering the diagnostics level, and CI
+            // sees all of them at once via tools/check_config.php.
+            $this->sink->emit(new ConfigNotFoundDiagnostic(
+                                  id:             'astrx.config/get_config.defaulted',
+                                  level:          DiagnosticLevel::DEBUG,
+                                  classShortName: $domain,
+                                  configName:     $key,
+                              ));
+
             return $fallback;
         }
 
@@ -95,7 +110,6 @@ final class Config
 
         /** @var array<string, array<string, mixed>> $loaded */
         $this->configuration = array_merge($this->configuration, $loaded);
-        $this->loadedDomains[$domain] = true;
     }
 
     /** Applies the config section for $domain to $instance. */
@@ -144,10 +158,52 @@ final class Config
         return is_int($v) ? $v : (is_numeric($v) ? (int)$v : $default);
     }
 
+    /**
+     * A config flag, read strictly.
+     *
+     * The old body was `is_bool($v) ? $v : (bool)$v`, i.e. a plain truthy cast.
+     * Every non-empty string is truthy in PHP, so `'false'` and `'off'` both
+     * came back TRUE — the exact opposite of what the file says. That is not
+     * theoretical here: ModuleRegistry::enabled() rides on this method, so a
+     * hand-edited `'chat' => 'false'` in Modules.config.php left the chat module
+     * fully enabled while every human reading the file believed it was off.
+     *
+     * So: real booleans pass through; the unambiguous textual and 0/1 spellings
+     * are parsed the way they read; anything else is a config error — reported,
+     * and resolved to $default rather than to "not empty".
+     */
     public function getConfigBool(string $domain, string $key, bool $default = false): bool
     {
         $v = $this->getConfig($domain, $key, $default);
-        return is_bool($v) ? $v : (bool)$v;
+
+        if (is_bool($v)) {
+            return $v;
+        }
+
+        if ($v === 0 || $v === 1) {
+            return $v === 1;
+        }
+
+        if (is_string($v)) {
+            $parsed = match (strtolower(trim($v))) {
+                '1', 'true', 'yes', 'on'        => true,
+                '0', 'false', 'no', 'off', ''   => false,
+                default                         => null,
+            };
+            if ($parsed !== null) {
+                return $parsed;
+            }
+        }
+
+        $this->sink->emit(new ConfigNotABoolDiagnostic(
+                              id:     'astrx.config/not_a_bool',
+                              level:  DiagnosticLevel::ERROR,
+                              domain: $domain,
+                              key:    $key,
+                              actual: get_debug_type($v),
+                          ));
+
+        return $default;
     }
 
     /**

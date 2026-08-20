@@ -70,7 +70,9 @@
     <tr><th>{{label_template_extension}}</th><td><input type="text" name="template_extension" value="{{cfg_template_extension}}" class="input"></td></tr>
     <tr><th>{{label_template_cache_dir}}</th><td><input type="text" name="template_cache_dir" value="{{cfg_template_cache_dir}}" class="input"></td></tr>
     <tr><th>{{label_cache_templates}}</th><td><input type="checkbox" name="cache_templates" value="1"{{#cfg_cache_templates}} checked{{/cfg_cache_templates}}></td></tr>
-    <tr><th>{{label_php_processing}}</th><td><input type="checkbox" name="php_processing" value="1"{{#cfg_php_processing}} checked{{/cfg_php_processing}}></td></tr>
+    {{! A "PHP processing" checkbox used to sit here. Removed, not hidden: the
+        engine has no #[InjectConfig] setter for php_processing, so nothing ever
+        read the key this control wrote and ticking it changed nothing. }}
     <tr><th>{{label_parse_mode}}</th><td><input type="number" name="parse_mode" value="{{cfg_parse_mode}}" min="0" max="1" class="input"></td></tr>
     <tr><td colspan="2"><input type="submit" value="{{btn_save}}" class="input"></td></tr>
   </table>

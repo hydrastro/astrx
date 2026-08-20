@@ -5,6 +5,7 @@ namespace AstrX\Content;
 
 use AstrX\Config\Config;
 use AstrX\I18n\Translator;
+use AstrX\Result\DiagnosticsCollector;
 use AstrX\Routing\UrlGenerator;
 
 /**
@@ -28,6 +29,7 @@ final class ContentService
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
         private readonly Config                $config,
+        private readonly DiagnosticsCollector  $collector,
     ) {}
 
     /** The /<locale>/pages base URL that content pages hang off. */
@@ -159,7 +161,7 @@ final class ContentService
      */
     public function index(bool $isLoggedIn): array
     {
-        $r    = $this->repo->listed($isLoggedIn, time());
+        $r    = $this->repo->listed($isLoggedIn, time())->drainTo($this->collector);
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -185,7 +187,7 @@ final class ContentService
      */
     public function sitemapPages(): array
     {
-        $r    = $this->repo->listed(false, time()); // includePrivate=false → public only
+        $r    = $this->repo->listed(false, time())->drainTo($this->collector); // public only
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -208,7 +210,7 @@ final class ContentService
      */
     public function backlinks(int $pageId): array
     {
-        $r    = $this->repo->backlinks($pageId, time());
+        $r    = $this->repo->backlinks($pageId, time())->drainTo($this->collector);
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -228,7 +230,7 @@ final class ContentService
      */
     public function graphSvg(bool $isLoggedIn): array
     {
-        $g     = $this->repo->graph($isLoggedIn, time());
+        $g     = $this->repo->graph($isLoggedIn, time())->drainTo($this->collector);
         $data  = $g->isOk() ? $g->unwrap() : ['nodes' => [], 'edges' => []];
         $nodes = $data['nodes'];
         $edges = $data['edges'];
@@ -298,7 +300,10 @@ final class ContentService
      */
     public function brokenLinks(): array
     {
-        $r    = $this->repo->brokenLinks();
+        // A failed query here is the dangerous one: an empty list renders the
+        // admin broken-link report as a clean all-clear, which is the same page
+        // an operator uses to decide there is nothing to fix.
+        $r    = $this->repo->brokenLinks()->drainTo($this->collector);
         $rows = $r->isOk() ? $r->unwrap() : [];
         $out  = [];
         foreach ($rows as $row) {
@@ -313,10 +318,20 @@ final class ContentService
 
     // -------------------------------------------------------------------------
 
-    /** @return array<string,true> */
+    /**
+     * The set of slugs that exist, for [[wiki]] link resolution.
+     *
+     * Draining matters more here than anywhere else in this class: on a failed
+     * query the empty set makes EVERY [[wiki]] link on EVERY page render with
+     * the `broken` class. Without the drain that looked exactly like "the
+     * operator has 40 broken links", with no diagnostic anywhere saying the
+     * database was the problem.
+     *
+     * @return array<string,true>
+     */
     private function existingSlugs(): array
     {
-        $r = $this->repo->allSlugs();
+        $r = $this->repo->allSlugs()->drainTo($this->collector);
         return $r->isOk() ? $r->unwrap() : [];
     }
 

@@ -8,11 +8,10 @@ use AstrX\User\Diagnostic\UserLoginFailedDiagnostic;
 use AstrX\User\Diagnostic\UserLoginRestrictedDiagnostic;
 use AstrX\User\Diagnostic\UserNotVerifiedDiagnostic;
 use AstrX\User\Diagnostic\UserRegistrationClosedDiagnostic;
-use AstrX\User\Diagnostic\UserUsernameTakenDiagnostic;
-use AstrX\User\Diagnostic\UserEmailTakenDiagnostic;
-use AstrX\User\Diagnostic\UserMailboxTakenDiagnostic;
+use AstrX\User\Diagnostic\UserIdentifierUnavailableDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidUsernameDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidPasswordDiagnostic;
+use AstrX\User\Diagnostic\UserPasswordTooShortDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidMailboxDiagnostic;
 use AstrX\User\Diagnostic\UserPasswordsMismatchDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidDateDiagnostic;
@@ -51,17 +50,18 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Registrations are currently closed.',
 
-    'astrx.user/username_taken' =>
+    // ONE message for username / mailbox / recovery-email collisions. Naming
+    // which of the three collided answers "does this person have an account
+    // here?" for anyone who types an address into the public registration form.
+    'astrx.user/identifier_unavailable' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        'That username is already taken.',
+        'Those details cannot be used. Please choose a different username, email address and recovery email.',
 
-    'astrx.user/email_taken' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'That recovery email is already in use.',
-
-    'astrx.user/mailbox_taken' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'That email address is already registered.',
+    'astrx.user/password_too_short' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof UserPasswordTooShortDiagnostic);
+            return 'The password must be at least ' . $d->minLength() . ' characters long.';
+        },
 
     'astrx.user/invalid_username' =>
         function (DiagnosticInterface $d, Translator $t): string {
@@ -140,4 +140,15 @@ return [
             assert($d instanceof InvalidThemeDiagnostic);
             return 'That theme is not installed. Please pick another.';
         },
+
+    // Catch-all fallbacks: UserService and AvatarService map an unrecognised
+    // error enum onto these ids, so they are reachable from any future case
+    // added to those enums without a matching diagnostic.
+    'astrx.user/unknown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Something went wrong. Please try again.',
+
+    'astrx.user/avatar_unknown' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'The avatar could not be processed. Please try a different image.',
 ];

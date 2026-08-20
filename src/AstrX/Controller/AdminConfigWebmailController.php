@@ -6,9 +6,10 @@ namespace AstrX\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use function AstrX\Support\configDir;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
+use AstrX\Config\ConfigDomain;
+use AstrX\Config\ConfigDomainResolver;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -27,8 +28,24 @@ use AstrX\Template\DefaultTemplateContext;
  * Two sections on one page:
  *   imap     — ImapClient settings (host, port, encryption, timeout, socks5)
  *   folders  — WebmailService folder names (trash, sent, drafts) + per-page count
- * Writes Imap.config.php atomically.
+ *
+ * Both sections live in Mail.config.php — that is what `AstrX\Mail\ImapClient`
+ * and `AstrX\Mail\WebmailService` are configured from (ModuleLoader resolves the
+ * section from the class short name, and reaches the file through the
+ * parent-namespace fallback). This editor used to write `Imap.config.php`
+ * instead: a file no code path loads. Saving reported success and wrote an audit
+ * row while ImapClient kept its previous settings — so an operator who set
+ * imap_socks5_host/imap_socks5_port to point IMAP at Tor got a "saved" flash and
+ * a client that still connected to the IMAP server directly, off-Tor.
+ *
+ * The #[ConfigDomain] attributes below are the single declaration of that
+ * section→file pairing: this controller derives its write target from them
+ * ({@see domainFile()}), ConfigWriter independently routes each section to the
+ * file that declares it, and tools/check_config.php fails CI if the declaration
+ * and the on-disk layout ever diverge.
  */
+#[ConfigDomain('ImapClient', file: 'Mail')]
+#[ConfigDomain('WebmailService', file: 'Mail')]
 final class AdminConfigWebmailController extends AbstractController
 {
     private const FORM = 'admin_config_webmail';
@@ -103,7 +120,8 @@ final class AdminConfigWebmailController extends AbstractController
             $result->drainTo($this->collector);
             if ($result->isOk()) {
                 $this->flash->set('success', $this->t->t('admin.config.saved'));
-                $this->audit->log('config.save', 'Imap.config.php')->drainTo($this->collector);
+                $this->audit->log('config.save', $this->domainFile() . '.config.php')
+                    ->drainTo($this->collector);
             }
         }
     }
@@ -114,17 +132,19 @@ final class AdminConfigWebmailController extends AbstractController
      */
     private function saveImap(array $p)
     : Result {
-        $full = $this->loadFullImapConfig();
-        $full['ImapClient'] = [
-            'imap_host' => trim(self::mStr($p, 'imap_host', 'localhost')),
-            'imap_port' => max(1, self::mInt($p, 'imap_port', 993)),
-            'imap_encryption' => trim(self::mStr($p, 'imap_encryption', 'ssl')),
-            'imap_timeout' => max(5, self::mInt($p, 'imap_timeout', 30)),
-            'imap_socks5_host' => trim(self::mStr($p, 'imap_socks5_host', '')),
-            'imap_socks5_port' => max(1, self::mInt($p, 'imap_socks5_port', 9050)),
-        ];
-
-        return $this->writer->write('Imap', $full);
+        // Only the keys this form owns. ConfigWriter merges them over the file's
+        // current contents, so imap_verify_ssl / imap_allow_preauth (owned by the
+        // other form and by the env defaults) survive a save here.
+        return $this->writer->write($this->domainFile(), [
+            'ImapClient' => [
+                'imap_host' => trim(self::mStr($p, 'imap_host', 'localhost')),
+                'imap_port' => max(1, self::mInt($p, 'imap_port', 993)),
+                'imap_encryption' => trim(self::mStr($p, 'imap_encryption', 'ssl')),
+                'imap_timeout' => max(5, self::mInt($p, 'imap_timeout', 30)),
+                'imap_socks5_host' => trim(self::mStr($p, 'imap_socks5_host', '')),
+                'imap_socks5_port' => max(1, self::mInt($p, 'imap_socks5_port', 9050)),
+            ],
+        ]);
     }
 
     /**
@@ -133,19 +153,20 @@ final class AdminConfigWebmailController extends AbstractController
      */
     private function saveFolders(array $p)
     : Result {
-        $full = $this->loadFullImapConfig();
-        $full['WebmailService'] = [
-            'messages_per_page'           => max(5, min(200, self::mInt($p, 'messages_per_page', 25))),
-            'trash_folder'                => trim(self::mStr($p, 'trash_folder', 'Trash')),
-            'sent_folder'                 => trim(self::mStr($p, 'sent_folder', 'Sent')),
-            'drafts_folder'               => trim(self::mStr($p, 'drafts_folder', 'Drafts')),
-            'mail_domain'                 => trim(self::mStr($p, 'mail_domain', 'localhost')),
-            'imap_login_use_full_address' => isset($p['imap_login_use_full_address']),
-            'mailbox_is_username'         => isset($p['mailbox_is_username']),
-        ];
-        $full['ImapClient']['imap_verify_ssl'] = isset($p['imap_verify_ssl']);
-
-        return $this->writer->write('Imap', $full);
+        return $this->writer->write($this->domainFile(), [
+            'WebmailService' => [
+                'messages_per_page'           => max(5, min(200, self::mInt($p, 'messages_per_page', 25))),
+                'trash_folder'                => trim(self::mStr($p, 'trash_folder', 'Trash')),
+                'sent_folder'                 => trim(self::mStr($p, 'sent_folder', 'Sent')),
+                'drafts_folder'               => trim(self::mStr($p, 'drafts_folder', 'Drafts')),
+                'mail_domain'                 => trim(self::mStr($p, 'mail_domain', 'localhost')),
+                'imap_login_use_full_address' => isset($p['imap_login_use_full_address']),
+                'mailbox_is_username'         => isset($p['mailbox_is_username']),
+            ],
+            'ImapClient' => [
+                'imap_verify_ssl' => isset($p['imap_verify_ssl']),
+            ],
+        ]);
     }
 
     // ── Context builder ───────────────────────────────────────────────────────
@@ -258,19 +279,20 @@ final class AdminConfigWebmailController extends AbstractController
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** @return array<string, array<string, mixed>> */
-    private function loadFullImapConfig()
-    : array
+    /**
+     * The config file base name this editor persists to, taken from the
+     * #[ConfigDomain] declarations on this class so the read side and the write
+     * side quote one source. Falls back to the section name if the attribute is
+     * ever removed — that is exactly the drift tools/check_config.php fails on.
+     */
+    private function domainFile()
+    : string
     {
-        $path = (configDir() . 'Imap.config.php');
-        if (!is_file($path)) {
-            return [];
+        foreach (ConfigDomainResolver::declaredOn(self::class) as $domain) {
+            return $domain->fileBaseName();
         }
-        $loaded = @include $path;
 
-        if (!is_array($loaded)) { return []; }
-        /** @var array<string,array<string,mixed>> $loaded */
-        return $loaded;
+        return 'ImapClient';
     }
 
     /** @return list<array{value:string,label:string,selected:bool}> */

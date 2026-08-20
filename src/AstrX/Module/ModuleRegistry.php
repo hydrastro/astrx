@@ -34,9 +34,26 @@ final class ModuleRegistry
         $this->config->loadModuleConfig('Modules');
     }
 
-    /** Whether an optional module is enabled (default ON, incl. for unknown keys). */
+    /**
+     * Whether an optional module is enabled.
+     *
+     * A key that ships a manifest but is missing from Modules.config.php
+     * defaults ON, so an install whose config file predates a new module keeps
+     * behaving as before; tools/check_modules.php fails the build on that gap,
+     * so it cannot survive in the repository.
+     *
+     * A key with NO manifest is OFF. This is the rule ModulePageGuard already
+     * applies to `page.module`, and the two have to agree: the guard fails
+     * closed on an unrecognised owner while this method answered "enabled" for
+     * the identical key, so the same typo hid a page in one place and left a
+     * module's nav, guards and hooks switched on in the other.
+     */
     public function enabled(string $key): bool
     {
+        if (!in_array($key, $this->moduleKeys(), true)) {
+            return false;
+        }
+
         return $this->config->getConfigBool('Modules', $key, true);
     }
 

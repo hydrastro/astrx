@@ -31,6 +31,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
 use AstrX\User\UserGroup;
 use AstrX\User\UserSession;
+use AstrX\Support\RequiresPermission;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
@@ -540,18 +541,13 @@ final class ContentManager
             }
         }
 
-        // ── Admin page guard ──────────────────────────────────────────────────────
-        // All pages that are descendants of the admin root require ADMIN_ACCESS.
-        // We check file_name (never translated, never editable via the Pages UI)
-        // rather than url_id (translated slug that could theoretically change).
-        // The admin root's file_name is 'admin'; all its descendants include it
-        // as an ancestor in the closure table.
-        $isAdminPage = $page->fileName === 'admin'
-                       || array_any(
-                           $page->ancestors,
-                           fn($a) => $a['file_name'] === 'admin'
-                       );
-        if ($isAdminPage && $this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        // ── Page entry guard ──────────────────────────────────────────────────────
+        // Runs BEFORE the controller is constructed or handle() is called, so a
+        // visitor who may not enter a page never reaches the code that serves it.
+        // requiredPagePermission() merges two independent sources — the page tree
+        // (data) and the controller class (code) — see that method.
+        $requiredPermission = self::requiredPagePermission($page);
+        if ($requiredPermission !== null && $this->gate->cannot($requiredPermission)) {
             $loginUrlId = $this->config->getConfig('Routing', 'default_page', 'WORDING_LOGIN');
             // resolve the login URL properly through the translator
             $loginSlug  = $this->translator->t('WORDING_LOGIN', fallback: 'login');
@@ -649,8 +645,10 @@ final class ContentManager
         }
 
         if ($page->controller) {
-            $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';
-            $fqcn  = 'AstrX\\Controller\\' . $short;
+            // Same derivation the entry guard above used, via the shared helper —
+            // if the two ever computed a different class name, the guard would be
+            // gating a class that dispatch does not run.
+            $fqcn = self::controllerClassFor($page);
 
             if (class_exists($fqcn)) {
                 $controllerResult = $this->injector->createClass($fqcn)
@@ -706,6 +704,24 @@ final class ContentManager
             }
         }
 
+        // ── Response phase ────────────────────────────────────────────────────
+        // Baseline security headers go out ONCE, HERE, before any branch that can
+        // emit a body — the fragment branch, the API branch, the HTML branch and
+        // the template=0 fall-through all sit below this line. They used to be
+        // emitted only on the HTML branch, so
+        // `curl -H 'X-AstrX-JS-Browser: 1' http://host/en/main` returned a full
+        // HTML document with NO Content-Security-Policy and NO X-Frame-Options —
+        // and CSP `default-src 'none'` is what neutralises every {{&raw}} sink in
+        // the codebase. Emitting first means no early `return` added below can
+        // drop them; a branch that needs something different overrides that one
+        // header (header() replaces by default) instead of having to opt in.
+        //
+        // Controllers that stream their own bytes (captcha frame/image, media,
+        // avatars) exit() inside handle() and never reach this line, so the
+        // captcha iframe keeps its deliberate X-Frame-Options: SAMEORIGIN and is
+        // not sealed off by this response's frame-ancestors 'none'.
+        $this->emitSecurityHeaders();
+
         if ($page->template) {
             $engineResult = $this->injector->createClass(TemplateEngine::class)
                 ->drainTo($this->collector);
@@ -758,16 +774,13 @@ final class ContentManager
                     header('Cache-Control: private, no-store');
                     header('Vary: X-AstrX-JS-Browser, Accept', false);
                     header('X-AstrX-JS-Browser: fragment');
-                    // The JS shell owns the full CSP; these two are pure-win
-                    // anonymity headers on the fragment response and never clip it.
-                    header('Referrer-Policy: no-referrer');
-                    header('X-Content-Type-Options: nosniff');
-                    // R13: advertise the canonical .onion (anti-phishing) so a Tor
-                    // Browser on any mirror auto-upgrades to the real hidden service.
-                    // Emitted only when the operator has configured a canonical
-                    // onion; the /mirrors page carries the signed list to verify it.
-                    $onion = $this->onionPrimary();
-                    if ($onion !== '') { header('Onion-Location: ' . $onion); }
+                    // CSP / Referrer-Policy / nosniff / X-Frame-Options /
+                    // Onion-Location already went out with the baseline above.
+                    // This fragment is a full HTML document to anything that
+                    // navigates to it directly (curl, or a browser following the
+                    // URL), so it needs the same strict CSP as the main document;
+                    // the JS shell's own, more permissive CSP is emitted by
+                    // JsController on the /js/ shell response, not here.
                     $this->emitServerTiming('astrx_fragment', $astrxRequestStarted);
                 }
 
@@ -857,10 +870,8 @@ final class ContentManager
             if (!headers_sent()) {
                 $this->emitServerTiming('astrx_html', $astrxRequestStarted);
             }
-            // Baseline security headers for the main HTML document (CSP etc.).
-            // NOT emitted on the /js/ fragment path above — JsController owns a
-            // more permissive CSP for the JS shell.
-            $this->emitSecurityHeaders();
+            // Baseline security headers (CSP etc.) already went out at the top of
+            // the response phase, for this branch and every other one.
             echo $renderResult->unwrap();
             return;
         }
@@ -998,6 +1009,86 @@ final class ContentManager
         return [$locale, $sidCandidate, $pageToken];
     }
 
+    // =========================================================================
+    // Page entry guard
+    // =========================================================================
+
+    /**
+     * The FQCN the reflection router dispatches this page to.
+     *
+     * 'admin_config_system' → AstrX\Controller\AdminConfigSystemController. The
+     * class may not exist (a page row can name a controller that was never
+     * written); callers class_exists() it.
+     */
+    private static function controllerClassFor(Page $page): string
+    {
+        return 'AstrX\\Controller\\'
+               . str_replace('_', '', ucwords($page->fileName, '_'))
+               . 'Controller';
+    }
+
+    /**
+     * The permission a visitor must hold to ENTER this page, or null when the
+     * page is open to everyone.
+     *
+     * Three sources, checked in order, deliberately overlapping:
+     *
+     *   1. The page tree. Every descendant of the admin root requires
+     *      ADMIN_ACCESS. file_name is used rather than url_id because file_name
+     *      is never translated and is not editable through the Pages UI.
+     *
+     *   2. A #[RequiresPermission] attribute on the controller class (or on any
+     *      of its parents).
+     *
+     *   3. The Admin*Controller naming the reflection router already keys
+     *      dispatch on.
+     *
+     * 2 and 3 exist because 1 alone is DATA: `GET /en/admin-content` with no
+     * session used to reach AdminContentController::handle() and render the
+     * admin shell under the controller's own 403, purely because
+     * migrate_zz_content_module.sql inserted the page's self row in
+     * `page_closure` and not the WORDING_ADMIN parent row. A missing row is now
+     * a cosmetic bug (the template resolves to the wrong include path) instead
+     * of a silently disabled gate — no migration can unlock an Admin*Controller.
+     *
+     * This is the coarse "may you open this page" gate only. Controllers keep
+     * their finer checks: AdminConfigSystemController still answers 403 to a MOD
+     * who holds ADMIN_ACCESS but not ADMIN_CONFIG_SYSTEM.
+     */
+    private static function requiredPagePermission(Page $page): ?Permission
+    {
+        if ($page->fileName === 'admin'
+            || array_any($page->ancestors, static fn($a): bool => $a['file_name'] === 'admin')
+        ) {
+            return Permission::ADMIN_ACCESS;
+        }
+
+        if (!$page->controller) {
+            return null;
+        }
+
+        $fqcn = self::controllerClassFor($page);
+        if (!class_exists($fqcn)) {
+            return null;
+        }
+
+        // Walk the class and its parents: getAttributes() does not inherit, so a
+        // shared admin base class would otherwise declare a gate that none of its
+        // subclasses enforced.
+        for ($rc = new \ReflectionClass($fqcn); $rc !== false; $rc = $rc->getParentClass()) {
+            foreach ($rc->getAttributes(RequiresPermission::class) as $attribute) {
+                return $attribute->newInstance()->permission;
+            }
+        }
+
+        // 'AstrX\Controller\AdminContentController' → short name starts with
+        // 'Admin'. Every one of the 33 Admin*Controller classes is an admin
+        // surface; the moderator panels that are deliberately NOT admin
+        // (ChatAdminController → CHAT_MODERATE, BoardModController →
+        // BOARD_MODERATE) do not match this prefix and keep their own gates.
+        $short = substr($fqcn, strrpos($fqcn, '\\') + 1);
+        return str_starts_with($short, 'Admin') ? Permission::ADMIN_ACCESS : null;
+    }
 
     private function isJsBrowserContentRequest(Request $request): bool
     {
@@ -1032,7 +1123,14 @@ final class ContentManager
     }
 
     /**
-     * Emit the baseline security headers for the main HTML document response.
+     * Emit the baseline security headers for a response this class produces.
+     *
+     * Called ONCE at the top of the response phase in init(), plus at the head of
+     * the two paths that can produce a response without reaching it
+     * (renderPanicLockdown, renderError). Every branch below the call site
+     * inherits these; a branch that needs a different value overrides that single
+     * header rather than opting in, so an early `return` added later cannot ship
+     * a document with no CSP the way the JS-fragment branch used to.
      *
      * The canonical site is designed to run with JavaScript OFF, so a strict
      * Content-Security-Policy (default-src 'none') is safe and neutralises any

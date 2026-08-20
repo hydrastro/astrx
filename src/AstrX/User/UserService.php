@@ -10,15 +10,15 @@ use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\Session\ServerSecret;
 use AstrX\User\Diagnostic\UserLoginFailedDiagnostic;
 use AstrX\User\Diagnostic\UserLoginRestrictedDiagnostic;
 use AstrX\User\Diagnostic\UserNotVerifiedDiagnostic;
 use AstrX\User\Diagnostic\UserRegistrationClosedDiagnostic;
-use AstrX\User\Diagnostic\UserUsernameTakenDiagnostic;
-use AstrX\User\Diagnostic\UserEmailTakenDiagnostic;
-use AstrX\User\Diagnostic\UserMailboxTakenDiagnostic;
+use AstrX\User\Diagnostic\UserIdentifierUnavailableDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidUsernameDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidPasswordDiagnostic;
+use AstrX\User\Diagnostic\UserPasswordTooShortDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidMailboxDiagnostic;
 use AstrX\User\Diagnostic\UserPasswordsMismatchDiagnostic;
 use AstrX\User\Diagnostic\UserInvalidDateDiagnostic;
@@ -69,6 +69,57 @@ final class UserService
     private const string DUMMY_ARGON2ID =
         '$argon2id$v=19$m=65536,t=4,p=1$cDJiZmhhblJSVGFOS0Z1aA$ZIZhHVT4t7sWknDok3QU8wQQ4S1fnijafr8qCdFRY5c';
 
+    /**
+     * Hard floor on password length, enforced in CODE, deliberately not read
+     * from config.
+     *
+     * UserService.password_regex ships empty and the admin form can empty it
+     * again in one save, at which point the only password check left was
+     * `$password === ''`: the string "a" was an acceptable account password.
+     * Combined with a login captcha that never appeared (see
+     * shouldShowLoginCaptcha) and no IP rate limiter, that made online guessing
+     * a matter of minutes. A config array can be emptied; this cannot.
+     *
+     * 12 follows NIST SP 800-63B's length-over-composition guidance — there are
+     * deliberately no "must contain a symbol" rules, which push users toward
+     * predictable substitutions without adding real entropy.
+     */
+    public const int MIN_PASSWORD_LENGTH = 12;
+
+    /**
+     * Upper bound, also enforced in code. Argon2id hashes whatever it is given:
+     * a single POST carrying a 20 MB "password" costs the worker seconds of CPU
+     * and memory bandwidth per attempt, which on a small php-fpm pool is a
+     * one-request denial of service. 4096 is far above any real passphrase.
+     */
+    public const int MAX_PASSWORD_LENGTH = 4096;
+
+    /**
+     * Reject a password that violates the code-enforced floor/ceiling. Returns
+     * null when the password is acceptable at this level (the configurable
+     * password_regex rules are applied separately, and only ever ADD rules).
+     *
+     * @return Result<never>|null
+     */
+    private function checkPasswordLength(string $password): ?Result
+    {
+        // strlen(), not mb_strlen(): the floor is about how much an attacker has
+        // to guess, and bytes are what they guess. A 12-character CJK passphrase
+        // is comfortably over the byte floor either way.
+        $length = strlen($password);
+        if ($length < self::MIN_PASSWORD_LENGTH) {
+            return Result::err(null, Diagnostics::of(new UserPasswordTooShortDiagnostic(
+                'astrx.user/password_too_short',
+                DiagnosticLevel::NOTICE,
+                self::MIN_PASSWORD_LENGTH,
+            )));
+        }
+        if ($length > self::MAX_PASSWORD_LENGTH) {
+            return $this->opErr('invalid_password');
+        }
+        return null;
+    }
+
 
     /**
      * Normalise a username for availability checking.
@@ -95,7 +146,9 @@ final class UserService
     private bool   $requireDisplayName    = true;
     private int    $minimumAge            = 0;
     private int    $maximumAge            = 0;
-    private int    $loginCaptchaType      = self::CAPTCHA_SHOW_ON_X_FAILED;
+    // Default ALWAYS, not ON_X_FAILED: the failure counter that mode reads lives
+    // in the client's own session — see shouldShowLoginCaptcha().
+    private int    $loginCaptchaType      = self::CAPTCHA_SHOW_ALWAYS;
     private int    $loginCaptchaAttempts  = 3;
     private int    $registerCaptchaType   = self::CAPTCHA_SHOW_ALWAYS;
     private int    $recoverCaptchaType    = self::CAPTCHA_SHOW_ALWAYS;
@@ -172,6 +225,17 @@ final class UserService
     public function __construct(
         private readonly UserRepository $repo,
         private readonly AvatarService  $avatarService,
+        /** Only used to keep the ACTING session alive across an eviction — see evictOtherSessions(). */
+        private readonly UserSession    $session,
+        /**
+         * Wraps the TOTP secret before it reaches the database — see
+         * encryptTotpSecret(). REQUIRED on purpose: Injector::createClass()
+         * SKIPS optional parameters, so a default would give this class a
+         * private ServerSecret that never sees Session.config.php's
+         * `server_secret`, and TOTP rows would be sealed under a different key
+         * from the one every other subsystem uses.
+         */
+        private readonly ServerSecret   $secret,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -207,8 +271,9 @@ final class UserService
         if (!is_array($row)) {
             return $off;
         }
-        $secret  = is_scalar($row['totp_secret'] ?? null) ? (string) $row['totp_secret'] : '';
-        $enabled = $this->intVal($row['totp_enabled'] ?? null) === 1 && $secret !== '';
+        $storedSecret = is_scalar($row['totp_secret'] ?? null) ? (string) $row['totp_secret'] : '';
+        $secret       = $this->decryptTotpSecret($storedSecret);
+        $enabled      = $this->intVal($row['totp_enabled'] ?? null) === 1 && $secret !== '';
         $recovery = [];
         $rawRec = $row['totp_recovery'] ?? null;
         if (is_string($rawRec) && $rawRec !== '') {
@@ -264,7 +329,88 @@ final class UserService
     public function enableTotp(string $hexId, string $secret, array $recoveryHashes): Result
     {
         $json = json_encode(array_values($recoveryHashes));
-        return $this->repo->setTotp($hexId, $secret, true, $json === false ? '[]' : $json);
+        return $this->repo->setTotp(
+            $hexId,
+            $this->encryptTotpSecret($secret),
+            true,
+            $json === false ? '[]' : $json,
+        );
+    }
+
+    // ── TOTP secret at rest ───────────────────────────────────────────────────
+    //
+    // The recovery CODES are password_hash()ed, but the secret itself was stored
+    // as the cleartext base32 string it is handed to the authenticator app. The
+    // project's threat model explicitly includes database theft (it is why
+    // sessions are encrypted with the server secret at all), and a stolen
+    // `totp_secret` column is a working second factor for every 2FA user
+    // forever: the thief generates valid codes indefinitely, and the user has no
+    // way to notice. Hashing is not an option — the server must reproduce the
+    // secret to compute the expected code — so it is encrypted under a key
+    // derived from the install's server secret, which does not live in the
+    // database.
+
+    /** Envelope marker + version, so plaintext rows from before this change are recognisable. */
+    private const string TOTP_ENVELOPE_PREFIX = 'enc:v1:';
+
+    /**
+     * AES-256-CTR + HMAC-SHA256 (encrypt-then-MAC), keyed by HKDF from the
+     * install secret. Layout, base64'd behind the prefix:
+     *   [32-byte HMAC][16-byte IV][ciphertext]
+     * Mirrors SecureSessionHandler's session envelope; the info strings differ
+     * so the two key spaces stay separate.
+     */
+    private function encryptTotpSecret(string $plain): string
+    {
+        if ($plain === '') {
+            return '';
+        }
+
+        $ikm        = $this->secret->bytes();
+        $key        = hash_hkdf('sha256', $ikm, 32, 'astrx-totp-enc');
+        $macKey     = hash_hkdf('sha256', $ikm, 32, 'astrx-totp-mac');
+        $iv         = random_bytes(16);
+        $ciphertext = (string) openssl_encrypt($plain, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
+        $hmac       = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
+
+        return self::TOTP_ENVELOPE_PREFIX . base64_encode($hmac . $iv . $ciphertext);
+    }
+
+    /**
+     * Inverse of encryptTotpSecret().
+     *
+     * A value without the envelope prefix is returned as-is: rows written before
+     * this change hold plaintext base32, and refusing them would lock every
+     * existing 2FA user out of their account on upgrade. Such a row is re-wrapped
+     * the next time the user re-enrols. A value that HAS the prefix but fails its
+     * MAC returns '' — that is a tampered or wrong-key row, and totpInfo() then
+     * reports TOTP as disabled rather than feeding garbage to the code check.
+     */
+    private function decryptTotpSecret(string $stored): string
+    {
+        if ($stored === '' || !str_starts_with($stored, self::TOTP_ENVELOPE_PREFIX)) {
+            return $stored;
+        }
+
+        $blob = base64_decode(substr($stored, strlen(self::TOTP_ENVELOPE_PREFIX)), strict: true);
+        if ($blob === false || strlen($blob) <= 48) {
+            return '';
+        }
+
+        $hmac       = substr($blob, 0, 32);
+        $iv         = substr($blob, 32, 16);
+        $ciphertext = substr($blob, 48);
+
+        $ikm    = $this->secret->bytes();
+        $macKey = hash_hkdf('sha256', $ikm, 32, 'astrx-totp-mac');
+        if (!hash_equals(hash_hmac('sha256', $iv . $ciphertext, $macKey, true), $hmac)) {
+            return '';
+        }
+
+        $key   = hash_hkdf('sha256', $ikm, 32, 'astrx-totp-enc');
+        $plain = openssl_decrypt($ciphertext, 'AES-256-CTR', $key, OPENSSL_RAW_DATA, $iv);
+
+        return $plain === false ? '' : $plain;
     }
 
     /**
@@ -415,24 +561,42 @@ final class UserService
     }
 
     /**
-     * Decide whether the LOGIN form needs a captcha based on a caller-supplied
-     * failure count (kept in the session, independent of account existence).
+     * Decide whether the LOGIN form needs a captcha.
+     *
+     * On the login form there are exactly TWO honest answers, always and never,
+     * and $failCount does not choose between them.
      *
      * shouldShowCaptcha('login', $username) does a DB lookup keyed on the
      * username, which leaks account existence: real users start showing a
-     * captcha after N fails while unknown usernames never do. This variant is
-     * driven purely by the caller's session counter so the captcha requirement
-     * is identical whether or not the account exists (FIX M5b). The captcha
-     * *policy* (always / never / on-N-failed) is still honoured.
+     * captcha after N fails while unknown usernames never do. That oracle was
+     * closed by moving the counter into the session — but the session is state
+     * the CLIENT owns. Dropping the cookie resets it, so an attacker scripting
+     * the login form arrives with $failCount = 0 on every request and
+     * CAPTCHA_SHOW_ON_X_FAILED never fires once. AstrX has no IP to rate-limit
+     * (every request is a Tor exit) and no JavaScript, so the per-account
+     * 10-in-900s lockout is the only other brake: it does nothing against
+     * spraying one guess across many accounts, and nothing at all against the
+     * registration of throwaway accounts.
+     *
+     * So the threshold mode is honoured as ALWAYS here. Operators who accept the
+     * risk still have an explicit off switch — set
+     * UserService.login_captcha_type to CAPTCHA_SHOW_NEVER (1). That is a
+     * decision someone has to write down, not an emergent property of a counter
+     * the attacker controls.
+     *
+     * $failCount is retained (and still counted by LoginController) because it
+     * remains meaningful for a legitimate user's UI and for future
+     * proof-of-work escalation; it just cannot be the thing that decides
+     * whether the brake exists at all.
      *
      * @return Result<bool>
      */
     public function shouldShowLoginCaptcha(int $failCount): Result
     {
         return match ($this->loginCaptchaType) {
-            self::CAPTCHA_SHOW_ALWAYS => Result::ok(true),
-            self::CAPTCHA_SHOW_NEVER  => Result::ok(false),
-            default                   => Result::ok($failCount >= $this->loginCaptchaAttempts),
+            self::CAPTCHA_SHOW_NEVER => Result::ok(false),
+            // CAPTCHA_SHOW_ALWAYS and CAPTCHA_SHOW_ON_X_FAILED both land here.
+            default                  => Result::ok(true),
         };
     }
 
@@ -607,9 +771,15 @@ final class UserService
             return $this->opErr('empty_fields');
         }
 
-        // Password validation
+        // Password validation. The code floor runs FIRST so a too-short password
+        // gets the specific, translated "at least N characters" message even on
+        // an install whose password_regex is empty (which is what ships).
         if ($password !== $repeat) {
             return $this->opErr('passwords_mismatch');
+        }
+        $lengthErr = $this->checkPasswordLength($password);
+        if ($lengthErr !== null) {
+            return $lengthErr;
         }
         $pwErr = $this->checkRegex($this->passwordRegex, $password);
         if ($pwErr !== null) {
@@ -870,6 +1040,11 @@ final class UserService
             return $this->opErr('empty_fields');
         }
 
+        $lengthErr = $this->checkPasswordLength($newPassword);
+        if ($lengthErr !== null) {
+            return $lengthErr;
+        }
+
         $pwErr = $this->checkRegex($this->passwordRegex, $newPassword);
         if ($pwErr !== null) {
             return $this->opErr('invalid_password', $pwErr);
@@ -891,8 +1066,64 @@ final class UserService
             }
         }
 
-        $hash = password_hash($newPassword, PASSWORD_ARGON2ID);
-        return $this->repo->updatePassword($hexId, $hash);
+        $hash    = password_hash($newPassword, PASSWORD_ARGON2ID);
+        $updated = $this->repo->updatePassword($hexId, $hash);
+        if (!$updated->isOk()) {
+            return $updated;
+        }
+
+        return $this->evictOtherSessions($hexId, $updated);
+    }
+
+    /**
+     * Invalidate every OTHER live session of this account, keeping the one that
+     * performed the change (if any) signed in.
+     *
+     * Called after a password change. Changing a password is the single most
+     * common thing a user does BECAUSE they think someone else is in their
+     * account — and until now it did nothing to that someone else:
+     * updatePassword() is a bare `UPDATE user SET password`, so the attacker's
+     * session cookie kept working exactly as before. Same for the recovery-token
+     * reset path, which is the flow a user reaches precisely when they have lost
+     * control of the credential.
+     *
+     * bumpSessionEpoch() + ContentManager's per-request epoch re-validation
+     * (R13) is the existing eviction mechanism; only the admin force-logout
+     * button was calling it. Re-adopting the new epoch for the acting session
+     * afterwards is what keeps the user who just changed their own password from
+     * being logged out along with the attacker. The recovery path has no session
+     * (RecoverController runs logged-out), so nothing is re-adopted there and
+     * every old session dies — which is the point.
+     *
+     * @param Result<bool> $passthrough returned unchanged on success
+     * @return Result<bool>
+     */
+    private function evictOtherSessions(string $hexId, Result $passthrough): Result
+    {
+        $bump = $this->repo->bumpSessionEpoch($hexId);
+        if (!$bump->isOk()) {
+            // The password DID change; report the eviction failure rather than
+            // claim success, so the caller does not tell the user "your other
+            // sessions were signed out" when they were not.
+            return Result::err(null, $bump->diagnostics());
+        }
+
+        if ($this->session->isLoggedIn()
+            && strtolower($this->session->userId()) === strtolower($hexId)
+        ) {
+            $fresh = $this->repo->findById($hexId);
+            if ($fresh->isOk()) {
+                $row = $fresh->unwrap();
+                if (is_array($row) && is_scalar($row['session_epoch'] ?? null)) {
+                    $this->session->setSessionEpoch((int) $row['session_epoch']);
+                }
+            }
+            // If the re-read fails we deliberately do NOT guess the new epoch:
+            // this session then mismatches and is signed out on its next
+            // request. Losing your own session is the safe direction.
+        }
+
+        return $passthrough;
     }
 
     /** @return Result<bool> */
@@ -902,12 +1133,30 @@ final class UserService
             return $this->opErr('empty_fields');
         }
 
+        // The floor applies to admin-set passwords too. An admin handing a user
+        // the temporary password "abc" produces exactly the account an online
+        // guesser is looking for, and nothing forces a change afterwards.
+        $lengthErr = $this->checkPasswordLength($password);
+        if ($lengthErr !== null) {
+            return $lengthErr;
+        }
+
         $pwErr = $this->checkRegex($this->passwordRegex, $password);
         if ($pwErr !== null) {
             return $this->opErr('invalid_password', $pwErr);
         }
 
-        return $this->repo->updatePassword($hexId, password_hash($password, PASSWORD_ARGON2ID));
+        $updated = $this->repo->updatePassword($hexId, password_hash($password, PASSWORD_ARGON2ID));
+        if (!$updated->isOk()) {
+            return $updated;
+        }
+
+        // An admin resetting a password is answering a compromise report at
+        // least as often as a forgotten password; leaving the intruder's session
+        // alive defeats the reset. adminSetPasswordHash() deliberately does NOT
+        // do this — it exists for restores/migrations, where re-writing the same
+        // hash must not sign the account's users out.
+        return $this->evictOtherSessions($hexId, $updated);
     }
 
     /** @return Result<bool> */
@@ -1122,9 +1371,18 @@ final class UserService
             'login_restricted'     => new UserLoginRestrictedDiagnostic('astrx.user/login_restricted', DiagnosticLevel::WARNING),
             'not_verified'         => new UserNotVerifiedDiagnostic('astrx.user/not_verified', DiagnosticLevel::NOTICE),
             'registration_closed'  => new UserRegistrationClosedDiagnostic('astrx.user/registration_closed', DiagnosticLevel::NOTICE),
-            'username_taken'       => new UserUsernameTakenDiagnostic('astrx.user/username_taken', DiagnosticLevel::NOTICE),
-            'email_taken'          => new UserEmailTakenDiagnostic('astrx.user/email_taken', DiagnosticLevel::NOTICE),
-            'mailbox_taken'        => new UserMailboxTakenDiagnostic('astrx.user/mailbox_taken', DiagnosticLevel::NOTICE),
+            // All three collision kinds render as ONE indistinguishable message.
+            // Separate username_taken / email_taken / mailbox_taken diagnostics
+            // turned the public registration form into an account-existence
+            // oracle: POST a recovery address, read which of the three errors
+            // comes back, and you have confirmed whether that person has an
+            // account on this hidden service. That is precisely the oracle
+            // RecoverController mirrors its success path to avoid. The operation
+            // names are kept because the CALL SITES stay readable; only the
+            // rendered answer is collapsed.
+            'username_taken',
+            'email_taken',
+            'mailbox_taken'        => new UserIdentifierUnavailableDiagnostic('astrx.user/identifier_unavailable', DiagnosticLevel::NOTICE),
             'invalid_username'     => new UserInvalidUsernameDiagnostic('astrx.user/invalid_username', DiagnosticLevel::NOTICE, $detail),
             'invalid_password'     => new UserInvalidPasswordDiagnostic('astrx.user/invalid_password', DiagnosticLevel::NOTICE, $detail),
             'invalid_mailbox'      => new UserInvalidMailboxDiagnostic('astrx.user/invalid_mailbox', DiagnosticLevel::NOTICE),

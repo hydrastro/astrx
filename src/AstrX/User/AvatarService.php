@@ -11,6 +11,7 @@ use AstrX\Image\ImageSanitizer;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\Session\ServerSecret;
 use AstrX\User\Diagnostic\UserAvatarSizeDiagnostic;
 use AstrX\User\Diagnostic\UserAvatarExtensionDiagnostic;
 use AstrX\User\Diagnostic\UserAvatarInvalidDiagnostic;
@@ -23,8 +24,9 @@ use AstrX\User\Diagnostic\UserAvatarMoveFailedDiagnostic;
  * Avatars are stored as PNG files in a configurable directory.
  * Path pattern: {avatar_dir}/{hex_user_id}.png
  *
- * When a user has no custom avatar and identicons are enabled,
- * callers should use IdenticonRenderer::render($hexId) for display.
+ * When a user has no custom avatar and identicons are enabled, callers render
+ * IdenticonRenderer::render(identiconSeed(...)) — never render($hexId) or any
+ * other value an outsider can reconstruct. See identiconSeed().
  */
 final class AvatarService
 {
@@ -51,7 +53,42 @@ final class AvatarService
     public function __construct(
         private readonly UserRepository $repo,
         private readonly ImageSanitizer $sanitizer,
+        /**
+         * REQUIRED on purpose — do not give this a default. Injector::createClass()
+         * SKIPS optional parameters, so a default would hand this class a private
+         * ServerSecret that never receives Session.config.php's `server_secret`,
+         * and identicons would be keyed differently from sessions on any install
+         * that configures one.
+         */
+        private readonly ServerSecret   $secret,
     ) {}
+
+    /**
+     * The seed for a registered user's fallback identicon.
+     *
+     * Keyed with the install's server secret, because the identicon is otherwise
+     * an oracle for the user's recovery e-mail. The previous seed was the plain
+     * concatenation $hexId . $email, and IdenticonRenderer::render() is a bare
+     * sha256() of its input, so the PNG is a pure function of public data plus
+     * one guess: an attacker reads alice's 32-hex uid from any page that renders
+     * her avatar, fetches /avatar/<uid>, calibrates the renderer's geometry
+     * against the public ?seed= endpoint, then renders sha256(uid . guess)
+     * locally for each address they suspect. A byte-equal PNG CONFIRMS the
+     * address — on a hidden service whose premise is anonymity, that turns a
+     * guess into a certainty. With an HMAC the attacker cannot compute the seed
+     * without the install secret, so no local render can ever match.
+     *
+     * Still deterministic per install, so a user's identicon is stable, and
+     * still distinct per e-mail, so two users who end up sharing a username
+     * after a rename keep different pictures.
+     */
+    public function identiconSeed(string $hexId, string $email): string
+    {
+        // NUL separator: without it (hexId='ab', email='cd') and (hexId='abc',
+        // email='d') would hash the same input. hexIds are fixed-length today,
+        // but the separator makes that not matter.
+        return hash_hmac('sha256', $hexId . "\0" . $email, $this->secret->bytes());
+    }
 
     /**
      * Upload and store a new avatar for the given user.

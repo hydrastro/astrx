@@ -110,4 +110,15 @@ return [
             assert($d instanceof MailerNotConfiguredDiagnostic);
             return "Il mailer non è configurato. Le email in uscita (ad es. i token di verifica) non possono essere inviate. Collega PHPMailer in RegisterController per silenziare l'avviso.";
         },
+
+    // ── Errore generico del mailer / modello email mancante ───────────────────
+
+    'astrx.mail/error' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Impossibile inviare il messaggio. Riprova più tardi.',
+
+    'astrx.email/template_missing' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Il modello dell\'email è mancante, quindi non è stato inviato alcun messaggio. '
+        . 'Verifica che resources/template/email/ sia installato.',
 ];

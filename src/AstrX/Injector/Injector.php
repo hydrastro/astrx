@@ -7,6 +7,7 @@ use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
 use ReflectionNamedType;
+use AstrX\Config\InjectConfig;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
@@ -65,9 +66,29 @@ final class Injector
     /** @var list<RegisteredHelper> */
     private array $helpers = [];
 
+    /**
+     * config.php ['Injector']['helpers_strict'].
+     *
+     * True (the default, and the historical behaviour): a helper that throws
+     * fails the whole createClass() call, so a half-wired object is never
+     * shared. False: the failure is still reported as a diagnostic, but the
+     * object is returned. The trade is real — ModuleLoader::onClassCreated is
+     * the only registered helper, and if it throws under strict mode EVERY
+     * class in the request fails to build and the site serves a 500; under
+     * non-strict mode the site stays up on hardcoded defaults with the reason
+     * visible in the diagnostics.
+     */
+    private bool $helpersStrict = true;
+
     public function __construct()
     {
         $this->classes[self::class] = $this;
+    }
+
+    #[InjectConfig('helpers_strict')]
+    public function setHelpersStrict(bool $strict): void
+    {
+        $this->helpersStrict = $strict;
     }
 
     // -------------------------------------------------------------------------
@@ -207,8 +228,9 @@ final class Injector
         $this->constructing[$className] = true;
 
         try {
-            $rc           = new ReflectionClass($className);
-            $dependencies = [];
+            $rc                = new ReflectionClass($className);
+            $dependencies      = [];
+            $helperDiagnostics = Diagnostics::empty();
 
             if ($rc->hasMethod('__construct')) {
                 foreach ($rc->getMethod('__construct')->getParameters() as $parameter) {
@@ -224,12 +246,21 @@ final class Injector
                         continue;
                     }
 
-                    if ($parameter->isOptional()) {
-                        continue;
-                    }
-
+                    // Resolve the TYPE before consulting isOptional(). Checking
+                    // optionality first meant `__construct(?Foo $x = null)` was
+                    // skipped without ever attempting to resolve Foo, so the
+                    // parameter always took its null default even when the
+                    // container held a shared Foo. That is how TemplateEngine's
+                    // `?DiagnosticSinkInterface $sink = null` ended up on a
+                    // private collector nobody reads.
                     $type = $parameter->getType();
-                    if (!($type instanceof ReflectionNamedType)) {
+                    if (!($type instanceof ReflectionNamedType) || $type->isBuiltin()) {
+                        // A scalar/array/union/intersection parameter is not
+                        // something the container can supply. Optional → take the
+                        // declared default; required → unresolvable.
+                        if ($parameter->isOptional()) {
+                            continue;
+                        }
                         return Result::err(null, Diagnostics::of(
                             new UnresolvableParameterDiagnostic(
                                 self::ID_UNRESOLVABLE_PARAMETER,
@@ -242,6 +273,11 @@ final class Injector
 
                     $depResult = $this->getClass($type->getName(), true);
                     if (!$depResult->isOk()) {
+                        // Unresolvable class dependency: fall back to the default
+                        // when there is one, fail otherwise.
+                        if ($parameter->isOptional()) {
+                            continue;
+                        }
                         return Result::err(null, $depResult->diagnostics());
                     }
 
@@ -258,7 +294,7 @@ final class Injector
                 try {
                     $helper->instance->{$helper->method}($obj, $className);
                 } catch (Throwable $t) {
-                    return Result::err(null, Diagnostics::of(
+                    $diagnostics = Diagnostics::of(
                         new HelperReflectionDiagnostic(
                             self::ID_HELPER_REFLECTION,
                             self::LVL_HELPER_REFLECTION,
@@ -266,7 +302,11 @@ final class Injector
                             $helper->method,
                             $t->getMessage(),
                         )
-                    ));
+                    );
+                    if ($this->helpersStrict) {
+                        return Result::err(null, $diagnostics);
+                    }
+                    $helperDiagnostics = $helperDiagnostics->concat($diagnostics);
                 }
             }
 
@@ -274,13 +314,28 @@ final class Injector
                 $this->classes[$className] = $obj;
             }
 
-            return Result::ok($obj);
+            return Result::ok($obj, $helperDiagnostics);
         } catch (ReflectionException $e) {
             return Result::err(null, Diagnostics::of(
                 new ClassReflectionDiagnostic(
                     self::ID_CLASS_REFLECTION,
                     self::LVL_CLASS_REFLECTION,
                     $e->getMessage(),
+                )
+            ));
+        } catch (Throwable $t) {
+            // ReflectionException alone is not enough. `new $className(...)`
+            // raises a plain Error for an abstract class, an interface, or a
+            // private constructor, and a constructor is free to throw anything
+            // at all. Uncaught, those escape the Result envelope entirely: they
+            // bypass every isOk() check at the call site and surface as a raw
+            // 500 instead of the themed error page the diagnostics path
+            // produces.
+            return Result::err(null, Diagnostics::of(
+                new ClassReflectionDiagnostic(
+                    self::ID_CLASS_REFLECTION,
+                    self::LVL_CLASS_REFLECTION,
+                    $className . ': ' . $t->getMessage(),
                 )
             ));
         } finally {

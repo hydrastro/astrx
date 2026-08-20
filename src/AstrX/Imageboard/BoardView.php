@@ -132,7 +132,7 @@ final class BoardView
         // additionally underlined (via the .name-link CSS).
         $name       = $this->str($post['name'] ?? null);
         $profileUrl = $this->str($post['profile_url'] ?? null);
-        $nameColor  = $this->str($post['name_color'] ?? null);
+        $nameColor  = self::cssColor($this->str($post['name_color'] ?? null));
         $colorAttr  = $nameColor !== '' ? ' style="color:' . $this->e($nameColor) . '"' : '';
         $nameInner  = $this->e($name);
         if ($profileUrl !== '') {
@@ -218,6 +218,37 @@ final class BoardView
     private function e(string $s): string
     {
         return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5);
+    }
+
+    /**
+     * A CSS colour value, or '' when the input is not one.
+     *
+     * e() is the wrong tool for a CSS value. It stops an attribute breakout
+     * (quotes, <, >) but every character CSS needs is still legal inside the
+     * attribute: the configured role colour `red;background:url(http://x/p.png)`
+     * survives e() unchanged and becomes a live style declaration. On a Tor
+     * hidden service that url() is a deanonymisation primitive — it makes every
+     * reader of the board fetch an attacker URL — and "CSP blocks it" is one
+     * control, not two.
+     *
+     * Accepted: #rgb / #rgba / #rrggbb / #rrggbbaa, and a bare CSS colour
+     * keyword (letters only, e.g. `red`, `rebeccapurple`, `transparent`). Both
+     * shapes are what the shipped ImageboardConfig role_colors map contains
+     * ('ADMIN:red,MOD:purple,USER:white'). Anything with a semicolon, a colon,
+     * a bracket, a space or a slash — i.e. anything that could close the
+     * declaration or open a function — is rejected, and the name simply renders
+     * in the theme's default colour.
+     */
+    private static function cssColor(string $v): string
+    {
+        $v = trim($v);
+        if ($v === '' || strlen($v) > 32) {
+            return '';
+        }
+        if (preg_match('/^#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/', $v) === 1) {
+            return $v;
+        }
+        return preg_match('/^[A-Za-z]+$/', $v) === 1 ? $v : '';
     }
 
     private function str(mixed $v): string

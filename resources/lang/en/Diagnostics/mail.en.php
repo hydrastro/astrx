@@ -109,4 +109,15 @@ return [
             assert($d instanceof MailerNotConfiguredDiagnostic);
             return 'Mailer is not configured. Outbound email (e.g. verification tokens) cannot be sent. Wire PHPMailer in RegisterController to silence.';
         },
+
+    // ── Generic mailer failure / missing email template ───────────────────────
+
+    'astrx.mail/error' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'The message could not be sent. Please try again later.',
+
+    'astrx.email/template_missing' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'The email template is missing, so no message was sent. '
+        . 'Check that resources/template/email/ is installed.',
 ];

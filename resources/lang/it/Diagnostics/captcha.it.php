@@ -32,4 +32,15 @@ return [
             assert($d instanceof CaptchaDbDiagnostic);
             return "Errore database nel captcha: {$d->message()}.";
         },
+
+    // Emessa quando il pulsante "nuovo captcha" non riesce a sostituire il testo
+    // della sfida: il limite di rigenerazioni o il suo intervallo di attesa hanno
+    // bloccato l'UPDATE, oppure la scrittura è fallita. Senza questa voce
+    // l'utente vedeva il timbro grezzo "[FALLBACK:ERROR]
+    // astrx.captcha/regenerate_failed".
+    'astrx.captcha/regenerate_failed' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof CaptchaDbDiagnostic);
+            return 'Impossibile generare un nuovo captcha. Ricarica la pagina.';
+        },
 ];

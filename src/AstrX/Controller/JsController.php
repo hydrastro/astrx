@@ -15,6 +15,7 @@ use PDO;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
+use function AstrX\Support\atomicWrite;
 use function AstrX\Support\cacheDir;
 use function AstrX\Support\templateDir;
 
@@ -97,9 +98,9 @@ final class JsController extends AbstractController
     {
         $tail = $this->currentUrl->tail();
         // `?? null` guards the bare /js shell route (empty tail): reading $tail[0]
-        // when it is absent raises an E_WARNING, which the production error mask
-        // escalates to a forced HTTP 500 at shutdown. null falls to the shell
-        // (match default) — the intended behaviour for the shell entry point.
+        // when it is absent raises an "Undefined array key" E_WARNING on every
+        // request to /<locale>/js. null falls to the shell (match default) — the
+        // intended behaviour for the shell entry point.
         $first = $tail[0] ?? null;
 
         match ($first) {
@@ -1267,18 +1268,30 @@ JS;
         ];
     }
 
-    /** @return list<array<string,mixed>> */
-    private function manifestPages(): array
+    /**
+     * The page rows an anonymous caller of /<locale>/js/* is allowed to see.
+     *
+     * The /js artifacts are GUEST artifacts (served un-authenticated, is_admin
+     * hardcoded false). Exclude the entire admin subtree (the 'admin' page and
+     * every closure-descendant) so no /js artifact can enumerate the admin
+     * surface — slugs, titles and API URLs of banlist/users/config/audit-log —
+     * to anonymous Tor visitors. Those pages are ADMIN_ACCESS-gated at dispatch
+     * regardless; this closes the RECON leak that bypassed the app's own
+     * admin-hiding (page_robots index=0, robots.txt disallowing the admin
+     * prefix).
+     *
+     * ONE query, shared by the manifest and the template bundle, so a page can
+     * never be private to one artifact and public to another —
+     * which is exactly how /js/templates.js ended up shipping admin.html,
+     * admin_content.html and bot_trap.html while the manifest hid those pages.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function visiblePageRows(): array
     {
-        // The /js bundle is a GUEST artifact (served un-authenticated, is_admin
-        // hardcoded false). Exclude the entire admin subtree (the 'admin' page and
-        // every closure-descendant) so the manifest can't enumerate the admin
-        // surface — slugs, titles, and API URLs of banlist/users/config/audit-log —
-        // to anonymous Tor visitors. Those pages are ADMIN_ACCESS-gated at dispatch
-        // regardless; this closes the RECON leak that bypassed the app's own
-        // admin-hiding (page_robots index=0 / robots.txt Disallow /*/admin).
         $stmt = $this->pdo->query(
-            "SELECT id, url_id, i18n, file_name, template, controller, hidden, api_enabled, title
+            "SELECT id, url_id, i18n, file_name, template, controller, hidden,
+                    api_enabled, title, `index`, template_file_name
                FROM resolved_page
               WHERE hidden = 0
                 AND template = 1
@@ -1291,6 +1304,13 @@ JS;
         );
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         /** @var list<array<string,mixed>> $rows */
+        return $rows;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function manifestPages(): array
+    {
+        $rows = $this->visiblePageRows();
         $disabledIds = $this->disabledPageIds();
         $pages = [];
         foreach ($rows as $row) {
@@ -1404,7 +1424,11 @@ JS;
         $cacheRoot = rtrim(cacheDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'js';
         $cacheFile = $cacheRoot . DIRECTORY_SEPARATOR . 'templates.json';
 
-        $sources = $this->templateSources($root);
+        $sources = self::templateSources($root, $this->bundledTemplateNames());
+        // The fingerprint covers the ALLOWED set only, so it also changes when a
+        // module is toggled or a page row is added/removed — not just when a file
+        // is edited. A stale cache from before a module was disabled would
+        // otherwise keep serving that module's templates.
         $fingerprint = sha1($this->json(array_map(
             static fn(array $s): array => [$s['name'], $s['mtime'], $s['size']],
             $sources
@@ -1437,18 +1461,184 @@ JS;
             'templates'   => $templates,
         ];
 
-        if (!is_dir($cacheRoot)) {
-            @mkdir($cacheRoot, 0755, true);
-        }
-        @file_put_contents($cacheFile, $this->json($payload), LOCK_EX);
+        // atomicWrite(), not file_put_contents(+LOCK_EX): the reader a few lines
+        // above is a bare file_get_contents() that takes no shared lock, so
+        // LOCK_EX never protected it. Two requests that both miss this cache
+        // (first hit after a deploy, or after a module toggle changes the
+        // fingerprint) write it concurrently; a reader landing mid-write gets
+        // truncated JSON, json_decode() returns null, and the bundle is rebuilt
+        // from disk on every request until someone finishes a clean write.
+        // atomicWrite() also creates the directory.
+        atomicWrite($cacheFile, $this->json($payload));
 
         return $payload;
     }
 
     /**
+     * The template names the guest bundle may contain.
+     *
+     * Derived from the page rows this caller is allowed to see, NOT from a list
+     * of directory prefixes to skip. The prefix list is what failed: it skipped
+     * `admin/`, so the four admin templates that sat at the template ROOT
+     * (admin.html, admin_content.html, admin_language.html, admin_themes.html)
+     * sailed straight into a bundle that `curl http://host/en/js/templates.js`
+     * fetches with no session and no gate.
+     *
+     * A name enters the bundle by one of three routes:
+     *
+     *   1. A visible page row's include path — the same ancestors-then-file_name
+     *      path DefaultTemplateContext::buildIncludePath() computes, so 'login'
+     *      under the 'user' root resolves to 'user/login'. Adding a page under
+     *      the admin root now REMOVES its template from the bundle, instead of
+     *      the two having to be kept in sync by hand.
+     *
+     *   2. The outer layouts the runtime itself renders: ContentManager's
+     *      default_template (the shell the JS runtime renders client-side — the
+     *      runtime throws "Template cache does not contain default.html"
+     *      without it) and js_fragment (the fragment layout it transplants).
+     *
+     *   3. partials/ — shared layout fragments, not pages, so there is no page
+     *      row to authorise them against, and the slots that pull them in
+     *      ({{> chat_nav}}, {{> captcha}}) resolve their name from a RUNTIME
+     *      context value, so they cannot be derived statically. All five are
+     *      nav/comment/captcha chrome; none is an admin surface.
+     *
+     * noindex pages are excluded on top of that. Concretely: bot_trap.html is
+     * the honeypot maze's markup. With it in the bundle a crawler fetches
+     * /en/js/templates.js once and can fingerprint and avoid the trap forever
+     * without ever visiting /en/trap — the honeypot's entire value. Its page row
+     * is deliberately hidden=0 (a hidden page never reaches its controller, so
+     * the trap would never fire), and page_robots marks it index=0 — the site's
+     * own statement that the page is not for enumeration.
+     *
+     * @return array<string,true>
+     */
+    private function bundledTemplateNames(): array
+    {
+        $disabledIds = $this->disabledPageIds();
+
+        $pageIds   = [];
+        $fileNames = [];
+        $names     = [];
+        foreach ($this->visiblePageRows() as $row) {
+            $id = is_numeric($row['id'] ?? null) ? (int) $row['id'] : 0;
+            $fileName = is_scalar($row['file_name'] ?? null) ? (string) $row['file_name'] : '';
+            if ($id <= 0 || $fileName === '' || isset($disabledIds[$id])) {
+                continue;
+            }
+            // COALESCE'd to 1 by the resolved_page view when a page has no
+            // page_robots row, so a page is only dropped when the operator
+            // actually said noindex.
+            $indexable = $row['index'] ?? 1;
+            if (!is_numeric($indexable) || (int) $indexable !== 1) {
+                continue;
+            }
+            $pageIds[]      = $id;
+            $fileNames[$id] = $fileName;
+
+            $layout = is_scalar($row['template_file_name'] ?? null) ? (string) $row['template_file_name'] : '';
+            if ($layout !== '') {
+                $names[$layout] = true;
+            }
+        }
+
+        foreach ($this->includePaths($pageIds, $fileNames) as $include) {
+            $names[$include] = true;
+        }
+
+        $names[$this->config->getConfigString('ContentManager', 'default_template', 'default')] = true;
+        $names['js_fragment'] = true;
+
+        foreach (glob(rtrim(templateDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'partials'
+                      . DIRECTORY_SEPARATOR . '*.html') ?: [] as $partial) {
+            $names['partials/' . basename($partial, '.html')] = true;
+        }
+
+        return $names;
+    }
+
+    /**
+     * Template include path per page id: the page's closure ancestors ordered by
+     * id, minus its own file_name, then its own file_name last.
+     *
+     * Mirrors DefaultTemplateContext::buildIncludePath() exactly — that is the
+     * path the server renders for the page, so it is the path the bundle must
+     * carry. One query for all pages rather than one per page: this runs on
+     * every /js/templates.js request to compute the fingerprint.
+     *
+     * @param list<int>        $pageIds
+     * @param array<int,string> $fileNames page id => own file_name
+     * @return list<string>
+     */
+    private function includePaths(array $pageIds, array $fileNames): array
+    {
+        if ($pageIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($pageIds), '?'));
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT c.descendant AS page_id, a.file_name AS ancestor_file_name
+                   FROM `page_closure` c
+                   JOIN `page` a ON a.id = c.ancestor
+                  WHERE c.descendant IN ({$placeholders})
+                  ORDER BY c.descendant ASC, a.id ASC"
+            );
+            $stmt->execute(array_values($pageIds));
+            /** @var list<array<string,mixed>> $rows */
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (\PDOException) {
+            // A bundle with no page templates still boots the shell (layouts and
+            // partials are added by the caller); an exception here would 500 the
+            // whole /js namespace instead.
+            return [];
+        }
+
+        return self::assembleIncludePaths($rows, $pageIds, $fileNames);
+    }
+
+    /**
+     * Pure assembly half of includePaths(), split out so a test can assert it
+     * agrees with DefaultTemplateContext::buildIncludePath() without a database.
+     * If the two ever disagree the bundle ships a template under a name the
+     * server never renders (and omits the one it does).
+     *
+     * @param list<array<string,mixed>> $rows       closure rows, ordered by descendant then ancestor id
+     * @param list<int>                 $pageIds
+     * @param array<int,string>         $fileNames  page id => own file_name
+     * @return list<string>
+     */
+    private static function assembleIncludePaths(array $rows, array $pageIds, array $fileNames): array
+    {
+        /** @var array<int,list<string>> $parts */
+        $parts = [];
+        foreach ($rows as $row) {
+            $id = is_numeric($row['page_id'] ?? null) ? (int) $row['page_id'] : 0;
+            $fn = is_scalar($row['ancestor_file_name'] ?? null) ? (string) $row['ancestor_file_name'] : '';
+            $own = $fileNames[$id] ?? '';
+            if ($id === 0 || $fn === '' || $own === '' || $fn === $own) {
+                continue;
+            }
+            $parts[$id][] = $fn;
+        }
+
+        $out = [];
+        foreach ($pageIds as $id) {
+            $own = $fileNames[$id] ?? '';
+            if ($own === '') {
+                continue;
+            }
+            $out[] = implode('/', [...($parts[$id] ?? []), $own]);
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,true> $allowed template name => true (see bundledTemplateNames())
      * @return list<array{name:string,path:string,mtime:int,size:int}>
      */
-    private function templateSources(string $root): array
+    private static function templateSources(string $root, array $allowed): array
     {
         if (!is_dir($root)) {
             return [];
@@ -1466,21 +1656,13 @@ JS;
             if (!str_ends_with($path, '.html')) {
                 continue;
             }
-            $rel = str_replace('\\', '/', substr($path, strlen($root)));
-            if (str_starts_with($rel, 'cache/')) {
-                continue;
-            }
-            // Email templates are intentionally not needed in the browser cache.
-            if (str_starts_with($rel, 'email/')) {
-                continue;
-            }
-            // Admin templates carry privileged markup and are never rendered by
-            // the anonymous /js/ browser — keep them out of the public bundle
-            // (bandwidth + hygiene), mirroring the email/ skip above.
-            if (str_starts_with($rel, 'admin/')) {
-                continue;
-            }
+            $rel  = str_replace('\\', '/', substr($path, strlen($root)));
             $name = substr($rel, 0, -5);
+            // The allowlist subsumes the old cache/, email/ and admin/ prefix
+            // skips: no page row resolves to a name under any of them.
+            if (!isset($allowed[$name])) {
+                continue;
+            }
             $out[] = [
                 'name'  => $name,
                 'path'  => $path,

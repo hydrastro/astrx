@@ -19,20 +19,38 @@ declare(strict_types=1);
  * manifest, so this file only holds the on/off flags (unlisted modules default ON).
  */
 return [
+    // EXHAUSTIVE: one entry per src/AstrX/<Module>/module.php manifest.
+    // tools/check_modules.php fails the build when a manifest has no entry here.
+    // It used to warn, and seven of the eighteen modules had drifted off the
+    // list — so "turn a module off" meant editing a file that did not mention
+    // it, and the only way to find out was to notice its pages were still there.
+    //
+    // Values must be real booleans. Config::getConfigBool rejects anything else
+    // (a quoted 'false' used to read back as TRUE) and falls back to ON.
     'Modules' => [
-        'imageboard' => true,
-        'chat'       => true,
-        'bottrap'    => true,
-        'search'     => true,
-        'webmail'    => true,
-        'content'    => true,
-        'media'      => true,
+        'imageboard'    => true,
+        'chat'          => true,
+        'bottrap'       => true,
+        'search'        => true,
+        'webmail'       => true,
+        'content'       => true,
+        'media'         => true,
 
         // Transparency / trust pages — each independently toggleable. Flip any to
         // false to 404 that page + its admin editor and drop both nav entries.
-        'canary'     => true,
-        'downloads'  => true,
-        'mirrors'    => true,
-        'tipline'    => true,
+        'canary'        => true,
+        'downloads'     => true,
+        'mirrors'       => true,
+        'tipline'       => true,
+
+        // Search back-ends and admin surfaces. Previously absent from this file
+        // and therefore ON by an unwritten default.
+        'blocklist'     => true,
+        'fedsearch'     => true,
+        'gitbrowse'     => true,
+        'onionsearch'   => true,
+        'suiteadmin'    => true,
+        'torrentsearch' => true,
+        'websearch'     => true,
     ],
 ];

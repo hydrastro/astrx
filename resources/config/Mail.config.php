@@ -47,4 +47,20 @@ return [
         'sent_folder'                 => 'Sent',
         'drafts_folder'               => 'Drafts',
     ],
+    // AstrX\Mail\MailboxManager. This section was missing from the shipped file
+    // even though the class declares #[InjectConfig] setters for all three keys
+    // and the admin Mail page writes them here: Config::applyConfigToInstance()
+    // skips a setter whose key is absent, so on a fresh install every setter
+    // silently no-op'd and MailboxManager built addresses as "user@" (empty
+    // domain) until an admin happened to open the Mail page and press Save.
+    // Defaults match the class's own field defaults, so declaring them changes
+    // nothing until the operator sets the env vars or edits this file.
+    'MailboxManager' => [
+        // Domain appended to a username to form its mailbox address.
+        'mailbox_domain' => getenv('MAILBOX_DOMAIN') ?: '',
+        // Base URL of the provisioning API ('' disables remote provisioning).
+        'mailapi_url'    => getenv('MAILAPI_URL')    ?: '',
+        // Shared secret for that API.
+        'mailapi_secret' => getenv('MAILAPI_SECRET') ?: '',
+    ],
 ];

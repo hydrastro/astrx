@@ -15,6 +15,7 @@ use AstrX\Template\Diagnostic\TemplateFileNotFoundDiagnostic;
 use AstrX\Template\Diagnostic\TemplateFileReadFailedDiagnostic;
 use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
 use Throwable;
+use function AstrX\Support\atomicWrite;
 use function AstrX\Support\cacheDir;
 use function AstrX\Support\templateDir;
 
@@ -347,13 +348,29 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             /** @var array<int, array<int,string>|string> $ast */
             $code      = $this->compileTemplate($className, $ast, $phpProcessing);
         } else {
+            // PARSE_MODE_PLAIN: emit the file's bytes with no token pass.
+            //
+            // $templateFile — the SAME path checked with file_exists() and
+            // confirmed inside the template dir by the realpath() test above.
+            // This branch used to build its own path with a hardcoded '.php'
+            // while the check used $templateExtension, so on a stock install it
+            // verified `main.html` and then read `main.php`: file_get_contents
+            // failed, render() returned "", and every page answered 200 with an
+            // empty body — no error, no diagnostic.
+            //
+            // var_export(), not a double-quoted literal: this string is eval'd,
+            // and template_dir comes straight from the admin System-config form.
+            // A dir containing $ or " (or "; system('…'); //) was interpolated
+            // into the generated source — admin-write turned into code execution.
+            // Every other codegen path here already var_export()s its literals.
+            $fileLiteral = var_export($templateFile, true);
             $code = '<?php class ' . $className
                     . '{private $TemplateEngine;function __construct($TemplateEngine){$this->TemplateEngine=$TemplateEngine;}'
                     . 'function render($args=array(),$parent=array()){';
             if ($phpProcessing) {
-                $code .= 'extract($args);ob_start();require("' . $this->templateDir . $template . '.php");$buffer=ob_get_clean();';
+                $code .= 'extract($args);ob_start();require(' . $fileLiteral . ');$buffer=ob_get_clean();';
             } else {
-                $code .= '$buffer=file_get_contents("' . $this->templateDir . $template . '.php");';
+                $code .= '$buffer=file_get_contents(' . $fileLiteral . ');';
             }
             $code .= 'return ($buffer)?$buffer:"";}}';
         }
@@ -366,11 +383,16 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
         if ($this->cacheTemplates) {
             $cacheFile = $this->templateCacheDir . $template . '.php';
-            $cacheDir  = dirname($cacheFile);
-            if (!is_dir($cacheDir)) {
-                mkdir($cacheDir, 0755, recursive: true);
-            }
-            if (@file_put_contents($cacheFile, $code) !== false) {
+            // atomicWrite(), not file_put_contents(): this file is require_once'd
+            // by the very next request that hits this template. A plain write
+            // truncates first, so a request arriving mid-write require's a
+            // half-written PHP class and raises a ParseError — catchable, but
+            // nothing catches it, so it escapes to the ErrorHandler as a 500.
+            // Concurrency here is the normal case, not a corner case: after an
+            // admin "Clear Cache" (or a deploy that touches a template) every
+            // request in the next burst misses and compiles the same file.
+            // atomicWrite() also creates the directory.
+            if (atomicWrite($cacheFile, $code)) {
                 $this->rememberTemplateCacheIndexEntry(
                     template: $template,
                     className: $className,
@@ -456,7 +478,15 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         );
         /** @var \SplFileInfo $file */
         foreach ($rii as $file) {
-            if ($file->isFile() && str_ends_with($file->getFilename(), '.php')) {
+            // '.tmp.<hex>' files are atomicWrite()'s staging files. One is left
+            // behind only when a worker is killed between the write and the
+            // rename (php-fpm max_execution_time, a container stop mid-deploy) —
+            // nothing else ever removes them, so without this sweep they
+            // accumulate in the cache directory for the life of the install.
+            $name = $file->getFilename();
+            if ($file->isFile()
+                && (str_ends_with($name, '.php') || preg_match('/\.tmp\.[0-9a-f]+$/', $name) === 1)
+            ) {
                 if (@unlink($file->getPathname())) { $deleted++; }
             }
         }
@@ -594,13 +624,15 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         }
 
         $file = $this->templateCacheIndexFile();
-        $dir = dirname($file);
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            return;
-        }
 
+        // LOCK_EX here was not enough and the reader is why: loadTemplateCacheIndex()
+        // does a bare `@include $file`, which takes no shared lock, so it read the
+        // truncated file anyway. This index is GLOBAL — one torn read raises an
+        // uncaught ParseError on EVERY page, not just the template being compiled.
+        // atomicWrite() renames a complete file into place, which gives the
+        // lock-free reader the guarantee LOCK_EX never did.
         $php = '<?php return ' . var_export($this->templateCacheIndex, true) . ';' . PHP_EOL;
-        if (@file_put_contents($file, $php, LOCK_EX) !== false) {
+        if (atomicWrite($file, $php)) {
             $this->templateCacheIndexDirty = false;
         }
     }
@@ -790,9 +822,9 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             // Emit the section name as a var_export()'d single-quoted PHP literal
             // (like the TEXT branch) so ", \ and $ are all safely encoded. In a
             // double-quoted literal a name containing $ (e.g. {{#x$args}}) would
-            // interpolate a live render() variable — the wrong key plus an "Array
-            // to string conversion" warning the ErrorHandler turns into a 500.
-            // A single-quoted var_export literal never interpolates.
+            // interpolate a live render() variable — the wrong key, plus an
+            // "Array to string conversion" warning in the diagnostics of every
+            // render. A single-quoted var_export literal never interpolates.
             $sectionName = var_export((string) $endParent[self::AST_VALUE], true);
             $code .= match ($endParent[self::AST_TYPE]) {
                 self::TOKEN_TYPE_INVERTED_LOOP_START =>

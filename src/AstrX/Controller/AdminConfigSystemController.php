@@ -21,7 +21,9 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
+use AstrX\Support\RequiresPermission;
 use AstrX\Template\DefaultTemplateContext;
+use AstrX\Template\TemplateEngine;
 
 /**
  * Admin — System configuration editor.
@@ -34,7 +36,15 @@ use AstrX\Template\DefaultTemplateContext;
  *   ContentManager.config.php → ContentManager
  * Each file is edited as its own sub-section.
  * All saves are atomic (write to .tmp then rename).
+ *
+ * The #[RequiresPermission] attribute below is the page's ENTRY gate, enforced
+ * by ContentManager before this class is constructed. It states in code what the
+ * `page_closure` parent row states in data, so a migration that forgets that row
+ * — exactly what happened to admin-content and admin-language — cannot leave the
+ * page ungated. The ADMIN_CONFIG_SYSTEM check in handle() is the finer gate and
+ * still runs: a MOD holds ADMIN_ACCESS and must still get a 403 here.
  */
+#[RequiresPermission(Permission::ADMIN_ACCESS)]
 final class AdminConfigSystemController extends AbstractController
 {
     private const FORM = 'admin_config_system';
@@ -257,20 +267,85 @@ final class AdminConfigSystemController extends AbstractController
      */
     private function saveTemplate(array $p)
     : Result {
+        // Validate before writing, for the same reason saveSession() does: this
+        // form configures the machinery that renders the page you would use to
+        // undo a bad save. Each field below can brick the site in a way that
+        // needs shell access to fix.
+        $templateDir = self::normaliseDir(self::mStr($p, 'template_dir', ''));
+        $cacheDir    = self::normaliseDir(self::mStr($p, 'template_cache_dir', ''));
+        $extension   = trim(self::mStr($p, 'template_extension', '.html'));
+        $parseMode   = self::mInt($p, 'parse_mode', TemplateEngine::PARSE_MODE_TEMPLATE);
+
+        // Blank template_dir makes every template path relative to the docroot,
+        // so EVERY render fails — including the admin System page that would let
+        // you put the value back. Must be a directory that exists now.
+        if ($templateDir === '' || !is_dir($templateDir)) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_template_dir'));
+            return Result::ok(false);
+        }
+
+        // The cache dir is created on demand, so it is enough that it exists or
+        // that its parent does; a path whose parent is missing means mkdir fails
+        // on every request and nothing is ever cached.
+        if ($cacheDir === '' || !(is_dir($cacheDir) || is_dir(dirname($cacheDir)))) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_template_cache_dir'));
+            return Result::ok(false);
+        }
+
+        // The extension is concatenated onto a filesystem path. Anything with a
+        // separator, a '..' or a null byte is a traversal attempt; anything
+        // without a leading dot silently resolves every template to a file that
+        // does not exist, i.e. a blank site.
+        if (preg_match('/^\.[A-Za-z0-9]{1,10}$/', $extension) !== 1) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_template_extension'));
+            return Result::ok(false);
+        }
+
+        // Only the two modes the engine implements. Any other value took the
+        // PLAIN branch, which used to check <name>.html for existence and then
+        // read <name>.php — so every page answered 200 with an empty body, with
+        // no error and no diagnostic to explain it.
+        if ($parseMode !== TemplateEngine::PARSE_MODE_PLAIN
+            && $parseMode !== TemplateEngine::PARSE_MODE_TEMPLATE) {
+            $this->flash->set('error',
+                $this->t->t('admin.config.system.invalid_parse_mode'));
+            return Result::ok(false);
+        }
+
         return $this->writer->write('TemplateEngine', [
             'TemplateEngine' => [
-                'template_dir' => trim(self::mStr($p, 'template_dir', '')),
-                'template_extension' => trim(
-                    self::mStr($p, 'template_extension', '.html')
-                ),
-                'template_cache_dir' => trim(
-                    self::mStr($p, 'template_cache_dir', '')
-                ),
+                'template_dir' => $templateDir,
+                'template_extension' => $extension,
+                'template_cache_dir' => $cacheDir,
                 'cache_templates' => self::mBool($p, 'cache_templates'),
-                'php_processing' => self::mBool($p, 'php_processing'),
-                'parse_mode' => self::mInt($p, 'parse_mode', 1),
+                // 'php_processing' is deliberately not written: nothing reads it.
+                // TemplateEngine has no #[InjectConfig] setter for it, and the
+                // only $phpProcessing that reaches the compiler is the method
+                // default (false), so the checkbox this used to persist changed
+                // nothing. ConfigWriter merges over the existing file, so an
+                // already-stored key is left untouched rather than dropped.
+                'parse_mode' => $parseMode,
             ],
         ]);
+    }
+
+    /**
+     * Trim a configured directory path and drop any trailing separator.
+     *
+     * Returns '' for a path containing a null byte: PHP's path functions treat
+     * "resources/template\0/evil" as "resources/template", so a value that
+     * passes is_dir() would not be the value that is stored.
+     */
+    private static function normaliseDir(string $raw): string
+    {
+        $dir = trim($raw);
+        if ($dir === '' || str_contains($dir, "\0")) {
+            return '';
+        }
+        return rtrim($dir, '/\\') . DIRECTORY_SEPARATOR;
     }
 
     /**
@@ -587,14 +662,10 @@ final class AdminConfigSystemController extends AbstractController
                 true
             )
         );
-        $this->ctx->set(
-            'cfg_php_processing',
-            $this->config->getConfigBool(
-                'TemplateEngine',
-                'php_processing',
-                false
-            )
-        );
+        // 'cfg_php_processing' is intentionally absent — the checkbox it fed has
+        // been removed from admin/admin_config_system.html. Nothing reads the
+        // php_processing config key (TemplateEngine has no #[InjectConfig] setter
+        // for it), so the control promised an effect it never had.
         $this->ctx->set(
             'cfg_parse_mode',
             $this->config->getConfigInt(
@@ -918,10 +989,6 @@ final class AdminConfigSystemController extends AbstractController
         $this->ctx->set(
             'label_cache_templates',
             $this->t->t('admin.config.field.cache_templates')
-        );
-        $this->ctx->set(
-            'label_php_processing',
-            $this->t->t('admin.config.field.php_processing')
         );
         $this->ctx->set(
             'label_parse_mode',

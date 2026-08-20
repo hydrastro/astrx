@@ -340,6 +340,10 @@ return [
     'admin.config.system.no_languages'                 => 'Devi specificare almeno una lingua disponibile.',
     'admin.config.system.default_language_unavailable' => 'La lingua predefinita deve essere tra quelle disponibili.',
     'admin.config.system.default_page_empty'           => 'La pagina predefinita non può essere vuota.',
+    'admin.config.system.invalid_template_dir'         => 'La directory dei template deve esistere — un valore vuoto o errato impedisce il rendering di ogni pagina, inclusa questa. Salvataggio annullato.',
+    'admin.config.system.invalid_template_cache_dir'   => 'La directory di cache dei template deve esistere, oppure deve esistere la sua directory superiore. Salvataggio annullato.',
+    'admin.config.system.invalid_template_extension'   => 'L\'estensione dei template deve essere un punto seguito da 1-10 lettere o cifre (es. .html). Salvataggio annullato.',
+    'admin.config.system.invalid_parse_mode'           => 'La modalità di parsing deve essere 0 (plain) o 1 (template). Salvataggio annullato.',
 
 
     // ---- Temi (fix95) -------------------------------------------------------

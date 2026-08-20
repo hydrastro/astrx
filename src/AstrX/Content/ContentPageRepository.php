@@ -159,6 +159,13 @@ final class ContentPageRepository
     /**
      * Insert (id=0) or update a page, then rebuild its link graph. Returns the id.
      *
+     * Runs in ONE transaction. It used to write the page row, then DELETE and
+     * re-INSERT every outbound link in autocommit: a failure part-way through
+     * left the page saved with a truncated link graph AND returned err, so the
+     * admin was told the save had failed while half of it had in fact
+     * committed. Either the page and its whole link graph land together, or
+     * nothing does and the err is the truth.
+     *
      * @return Result<int>
      */
     public function save(
@@ -171,11 +178,25 @@ final class ContentPageRepository
         ?int $publishAt,
         ?int $expireAt,
     ): Result {
-        // Normalise the visibility to the known set; anything else → 'public'.
+        // An unrecognised visibility used to normalise to 'public' — the MOST
+        // open of the three — so a typo, or a form field that simply failed to
+        // post, PUBLISHED the page. Fall back to what the page already is, and
+        // to 'private' for a page that does not exist yet, so a bad value can
+        // only ever narrow the audience.
         if (!in_array($visibility, ['public', 'unlisted', 'private'], true)) {
-            $visibility = 'public';
+            $visibility = $id > 0 ? $this->currentVisibility($id) : 'private';
         }
+
+        $owned = false;
         try {
+            // A caller may already have a transaction open; only manage our own.
+            if (!$this->pdo->inTransaction()) {
+                $this->pdo->beginTransaction();
+                $owned = true;
+            }
+
+            $previousSlug = $id > 0 ? $this->currentSlug($id) : null;
+
             if ($id > 0) {
                 $stmt = $this->pdo->prepare(
                     'UPDATE `content_page`
@@ -203,16 +224,69 @@ final class ContentPageRepository
             }
 
             $this->rebuildOutboundLinks($id, $slug, Markdown::wikiTargets($body));
+
+            // Renaming a slug leaves every inbound [[old-slug]] link pointing at
+            // this page through a stale, still-non-NULL to_id. The broken-link
+            // report keys on `to_id IS NULL`, so it reported those links clean
+            // while the rendered page marked them broken and following one 404'd
+            // — database and page permanently disagreeing, with no way to notice
+            // from the admin UI. Unresolve them explicitly.
+            if ($previousSlug !== null && $previousSlug !== $slug) {
+                $orphan = $this->pdo->prepare(
+                    'UPDATE `content_link` SET `to_id` = NULL WHERE `to_id` = :i AND `to_slug` <> :s'
+                );
+                $orphan->bindValue(':i', $id, PDO::PARAM_INT);
+                $orphan->bindValue(':s', $slug);
+                $orphan->execute();
+            }
+
             // A new/renamed page resolves any inbound links that were waiting on it.
             $res = $this->pdo->prepare('UPDATE `content_link` SET `to_id`=:i WHERE `to_slug`=:s AND `to_id` IS NULL');
             $res->bindValue(':i', $id, PDO::PARAM_INT);
             $res->bindValue(':s', $slug);
             $res->execute();
 
+            if ($owned) {
+                $this->pdo->commit();
+            }
+
             return Result::ok($id);
         } catch (PDOException $e) {
+            if ($owned && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             return Result::err(0, $this->diag($e));
         }
+    }
+
+    /** The slug currently stored for $id, or null when the row is gone. */
+    private function currentSlug(int $id): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT `slug` FROM `content_page` WHERE `id` = :i LIMIT 1');
+        $stmt->bindValue(':i', $id, PDO::PARAM_INT);
+        $stmt->execute();
+        $slug = $stmt->fetchColumn();
+        $stmt->closeCursor();
+
+        return is_string($slug) ? $slug : null;
+    }
+
+    /** The visibility currently stored for $id; the closed value when unknown. */
+    private function currentVisibility(int $id): string
+    {
+        try {
+            $stmt = $this->pdo->prepare('SELECT `visibility` FROM `content_page` WHERE `id` = :i LIMIT 1');
+            $stmt->bindValue(':i', $id, PDO::PARAM_INT);
+            $stmt->execute();
+            $current = $stmt->fetchColumn();
+            $stmt->closeCursor();
+        } catch (PDOException) {
+            return 'private';
+        }
+
+        return is_scalar($current) && in_array((string) $current, ['public', 'unlisted', 'private'], true)
+            ? (string) $current
+            : 'private';
     }
 
     /** @return Result<bool> */

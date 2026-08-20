@@ -49,8 +49,13 @@ $rows = [];
 /** @var array<string,string> $seen */
 $seen = [];
 
-// Configured module flags (for the "listed?" warning).
+// Configured module flags. $configuredRaw keeps the value AS WRITTEN so a
+// non-boolean can be reported: casting first is what hid `'chat' => 'false'`
+// (a truthy string) behind a perfectly innocent-looking `true`.
+/** @var array<string,bool> $configured */
 $configured = [];
+/** @var array<string,mixed> $configuredRaw */
+$configuredRaw = [];
 $configFile = $root . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'Modules.config.php';
 if (is_file($configFile)) {
     /** @var mixed $c */
@@ -58,7 +63,7 @@ if (is_file($configFile)) {
     if (is_array($c) && isset($c['Modules']) && is_array($c['Modules'])) {
         /** @var mixed $v */
         foreach ($c['Modules'] as $k => $v) {
-            if (is_string($k)) { $configured[$k] = (bool) $v; }
+            if (is_string($k)) { $configured[$k] = (bool) $v; $configuredRaw[$k] = $v; }
         }
     }
 }
@@ -132,8 +137,19 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
         }
     }
 
+    // An unlisted module is an ERROR, not a warning. "Unlisted defaults ON" is
+    // an unwritten rule: an operator who wants the module off opens
+    // Modules.config.php, does not find it there, and has nothing to flip.
+    // Seven of eighteen manifests had drifted off the list exactly this way.
     if (!array_key_exists($key, $configured)) {
-        $warnings[] = "{$key}: not listed in Modules.config.php (defaults ON)";
+        $errors[] = "{$key}: not listed in Modules.config.php — add \"'{$key}' => true,\" "
+            . 'to the Modules section so the module can be switched off';
+    } elseif (!is_bool($configuredRaw[$key])) {
+        // Config::getConfigBool now rejects a non-boolean and falls back to ON
+        // instead of casting it truthy, so a quoted 'false' no longer reads as
+        // "enabled" — but it still does not mean what its author intended.
+        $errors[] = "{$key}: Modules.config.php holds a " . get_debug_type($configuredRaw[$key])
+            . ', not a boolean — write true or false';
     }
 
     $rows[] = [

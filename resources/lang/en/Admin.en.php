@@ -638,6 +638,10 @@ return [
     'admin.config.system.no_languages'               => 'You must specify at least one available language.',
     'admin.config.system.default_language_unavailable' => 'Default language must be one of the available languages.',
     'admin.config.system.default_page_empty'         => 'Default page cannot be empty.',
+    'admin.config.system.invalid_template_dir'       => 'Template directory must be an existing directory — an empty or wrong value makes every page, including this one, fail to render. Save aborted.',
+    'admin.config.system.invalid_template_cache_dir' => 'Template cache directory must exist, or its parent must exist so it can be created. Save aborted.',
+    'admin.config.system.invalid_template_extension' => 'Template extension must be a dot followed by 1-10 letters or digits (e.g. .html). Save aborted.',
+    'admin.config.system.invalid_parse_mode'         => 'Parse mode must be 0 (plain) or 1 (template). Save aborted.',
 
     // ---- Themes (fix95) -----------------------------------------------------
     'admin.nav.themes'                    => 'Themes',

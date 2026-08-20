@@ -69,10 +69,11 @@ final class BotTrapController extends AbstractController
             exit;
         }
 
-        // Tarpit — clamped to a hard ceiling so a hit can never hang the server.
+        // Tarpit — clamped to a hard ceiling AND bounded in CONCURRENCY, so a
+        // hit can neither hang a worker for long nor occupy all of them.
         $tarpit = max(0, min(BotTrapConfig::MAX_TARPIT_SECONDS, $this->config->tarpitSeconds()));
         if ($tarpit > 0) {
-            sleep($tarpit);
+            $this->tarpitWithinConcurrencyBound($tarpit);
         }
 
         if ($this->config->logHits()) {
@@ -113,6 +114,58 @@ final class BotTrapController extends AbstractController
         $this->ctx->set('maze_links', $links);
 
         return $this->ok();
+    }
+
+    /**
+     * sleep($seconds), but only while fewer than
+     * BotTrapConfig::MAX_CONCURRENT_TARPITS requests are already sleeping.
+     *
+     * Why this exists: /trap is public, unauthenticated and free to request, and
+     * a bare sleep() pins one php-fpm worker per hit. On a pool of, say, eight
+     * workers, eight simultaneous GETs of /trap with tarpit_seconds=10 take the
+     * entire site offline for ten seconds — repeatable indefinitely by one
+     * client with a for-loop. The trap is supposed to cost the CRAWLER time.
+     *
+     * The bound is a set of lock files claimed with flock(LOCK_EX|LOCK_NB). No
+     * free slot means no sleep: the bot still gets its maze page, just without
+     * the delay, which is the correct thing to give up under load. Locks are
+     * released by fclose() — and by the kernel if the worker dies mid-sleep, so
+     * a crashed request cannot leak a slot permanently the way a counter file
+     * would.
+     */
+    private function tarpitWithinConcurrencyBound(int $seconds): void
+    {
+        $dir = sys_get_temp_dir();
+
+        for ($slot = 0; $slot < BotTrapConfig::MAX_CONCURRENT_TARPITS; $slot++) {
+            $path = $dir . DIRECTORY_SEPARATOR . 'astrx_bottrap_tarpit_' . $slot . '.lock';
+
+            // A local user could park a symlink at the predictable path; we only
+            // ever lock these files, never write through them, but skipping a
+            // symlink keeps us from touching anything we did not create.
+            if (is_link($path)) {
+                continue;
+            }
+
+            // 'c' = create if missing, do not truncate: the file is a lock
+            // token, its contents are irrelevant and never read.
+            $handle = @fopen($path, 'c');
+            if ($handle === false) {
+                continue;
+            }
+
+            if (@flock($handle, LOCK_EX | LOCK_NB)) {
+                sleep($seconds);
+                @flock($handle, LOCK_UN);
+                fclose($handle);
+                return;
+            }
+
+            fclose($handle);
+        }
+
+        // Every slot busy → serve the maze immediately. Shedding the delay is
+        // the whole point of the bound.
     }
 
     /**

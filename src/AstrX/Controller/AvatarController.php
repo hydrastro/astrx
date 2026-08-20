@@ -80,14 +80,20 @@ final class AvatarController extends AbstractController
         }
 
         // Identicon fallback.
-        // The seed mixes hexId + email so that two users with the same username
-        // (e.g. after a rename) but different emails get distinct identicons.
+        // The seed still mixes hexId + email so that two users with the same
+        // username (e.g. after a rename) but different emails get distinct
+        // identicons — but it now goes through AvatarService::identiconSeed(),
+        // which HMACs that pair with the install secret. The plain
+        // `$hexId . $email` used here before was reproducible by anyone:
+        // render() is a bare sha256 of its input, so fetching this PNG and
+        // re-rendering sha256(uid . "alice@example.org") locally CONFIRMED a
+        // guessed recovery address byte-for-byte. See identiconSeed().
         if ($this->avatarService->useIdenticons()) {
             $emailResult = $this->userRepo->findEmailById($hexId);
             $email       = ($emailResult->isOk() && is_string($emailResult->unwrap()))
                 ? (string) $emailResult->unwrap()
                 : '';
-            $seed = $hexId . $email;
+            $seed = $this->avatarService->identiconSeed($hexId, $email);
             $b64 = $this->identicon->render($seed);
             $png = base64_decode($b64);
             header('Content-Type: image/png');

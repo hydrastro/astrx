@@ -211,10 +211,19 @@ final class LoginController extends AbstractController
     }
 
     // ── Login-failure counter (session) ───────────────────────────────────────
-    // Kept in the session so the login captcha threshold is driven by attempts
-    // from THIS browser session, independent of whether the submitted username
-    // maps to a real account. The DB `login_attempts` column is still used
-    // separately by UserService for the brute-force lockout.
+    // Kept in the session so it is independent of whether the submitted username
+    // maps to a real account — moving it out of the DB closed an enumeration
+    // oracle and must NOT be undone. The DB `login_attempts` column is still
+    // used separately by UserService for the brute-force lockout.
+    //
+    // It no longer decides whether the login captcha appears, and must not be
+    // made to again: the session is state the VISITOR owns, so an attacker who
+    // drops the cookie arrives with a count of 0 on every request and any
+    // threshold built on it fires exactly never.
+    // UserService::shouldShowLoginCaptcha() therefore ignores the value except
+    // to honour an explicit "never" policy. The counter stays because it is
+    // still a truthful signal for a legitimate user and a hook for a future
+    // proof-of-work escalation.
 
     private function loginFailCount(): int
     {

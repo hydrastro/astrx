@@ -27,6 +27,13 @@ use AstrX\Config\InjectConfig;
  * replaced_by = hashed ID of the successor session (set on regeneration).
  * replace_at  = Unix timestamp when regeneration occurred.
  * Both columns support the grace-period handover window.
+ *
+ * Liveness: rotation keeps the OLD row alive on purpose (in-flight Tor requests
+ * may still carry the previous id), so "does the row exist" is NOT the same
+ * question as "is this session still valid". rowIsLive() is the single answer;
+ * validateId() admits with it, read() enforces with it, gc() deletes by its SQL
+ * mirror. Any new code path that decides a session is dead belongs there too,
+ * not in a fourth private rule.
  */
 final class SecureSessionHandler implements
     SessionHandlerInterface,
@@ -36,32 +43,47 @@ final class SecureSessionHandler implements
     private int $sidBytes = 128;
     private bool $encrypt = true;
     private int $maxRetries = 10;
-    /** Server-side secret mixed into encryption key so stolen DB rows cannot be
-     *  decrypted without also knowing the application secret. */
-    private string $serverSecret = '';
-
-    /**
-     * The server_secret value that was, for a time, committed to the public
-     * repository in Session.config.php. It is therefore no longer secret. If an
-     * install still carries this exact value (e.g. copied from an old checkout),
-     * we IGNORE it and fall through to the per-install generated fallback so a
-     * site can never run on a globally-known key.
-     */
-    private const LEAKED_SERVER_SECRET =
-        '2cadc3c3e1e0509c705e758f02e9d39c27446c2a509bc828b5ddbd6af4026ec4';
 
     /** Holds the freshly generated SID so validateId() can confirm it in-process. */
     private ?string $currentSessionId = null;
 
-    /** Memoised HKDF input key material — resolved once per request (per handler
-     *  instance) so every ikm() call agrees and the fallback file is touched once. */
-    private ?string $ikmCache = null;
-
     /** Seconds an old (rotated-away) session row stays valid after regeneration.
-     *  Configurable via Session.regenerate_grace_period; enforced in read(). */
+     *  Configurable via Session.regenerate_grace_period; enforced by rowIsLive(). */
     private int $graceSeconds = 30;
 
-    public function __construct(private readonly PDO $pdo) {}
+    /**
+     * Hashed ids this request has destroyed.
+     *
+     * PHP calls write()/updateTimestamp() at the end of EVERY request, including
+     * one whose read() just decided the session was dead and deleted it — the
+     * UPSERT then re-INSERTs the very row read() removed, with a fresh
+     * `timestamp` and no `replace_at`. The row comes back cleaner than it left:
+     * validateId() sees it again, inactivity GC restarts its clock, and the
+     * delete never sticks. Refusing to (re)write an id destroyed in this request
+     * is what makes destroy() final.
+     *
+     * @var array<string,true>
+     */
+    private array $destroyedThisRequest = [];
+
+    public function __construct(
+        private readonly PDO $pdo,
+        /**
+         * The install's secret.
+         *
+         * Defaulted — unlike UserService's and AvatarService's, which are
+         * required — because public/info.php wires this handler by hand
+         * (`new SecureSessionHandler($pdo)`) and applies Session.config.php
+         * itself. Injector::createClass() skips optional parameters, so under
+         * the framework this is a private instance rather than the shared one;
+         * that is safe here and only here, because setServerSecret() (an
+         * #[InjectConfig] setter the module loader always runs) forwards the
+         * configured value into it. With no configured value both instances
+         * read or create the same per-install file, so every consumer still
+         * agrees on the key.
+         */
+        private readonly ServerSecret $secret = new ServerSecret(),
+    ) {}
 
     #[InjectConfig('sid_bytes')]
     public function setSidBytes(int $sidBytes): void
@@ -87,89 +109,27 @@ final class SecureSessionHandler implements
         $this->graceSeconds = max(0, $seconds);
     }
 
+    /**
+     * Kept for the standalone wiring in public/info.php, which applies
+     * Session.config.php by hand. Forwards to the ServerSecret value object,
+     * which owns resolution (and the decision to FAIL rather than degrade to a
+     * per-request random key).
+     */
     #[InjectConfig('server_secret')]
     public function setServerSecret(string $secret): void
     {
-        $this->serverSecret = $secret;
+        $this->secret->setConfigured($secret);
     }
 
     /**
-     * Returns the effective IKM for HKDF.
-     * hash_hkdf() requires a non-empty key; if server_secret is not configured
-     * we fall back to a fixed string derived from a constant phrase so the
-     * system remains functional. Sessions are still AES-256 encrypted; they
-     * just lack the additional server-secret protection against DB-only attacks.
-     * Set 'server_secret' in Session.config.php for full security.
+     * The HKDF input key material: this install's server secret, so a stolen DB
+     * row cannot be decrypted without it.
+     *
+     * @throws \RuntimeException when no stable secret exists — see ServerSecret.
      */
     private function ikm(): string
     {
-        // Resolve once per request. Without this, and with no writable fallback
-        // path, each call below would generate a DIFFERENT random key — so a blob
-        // encrypted earlier in the request could not be decrypted later in it.
-        if ($this->ikmCache !== null) {
-            return $this->ikmCache;
-        }
-
-        // 1. Explicit admin-configured secret (recommended). The old leaked/
-        //    committed value is ignored — treated as unset — so no site ever runs
-        //    on a globally-known key. hash_equals for constant-time comparison.
-        if ($this->serverSecret !== ''
-            && !hash_equals(self::LEAKED_SERVER_SECRET, $this->serverSecret)
-        ) {
-            return $this->ikmCache = $this->serverSecret;
-        }
-
-        // 2. No configured server_secret → a lazily-generated per-installation
-        //    fallback secret, unique to this install. Candidate paths are ordered
-        //    most-durable first (config dir) down to most-reliably-writable (temp
-        //    dir). This matters: under Docker the bind-mounted config dir is often
-        //    NOT writable by the php-fpm user (www-data), and if the secret cannot
-        //    persist, ikm() differs on every request — every session decrypts to
-        //    empty and every POST (login included) becomes a 400. The temp-dir
-        //    fallback keeps the key stable at least until the container is
-        //    recreated. Setting server_secret explicitly avoids all of this.
-        $configDir  = \AstrX\Support\configDir();
-        $candidates = array_values(array_filter([
-            $configDir !== '' ? $configDir . '.server_secret_generated' : null,
-            sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'astrx_server_secret',
-        ]));
-
-        // Read an already-persisted secret from the first candidate that has one.
-        $tmpDir = sys_get_temp_dir();
-        foreach ($candidates as $file) {
-            if (!is_file($file)) {
-                continue;
-            }
-            // Harden the world-writable temp fallback: only trust it when it is
-            // NOT group/world-accessible, so a local user cannot pre-seed a known
-            // secret at the predictable sys_get_temp_dir() path and downgrade our
-            // session key. The app-private config-dir candidate is trusted as-is
-            // (its exact owner may legitimately differ, e.g. installer vs runtime).
-            if ($tmpDir !== '' && str_starts_with($file, $tmpDir)) {
-                $perms = @fileperms($file);
-                if ($perms === false || ($perms & 0077) !== 0) {
-                    continue;
-                }
-            }
-            $contents = @file_get_contents($file);
-            if (is_string($contents) && $contents !== '') {
-                return $this->ikmCache = $contents;
-            }
-        }
-
-        // First run — generate once and persist to the first WRITABLE candidate.
-        $generated = random_bytes(32);
-        foreach ($candidates as $file) {
-            if (@file_put_contents($file, $generated, LOCK_EX) !== false) {
-                @chmod($file, 0600);
-                return $this->ikmCache = $generated;
-            }
-        }
-
-        // 3. No writable location at all (very rare). Cache the in-memory value so
-        //    all calls WITHIN this request still agree; cross-request stability then
-        //    requires setting 'server_secret' in Session.config.php.
-        return $this->ikmCache = $generated;
+        return $this->secret->bytes();
     }
 
     // -------------------------------------------------------------------------
@@ -188,35 +148,54 @@ final class SecureSessionHandler implements
 
     public function destroy(string $id): bool
     {
+        $hashedId = $this->hashId($id);
+        // Remember BEFORE the DELETE: write()/updateTimestamp() run after this,
+        // at the end of the request, and would otherwise UPSERT the row straight
+        // back. See $destroyedThisRequest.
+        $this->destroyedThisRequest[$hashedId] = true;
+
         $stmt = $this->pdo->prepare('DELETE FROM `session` WHERE `id` = :id');
-        $stmt->execute(['id' => $this->hashId($id)]);
+        $stmt->execute(['id' => $hashedId]);
         return true;
     }
 
     public function gc(int $maxLifetime): int
     {
-        $cutoff = time() - $maxLifetime;
+        $now = time();
 
         $stmt = $this->pdo->prepare(
             'DELETE FROM `session` WHERE `timestamp` < :cutoff'
         );
-        $stmt->execute(['cutoff' => $cutoff]);
+        $stmt->execute(['cutoff' => $now - $maxLifetime]);
         $deleted = $stmt->rowCount();
 
-        // Also null out expired handover pointers so the columns don't grow stale.
-        // We keep the row alive (it may still hold session data); we just clear the
-        // replaced_by pointer once the grace period has elapsed for that row.
+        // The SQL mirror of rowIsLive()'s handover rule: DELETE the rotated-away
+        // rows whose grace window has closed.
+        //
+        // This statement used to `SET replaced_by = NULL, replace_at = NULL`
+        // instead — and that UN-ROTATED the session. Rotation keeps the old row
+        // alive (session_regenerate_id(false) even writes the current,
+        // AUTHENTICATED $_SESSION into it), and the ONLY thing that ever killed
+        // it was read()'s replace_at check. Clearing replace_at removed the
+        // evidence: read() then took the row as an ordinary live session and
+        // served the post-login snapshot to whoever still held the old id, while
+        // every use refreshed `timestamp` so inactivity GC never reached it
+        // either. On the shipped php.ini (gc_probability=1, gc_divisor=1000,
+        // gc_maxlifetime=1440) that resurrected a rotated-away id for roughly
+        // 1410 s per rotation. Deleting is the only correct action here.
+        //
         // Wrapped so a `session` table WITHOUT the optional handover columns
         // (a legacy install that hasn't migrated) doesn't throw an uncaught
         // PDOException when GC fires — the row DELETE above already ran and is
-        // what matters; the pointer cleanup is a no-op when the columns are absent.
+        // what matters.
         try {
-            $graceCutoff = time() - $this->graceSeconds; // configurable via Session.regenerate_grace_period
             $stmt2 = $this->pdo->prepare(
-                'UPDATE `session` SET `replaced_by` = NULL, `replace_at` = NULL
+                'DELETE FROM `session`
                   WHERE `replace_at` IS NOT NULL AND `replace_at` < :gc'
             );
-            $stmt2->execute([':gc' => $graceCutoff]);
+            // configurable via Session.regenerate_grace_period
+            $stmt2->execute([':gc' => $now - $this->graceSeconds]);
+            $deleted += $stmt2->rowCount();
         } catch (\PDOException) {
             // Legacy schema without handover columns — nothing to clean up.
         }
@@ -236,29 +215,19 @@ final class SecureSessionHandler implements
             return '';
         }
 
+        // ONE liveness rule, shared with validateId() and gc(). Enforcing it here
+        // as well as at admission matters because read() is reached even when
+        // session.use_strict_mode is off and validateId() is never consulted.
+        if (!$this->rowIsLive($row, time())) {
+            $this->destroy($id);
+            return '';
+        }
+
         // If this row has been replaced and we are within the grace period,
         // transparently redirect to the successor session.
         $replacedBy = isset($row['replaced_by']) && is_string($row['replaced_by'])
             ? $row['replaced_by'] : null;
-        // Coerce via is_numeric()/cast rather than is_int(): under PDO
-        // ATTR_EMULATE_PREPARES=true the INT column is returned as a STRING, so
-        // an is_int() check would yield null and silently DISABLE the
-        // grace-period expiry below — letting a rotated-away/stolen old sid stay
-        // valid indefinitely. A numeric string is honoured either way.
-        $replaceAt  = isset($row['replace_at']) && is_numeric($row['replace_at'])
-            ? (int) $row['replace_at'] : null;
-
-        // Grace-period EXPIRY (security): once an old (rotated-away) row is past
-        // the grace window, the old session id MUST stop working. Its timestamp
-        // is refreshed on every use, so gc() (delete-by-inactivity) would never
-        // collect it — a captured/rotated-away id would otherwise stay valid
-        // forever, defeating rotation. The legit client already moved to the
-        // successor id via Set-Cookie, so only stale/in-flight or stolen requests
-        // still carry the old id here.
-        if ($replaceAt !== null && (time() - $replaceAt) > $this->graceSeconds) {
-            $this->destroy($id);
-            return '';
-        }
+        $replaceAt  = $this->replaceAtOf($row);
 
         if ($replacedBy !== null && $replaceAt !== null && !$this->encrypt) {
             // Grace-period handover: a request still carrying the OLD id is served
@@ -288,6 +257,16 @@ final class SecureSessionHandler implements
     public function write(string $id, string $data): bool
     {
         $hashedId = $this->hashId($id);
+
+        // Never resurrect a row this request destroyed. Concretely: a request
+        // arriving on a rotated-away session id gets destroy()'d in read(), then
+        // PHP's end-of-request write() ran this UPSERT with the SAME id and
+        // INSERTed it again — a fresh `timestamp`, no `replace_at`, and the dead
+        // id accepted by validateId() from then on. The DELETE has to be final.
+        if (isset($this->destroyedThisRequest[$hashedId])) {
+            return true;
+        }
+
         $payload  = $this->encrypt ? $this->encrypt($id, $data) : $data;
         $ts       = time();
 
@@ -336,9 +315,21 @@ final class SecureSessionHandler implements
             return true;
         }
 
-        $stmt = $this->pdo->prepare('SELECT 1 FROM `session` WHERE `id` = :id');
-        $stmt->execute(['id' => $this->hashId($id)]);
-        return $stmt->fetch() !== false;
+        $hashedId = $this->hashId($id);
+        if (isset($this->destroyedThisRequest[$hashedId])) {
+            return false;
+        }
+
+        // Row EXISTENCE is not liveness. The old `SELECT 1` accepted any row,
+        // including a rotated-away one whose grace window had long closed —
+        // admission said yes while read() said no, and gc() had a third opinion.
+        // rowIsLive() is the single rule all three now consult.
+        $row = $this->readRow($hashedId);
+        if ($row === false) {
+            return false;
+        }
+
+        return $this->rowIsLive($row, time());
     }
 
     public function updateTimestamp(string $id, string $data): bool
@@ -349,6 +340,56 @@ final class SecureSessionHandler implements
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * THE liveness rule for a session row, consulted by validateId()
+     * (admission), read() (enforcement) and mirrored in SQL by gc() (cleanup).
+     *
+     * Before this existed the three disagreed, and the disagreement was
+     * exploitable: validateId() checked only that the row existed, read()
+     * checked the grace window, and gc() erased the very column read() checked.
+     *
+     * Scope note — INACTIVITY is deliberately NOT part of this predicate. PHP's
+     * session.gc_maxlifetime is probabilistic by design (it is only applied when
+     * gc_probability/gc_divisor fires), so enforcing it on every read would sign
+     * every user out after 1440 idle seconds on the shipped php.ini: a
+     * behaviour change, not a fix. gc() remains the sole consumer of the
+     * inactivity bound, with $maxLifetime supplied by PHP. The handover bound
+     * below is the rule all three share.
+     *
+     * @param array<string,mixed> $row
+     */
+    private function rowIsLive(array $row, int $now): bool
+    {
+        $replaceAt = $this->replaceAtOf($row);
+
+        // A rotated-away row is valid only inside the grace window. Its
+        // `timestamp` is refreshed on every use, so inactivity GC can never
+        // reap it; without this bound a captured old sid stays valid forever and
+        // rotation buys nothing. The legitimate client already moved to the
+        // successor id via Set-Cookie, so only stale in-flight — or stolen —
+        // requests still arrive on the old id.
+        return $replaceAt === null || ($now - $replaceAt) <= $this->graceSeconds;
+    }
+
+    /**
+     * `replace_at` as an int, or null when the row was never rotated (or the
+     * column does not exist on a legacy schema).
+     *
+     * Coerced via is_numeric()/cast rather than is_int(): under PDO
+     * ATTR_EMULATE_PREPARES=true the INT column comes back as a STRING, so an
+     * is_int() check would yield null and silently DISABLE the grace-period
+     * expiry — letting a rotated-away/stolen old sid stay valid indefinitely.
+     * A numeric string is honoured either way.
+     *
+     * @param array<string,mixed> $row
+     */
+    private function replaceAtOf(array $row): ?int
+    {
+        return isset($row['replace_at']) && is_numeric($row['replace_at'])
+            ? (int) $row['replace_at']
+            : null;
+    }
 
     /** @return array<string,mixed>|false */
     private function readRow(string $hashedId): array|false

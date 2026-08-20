@@ -23,6 +23,7 @@ use AstrX\Template\DefaultTemplateContext;
 use AstrX\User\UserGroup;
 use AstrX\User\DeletionMode;
 use AstrX\User\UserRepository;
+use AstrX\User\UserResource;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 
@@ -156,7 +157,11 @@ final class AdminUsersController extends AbstractController
             $this->flash->set('error', $this->t->t('admin.users.not_found'));
             return;
         }
-        $target = (object) $targetData;
+        // A TYPED resource, not `(object) $targetData`. The \stdClass a cast
+        // produces is registered to CommentPolicy, which has no arm for any
+        // user.* permission, so USER_EDIT_ANY / USER_DELETE_ANY / USER_PROMOTE
+        // were all decided by the role grant alone and UserPolicy never ran.
+        $target = UserResource::fromRow($targetData);
         if ($this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
             $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
             return;
@@ -175,16 +180,14 @@ final class AdminUsersController extends AbstractController
                 // it is not a self-promotion to a higher group. Without this, any
                 // editor could raise `type` straight from POST.
                 $postedType  = self::mInt($posted, 'type', 0);
-                $currentType = is_int($target->type ?? null)
-                    ? $target->type
-                    : (is_numeric($target->type ?? null) ? (int) $target->type : 0);
+                $currentType = $target->type->value;
                 if ($postedType !== $currentType) {
                     // Compare by PRIVILEGE RANK, not the raw enum value: UserGroup
                     // values are not privilege-ordered (USER=0, ADMIN=1, MOD=2,
                     // GUEST=3), so a numeric `<=` would let a MOD mint an ADMIN.
                     $newGroup    = UserGroup::tryFrom($postedType);
                     $actingRank  = $this->session->userType()->rank();
-                    $currentRank = (UserGroup::tryFrom($currentType) ?? UserGroup::GUEST)->rank();
+                    $currentRank = $target->type->rank();
                     $isSelf      = strtolower($hexId) === strtolower($this->session->userId());
                     $promotionAllowed =
                         $newGroup !== null                                    // must be a real group
@@ -299,9 +302,12 @@ final class AdminUsersController extends AbstractController
                 'case_sensitive_usernames'       => self::mBool($p, 'case_sensitive_usernames'),
                 'minimum_age'                    => max(0, self::mInt($p, 'minimum_age', 0)),
                 'maximum_age'                    => max(0, self::mInt($p, 'maximum_age', 0)),
+                // Fall back to ALWAYS, not ON_X_FAILED: a missing form field or a
+                // missing config key must not silently land on the mode whose
+                // threshold the attacker controls (their own session counter).
                 'login_captcha_type'             => $maySetAuthPolicy
-                    ? self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED)
-                    : $this->config->getConfigInt('UserService', 'login_captcha_type', UserService::CAPTCHA_SHOW_ON_X_FAILED),
+                    ? self::mInt($p, 'login_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS)
+                    : $this->config->getConfigInt('UserService', 'login_captcha_type', UserService::CAPTCHA_SHOW_ALWAYS),
                 'login_captcha_attempts'         => max(1, self::mInt($p, 'login_captcha_attempts', 3)),
                 // Brute-force lockout (fix M4) has no form field yet; preserve the
                 // current on-disk values so saving this page never silently drops them.

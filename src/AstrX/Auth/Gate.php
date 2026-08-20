@@ -20,11 +20,13 @@ use AstrX\User\UserSession;
  * How it works:
  *   1. Resolve the current user's role (UserGroup) from UserSession.
  *   2. Look up the permission in the role→permission map (from config).
- *   3. If the permission is granted at role level AND a Policy exists for
- *      the resource type, delegate to the Policy for a final ruling.
- *   4. Policy returning null = no opinion → role decision stands.
- *   5. Policy returning false = deny (even if role grants it).
- *   6. Policy returning true = allow (narrows .own checks to self).
+ *   3. If the permission is granted at role level AND a resource was supplied,
+ *      a Policy registered for that resource's class rules on it.
+ *   4. PolicyVerdict::Abstain = deliberately no opinion → role decision stands.
+ *   5. PolicyVerdict::Deny    = deny (even if role grants it).
+ *   6. PolicyVerdict::Allow   = allow (narrows .own checks to self).
+ *   7. No policy for the resource class, or a policy that does not list the
+ *      permission in governs(), = DENY. See can().
  *
  * Configuration (Auth.config.php):
  *   'grants' => [
@@ -101,18 +103,36 @@ final class Gate
             return false;
         }
 
-        // 2. Policy check (only when a resource is provided and a policy exists)
-        if ($resource !== null) {
-            $policy = $this->findPolicy($resource);
-            if ($policy !== null) {
-                $verdict = $policy->evaluate($permission, $this->session, $resource);
-                if ($verdict !== null) {
-                    return $verdict;
-                }
-            }
+        // 2. No resource → the role decision is the whole decision.
+        if ($resource === null) {
+            return true;
         }
 
-        return true;
+        // 3. A resource-scoped check is a request for a resource-level ruling.
+        //    If nothing can rule — no policy registered for the class, or a
+        //    policy that does not list this permission in governs() — we DENY
+        //    rather than fall through to the role decision.
+        //
+        //    This is the shape the UserPolicy bug had: AdminUsersController
+        //    passed a `(object) $userRow` (a \stdClass, registered to
+        //    CommentPolicy), asked for Permission::USER_EDIT_ANY, CommentPolicy
+        //    had no arm for it, and the old code read that silence as "no
+        //    opinion" and allowed the edit — so the guard documented as
+        //    "mods cannot edit admins" never executed once. Denying here means
+        //    the next such mis-binding fails visibly on the first request
+        //    instead of quietly granting the permission for years.
+        $policy = $this->findPolicy($resource);
+        if ($policy === null || !in_array($permission, $policy->governs(), true)) {
+            return false;
+        }
+
+        return match ($policy->evaluate($permission, $this->session, $resource)) {
+            PolicyVerdict::Allow   => true,
+            PolicyVerdict::Deny    => false,
+            // Deliberate abstention: the policy had a rule and it did not fire,
+            // so the role grant (already checked above) stands.
+            PolicyVerdict::Abstain => true,
+        };
     }
 
     /**
