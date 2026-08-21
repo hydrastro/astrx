@@ -112,16 +112,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # The member list is read from the manifest rather than typed out, because
+      # a hand-written list silently stops covering a crate the day one is
+      # added — and it already had: `astrx`, the entrypoint that depends on all
+      # five engines, was missing, so the one crate whose whole job is to pull
+      # the others in was the one nobody checked.
+      #
+      # The filter is anchored to the workspace members too. `grep -v crawlcore`
+      # dropped any line CONTAINING that string, so a third-party crate named
+      # `crawlcore-anything` would have been waved through; matching the tree's
+      # `name v0.0.0` field against the member list cannot be fooled that way.
       - name: Every crate resolves to nothing but first-party code by default
         run: |
           set -euo pipefail
+          # Each member's [package] name, straight from its own manifest. Not
+          # `cargo metadata | sed`: that JSON has a "name" field on every TARGET
+          # and every dependency too, so a naive match yields the 70-odd test
+          # binaries as well, and `cargo tree -p xcheck_json` then fails with
+          # "did not match any packages" — which the old `|| true` reported as
+          # a clean zero.
+          members=$(for d in crates/*/; do
+            sed -n '/^\[package\]/,/^\[/ s/^name *= *"\([^"]*\)".*/\1/p' "$d/Cargo.toml"
+          done | sort -u)
+          test -n "$members" || { echo "::error::found no workspace members"; exit 1; }
+          echo "workspace members: $(echo "$members" | tr '\n' ' ')"
+
           fail=0
-          for c in crawlcore torrentds onioncrawler websearch suitedash gitweb; do
-            n=$(cargo tree -p "$c" --edges normal --locked \
-                | tail -n +2 | grep -v crawlcore | grep -c . || true)
+          for c in $members; do
+            # Capture the tree separately so a cargo failure is a failure. The
+            # previous version piped straight into `grep -c . || true`, which
+            # turned any cargo error into "0 third-party crates" — a gate that
+            # reports success precisely when it could not run.
+            tree=$(cargo tree -p "$c" --edges normal --locked --prefix none) \
+              || { echo "::error::cargo tree failed for $c"; fail=1; continue; }
+            # Compare the crate NAME column against the member list, not a
+            # substring: `grep -v crawlcore` would also have waved through a
+            # third-party crate called `crawlcore-anything`.
+            third=$(printf '%s\n' "$tree" | tail -n +2 | awk 'NF {print $1}' | sort -u \
+                    | grep -vxF "$members" || true)
+            n=$(printf '%s\n' "$third" | grep -c . || true)
             if [ "$n" -ne 0 ]; then
-              echo "::error::$c pulls $n third-party crate(s) in the default build"
-              cargo tree -p "$c" --edges normal --locked
+              echo "::error::$c pulls $n third-party crate(s) in the default build: $(echo "$third" | tr '\n' ' ')"
+              printf '%s\n' "$tree"
               fail=1
             else
               echo "$c: 0"
