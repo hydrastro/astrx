@@ -33,6 +33,27 @@ defaults:
 
 env:
   CARGO_TERM_COLOR: always
+
+  # The toolchain the lint bar is measured against. PINNED, and bumped by hand.
+  #
+  # `-D warnings` against a floating `stable` means Rust's release train decides
+  # when this repository's CI goes red. Every six weeks clippy gains lints, they
+  # fire on code that has not changed, and a build breaks with no commit behind
+  # it — which is how a red CI becomes something people learn to ignore. That
+  # already happened here: a 1.9x release added a lint, and all five clippy
+  # tiers plus the installer failed on a tree that had just passed locally.
+  #
+  # It must be RUSTUP_TOOLCHAIN rather than the action's version argument:
+  # `astrx-suite/rust-toolchain.toml` pins channel = "stable" and rustup honours
+  # that file over whatever an action selected. That is the same trap that made
+  # the MSRV job a false pass for months, and it silently defeats a pin here in
+  # exactly the same way.
+  #
+  # `clippy-floating` below runs the same lints on real stable and does NOT
+  # gate, so a new lint arrives as a report to act on rather than a broken
+  # build. When it goes yellow: fix the findings, then raise this number.
+  LINT_TOOLCHAIN: '1.95.0'
+
   # NB: RUSTFLAGS is deliberately NOT set here. A workflow-level `-D warnings`
   # applies to DEPENDENCY compilation too, so a new warning inside tokio — code
   # this repository does not control and cannot fix — would break the build with
@@ -46,9 +67,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: rustfmt }
+      # Pinned for the same reason as clippy: rustfmt's output is not frozen
+      # across releases, so a floating toolchain can decide this repository is
+      # misformatted on a day nobody touched it. Less volatile than clippy —
+      # this job has never actually broken — but there is no reason for the two
+      # halves of the style gate to be measured against different compilers.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: rustfmt
       - run: cargo fmt --all --check
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
 
   # ------------------------------------------------- lints, every feature tier
   clippy:
@@ -63,11 +92,48 @@ jobs:
         features: ['--no-default-features', '', '--features rand', '--features net', '--all-features']
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: astrx-suite }
+      - name: Prove the lint bar is the pinned toolchain, not whatever stable is
+        run: cargo clippy --version
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+      - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+
+  # ------------------------------------ the same lints, on whatever stable is
+  #
+  # Non-blocking on purpose. This is the early warning that `LINT_TOOLCHAIN` has
+  # fallen behind: it goes yellow when a new clippy release has something to say
+  # about this tree, and the fix is to address the findings and then raise the
+  # pin — not to discover it as six red X's on an unrelated push.
+  #
+  # Only the two tiers that between them cover every line: the zero-dependency
+  # build and the full one. Five tiers of advisory output is noise.
+  clippy-floating:
+    name: clippy on current stable (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['--no-default-features', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: astrx-suite }
+      # rust-toolchain.toml says channel = "stable", so this is already what
+      # rustup would pick; naming it is what stops a future edit to that file
+      # from quietly turning this job into a duplicate of the pinned one.
+      - run: cargo clippy --version
+        env: { RUSTUP_TOOLCHAIN: stable }
       - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+        env: { RUSTUP_TOOLCHAIN: stable }
 
   # ----------------------------------------------------------------- tests
   test:
@@ -192,13 +258,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: 'rustfmt, clippy' }
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: 'rustfmt, clippy'
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: astrx-suite }
       # The script an operator is told to run. If it breaks, the documented
       # install path is broken, whatever the rest of this file says.
+      #
+      # `--ci` makes the script run clippy as a hard gate, so this job inherits
+      # the floating-toolchain problem the pinned `clippy` job above exists to
+      # avoid — and it did: it failed alongside all five clippy tiers on a tree
+      # that passed locally. The SCRIPT stays unpinned, because an operator runs
+      # it with whatever toolchain they have and that is the thing being tested;
+      # the pin lives here, in the job, where reproducibility is the point.
       - run: bash install_rust_suite.sh --ci
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
 
   # ------------------- the boundary between the two halves of the project
   boundary:
