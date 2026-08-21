@@ -106,10 +106,20 @@ jobs:
 
   # ------------------------------------ the same lints, on whatever stable is
   #
-  # Non-blocking on purpose. This is the early warning that `LINT_TOOLCHAIN` has
-  # fallen behind: it goes yellow when a new clippy release has something to say
-  # about this tree, and the fix is to address the findings and then raise the
-  # pin — not to discover it as six red X's on an unrelated push.
+  # The early warning that `LINT_TOOLCHAIN` has fallen behind. It reports what a
+  # newer clippy dislikes; the fix is to address the findings and raise the pin.
+  #
+  # It does NOT go red to do that. The first version of this job ran clippy with
+  # `-D warnings` and relied on `continue-on-error` — which stops the workflow
+  # failing but still paints a red X in the checks list, so an advisory job was
+  # indistinguishable at a glance from a broken build. That is the same "red CI
+  # nobody reads" failure this whole file has been working against, just wearing
+  # a different hat.
+  #
+  # So: warnings stay warnings, findings become GitHub annotations and a job
+  # summary, and the step exits 0. A HARD failure — code that no longer compiles
+  # on new stable — is a different thing and does exit non-zero, because that is
+  # not an opinion about style.
   #
   # Only the two tiers that between them cover every line: the zero-dependency
   # build and the full one. Five tiers of advisory output is noise.
@@ -132,8 +142,58 @@ jobs:
       # from quietly turning this job into a duplicate of the pinned one.
       - run: cargo clippy --version
         env: { RUSTUP_TOOLCHAIN: stable }
-      - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+
+      - name: What current stable would say (reported, not enforced)
         env: { RUSTUP_TOOLCHAIN: stable }
+        run: |
+          set -uo pipefail
+          ver=$(cargo clippy --version)
+          # No `-D warnings`: the exit code must mean "did it compile", not
+          # "does it have opinions". --message-format short gives one
+          # file:line:col: level: message per finding, which is what an
+          # annotation needs.
+          out=$(cargo clippy --workspace --all-targets --locked \
+                  ${{ matrix.features }} --message-format short 2>&1) || rc=$?
+          rc=${rc:-0}
+          printf '%s\n' "$out"
+
+          findings=$(printf '%s\n' "$out" | grep -E '^[^ ]+:[0-9]+:[0-9]+: warning:' || true)
+          n=$(printf '%s' "$findings" | grep -c . || true)
+
+          {
+            echo "## clippy on \`${ver}\` — \`${{ matrix.features }}\`"
+            echo
+            echo "Pinned lint toolchain: \`${LINT_TOOLCHAIN}\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$n" -gt 0 ]; then
+            echo "::notice::${n} lint finding(s) on ${ver} that the pinned ${LINT_TOOLCHAIN} does not report. Fix them, then raise LINT_TOOLCHAIN."
+            # One annotation each, so the findings are readable from the run
+            # summary without opening the log.
+            printf '%s\n' "$findings" | while IFS= read -r line; do
+              f=${line%%:*}; rest=${line#*:}
+              l=${rest%%:*};  rest=${rest#*:}
+              c=${rest%%:*};  msg=${rest#*: warning: }
+              echo "::warning file=astrx-suite/${f},line=${l},col=${c}::${msg}"
+            done
+            {
+              echo "${n} finding(s):"
+              echo '```'
+              printf '%s\n' "$findings"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no new lints on ${ver}"
+            echo "No findings — \`LINT_TOOLCHAIN\` can be raised to this release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Lints are advisory; not compiling is not.
+          if printf '%s\n' "$out" | grep -qE '^error(\[|:)'; then
+            echo "::error::the workspace does not COMPILE on ${ver} — this is not a style opinion"
+            exit "$rc"
+          fi
+          exit 0
 
   # ----------------------------------------------------------------- tests
   test:
@@ -197,10 +257,17 @@ jobs:
           # binaries as well, and `cargo tree -p xcheck_json` then fails with
           # "did not match any packages" — which the old `|| true` reported as
           # a clean zero.
-          members=$(for d in crates/*/; do
-            sed -n '/^\[package\]/,/^\[/ s/^name *= *"\([^"]*\)".*/\1/p' "$d/Cargo.toml"
+          members=$(for f in crates/*/Cargo.toml; do
+            [ -f "$f" ] || continue
+            sed -n '/^\[package\]/,/^\[/ s/^name *= *"\([^"]*\)".*/\1/p' "$f"
           done | sort -u)
-          test -n "$members" || { echo "::error::found no workspace members"; exit 1; }
+          # The `[ -f ]` guard is so an unmatched glob reaches THIS line instead
+          # of dying inside sed under `set -e`: a gate that cannot find anything
+          # to check should say that, not emit "No such file or directory".
+          test -n "$members" || {
+            echo "::error::no workspace members found under crates/ — this job checked nothing"
+            exit 1
+          }
           echo "workspace members: $(echo "$members" | tr '\n' ' ')"
 
           fail=0

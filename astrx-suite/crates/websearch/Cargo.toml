@@ -5,6 +5,13 @@ edition = "2021"
 rust-version = "1.80"
 license = "MIT"
 repository = "https://github.com/hydrastro/astrx"
+# Not published to crates.io, and the declaration is load-bearing rather than
+# decorative: every engine depends on crawlcore as `{ path = "../crawlcore" }`,
+# and cargo-deny counts a versionless path dependency as a wildcard unless the
+# crate says it is unpublishable — because crates.io would reject a path
+# dependency anyway. Saying so here is also the only thing that stops a stray
+# `cargo publish` in one of these directories from reaching the registry.
+publish = false
 description = "Clearnet search engine: SSRF-safe crawler (the guard as a type), FTS + BM25/PageRank ranking, no-JS UI + JSON API, federation."
 
 [dependencies]
