@@ -308,6 +308,29 @@ $err = m_set_flag($file, 'canary', false);
 check('an unlisted module is inserted', $err === '');
 eq('…and reads back disabled', false, m_read_modules($file)['canary'] ?? null);
 
+// Setting a flag to the value it already holds is a SUCCESSFUL no-op. The old
+// code compared the rewritten text to the original and called any non-difference
+// "Could not update <file>"; m_cmd_toggle turns that into exit(1), so `disable
+// chat` twice in a row killed CI's `set -euo pipefail` matrix with a message
+// about a file-write problem, and the matrix could never be restarted, reordered
+// or interrupted between a module's `disable` and its `enable`.
+writeModulesFile($file, 'true');
+check('disable reports success the first time',          m_set_flag($file, 'chat', false) === '');
+check('disable is an idempotent no-op the second time',  m_set_flag($file, 'chat', false) === '');
+eq('…and chat is still disabled', false, m_read_modules($file)['chat'] ?? null);
+check('enable is symmetric: the first call succeeds',    m_set_flag($file, 'chat', true) === '');
+check('enable is symmetric: the second is a no-op too',  m_set_flag($file, 'chat', true) === '');
+eq('…and chat is still enabled', true, m_read_modules($file)['chat'] ?? null);
+eq('the no-op left exactly one \'chat\' entry (nothing inserted)',
+    1, substr_count((string) file_get_contents($file), "'chat'"));
+
+// The genuine "could not update": no entry to rewrite AND no "'Modules' => ["
+// to insert after. Nothing was written and nothing could be.
+file_put_contents($file, "<?php\nreturn ['NotModules' => []];\n");
+$err = m_set_flag($file, 'chat', false);
+check('a file with no Modules block is still a hard failure',
+    str_contains($err, 'Could not update'));
+
 // A duplicate key later in the file overrides the one we edited: report it
 // rather than printing DISABLED over a module that is still running.
 file_put_contents($file, "<?php\nreturn [\n    'Modules' => [\n"

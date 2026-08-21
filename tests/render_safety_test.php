@@ -43,8 +43,8 @@ namespace {
     $ROOT      = dirname(__DIR__);
     $CLASS_DIR = $ROOT . '/src/AstrX/';
 
-    $TMP = sys_get_temp_dir() . '/astrx-render-safety-' . bin2hex(random_bytes(4));
-    mkdir($TMP, 0755, true);
+    require_once __DIR__ . '/lib/scratch.php';
+    $TMP = AstrX\TestSupport\scratchDir('astrx-render-safety-');
 
     // configDir() reads this at call time — point it at the temp dir so the
     // ConfigWriter round trip below cannot touch resources/config. ConfigWriter
@@ -75,17 +75,6 @@ namespace {
         $ok = $expected === $actual;
         check($label . ($ok ? '' : ' (expected ' . var_export($expected, true)
                                  . ', got ' . var_export($actual, true) . ')'), $ok);
-    }
-
-    function rmTree(string $dir): void
-    {
-        if (!is_dir($dir)) { return; }
-        foreach (scandir($dir) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') { continue; }
-            $path = $dir . DIRECTORY_SEPARATOR . $entry;
-            is_dir($path) ? rmTree($path) : @unlink($path);
-        }
-        @rmdir($dir);
     }
 
     // =========================================================================
@@ -340,7 +329,15 @@ namespace {
         !array_key_exists('php_processing', $section),
     );
 
-    rmTree($TMP);
+    // Drop the engines BEFORE the scratch dir goes: TemplateEngine flushes its
+    // template-cache index from __destruct(), and atomicWrite() recreates the
+    // directory to do it. PHP runs shutdown functions before destructors, so the
+    // cleanup registered by scratchDir() cannot outrun them — which is why 29
+    // /tmp/astrx-render-safety-* trees, each holding one .template-index.php,
+    // had piled up on the machine this was reviewed on. unset() here makes the
+    // destructor run at this line instead.
+    unset($engine, $plain, $evil);
+    AstrX\TestSupport\rmTree($TMP);
 
     echo "\n{$PASS} passed, {$FAIL} failed\n";
     exit($FAIL === 0 ? 0 : 1);

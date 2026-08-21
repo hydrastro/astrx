@@ -96,35 +96,177 @@ jobs:
       - name: Module integrity (with the DB present)
         run: php tools/check_modules.php
 
+      # A step with no `shell:` key runs as `bash -e {0}` — errexit is ON even
+      # though nothing here calls `set -e`. That is what made the previous
+      # version of this step useless: `code=$(curl …)` is a bare assignment, so
+      # its exit status IS curl's, and curl exits 7 on connection-refused — the
+      # one failure this step can actually hit (it exits 0 for any HTTP status,
+      # which is the whole point of -w '%{http_code}'). errexit fired ON THE
+      # ASSIGNMENT, before the diagnostic block, so a broken boot reached GitHub
+      # as "Process completed with exit code 7" with zero output.
+      # Hence: every curl is guarded — `|| true` where the status is all we
+      # want, `|| rc=$?` in the poll, which guards AND keeps curl's exit code
+      # for the diagnosis below — readiness is polled instead of
+      # `sleep 2`-and-hope, and the failure path is one `if` block that always
+      # runs and distinguishes "never came up" from "answered non-200".
       - name: Smoke — home renders with every module ON
         run: |
-          php -S 127.0.0.1:8080 -t public public/index.php >/tmp/srv.log 2>&1 &
-          sleep 2
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/en/)
-          test "$code" = "200" || {
-            echo "home = $code (all on)";
-            echo "===== RESPONSE BODY (the actual error — testing mode prints it here) =====";
-            curl -s http://127.0.0.1:8080/en/;
-            echo;
-            echo "===== SERVER LOG =====";
-            cat /tmp/srv.log;
-            echo "===== PHP VERSION =====";
-            php -v;
-            exit 1;
-          }
+          php -S 127.0.0.1:8080 -t public public/index.php >/tmp/srv-8080.log 2>&1 &
+          SRV=$!
+          # The runner does not process-group-kill a `run:` step and bash does not
+          # SIGHUP the background jobs of a non-interactive shell, so without this
+          # the server outlives the step: it holds the checkout open while later
+          # steps rewrite Modules.config.php 36 times, and it keeps an open fd at
+          # a non-zero offset on any log a later step truncates — which NUL-pads
+          # the very diagnostics the failure path prints. Per-step log files for
+          # the same reason.
+          trap 'kill "${SRV:-}" 2>/dev/null || true' EXIT
 
+          # Readiness poll. 000 = curl got no HTTP status at all = nothing is
+          # listening yet; any real status (500 included) means the server is up
+          # and this step must report it rather than keep waiting.
+          #
+          # The bound is the WALL CLOCK, not an iteration count. `for _ in $(seq
+          # 1 100)` bounds attempts, and an attempt is cheap only when the
+          # connection is REFUSED; a server that accepts and never answers —
+          # single-threaded `php -S` blocked on a DB connect, an infinite loop —
+          # costs the whole --max-time per attempt, so the old 100 × 10s was ~17
+          # minutes, claiming "within 20s" the entire way. $SECONDS is bash's own
+          # clock and READY_SECONDS feeds both the loop and the message, so the
+          # bound and the text it prints cannot drift apart.
+          #
+          # NOTE: this poll and the diagnosis block below are duplicated verbatim
+          # in the two Matrix steps (bar the port/URL). Keep the three copies in
+          # step — GitHub does not expand YAML anchors in workflows.
+          READY_SECONDS=20
+          code=''
+          rc=0
+          deadline=$((SECONDS + READY_SECONDS))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            rc=0
+            code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 5 http://127.0.0.1:8080/en/) || rc=$?
+            if [ -n "$code" ] && [ "$code" != "000" ]; then break; fi
+            sleep 0.2
+          done
+
+          if [ "$code" != "200" ]; then
+            if [ -z "$code" ] || [ "$code" = "000" ]; then
+              # curl's exit code says WHICH silence this is: 7 = nothing is
+              # listening, 28 = the connection was accepted and the app never
+              # answered (a hung boot, not a missing server), 52 = accepted then
+              # closed with no reply (it died mid-request). Calling all three
+              # "the server never came up" sends the operator to the wrong place.
+              case "$rc" in
+                7)  why='connection refused — nothing ever listened' ;;
+                28) why='connected, but the app never answered — a hung boot, not a missing server' ;;
+                52) why='connected, then the server closed without replying — it died mid-request' ;;
+                *)  why="no HTTP status came back (curl exit ${rc})" ;;
+              esac
+              echo "home: 127.0.0.1:8080 gave nothing within ${READY_SECONDS}s (all on): ${why}"
+            else
+              echo "home = $code (all on)"
+            fi
+            echo "===== RESPONSE BODY (the actual error — testing mode prints it here) ====="
+            curl -s --connect-timeout 1 --max-time 5 http://127.0.0.1:8080/en/ || true
+            echo
+            echo "===== SERVER LOG (/tmp/srv-8080.log) ====="
+            cat /tmp/srv-8080.log || true
+            echo "===== PHP VERSION ====="
+            php -v
+            exit 1
+          fi
+          echo "home = 200 with every module ON"
+
+      # NOTE: the `php -r` module-list one-liner is duplicated verbatim in the
+      # next step. Keep the two byte-identical — they previously differed by the
+      # is_string() guard, so the two steps could disagree about what a module is.
       - name: Matrix — each module OFF then ON; home must stay up (200)
         run: |
           set -euo pipefail
           MODULES=$(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"])&&is_string($m["key"]))echo $m["key"]," ";}')
-          echo "modules: $MODULES"
+          # Word splitting is the point here: count what was discovered.
+          count=$(set -- $MODULES; echo "$#")
+          echo "modules ($count): $MODULES"
+
+          # An empty discovery is a step that CANNOT fail: with MODULES='' the
+          # loop below never runs and this exits 0 having toggled nothing. That
+          # is the same "green step that tests nothing" class the rest of this
+          # rewrite is about, so assert a floor rather than mere non-emptiness —
+          # a glob that goes from 18 manifests to 1 is just as vacuous, and just
+          # as green. A floor, not a target: raise it as modules are added.
+          # NOTE: duplicated verbatim in the core-only step below.
+          MIN_MODULES=8
+          if [ "$count" -lt "$MIN_MODULES" ]; then
+            echo "module discovery found $count manifest(s) matching src/AstrX/*/module.php, expected at least $MIN_MODULES"
+            echo "the layout or the manifest format changed — this step would otherwise pass having tested nothing"
+            exit 1
+          fi
+
+          SRV=''
+          trap 'kill "${SRV:-}" 2>/dev/null || true' EXIT
+          port=8100
           for m in $MODULES; do
+            # A fresh port per iteration. The loop used to rebind the SAME :8081
+            # roughly 200 ms after `kill`, and `kill` only SENDS SIGTERM — it
+            # waits for nothing. If the socket was not released by then, or
+            # anything else on the runner held the port (this job's own leaked
+            # smoke-step server, for one), the new server exited 1 with "Address
+            # already in use" as a background job errexit never sees, and the
+            # step then blamed the module: with nothing listening the check reads
+            # "home = 000 with '<module>' disabled", and with a foreign listener
+            # on the port it reports THAT process's status — reproduced as
+            # "home = 500 with 'blocklist' disabled" against a server that had
+            # nothing to do with blocklist. `wait` below closes the release race
+            # from the other side.
+            port=$((port + 1))
+            log="/tmp/srv-${port}-${m}.log"
             php tools/module.php disable "$m"
-            php -S 127.0.0.1:8081 -t public public/index.php >/tmp/srv.log 2>&1 &
-            SRV=$!; sleep 2
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/en/ || true)
+            php -S "127.0.0.1:${port}" -t public public/index.php >"$log" 2>&1 &
+            SRV=$!
+            # Wall-clock bound, curl exit code kept — see the smoke step for why
+            # (18 iterations of a 17-minute worst case is most of a day).
+            READY_SECONDS=20
+            code=''
+            rc=0
+            deadline=$((SECONDS + READY_SECONDS))
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              rc=0
+              code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 5 "http://127.0.0.1:${port}/en/") || rc=$?
+              if [ -n "$code" ] && [ "$code" != "000" ]; then break; fi
+              sleep 0.2
+            done
+
+            # Capture the body BEFORE the kill. The failure block below runs
+            # after kill/wait, so the curl it used to do there always hit a dead
+            # port: "===== RESPONSE BODY =====" printed nothing, every time, in
+            # the step most likely to need it. The body IS the diagnostic —
+            # testing mode renders the exception into the response.
+            body=''
+            if [ "$code" != "200" ]; then
+              body=$(curl -s --connect-timeout 1 --max-time 5 "http://127.0.0.1:${port}/en/" || true)
+            fi
+
             kill "$SRV" 2>/dev/null || true
-            test "$code" = "200" || { echo "home = $code with '$m' disabled"; cat /tmp/srv.log; exit 1; }
+            wait "$SRV" 2>/dev/null || true
+            SRV=''
+            if [ "$code" != "200" ]; then
+              if [ -z "$code" ] || [ "$code" = "000" ]; then
+                case "$rc" in
+                  7)  why='connection refused — nothing ever listened' ;;
+                  28) why='connected, but the app never answered — a hung boot, not a missing server' ;;
+                  52) why='connected, then the server closed without replying — it died mid-request' ;;
+                  *)  why="no HTTP status came back (curl exit ${rc})" ;;
+                esac
+                echo "home: 127.0.0.1:${port} gave nothing within ${READY_SECONDS}s with '$m' disabled: ${why}"
+              else
+                echo "home = $code with '$m' disabled"
+              fi
+              echo "===== RESPONSE BODY (captured while the server was still alive) ====="
+              printf '%s\n' "$body"
+              echo "===== SERVER LOG (${log}) ====="
+              cat "$log" || true
+              exit 1
+            fi
             php tools/module.php enable "$m"
             echo "ok: $m toggled off/on, home stayed 200"
           done
@@ -132,11 +274,53 @@ jobs:
       - name: Matrix — core-only (every module OFF) still boots
         run: |
           set -euo pipefail
-          for m in $(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"]))echo $m["key"]," ";}'); do
+          MODULES=$(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"])&&is_string($m["key"]))echo $m["key"]," ";}')
+          count=$(set -- $MODULES; echo "$#")
+          echo "modules ($count): $MODULES"
+
+          # Without this the failure mode is worse than the matrix step's: an
+          # empty list disables NOTHING, and "core-only boot OK" is then printed
+          # by a fully-enabled site. Same floor, same reason.
+          MIN_MODULES=8
+          if [ "$count" -lt "$MIN_MODULES" ]; then
+            echo "module discovery found $count manifest(s) matching src/AstrX/*/module.php, expected at least $MIN_MODULES"
+            echo "nothing would be disabled — 'core-only' would assert against a fully-enabled site"
+            exit 1
+          fi
+
+          for m in $MODULES; do
             php tools/module.php disable "$m"
           done
-          php -S 127.0.0.1:8082 -t public public/index.php >/tmp/srv.log 2>&1 &
-          sleep 2
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/en/)
-          test "$code" = "200" || { echo "core-only home = $code"; cat /tmp/srv.log; exit 1; }
+          php -S 127.0.0.1:8082 -t public public/index.php >/tmp/srv-8082.log 2>&1 &
+          SRV=$!
+          trap 'kill "${SRV:-}" 2>/dev/null || true' EXIT
+          READY_SECONDS=20
+          code=''
+          rc=0
+          deadline=$((SECONDS + READY_SECONDS))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            rc=0
+            code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 5 http://127.0.0.1:8082/en/) || rc=$?
+            if [ -n "$code" ] && [ "$code" != "000" ]; then break; fi
+            sleep 0.2
+          done
+          if [ "$code" != "200" ]; then
+            if [ -z "$code" ] || [ "$code" = "000" ]; then
+              case "$rc" in
+                7)  why='connection refused — nothing ever listened' ;;
+                28) why='connected, but the app never answered — a hung boot, not a missing server' ;;
+                52) why='connected, then the server closed without replying — it died mid-request' ;;
+                *)  why="no HTTP status came back (curl exit ${rc})" ;;
+              esac
+              echo "core-only home: 127.0.0.1:8082 gave nothing within ${READY_SECONDS}s: ${why}"
+            else
+              echo "core-only home = $code"
+            fi
+            echo "===== RESPONSE BODY ====="
+            curl -s --connect-timeout 1 --max-time 5 http://127.0.0.1:8082/en/ || true
+            echo
+            echo "===== SERVER LOG (/tmp/srv-8082.log) ====="
+            cat /tmp/srv-8082.log || true
+            exit 1
+          fi
           echo "core-only boot OK"

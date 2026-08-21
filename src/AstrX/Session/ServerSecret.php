@@ -50,9 +50,19 @@ final class ServerSecret
     /** Memoised result — resolved at most once per request. */
     private ?string $resolved = null;
 
-    /** Memoised effective uid, or null when it could not be determined. */
+    /** Memoised effective uid from ext-posix; directory-independent. */
     private ?int $ownUid = null;
     private bool $ownUidResolved = false;
+
+    /**
+     * Memoised uid-probe result per probe directory — including the failure, so
+     * an unwritable directory costs one syscall per request, not one per call.
+     * Keyed by directory because "we could not prove our uid in /tmp" says
+     * nothing about a candidate that lives somewhere else.
+     *
+     * @var array<string, int|null>
+     */
+    private array $probedUids = [];
 
     #[InjectConfig('server_secret')]
     public function setConfigured(string $secret): void
@@ -124,7 +134,13 @@ final class ServerSecret
 
         return array_values(array_filter([
             $configDir !== '' ? $configDir . self::CONFIG_DIR_FILENAME : null,
-            sys_get_temp_dir() . DIRECTORY_SEPARATOR . self::TEMP_DIR_FILENAME,
+            // \AstrX\Support\tempDir(), not sys_get_temp_dir(): it resolves to
+            // the same directory in production, and gives tests (and an operator
+            // who wants this off the world-writable /tmp) one place to repoint
+            // the shared, predictable candidate. isSharedTempPath() reads the
+            // same accessor, so the ownership + permission checks keep applying
+            // to whatever it resolves to.
+            \AstrX\Support\tempDir() . DIRECTORY_SEPARATOR . self::TEMP_DIR_FILENAME,
         ]));
     }
 
@@ -205,7 +221,7 @@ final class ServerSecret
 
     private function isSharedTempPath(string $file): bool
     {
-        $tmpDir = sys_get_temp_dir();
+        $tmpDir = \AstrX\Support\tempDir();
         return $tmpDir !== '' && str_starts_with($file, $tmpDir);
     }
 
@@ -217,7 +233,7 @@ final class ServerSecret
             return false;
         }
 
-        $uid = $this->effectiveUid();
+        $uid = $this->effectiveUid(\dirname($file));
         if ($uid === null) {
             // We cannot prove the file is ours, and this is the world-writable
             // temp directory. Refuse: adopting a stranger's 0600 file would hand
@@ -231,27 +247,42 @@ final class ServerSecret
     /**
      * This process's effective uid, without requiring ext-posix (the shipped
      * docker/php image does not enable it): create a throwaway file and ask who
-     * owns it. Memoised — including the failure, so a broken temp dir costs one
-     * syscall per request, not one per call.
+     * owns it.
+     *
+     * The probe goes in $probeDir — the directory of the candidate being checked
+     * — and NOT in sys_get_temp_dir(). The whole reason ASTRX_TEMP_DIR exists is
+     * an install where /tmp is unusable: open_basedir, a read-only tmpfs, no
+     * /tmp in the container at all. Probing /tmp there returned null with posix
+     * absent, isPrivateToUs() then refused the very file this class had written
+     * one request earlier, createExclusively() could not recreate it (it is
+     * already there), and every request after the first died with the
+     * RuntimeException from bytes(). Asking the directory we are actually
+     * writing to cannot fail for a reason unrelated to that directory.
+     *
+     * @param string $probeDir directory to create the throwaway file in
      */
-    private function effectiveUid(): ?int
+    private function effectiveUid(string $probeDir): ?int
     {
         if ($this->ownUidResolved) {
             return $this->ownUid;
         }
-        $this->ownUidResolved = true;
 
         if (function_exists('posix_geteuid')) {
+            $this->ownUidResolved = true;
             return $this->ownUid = posix_geteuid();
         }
 
-        $probe = @tempnam(sys_get_temp_dir(), 'astrx_uid_');
+        if (array_key_exists($probeDir, $this->probedUids)) {
+            return $this->probedUids[$probeDir];
+        }
+
+        $probe = @tempnam($probeDir, 'astrx_uid_');
         if ($probe === false) {
-            return $this->ownUid = null;
+            return $this->probedUids[$probeDir] = null;
         }
         $owner = @fileowner($probe);
         @unlink($probe);
 
-        return $this->ownUid = ($owner === false ? null : $owner);
+        return $this->probedUids[$probeDir] = ($owner === false ? null : $owner);
     }
 }

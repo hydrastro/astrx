@@ -111,6 +111,18 @@ function m_known_modules(array $configured, string $modulesDir, string $classDir
  *     serving the pre-flip file and the toggle never takes effect at all.
  *  3. Verify. After writing, re-read the file and confirm the flag now reads as
  *     asked; anything else is reported as a failure instead of a success.
+ *  4. Setting a flag to the value it ALREADY holds is a successful no-op, not an
+ *     error. The old code compared the rewritten text against the original and
+ *     called any non-difference "Could not update <file>", so `disable chat` on
+ *     an already-disabled module exited 1 with a message about a file-write
+ *     problem. Under CI's `set -euo pipefail` that killed the whole job, which
+ *     made the module matrix non-restartable and non-reorderable and would
+ *     hard-fail the moment anyone committed a module as `false`, or the loop was
+ *     interrupted between its `disable` and its `enable`. The re-read in (3) is
+ *     the source of truth for what the file now says; "could not update" is
+ *     reserved for the case where the entry is absent AND the insert point is
+ *     missing too (or preg_* itself failed) — nothing was written and nothing
+ *     could be.
  */
 function m_set_flag(string $file, string $mod, bool $enabled): string
 {
@@ -124,7 +136,8 @@ function m_set_flag(string $file, string $mod, bool $enabled): string
     // swallow an array value and corrupt the file.
     $value  = "(?:'[^']*'|\"[^\"]*\"|[A-Za-z0-9_]+)";
 
-    if (preg_match("/'{$quoted}'\s*=>\s*{$value}\s*,/", $content) === 1) {
+    $matched = preg_match("/'{$quoted}'\s*=>\s*{$value}\s*,/", $content) === 1;
+    if ($matched) {
         $new = preg_replace("/('{$quoted}'\s*=>\s*){$value}(\s*,)/", '${1}' . $val . '${2}', $content, 1);
     } else {
         // Insert a new entry right after the "'Modules' => [" opening line.
@@ -135,15 +148,27 @@ function m_set_flag(string $file, string $mod, bool $enabled): string
             1,
         );
     }
-    if (!is_string($new) || $new === $content) { return "Could not update {$file}."; }
-    if (!\AstrX\Support\atomicWrite($file, $new)) { return "Cannot write {$file}."; }
 
+    if (!is_string($new) || ($new === $content && !$matched)) {
+        // No entry to rewrite AND no "'Modules' => [" to insert after (or a
+        // preg_* failure): nothing was written and nothing could be.
+        return "Could not update {$file}.";
+    }
+    // Unchanged text with a match = the entry already spells exactly $val. Skip
+    // the write (atomicWrite() would only rename an identical file into place)
+    // and let the verification below confirm it, exactly as for a real rewrite.
+    if ($new !== $content && !\AstrX\Support\atomicWrite($file, $new)) {
+        return "Cannot write {$file}.";
+    }
+
+    // Phrased without claiming a write: this same check now also covers the
+    // no-op path, where the file was already correct and nothing was written.
     $after = m_read_modules($file);
     if (!array_key_exists($mod, $after)) {
-        return "Wrote {$file} but '{$mod}' is still not listed — edit it by hand.";
+        return "{$file} still does not list '{$mod}' — edit it by hand.";
     }
     if ($after[$mod] !== $enabled) {
-        return "Wrote {$file} but '{$mod}' still reads back as "
+        return "{$file} still reads '{$mod}' as "
             . ($after[$mod] ? 'enabled' : 'disabled')
             . ' — a duplicate entry later in the file is overriding it.';
     }

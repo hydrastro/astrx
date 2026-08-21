@@ -32,6 +32,8 @@ Or point your web server root at `public/` with URL rewriting to `index.php`.
 
 Then visit `http://localhost/setup.php` and follow the five-step wizard: requirements check → database → admin account → security → done.
 
+The wizard writes `resources/config/PDO.config.php` for you. By hand instead: `cp resources/config/PDO.config.php.example resources/config/PDO.config.php` and fill in the credentials. Only the example ships — the real one is gitignored, for reasons.
+
 > **Note:** the wizard locks itself on completion, but it's advised to delete `public/setup.php` afterwards anyway.
 
 For nginx:

@@ -47,6 +47,52 @@ function cacheDir(): string
 }
 
 /**
+ * Where AstrX puts the few runtime files it keeps at a PREDICTABLE, SHARED path
+ * outside the install: the generated server-secret fallback
+ * (ServerSecret::TEMP_DIR_FILENAME) and the bot-trap tarpit slot locks.
+ *
+ * The production default is sys_get_temp_dir(), unchanged. ASTRX_TEMP_DIR
+ * overrides it, in exactly the shape CONFIG_DIR uses above — a constant defined
+ * by the caller, read back through a typed accessor with a defined() guard.
+ * Nothing in the shipped tree defines it: like CONFIG_DIR it is defined before
+ * bootstrap runs (public/index.php) by an operator who wants these files off the
+ * world-writable /tmp, or by a test that wants them in its own scratch dir.
+ *
+ * tests/prg_bottrap_test.php is the one that takes this path: it defines the
+ * constant and requires THIS file, so the branch below is exercised rather than
+ * merely asserted. The other two tests that need a private temp dir
+ * (session_liveness, user_security) declare their own tempDir() in this
+ * namespace instead — they must also repoint configDir() / resourceStorageDir()
+ * partway through the run, which a constant cannot do.
+ *
+ * Why a per-run directory matters at all: a shared, predictable /tmp path ties a
+ * test result to whatever else happens to be on the host: a pre-existing
+ * /tmp/astrx_server_secret (0600 and self-owned) is adopted by ServerSecret, so
+ * it never creates the config-dir file and two assertions fail with a message
+ * that never mentions /tmp; a leftover /tmp/astrx_bottrap_tarpit_N.lock owned by
+ * another user breaks the tarpit concurrency bound the same way.
+ *
+ * The trim happens BEFORE the emptiness test, not after. Reversed — as this was
+ * — ASTRX_TEMP_DIR='/' (also '//', '\') passes the $v !== '' guard and then
+ * rtrims to '', which is not just a bad path: ServerSecret::isSharedTempPath()
+ * short-circuits on $tmpDir !== '', so the 0600 + ownership proof would be
+ * skipped for the one candidate it exists to protect, and the secret would be
+ * written to /astrx_server_secret at the filesystem root. A value that trims
+ * away is treated as unset.
+ */
+function tempDir(): string
+{
+    if (defined('ASTRX_TEMP_DIR')) {
+        $v = \constant('ASTRX_TEMP_DIR');
+        $v = is_string($v) ? rtrim($v, '/\\') : '';
+        if ($v !== '') {
+            return $v;
+        }
+    }
+    return sys_get_temp_dir();
+}
+
+/**
  * Publish a file so no reader can ever observe a partial one: write the bytes to
  * a unique temporary file in the same directory, then rename() it into place.
  *

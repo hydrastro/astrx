@@ -103,8 +103,28 @@ namespace {
     $IH1 = str_repeat('a', 40);
     $IH2 = str_repeat('b', 40);
 
+    /**
+     * A localhost port nothing is listening on, probed upward from $from.
+     *
+     * The port used to be the constant 8815, which made this test fail as "mock
+     * server never became ready" for reasons that have nothing to do with the
+     * code under test: a CI runner with its own service there, a leftover server
+     * from an interrupted run, a second copy of the suite in parallel.
+     */
+    function freePort(int $from): int
+    {
+        for ($port = $from; $port < $from + 200; $port++) {
+            $probe = @stream_socket_server("tcp://127.0.0.1:{$port}", $errno, $errstr);
+            if ($probe !== false) {
+                fclose($probe);          // released; the child binds it a moment later
+                return $port;
+            }
+        }
+        fwrite(STDERR, "no free port in [{$from}, " . ($from + 200) . ")\n");
+        exit(2);
+    }
+
     // ---- boot the mock server -------------------------------------------------
-    $port    = 8815;
     $mock    = __DIR__ . '/mock_suite_server.php';
     $addLog  = tempnam(sys_get_temp_dir(), 'astrx_add_');
     if (!is_string($addLog)) { fwrite(STDERR, "tempnam failed\n"); exit(2); }
@@ -120,27 +140,46 @@ namespace {
     $env['MOCK_BLOCK_LOG']   = $blockLog;
     $env['MOCK_ADMIN_TOKEN'] = $ADMIN_TOKEN;
 
-    $cmd  = sprintf('exec php -S 127.0.0.1:%d %s', $port, escapeshellarg($mock));
-    $proc = proc_open(
-        $cmd,
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-        null,
-        $env,
-    );
-    if (!is_resource($proc)) {
-        fwrite(STDERR, "could not start mock server\n");
-        exit(2);
-    }
-    // wait for readiness
+    // escapeshellarg(PHP_BINARY), not a bare `php`: $PATH can resolve to a
+    // different interpreter than the one running this test (a system 8.1 next to
+    // the 8.4 under test), and the mock is written against this one.
+    $proc  = null;
+    $pipes = [];
+    $port  = 0;
     $ready = false;
-    for ($i = 0; $i < 50; $i++) {
-        $h = @file_get_contents("http://127.0.0.1:$port/healthz");
-        if ($h === 'ok') { $ready = true; break; }
-        usleep(100_000);
+
+    for ($attempt = 0; $attempt < 5 && !$ready; $attempt++) {
+        $port = freePort(8815);
+        $cmd  = sprintf('exec %s -S 127.0.0.1:%d %s', escapeshellarg(PHP_BINARY), $port, escapeshellarg($mock));
+        $proc = proc_open(
+            $cmd,
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            null,
+            $env,
+        );
+        if (!is_resource($proc)) {
+            fwrite(STDERR, "could not start mock server\n");
+            exit(2);
+        }
+        // wait for readiness
+        for ($i = 0; $i < 50; $i++) {
+            $h = @file_get_contents("http://127.0.0.1:$port/healthz");
+            if ($h === 'ok') { $ready = true; break; }
+            // Child gone = it lost the race for the port between our probe
+            // closing and its own bind(). Take another port instead of calling
+            // that a mock-server failure.
+            if (proc_get_status($proc)['running'] === false) { break; }
+            usleep(100_000);
+        }
+        if (!$ready) {
+            proc_terminate($proc);
+            foreach ($pipes as $p) { if (is_resource($p)) { fclose($p); } }
+            proc_close($proc);
+            $proc = null;
+        }
     }
-    if (!$ready) {
-        proc_terminate($proc);
+    if (!$ready || !is_resource($proc)) {
         fwrite(STDERR, "mock server never became ready\n");
         exit(2);
     }

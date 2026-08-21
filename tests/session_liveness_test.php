@@ -37,12 +37,43 @@ namespace AstrX\Config {
 }
 
 namespace AstrX\Support {
-    // SecureSessionHandler/ServerSecret call configDir(); point it at a scratch
-    // dir so the test never touches a real install's secret.
+    // These two are declared here rather than driven through the shipped
+    // accessors' constants (as tests/prg_bottrap_test.php does) because this
+    // file REPOINTS configDir() partway through the run — the "no usable
+    // location" check below needs a config dir that does not exist — and a
+    // define() cannot be taken back.
+    //
+    // Both fail closed. Returning '' from a directory resolver is how you end up
+    // asking ServerSecret to write /astrx_server_secret at the filesystem root:
+    // isSharedTempPath() short-circuits on an empty temp dir, so the 0600 +
+    // ownership proof is skipped for the one candidate it exists to protect.
+    // A LogicException, not a RuntimeException: the last check in this file
+    // asserts that bytes() throws RuntimeException, and a harness fault must not
+    // be able to satisfy that assertion.
     if (!\function_exists('AstrX\Support\configDir')) {
         function configDir(): string
         {
-            return \rtrim((string) \getenv('ASTRX_TEST_CONFIG_DIR'), '/') . '/';
+            $d = \rtrim((string) \getenv('ASTRX_TEST_CONFIG_DIR'), '/');
+            if ($d === '') {
+                throw new \LogicException('ASTRX_TEST_CONFIG_DIR is unset');
+            }
+            return $d . '/';
+        }
+    }
+    // The same treatment for ServerSecret's OTHER candidate, which used to be
+    // the fixed sys_get_temp_dir().'/astrx_server_secret' — a path shared with
+    // every other user and every other run on the host. A pre-existing 0600
+    // self-owned file there is trusted, so bytes() adopts it, never creates the
+    // config-dir file, and two checks below fail with a message that never
+    // mentions /tmp. Per-run scratch dir instead: no coupling to the host.
+    if (!\function_exists('AstrX\Support\tempDir')) {
+        function tempDir(): string
+        {
+            $d = \rtrim((string) \getenv('ASTRX_TEST_TEMP_DIR'), '/');
+            if ($d === '') {
+                throw new \LogicException('ASTRX_TEST_TEMP_DIR is unset');
+            }
+            return $d;
         }
     }
 }
@@ -59,15 +90,21 @@ namespace {
         if (is_file($file)) { require_once $file; }
     });
 
-    $scratch = sys_get_temp_dir() . '/astrx_session_test_' . bin2hex(random_bytes(6));
-    mkdir($scratch, 0700, true);
+    require_once __DIR__ . '/lib/scratch.php';
+    $scratch = AstrX\TestSupport\scratchDir('astrx_session_test_');
     putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch);
-    register_shutdown_function(static function () use ($scratch): void {
-        foreach ((array) glob($scratch . '/{,.}*', GLOB_BRACE) as $f) {
-            if (is_string($f) && is_file($f)) { @unlink($f); }
-        }
-        @rmdir($scratch);
-    });
+    putenv('ASTRX_TEST_TEMP_DIR=' . $scratch);
+
+    // The overrides above are function_exists()-guarded, so they are a no-op if
+    // anything ever loads src/AstrX/Support/constants.php first. Prove they took
+    // before writing a single secret: otherwise this test quietly reads and
+    // writes the host's shared /tmp, and its results stop meaning anything.
+    if (AstrX\Support\configDir() !== $scratch . '/' || AstrX\Support\tempDir() !== $scratch) {
+        fwrite(STDERR, "the AstrX\\Support overrides in this file did not take: configDir()="
+            . var_export(AstrX\Support\configDir(), true) . ", tempDir()="
+            . var_export(AstrX\Support\tempDir(), true) . "\n");
+        exit(1);
+    }
 
     $PASS = 0;
     $FAIL = 0;
@@ -263,32 +300,26 @@ namespace {
     // permission-based setup would not, and this suite may run as root). The
     // temp-dir candidate is occupied by a group/world-accessible file, which is
     // exactly the local-user pre-seeding ServerSecret must refuse to trust.
-    $tempCandidate = sys_get_temp_dir() . '/astrx_server_secret';
-    $stashed       = null;
-    if (file_exists($tempCandidate)) {
-        $stashed = $tempCandidate . '.' . bin2hex(random_bytes(4)) . '.testbak';
-        if (!@rename($tempCandidate, $stashed)) { $stashed = null; }
+    //
+    // Both candidates now live in this run's own scratch directory (tempDir() is
+    // overridden at the top of this file), so this no longer has to stash and
+    // restore a shared /tmp path, and cannot be skipped — or silently derailed —
+    // by another user's leftovers.
+    $tempCandidate = $scratch . '/astrx_server_secret';   // ServerSecret::TEMP_DIR_FILENAME
+    touch($tempCandidate);
+    chmod($tempCandidate, 0666);            // group/world accessible ⇒ untrusted
+    putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch . '/does-not-exist');
+
+    $failedLoudly = false;
+    try {
+        (new ServerSecret())->bytes();
+    } catch (\RuntimeException) {
+        $failedLoudly = true;
     }
+    check('no usable location → RuntimeException, not a per-request random key', $failedLoudly);
 
-    if (file_exists($tempCandidate)) {
-        echo "  skip - temp-dir candidate in use by another process\n";
-    } else {
-        touch($tempCandidate);
-        chmod($tempCandidate, 0666);            // group/world accessible ⇒ untrusted
-        putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch . '/does-not-exist');
-
-        $failedLoudly = false;
-        try {
-            (new ServerSecret())->bytes();
-        } catch (\RuntimeException) {
-            $failedLoudly = true;
-        }
-        check('no usable location → RuntimeException, not a per-request random key', $failedLoudly);
-
-        putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch);
-        @unlink($tempCandidate);
-    }
-    if ($stashed !== null) { @rename($stashed, $tempCandidate); }
+    putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch);
+    @unlink($tempCandidate);
 
     echo "\n{$PASS} passed, {$FAIL} failed\n";
     exit($FAIL === 0 ? 0 : 1);

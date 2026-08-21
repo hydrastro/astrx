@@ -27,16 +27,48 @@ namespace AstrX\Config {
 }
 
 namespace AstrX\Support {
+    // All three fail closed. A directory resolver that returns '' when its
+    // scratch dir is missing does not skip the write, it writes to '/' — and
+    // phpstan.neon analyses src, public and tools, so tests/ is where that kind
+    // of thing rots unnoticed.
     if (!\function_exists('AstrX\Support\configDir')) {
         function configDir(): string
         {
-            return \rtrim((string) \getenv('ASTRX_TEST_CONFIG_DIR'), '/') . '/';
+            $d = \rtrim((string) \getenv('ASTRX_TEST_CONFIG_DIR'), '/');
+            if ($d === '') {
+                throw new \LogicException('ASTRX_TEST_CONFIG_DIR is unset');
+            }
+            return $d . '/';
         }
     }
     if (!\function_exists('AstrX\Support\resourceStorageDir')) {
         function resourceStorageDir(string $configured, string $fallback): string
         {
-            return $configured !== '' ? $configured : \sys_get_temp_dir() . '/' . $fallback;
+            if ($configured !== '') {
+                return $configured;
+            }
+            $d = \rtrim((string) \getenv('ASTRX_TEST_SCRATCH_DIR'), '/');
+            if ($d === '') {
+                throw new \LogicException('ASTRX_TEST_SCRATCH_DIR is unset');
+            }
+            return $d . '/' . $fallback;
+        }
+    }
+    // configDir()'s pair: ServerSecret's other candidate lives in tempDir().
+    // Every secret in this file is explicitly configured, so nothing here
+    // reaches it today — declared anyway so a future ServerSecret WITHOUT a
+    // configured value lands in this run's scratch dir rather than at a shared,
+    // predictable /tmp path, and declared against its OWN variable: it used to
+    // read ASTRX_TEST_CONFIG_DIR, i.e. a dead override reading the wrong name
+    // and returning '' if that name ever changed.
+    if (!\function_exists('AstrX\Support\tempDir')) {
+        function tempDir(): string
+        {
+            $d = \rtrim((string) \getenv('ASTRX_TEST_TEMP_DIR'), '/');
+            if ($d === '') {
+                throw new \LogicException('ASTRX_TEST_TEMP_DIR is unset');
+            }
+            return $d;
         }
     }
 }
@@ -57,15 +89,23 @@ namespace {
         if (is_file($file)) { require_once $file; }
     });
 
-    $scratch = sys_get_temp_dir() . '/astrx_user_test_' . bin2hex(random_bytes(6));
-    mkdir($scratch, 0700, true);
+    require_once __DIR__ . '/lib/scratch.php';
+    $scratch = AstrX\TestSupport\scratchDir('astrx_user_test_');
+
+    // One directory, three names — each override reads the variable that names
+    // it, so a missing one cannot silently relocate the others.
     putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch);
-    register_shutdown_function(static function () use ($scratch): void {
-        foreach ((array) glob($scratch . '/{,.}*', GLOB_BRACE) as $f) {
-            if (is_string($f) && is_file($f)) { @unlink($f); }
-        }
-        @rmdir($scratch);
-    });
+    putenv('ASTRX_TEST_TEMP_DIR=' . $scratch);
+    putenv('ASTRX_TEST_SCRATCH_DIR=' . $scratch);
+
+    // function_exists()-guarded overrides are a no-op if constants.php is ever
+    // loaded first; prove they took rather than write a real install's files.
+    if (AstrX\Support\configDir() !== $scratch . '/' || AstrX\Support\tempDir() !== $scratch) {
+        fwrite(STDERR, "the AstrX\\Support overrides in this file did not take: configDir()="
+            . var_export(AstrX\Support\configDir(), true) . ", tempDir()="
+            . var_export(AstrX\Support\tempDir(), true) . "\n");
+        exit(1);
+    }
 
     $PASS = 0;
     $FAIL = 0;
