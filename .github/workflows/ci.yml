@@ -96,6 +96,19 @@ jobs:
       - name: Module integrity (with the DB present)
         run: php tools/check_modules.php
 
+      # There are two ways to arrive at "the current schema": a fresh install,
+      # and an old install that has had every migration applied. `tables.sql` is
+      # an append-only migration log, so those two paths can drift — a column a
+      # migration adds but the base DDL never gained, a default or a collation
+      # that differs — and nothing noticed. This diffs `information_schema`
+      # between the two and fails on any difference.
+      #
+      # It lives here rather than in `lint` because it is the one test that
+      # needs a database; run without one it prints why and exits 0, so the
+      # portable suite stays portable.
+      - name: Schema convergence (a fresh install == an upgraded one)
+        run: php tests/schema_convergence_test.php
+
       # A step with no `shell:` key runs as `bash -e {0}` — errexit is ON even
       # though nothing here calls `set -e`. That is what made the previous
       # version of this step useless: `code=$(curl …)` is a bare assignment, so
