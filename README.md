@@ -240,9 +240,8 @@ CI runs all of that, plus the installer, plus the tests, plus a check that the R
 
 ## Roadmap
 
-- [ ] Template cache invalidation mechanism
-- [ ] Advanced template caching (segment-level)
-- [ ] REST API layer
-- [ ] phpcs / PHP-CS-Fixer integration
-- [ ] README screenshot
+- [ ] Template cache: fingerprint the compiler, not just the source mtime
+- [ ] Paginate the content index before someone writes their five thousandth page
+- [ ] API versioning and rate limiting
+- [ ] README screenshots
 - [ ] Stop adding modules at 3am

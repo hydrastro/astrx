@@ -45,13 +45,13 @@ It returns the locale API base, query-mode example, and every page currently mar
 
 Pages are NOT exposed via the API by default. Each row in the `page` table has an `api_enabled TINYINT NOT NULL DEFAULT 0` column. A request to `/api/<page>` for a page where `api_enabled = 0` returns `404` — we do not reveal whether the page exists.
 
-To enable a page for API access:
+To enable a page for API access, use the **API** toggle in admin → Pages, or set the column directly:
 
 ```sql
 UPDATE `page` SET `api_enabled` = 1 WHERE `url_id` = 'WORDING_USER_PROFILE';
 ```
 
-Until a future admin UI is added, this is a manual operation. Most pages should stay disabled — only opt in endpoints whose context has been audited for safe exposure (see [Context scopes](#context-scopes) below).
+Most pages should stay disabled — only opt in endpoints whose context has been audited for safe exposure (see [Context scopes](#context-scopes) below).
 
 ---
 
