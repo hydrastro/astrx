@@ -7,6 +7,10 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Controller\Controller;
+use AstrX\Database\ConnectionFailure;
+use AstrX\Database\Diagnostic\DatabaseConfigIncompleteDiagnostic;
+use AstrX\Database\Diagnostic\DatabaseUnavailableDiagnostic;
+use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\Http\HttpStatus;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -19,9 +23,12 @@ use AstrX\Page\Page;
 use AstrX\Page\Diagnostic\ControllerMissingDiagnostic;
 use AstrX\Page\Diagnostic\PageHiddenNoticeDiagnostic;
 use AstrX\Page\PageHandler;
+use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Result\Result;
+use AstrX\Theme\ThemeService;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlStack;
 use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
@@ -35,12 +42,26 @@ use AstrX\Support\RequiresPermission;
 use AstrX\Template\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
+use PDOException;
 use function AstrX\Support\langDir;
 
 final class ContentManager
 {
     public const string ID_INVALID_PRG_ID = 'astrx.session/invalid_prg_id';
     public const DiagnosticLevel LVL_INVALID_PRG_ID = DiagnosticLevel::WARNING;
+
+    /**
+     * The database could not be opened. CRITICAL, not ERROR: this is the one
+     * dependency without which no part of the request can proceed, so it must
+     * outrank every other diagnostic the failed request collects and stay above
+     * any status-bar threshold an operator sets.
+     */
+    public const string ID_DB_UNAVAILABLE = 'astrx.database/connect_failed';
+    public const DiagnosticLevel LVL_DB_UNAVAILABLE = DiagnosticLevel::CRITICAL;
+
+    /** PDO.config.php does not declare every credential — no connection is attempted. */
+    public const string ID_DB_CONFIG_INCOMPLETE = 'astrx.database/config_incomplete';
+    public const DiagnosticLevel LVL_DB_CONFIG_INCOMPLETE = DiagnosticLevel::CRITICAL;
 
     public function __construct(
         private readonly Injector $injector,
@@ -166,7 +187,18 @@ final class ContentManager
             $renderer->loadDomain(langDir(), $diagnosticsDomain);
         }
 
-        $this->initPDO();
+        // The database is the framework's single hard dependency: sessions,
+        // pages, the navbar, users and the themed error page all read it. Stop
+        // the request here rather than letting the dozen createClass() calls
+        // below each fail with its own unresolvable-parameter diagnostic and
+        // bury the one that says why. 503, not 500: nothing is wrong with the
+        // request, the service is not available to answer it.
+        $pdoResult = $this->initPDO()->drainTo($this->collector);
+        if (!$pdoResult->isOk()) {
+            $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
+            return;
+        }
+        $this->injector->setClass($pdoResult->unwrap());
 
         $sessionResult = $this->injector->createClass(SecureSessionHandler::class)
             ->drainTo($this->collector);
@@ -1334,20 +1366,152 @@ final class ContentManager
             }
         }
 
-        // Failsafe: minimal HTML that does not require templates or DB.
+        // Failsafe: no templates, no database.
+        $this->renderFailsafeErrorPage($status);
+    }
+
+    /**
+     * The database-free error page.
+     *
+     * Reached whenever the themed error page cannot be built — above all when
+     * the database itself is down, which is exactly when an operator most needs
+     * to be told something. It therefore uses nothing but the config, the
+     * filesystem and the Http lang domain renderError() has already loaded:
+     *
+     *   - the status name and message come from the Http catalog
+     *     (http.status.<code>.*, whose en/it parity tools/check_lang_parity.php
+     *     enforces) instead of the English literals that used to be inlined here;
+     *   - the active theme's stylesheet is inlined, so a site with no database
+     *     still answers in its own skin rather than as an unstyled browser
+     *     default — ThemeService reads the filesystem only, and any failure
+     *     resolving it simply means no <style> block;
+     *   - in a dev-like environment the collected diagnostics are listed, so
+     *     environment=testing still debugs. That list is safe by construction:
+     *     the database diagnostics carry codes, never the DSN, host, user or
+     *     password (see initPDO). It stays OFF in production/staging, where a
+     *     visitor must learn nothing from a 5xx.
+     */
+    private function renderFailsafeErrorPage(HttpStatus $status): void
+    {
         $code = $status->value;
-        $name = htmlspecialchars($status->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $name = ucwords(strtolower(str_replace('_', ' ', $name)));
-        echo <<<HTML
-        <!DOCTYPE html>
-        <html lang="en">
-        <head><meta charset="UTF-8"><title>{$code} {$name}</title></head>
-        <body>
-          <h1>{$code} — {$name}</h1>
-          <p>An error occurred. Please try again or contact the administrator.</p>
-        </body>
-        </html>
-        HTML;
+
+        // Fall back to the enum's own name ("SERVICE_UNAVAILABLE" →
+        // "Service Unavailable") if the catalog has no entry for this code.
+        $nameFallback = ucwords(strtolower(str_replace('_', ' ', $status->name)));
+        $name    = $this->translator->t('http.status.' . $code . '.name', fallback: $nameFallback);
+        $message = $this->translator->t(
+            'http.status.' . $code . '.message',
+            fallback: 'An error occurred. Please try again or contact the administrator.',
+        );
+        $siteName = $this->config->getConfigString('ContentManager', 'website_name', 'AstrX');
+
+        $lang    = $this->esc($this->translator->getLocale());
+        $safeSite = $this->esc($siteName);
+        $safeName = $this->esc($name);
+        $safeMsg  = $this->esc($message);
+
+        // Inline the theme CSS. ThemeService only touches config + filesystem,
+        // but this is the failsafe: guard it so a broken theme cannot turn the
+        // last-resort page into a second failure.
+        $css = '';
+        $themeResult = $this->injector->createClass(ThemeService::class);
+        if ($themeResult->isOk()) {
+            $theme = $themeResult->unwrap();
+            if ($theme instanceof ThemeService) {
+                $css = $theme->activeStylesheetContent();
+            }
+        }
+        $styleBlock = $css !== ''
+            // </style> is the only sequence that can break out of a style
+            // element; the stylesheet is an operator-installed file, not input.
+            ? '<style>' . str_replace('</', '<\/', $css) . '</style>'
+            : '';
+
+        echo '<!DOCTYPE html>' . "\n"
+           . '<html lang="' . $lang . '">' . "\n"
+           . '<head><meta charset="UTF-8"><meta name="robots" content="noindex,nofollow">'
+           . '<title>' . $code . ' ' . $safeName . '</title>' . $styleBlock . '</head>' . "\n"
+           . '<body>' . "\n"
+           . '<div id="wrap">' . "\n"
+           . '  <div id="header"><h1 id="title">' . $safeSite . '</h1></div>' . "\n"
+           . '  <div id="main">' . "\n"
+           . '    <h2>' . $code . ' — ' . $safeName . '</h2>' . "\n"
+           . '    <p>' . $safeMsg . '</p>' . "\n"
+           . $this->failsafeDiagnosticsHtml()
+           . '  </div>' . "\n"
+           . '</div>' . "\n"
+           . '</body>' . "\n"
+           . '</html>' . "\n";
+    }
+
+    /**
+     * The diagnostics block for the failsafe page — dev-like environments only.
+     *
+     * Returns '' in production and staging. Renders through DiagnosticRenderer
+     * so every line is the same translated, catalog-defined sentence the status
+     * bar would show; a code with no catalog entry stays a [FALLBACK:…] stamp
+     * rather than leaking an object dump.
+     */
+    private function failsafeDiagnosticsHtml(): string
+    {
+        $env = EnvironmentType::tryFrom($this->config->getConfigInt(
+            'Prelude',
+            'environment',
+            EnvironmentType::PRODUCTION->value,
+        )) ?? EnvironmentType::PRODUCTION;
+
+        if (!$env->isDevLike()) {
+            return '';
+        }
+
+        $rendererResult = $this->injector->getClass(DiagnosticRenderer::class);
+        if (!$rendererResult->isOk()) {
+            return '';
+        }
+        $renderer = $rendererResult->unwrap();
+        if (!$renderer instanceof DiagnosticRenderer) {
+            return '';
+        }
+
+        // A failsafe assumes nothing about how far the request got. init() loads
+        // this catalog just before opening the database, but renderError() is
+        // also reachable from paths that never ran that line, and a renderer
+        // with no catalog prints "[FALLBACK:CRITICAL] astrx.database/…" instead
+        // of the sentence. loadDomain() re-registers the same keys, so calling
+        // it a second time costs one require and changes nothing.
+        if (langDir() !== '') {
+            $renderer->loadDomain(langDir(), $this->config->getConfigString(
+                'ContentManager',
+                'diagnostics_lang_domain',
+                'Diagnostics',
+            ));
+        }
+
+        // No DiagnosticVisibilityChecker: it reads its rules from the database,
+        // which in this path is precisely what is unavailable. The environment
+        // gate above is the access control here.
+        $rows = $renderer->renderFiltered(
+            $this->collector->diagnostics(),
+            DiagnosticLevel::NOTICE,
+        );
+        if ($rows === []) {
+            return '';
+        }
+
+        $html = '    <div id="message_bar">' . "\n";
+        foreach ($rows as $row) {
+            $html .= '      <p class="diag-' . strtolower($row['level']->name) . '">'
+                   . '[' . $this->esc($row['level_label']) . '] '
+                   . $this->esc($row['message']) . '</p>' . "\n";
+        }
+
+        return $html . '    </div>' . "\n";
+    }
+
+    /** HTML-escape for the failsafe page, which has no template engine to do it. */
+    private function esc(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 
 
@@ -1403,36 +1567,128 @@ final class ContentManager
         }
     }
 
-    private function initPDO(): void
+    /**
+     * Open the request's database connection.
+     *
+     * This is the only place AstrX constructs a PDO, and every way it can fail
+     * — a container that has not finished booting, a rotated password, a typo
+     * in PDO.config.php, a PHP build without the driver — is a RECOVERABLE
+     * RUNTIME error about the operator's environment, not a programmer-contract
+     * violation. So it flows through Result<PDO> and the Diagnostics channel
+     * like every other runtime failure in this framework, and `new PDO(...)` is
+     * wrapped rather than left to throw. Unwrapped it produced a bare 500 in
+     * production and, under environment=testing, a stack trace whose exception
+     * message carried the database host and the account name.
+     *
+     * WHAT MAY REACH A RENDERED STRING, AND WHY
+     *
+     * The DSN, host, port, username and password never leave this method. The
+     * diagnostic carries the driver name, a ConnectionFailure classification,
+     * the SQLSTATE and the driver's error number — codes, all of them safe.
+     *
+     * The PDOException MESSAGE is dropped, not attached, because no rendering
+     * path for a diagnostic in this framework is provably admin-only:
+     *   - ErrorController's <details> panel is admin-only today
+     *     (Gate::can(ADMIN_ACCESS)), but what it renders is the catalog string;
+     *   - the same catalog string also reaches the page status bar through
+     *     DiagnosticRenderer::renderFiltered() and API clients through
+     *     JsonRenderer, and BOTH decide visibility with
+     *     DiagnosticVisibilityChecker — i.e. with the operator-editable
+     *     diagnostic_visibility table, which can grant any code to GUEST.
+     * One admin ticking this code visible for guests would then publish
+     * "Access denied for user 'astrx'@'10.0.0.7'" to anonymous visitors of a
+     * hidden service. The codes lose nothing an operator needs: 1045 is a
+     * rejected credential, 1049 a missing database, 2002 nothing listening —
+     * and the host and user are in that operator's own PDO.config.php, which
+     * the catalog message names.
+     *
+     * @return Result<PDO>
+     */
+    private function initPDO(): Result
     {
-        $driver  = $this->config->getConfig('PDO', 'db_type', 'mysql');
-        assert(is_string($driver));
-        $host    = $this->config->getConfig('PDO', 'db_host', 'localhost');
-        assert(is_string($host));
-        $dbname  = $this->config->getConfig('PDO', 'db_name', 'content_manager');
-        assert(is_string($dbname));
-        $username = $this->config->getConfig('PDO', 'db_username', 'user');
-        assert(is_string($username));
-        $passwd  = $this->config->getConfig('PDO', 'db_password', 'password');
-        assert(is_string($passwd));
+        // db_type keeps a default: it names a PHP driver, not a credential, and
+        // every schema AstrX ships is MySQL/MariaDB DDL.
+        $driver = $this->config->getConfigString('PDO', 'db_type', 'mysql');
+
+        // The credentials have NO fallback, deliberately. The removed defaults
+        // ('localhost' / 'content_manager' / 'user' / 'password') turned "this
+        // install has no PDO.config.php" — the normal state of a fresh checkout,
+        // since the file is gitignored — into "silently try a guessable account
+        // against whatever is listening on localhost", and then reported the
+        // resulting auth failure as though the configuration had been read.
+        // Reading with no default also has Config emit its own
+        // astrx.config/get_config.not_found for each absent key, naming it.
+        $hostRaw     = $this->config->getConfig('PDO', 'db_host');
+        $dbnameRaw   = $this->config->getConfig('PDO', 'db_name');
+        $usernameRaw = $this->config->getConfig('PDO', 'db_username');
+        $passwdRaw   = $this->config->getConfig('PDO', 'db_password');
+
+        $host     = is_scalar($hostRaw)     ? (string) $hostRaw     : null;
+        $dbname   = is_scalar($dbnameRaw)   ? (string) $dbnameRaw   : null;
+        $username = is_scalar($usernameRaw) ? (string) $usernameRaw : null;
+        // An empty password is a legitimate value (the shipped example uses
+        // one); an ABSENT key is not, and the two must not resolve alike.
+        $passwd   = is_scalar($passwdRaw)   ? (string) $passwdRaw   : null;
+
+        if ($host === null || $dbname === null || $username === null || $passwd === null) {
+            $missing = [];
+            if ($host === null)     { $missing[] = 'db_host'; }
+            if ($dbname === null)   { $missing[] = 'db_name'; }
+            if ($username === null) { $missing[] = 'db_username'; }
+            if ($passwd === null)   { $missing[] = 'db_password'; }
+
+            return Result::err(null, Diagnostics::of(new DatabaseConfigIncompleteDiagnostic(
+                self::ID_DB_CONFIG_INCOMPLETE,
+                self::LVL_DB_CONFIG_INCOMPLETE,
+                $missing,
+            )));
+        }
+
+        // A driver this PHP was not built with makes PDO throw a message-only
+        // exception ("could not find driver") with no SQLSTATE and no error
+        // number. Decide it here, where the answer is certain, rather than by
+        // sniffing that message downstream.
+        if (!in_array($driver, PDO::getAvailableDrivers(), true)) {
+            return Result::err(null, Diagnostics::of(new DatabaseUnavailableDiagnostic(
+                self::ID_DB_UNAVAILABLE,
+                self::LVL_DB_UNAVAILABLE,
+                $driver,
+                ConnectionFailure::DRIVER_MISSING,
+                '',
+                0,
+            )));
+        }
 
         $port     = $this->config->getConfigInt('PDO', 'db_port', 0);
         $portPart = $port > 0 ? ';port=' . $port : '';
         $dsn = $driver . ':host=' . $host . $portPart . ';dbname=' . $dbname . ';charset=utf8mb4';
-        $pdo = new PDO($dsn, $username, $passwd);
 
-        $emulate    = $this->config->getConfig('PDO', 'emulate_prepares', false);
-        assert(is_bool($emulate));
-        $errExc     = $this->config->getConfig('PDO', 'errmode_exception', true);
-        assert(is_bool($errExc));
-        $fetchAssoc = $this->config->getConfig('PDO', 'default_fetch_assoc', true);
-        assert(is_bool($fetchAssoc));
+        // getConfigBool, not getConfig+assert: assertions are compiled out in
+        // production (zend.assertions=-1), so a hand-edited 'false' in
+        // PDO.config.php used to reach setAttribute() as the truthy string it is.
+        $emulate    = $this->config->getConfigBool('PDO', 'emulate_prepares', false);
+        $errExc     = $this->config->getConfigBool('PDO', 'errmode_exception', true);
+        $fetchAssoc = $this->config->getConfigBool('PDO', 'default_fetch_assoc', true);
 
-        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulate);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, $errExc ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT);
-        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH);
+        try {
+            $pdo = new PDO($dsn, $username, $passwd);
 
-        $this->injector->setClass($pdo);
+            // Inside the try as well: a driver that rejects an attribute throws
+            // the same PDOException, and a connection whose error mode never
+            // took is not one this method should hand out.
+            $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $emulate);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, $errExc ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, $fetchAssoc ? PDO::FETCH_ASSOC : PDO::FETCH_BOTH);
+        } catch (PDOException $e) {
+            return Result::err(null, Diagnostics::of(DatabaseUnavailableDiagnostic::fromException(
+                self::ID_DB_UNAVAILABLE,
+                self::LVL_DB_UNAVAILABLE,
+                $driver,
+                $e,
+            )));
+        }
+
+        return Result::ok($pdo);
     }
 
     private function resolvePage(PageHandler $pageHandler, string $pageToken): Page

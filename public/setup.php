@@ -259,13 +259,53 @@ function runSQL(PDO $pdo, string $file): string
                 $cursor->closeCursor();
             }
         } catch (\PDOException $e) {
-            if (!in_array((string)$e->getCode(), ['42S01','42S21','23000'], true)) {
+            if (!sqlErrorIsBenign($e)) {
                 return $e->getMessage() . ' | ' . substr($stmt, 0, 200);
             }
         }
     }
 
     return '';
+}
+
+/**
+ * Is this error the harmless "it is already there" that makes a re-run safe?
+ *
+ * The same rule as tools/install.php's sqlErrorIsBenign(), for the same reason.
+ * SQLSTATE alone is too coarse: '23000' is "integrity constraint violation" and
+ * covers BOTH the duplicate key a re-run should ignore (1062) AND failures that
+ * mean the statement did not do its job —
+ *
+ *   1451 / 1452  foreign key constraint fails
+ *   1048         column cannot be null
+ *
+ * Swallowing those made runMigration() record the migration as applied, with its
+ * checksum, so it could never run again — while the rows it was supposed to
+ * insert (e.g. the Content module's navbar entry) were permanently missing and
+ * the wizard printed "ok". The CLI installer was fixed; this wizard runs the
+ * very same migration files through its own copy of the runner, so it needs the
+ * very same rule.
+ */
+function sqlErrorIsBenign(\PDOException $e): bool
+{
+    $sqlState = (string) $e->getCode();
+
+    if ($sqlState === '42S01' || $sqlState === '42S21') {
+        return true; // table/view already exists; column already exists
+    }
+
+    if ($sqlState !== '23000') {
+        return false;
+    }
+
+    // Duplicate-key family only:
+    //   1022 duplicate key, 1062 duplicate entry,
+    //   1169 duplicate entry for a unique index,
+    //   1586 duplicate entry, key named.
+    $info   = $e->errorInfo;
+    $driver = (is_array($info) && isset($info[1]) && is_numeric($info[1])) ? (int) $info[1] : 0;
+
+    return in_array($driver, [1022, 1062, 1169, 1586], true);
 }
 
 function ensureMigrationTable(PDO $pdo): string
