@@ -2641,8 +2641,20 @@ placeholder='search indexed .onion pages' autofocus>\
     /// as long as the peer cared to keep it — one task, one socket and one file
     /// descriptor each, with nothing in the code that would ever reap them. A
     /// per-read timeout would not have helped either, since every dribbled byte
-    /// resets it; only a deadline over the whole round trip ends this. The
-    /// durations are scaled down so the test costs ~1 s of wall clock.
+    /// resets it; only a deadline over the whole round trip ends this.
+    ///
+    /// The durations are scaled down from production, but only so far. The
+    /// invariant is `dribble total > request_timeout >> a normal round trip`,
+    /// and the same `request_timeout` also governs the well-behaved request at
+    /// the end of this test — head read, route, search and write, ~2 ms on an
+    /// idle box and tens of milliseconds on a contended one. At the 300 ms this
+    /// used to run with, the second half of the invariant was inside the noise:
+    /// a loaded 2-core runner can stall a task for longer than that, the server
+    /// would drop a perfectly good request, and the final assertion would fail
+    /// with no bug behind it. 4 s of dribble against a 2 s deadline keeps both
+    /// halves — the slowloris is still cut off by the total deadline, and the
+    /// normal request keeps a ~40x margin against its loaded cost — for ~3 s
+    /// more wall clock, which is the cheaper side of the trade.
     #[cfg(feature = "net")]
     #[tokio::test]
     async fn a_slowloris_client_is_cut_off_by_the_total_deadline() {
@@ -2652,7 +2664,7 @@ placeholder='search indexed .onion pages' autofocus>\
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let limits = super::ServeLimits {
-            request_timeout: Duration::from_millis(300),
+            request_timeout: Duration::from_secs(2),
         };
         tokio::spawn(async move {
             let _ = super::serve_with_limits(listener, srv, limits).await;
@@ -2663,9 +2675,9 @@ placeholder='search indexed .onion pages' autofocus>\
         c.write_all(b"GET /api/search?q=widget HTTP/1.1\r\n")
             .await
             .unwrap();
-        for _ in 0..10 {
-            // one byte per 100 ms: under a 300 ms *per-read* timeout, forever
-            tokio::time::sleep(Duration::from_millis(100)).await;
+        for _ in 0..20 {
+            // one byte per 200 ms: under a 2 s *per-read* timeout, forever
+            tokio::time::sleep(Duration::from_millis(200)).await;
             if c.write_all(b"X").await.is_err() {
                 break;
             }
@@ -2679,7 +2691,10 @@ placeholder='search indexed .onion pages' autofocus>\
             .expect("connection must not still be open");
         assert!(r.is_err() || r.unwrap() == 0, "unexpected body: {buf:?}");
 
-        // and a well-behaved request on the same server is unaffected
+        // And a well-behaved request on the same server is unaffected — the
+        // deadline is a deadline on stalling, not a budget the server spends on
+        // every client. This runs under the same 2 s against a round trip that
+        // takes single-digit milliseconds.
         let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
         c.write_all(b"GET /api/search?q=widget HTTP/1.1\r\nHost: x\r\n\r\n")
             .await

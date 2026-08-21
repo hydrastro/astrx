@@ -321,7 +321,35 @@ fn port_check(port: u16, expect_prefix: &str) -> PortCheck {
     }
 }
 
-/// A free port, found by binding one and letting it go.
+/// A port that was free when this returned, found by binding one and letting it
+/// go.
+///
+/// It is free at that instant and no longer. Nothing holds it once this returns,
+/// so anything on the machine that asks for an ephemeral port can be handed this
+/// exact number a microsecond later. Inside this binary that is a live
+/// possibility, not a hypothetical: libtest runs up to `available_parallelism()`
+/// tests at a time — 2 on the 2-core CI runner — and several tests here bind
+/// `127.0.0.1:0` (`spawn_metrics_server`, `spawn_silent_server`, this function),
+/// so whichever test shares the runner with the caller is drawing from the same
+/// pool at the same moment. It stays rare because Linux allocates out of
+/// `ip_local_port_range` — 32768–60999 here — by walking the range rather than
+/// by handing back what was just released, but "rare" is how a test earns a
+/// once-a-month failure nobody can reproduce.
+///
+/// What does *not* race with it is the rest of the workspace: `cargo test` runs
+/// each test binary to completion before starting the next, so no other crate's
+/// sockets are open while these are.
+///
+/// Go through [`on_a_free_port`] wherever a squatter would change the verdict,
+/// which is every caller that asserts on a particular status — a port taken
+/// between the scavenge and the check turns the expected "is free" `Pass` into a
+/// `Warn`, or into an "already running" `Pass`.
+/// `every_check_a_default_config_builds_actually_runs` scavenges five ports
+/// directly instead, because there no squatter can reach its assertion: it only
+/// rejects `Fail`, and an occupied port cannot produce one. `PortCheck::run`
+/// returns `Fail` solely when `bind` fails with something other than
+/// `AddrInUse`; a port that is merely in use is reported as `Warn`, or as `Pass`
+/// if it answers as the expected engine.
 fn free_port() -> u16 {
     let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let p = l.local_addr().unwrap().port();
@@ -329,9 +357,35 @@ fn free_port() -> u16 {
     p
 }
 
+/// Run `check` against a freshly scavenged [`free_port`], up to three times,
+/// stopping at the first outcome `settled` accepts; return the last one for the
+/// caller to assert on as usual.
+///
+/// This does not make the scavenge race-free — nothing short of holding the port
+/// open would, and holding it open is the opposite of what these two checks need
+/// to see. It makes the verdict depend on an outcome observed on a port that was
+/// actually unoccupied, and leaves a real regression failing on the third
+/// attempt with the check's own message.
+fn on_a_free_port<T>(mut check: impl FnMut(u16) -> T, settled: impl Fn(&T) -> bool) -> T {
+    let mut out = check(free_port());
+    for _ in 0..2 {
+        if settled(&out) {
+            break;
+        }
+        out = check(free_port());
+    }
+    out
+}
+
 #[test]
 fn a_free_port_passes() {
-    let o = port_check(free_port(), "websearch_").run();
+    // The retry predicate is the assertion itself: any other verdict — including
+    // a Pass that says "already running" — describes a port somebody bound
+    // between the scavenge and the check, not a bug in the check.
+    let o = on_a_free_port(
+        |port| port_check(port, "websearch_").run(),
+        |o| o.status == Status::Pass && o.detail.contains("is free"),
+    );
     assert_eq!(o.status, Status::Pass, "{o:?}");
     assert!(o.detail.contains("is free"), "{o:?}");
 }
@@ -503,11 +557,19 @@ fn tor_checks_skip_when_no_proxy_is_configured() {
 
 #[test]
 fn a_dead_socks_port_fails() {
-    let o = TorSocksCheck {
-        host: "127.0.0.1".to_string(),
-        port: free_port(),
-    }
-    .run();
+    // A successful connect is the tell that the port was taken between the
+    // scavenge and the check: the point of the test is a port where the TCP
+    // connect itself is refused.
+    let o = on_a_free_port(
+        |port| {
+            TorSocksCheck {
+                host: "127.0.0.1".to_string(),
+                port,
+            }
+            .run()
+        },
+        |o| o.status == Status::Fail && o.detail.contains("nothing accepted a connection"),
+    );
     assert_eq!(o.status, Status::Fail, "{o:?}");
     assert!(o.detail.contains("nothing accepted a connection"), "{o:?}");
 }

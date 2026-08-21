@@ -400,6 +400,112 @@ impl Default for Store {
     }
 }
 
+/// One queue row's selection key: fewest attempts, then oldest, then hex — the
+/// same total order, over the same tuple, that the full sort this replaced used.
+///
+/// In a shipped build this IS that bare tuple. The alias is the whole of the
+/// definition, the selection builds a tuple and puts it in the heap exactly as
+/// it always did, and none of the `cfg(test)` items below are compiled: same
+/// types, same ordering, no counter, no wrapper, no allocation. Checked, not assumed — `target/release/
+/// torrentds` hashes the same as a line-for-line tuple baseline of this file.
+///
+/// Under `cfg(test)` it is instead a wrapper whose `Ord` tallies every
+/// comparison: the selection loop's own peek AND the ones `BinaryHeap` makes
+/// inside `push`/`pop`, which are most of the work and cannot be seen from the
+/// loop. That is the whole reason for the wrapper. The counter used to sit in
+/// the loop, one tick per non-skipped row, where it reads exactly `n` for *any*
+/// body under that loop — it could not tell this implementation from one that
+/// re-sorts the whole heap on every iteration, and the review confirmed that
+/// mutation left the count at 40 000 with the test still green.
+#[cfg(not(test))]
+type SelectRow<'a> = (u32, u64, &'a str);
+
+/// The `cfg(test)` form of the selection key; see the alias above.
+#[cfg(test)]
+#[derive(PartialEq, Eq)]
+struct SelectRow<'a>((u32, u64, &'a str));
+
+#[cfg(test)]
+impl Ord for SelectRow<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        note_select_cmp();
+        self.0.cmp(&other.0)
+    }
+}
+
+#[cfg(test)]
+impl PartialOrd for SelectRow<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Ordering comparisons performed by `Store::pending_infohashes`, for
+// `pending_infohashes_matches_a_full_sort`.
+//
+// The selection being cheaper than the full sort it replaced is a fact about how
+// much work each algorithm does, so it is counted rather than timed: selecting
+// 80 rows out of 40 000 is a sub-millisecond window that one scheduler
+// preemption on a loaded CI runner can double, which is how the old wall-clock
+// ratio failed while the code was correct.
+//
+// Thread-local and not a process-wide static because the test binary runs its
+// tests in parallel threads in one process, where a global would move under
+// unrelated tests. The whole thing exists only under `#[cfg(test)]`, so the
+// shipped build has neither the counter nor the `SelectRow` wrapper at all.
+#[cfg(test)]
+thread_local! {
+    /// This thread's running comparison count.
+    static SELECT_CMPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Record one ordering comparison between two [`SelectRow`]s. Called from
+/// `SelectRow::cmp`, so it fires for the selection loop's own peek AND for every
+/// comparison the heap makes internally.
+#[cfg(test)]
+fn note_select_cmp() {
+    SELECT_CMPS.with(|c| c.set(c.get() + 1));
+}
+
+/// Read and reset this thread's selection-comparison count.
+#[cfg(test)]
+fn take_select_cmps() -> u64 {
+    SELECT_CMPS.with(|c| c.replace(0))
+}
+
+// `SearchResult`s built by `Store::to_result`, for
+// `search_pages_before_materialising`.
+//
+// Same reasoning as the selection counter above. Paging before materialising is
+// a claim about how many rows the search builds, so it is counted rather than
+// timed: the old test compared the wall clock of a `limit=1` search against a
+// `limit=N` one, and CPU contention on a loaded runner adds roughly the same
+// number of milliseconds to BOTH sides, which destroys a ratio however many
+// samples it takes the best of. It failed 3 times in 50 full-suite runs with the
+// code working, once with the `limit=1` side the slower of the two.
+//
+// Thread-local and not a process-wide static because the test binary runs its
+// tests in parallel threads in one process, where a global would move under
+// unrelated tests — several of which search. The whole thing exists only under
+// `#[cfg(test)]`, so the shipped build materialises rows without it.
+#[cfg(test)]
+thread_local! {
+    /// This thread's running count of materialised rows.
+    static MATERIALISED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Record one materialised [`SearchResult`].
+#[cfg(test)]
+fn note_materialised() {
+    MATERIALISED.with(|c| c.set(c.get() + 1));
+}
+
+/// Read and reset this thread's materialised-row count.
+#[cfg(test)]
+fn take_materialised() -> u64 {
+    MATERIALISED.with(|c| c.replace(0))
+}
+
 impl Store {
     /// A fresh, empty store with the default spam threshold.
     #[must_use]
@@ -534,7 +640,7 @@ impl Store {
         // (80 by default), and sorting a 1M-row queue measured 36.7 ms per tick —
         // all of it with the store mutex held, so it also stalls the harvest sink.
         // The heap keeps the `limit` best rows, so this is O(n log limit).
-        let mut heap: std::collections::BinaryHeap<(u32, u64, &str)> =
+        let mut heap: std::collections::BinaryHeap<SelectRow> =
             std::collections::BinaryHeap::with_capacity(limit + 1);
         for (ih, d) in &self.discovered {
             if d.fetched || d.attempts >= max_attempts {
@@ -544,6 +650,12 @@ impl Store {
             // hex (which is how the BTreeMap already iterates, so stable-sort ties
             // resolved this way too).
             let row = (d.attempts, d.first_seen, ih.as_str());
+            // Test builds only: wrap the row so that every comparison of two of
+            // them — the peek below, and every sift inside the heap — is counted.
+            // See [`SelectRow`]. Not compiled otherwise; the line above is what
+            // the shipped selection puts in the heap.
+            #[cfg(test)]
+            let row = SelectRow(row);
             if heap.len() < limit {
                 heap.push(row);
             } else if heap.peek().is_some_and(|worst| row < *worst) {
@@ -553,6 +665,10 @@ impl Store {
         }
         let mut rows = heap.into_vec();
         rows.sort_unstable();
+        // Test builds only: unwrap the counting wrapper again, so the tail below
+        // is the same code in both builds.
+        #[cfg(test)]
+        let rows: Vec<(u32, u64, &str)> = rows.into_iter().map(|r| r.0).collect();
         rows.into_iter()
             .filter_map(|(_, _, ih)| unhex20(ih).map(|h| (h, self.discovered[ih].peer.clone())))
             .collect()
@@ -1075,6 +1191,12 @@ impl Store {
     }
 
     fn to_result(&self, r: &TorrentRecord) -> SearchResult {
+        // Counted here rather than at the call site so the count stays attached
+        // to the work itself: an implementation that goes back to materialising
+        // every candidate and paging afterwards is counted wherever it puts the
+        // call.
+        #[cfg(test)]
+        note_materialised();
         SearchResult {
             infohash: r.infohash.clone(),
             name: r.name.clone(),
@@ -1694,26 +1816,76 @@ mod tests {
         // …and it must cost materially less than that full sort. The dispatcher
         // runs this every 200 ms–1 s holding the store mutex, so at 1M rows the
         // 36.7 ms sort was also 36.7 ms of blocked inbound harvesting per tick.
+        //
+        // Counted, not timed. This used to assert `heap_time * 2 < sort_time`
+        // from a single sample of each side, and selecting 80 rows out of 40 000
+        // takes a few hundred microseconds — a window one scheduler preemption
+        // doubles, so on a loaded 2-core runner the test failed with the code
+        // working. Comparison counts are a property of the two algorithms and of
+        // nothing else. What this does NOT measure is wall-clock cost: the sort
+        // also materialises a 40 000-row Vec the selection never builds, so the
+        // real gap is wider than the comparison ratio.
+        //
+        // `heap_cmps` counts every comparison of two `SelectRow`s, the heap's own
+        // `push`/`pop` sifts included, because the counter lives in
+        // `SelectRow::cmp`. It deliberately does not live in the selection loop:
+        // one tick per non-skipped row reads exactly `n` for any body under that
+        // loop, and so cannot tell this implementation from one that re-sorts the
+        // whole heap on every iteration.
+        const QUEUED: u32 = 40_000;
         let mut big = Store::new();
-        for i in 0..40_000u32 {
-            big.add_discovered(&ih_of(i), None, 1000 + u64::from((i * 7919) % 40_000));
+        for i in 0..QUEUED {
+            big.add_discovered(&ih_of(i), None, 1000 + u64::from((i * 7919) % QUEUED));
         }
-        let t = std::time::Instant::now();
+        take_select_cmps(); // discard what the small store above counted
         let selected = big.pending_infohashes(80, 5);
-        let heap_time = t.elapsed();
-        let t = std::time::Instant::now();
+        let heap_cmps = take_select_cmps();
+        let mut sort_cmps = 0u64;
         let mut every: Vec<(&String, &Discovered)> = big.discovered.iter().collect();
         every.sort_by(|a, b| {
+            sort_cmps += 1;
             a.1.attempts
                 .cmp(&b.1.attempts)
                 .then(a.1.first_seen.cmp(&b.1.first_seen))
         });
-        let sort_time = t.elapsed();
         assert_eq!(selected.len(), 80);
+        // Bounded on BOTH sides, because a ceiling alone is satisfied by zero and
+        // zero is exactly what an uncounted implementation reports.
+        //
+        // Floor, `n`: once the heap holds `limit` rows every remaining row is
+        // compared against its worst, so a count below the row count means the
+        // ordering being counted is not the one the selection runs on — put the
+        // bare tuple back in place of `SelectRow` and this reads 0.
+        //
+        // Ceiling, `2n`: the O(n)-comparisons claim. On top of the `n` peeks only
+        // a row that displaces the heap's worst pays an O(log limit) sift, and
+        // few do this far into a 40 000-row scan; measured 44 905. Anything that
+        // sorts more than a bounded prefix is nowhere near it — putting the full
+        // sort back inside the loop (`heap.push(row); let mut v =
+        // heap.into_vec(); v.sort_unstable(); v.truncate(limit); heap =
+        // v.into_iter().collect();`) measures 26 964 571.
+        let queued = u64::from(QUEUED);
         assert!(
-            heap_time * 2 < sort_time,
-            "bounded selection ({heap_time:?}) is no cheaper than the full sort \
-             ({sort_time:?}) it replaced"
+            (queued..=2 * queued).contains(&heap_cmps),
+            "the bounded selection made {heap_cmps} ordering comparisons over \
+             {queued} queued rows, outside the expected {queued}..={}: below it \
+             the count is not measuring the selection, above it the selection is \
+             no longer O(n) comparisons",
+            2 * queued
+        );
+        // The same claim in its own terms, against a baseline measured in this
+        // process rather than a number recorded in a comment: how many
+        // comparisons a stable sort makes is a property of the toolchain (Rust's
+        // changed in 1.81), so `sort_cmps` is whatever THIS build's sort did —
+        // 658 240 on 1.95. It is the weaker of the two bounds, since the ceiling
+        // above already pins the selection at O(n) while sorting 40 000 rows in a
+        // random order cannot cost under ~554 000 comparisons whatever the
+        // algorithm. It is kept because "cheaper than the full sort it replaced"
+        // is the claim, and this is the line that states it.
+        assert!(
+            heap_cmps * 4 < sort_cmps,
+            "bounded selection ({heap_cmps} comparisons) is no cheaper than the \
+             full sort ({sort_cmps} comparisons) it replaced"
         );
     }
 
@@ -1721,8 +1893,8 @@ mod tests {
     /// to be cloned into a `SearchResult` (six `String`s + a freshly formatted
     /// magnet) and only then were `offset`/`limit` applied, so `/recent?limit=1`
     /// over 20 000 torrents took 174 ms and built 20 000 rows to return one.
-    /// Asserted as a ratio against the same query asking for every row, which is
-    /// ~1.0 without the fix.
+    /// Asserted by counting the rows the search builds, which is ~the corpus size
+    /// without the fix and exactly the page size with it.
     #[test]
     fn search_pages_before_materialising() {
         let mut s = Store::new();
@@ -1750,26 +1922,46 @@ mod tests {
             ..Default::default()
         };
         // Same corpus, same ordering, same filters — only the page size differs,
-        // so the gap is exactly the per-row materialisation the fix skips.
-        let bench = |limit: usize| {
-            let mut best = std::time::Duration::MAX;
-            for _ in 0..5 {
-                let t = std::time::Instant::now();
-                let r = s.search("", limit, 0, Order::Latest, &f, false);
-                best = best.min(t.elapsed());
-                assert_eq!(r.len(), limit.min(N as usize));
-            }
-            best
-        };
-        let one = bench(1);
-        let all = bench(N as usize);
-        // Best-of-5 on each side; measured ~5× apart with the fix, ~1× without, so
-        // 3× discriminates with room for a noisy machine.
-        assert!(
-            one * 3 < all,
-            "limit=1 ({one:?}) is not materially cheaper than limit={N} ({all:?}) — \
-             the whole result set is still being materialised before paging"
+        // so the difference in rows built is exactly the per-row materialisation
+        // the fix skips.
+        //
+        // Counted, not timed. This used to time a `limit=1` search against a
+        // `limit=N` one (best of five each) and require a 3× gap. On a loaded
+        // 2-core runner that failed 3 times in 50 full-suite runs with the code
+        // working, because contention adds roughly the same number of
+        // milliseconds to both sides and an additive term destroys a ratio:
+        // `one=112 ms vs all=289 ms` was one failure, and `one=131 ms vs
+        // all=29 ms` another, where the one-row page came back slower than the
+        // full one. How many rows the search builds depends on the search and on
+        // nothing else.
+        take_materialised(); // discard anything the corpus build counted
+        let one = s.search("", 1, 0, Order::Latest, &f, false);
+        let one_built = take_materialised();
+        let all = s.search("", N as usize, 0, Order::Latest, &f, false);
+        let all_built = take_materialised();
+        assert_eq!(one.len(), 1);
+        assert_eq!(all.len(), N as usize);
+        // Exact counts on both sides, not a ratio. `all_built == N` is what keeps
+        // `one_built == 1` from passing vacuously: a search that stopped
+        // materialising rows at all, or a counter that stopped firing, would
+        // report 0 for both and satisfy any inequality. Materialising the whole
+        // result set and paging afterwards — the bug — makes `one_built` N.
+        assert_eq!(
+            one_built, 1,
+            "limit=1 built {one_built} rows to return one row — {N} means the \
+             whole result set is still materialised before paging, 0 means the \
+             count is no longer being taken"
         );
+        assert_eq!(
+            all_built,
+            u64::from(N),
+            "limit={N} built {all_built} rows, so the counter is not tracking \
+             materialisation and the assertion above proves nothing"
+        );
+        // What this does NOT measure is wall-clock cost. Each skipped row is six
+        // `String` clones and a percent-encoded magnet, so the time saved is
+        // larger than the row ratio, but it is not what makes the test pass.
+
         // Paging is unchanged: page 2 of 2 is the same row the old skip/take gave.
         let page = s.search("", 2, 2, Order::Latest, &f, true);
         let head = s.search("", 4, 0, Order::Latest, &f, true);

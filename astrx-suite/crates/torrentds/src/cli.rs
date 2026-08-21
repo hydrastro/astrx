@@ -1625,11 +1625,13 @@ mod tests {
     /// snapshot it cannot decode as a hard error, so `index` and `search` both
     /// refuse to start with the index gone (an 89 MB snapshot truncated at 5 %,
     /// 50 % and 99.9 % gave `Store::restore == None` every time). Here a reader
-    /// thread hammers `read_store` while the writer rewrites a ~1 MB snapshot 30
-    /// times: with a rename it can never observe a partial file.
+    /// thread re-reads the snapshot, yielding between reads, while the writer
+    /// rewrites a ~1 MB one 30 times: with a rename it can never observe a
+    /// partial file. The read count is asserted too, because "no torn read" is
+    /// only worth something if reads actually happened during the writes.
     #[test]
     fn write_store_is_atomic_under_a_concurrent_reader() {
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
         let path = tmp("atomic", line!());
         let db = path.to_str().unwrap().to_string();
@@ -1652,25 +1654,74 @@ mod tests {
         assert!(size > 500_000, "snapshot unexpectedly small: {size}");
 
         let stop = Arc::new(AtomicBool::new(false));
+        // The reader publishes its completed-read count so the writer can wait for
+        // the overlap instead of hoping for it; see the writer loop below.
+        let reads_done = Arc::new(AtomicUsize::new(0));
         let reader = std::thread::spawn({
             let db = db.clone();
             let stop = stop.clone();
+            let reads_done = reads_done.clone();
             move || {
-                let mut torn = 0usize;
-                while !stop.load(Ordering::Relaxed) {
+                let (mut torn, mut reads) = (0usize, 0usize);
+                // Bounded, and it yields between reads. What this proves needs
+                // reads that OVERLAP the rewrites, not a hot spin: the loop used
+                // to re-read the ~1 MB snapshot as fast as it could for as long as
+                // the writes took, and that window grows with the load, so the
+                // reader pinned one of the two cores for all of it while libtest
+                // ran this binary's other tests on the one parallel thread it
+                // gets. The cap is what bounds that: 300 reads is ~9× the busiest
+                // run measured here — 18–34 reads over 20 runs of the whole
+                // `--lib` binary under a 16-way CPU load, against a writer loop
+                // that took 303–500 ms — so a normal run still ends on `stop`,
+                // and only a starved writer reaches the cap. `yield_now` gives
+                // the other test thread a scheduling point between reads.
+                for _ in 0..300 {
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
                     if read_store(&db, DEFAULT_SPAM_THRESHOLD).is_err() {
                         torn += 1;
                     }
+                    reads += 1;
+                    reads_done.store(reads, Ordering::Relaxed);
+                    std::thread::yield_now();
                 }
-                torn
+                (torn, reads)
             }
         });
-        for _ in 0..30 {
+        let mut writes = 0usize;
+        while writes < 30 || reads_done.load(Ordering::Relaxed) < 8 {
             write_store(&store, &db).expect("save");
+            writes += 1;
+            if writes >= 300 {
+                break;
+            }
         }
         stop.store(true, Ordering::Relaxed);
-        let torn = reader.join().expect("reader thread");
+        let (torn, reads) = reader.join().expect("reader thread");
         assert_eq!(torn, 0, "a reader observed {torn} unreadable snapshots");
+        // Without this the test could pass by never reading at all. `stop` is set
+        // straight after the last write, so every read counted here overlapped
+        // the rewrites, and each one is a chance to catch a truncated file: with
+        // `std::fs::write` in place of the rename, one read landing inside one
+        // write window fails the run.
+        //
+        // The overlap is guaranteed rather than measured, which is the point of
+        // the writer's `while writes < 30 || reads_done < 8`: the writer does not
+        // stop rewriting until the reader has actually completed 8 reads beside
+        // it, so a reader the scheduler starves makes the writer keep going
+        // instead of making this assertion fail. `reads` can only exceed the
+        // count the writer saw, never fall short of it. The floor does not bind
+        // in practice — over 20 runs of the whole `--lib` binary under a 16-way
+        // CPU load the reader got 18–34 reads in and the loop stopped at exactly
+        // 30 writes every time — so this now fails only if the reader thread died
+        // early, and the writer's 300-write escape hatch is what keeps that case
+        // a failure (reported by the `join` above) rather than a hang.
+        assert!(
+            reads >= 8,
+            "the reader only completed {reads} reads during {writes} rewrites — it \
+             barely overlapped the writer, so `torn == 0` proves little"
+        );
         assert_eq!(read_store(&db, DEFAULT_SPAM_THRESHOLD).unwrap().len(), 250);
 
         // The temp file is renamed, never left behind.

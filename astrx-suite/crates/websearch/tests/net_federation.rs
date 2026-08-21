@@ -44,13 +44,30 @@ fn serve_shard(listener: TcpListener, body: &'static str) -> tokio::task::JoinHa
     })
 }
 
-async fn free_port() -> u16 {
-    // Bind then drop: the port is free, so a later connect is refused.
-    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let p = l.local_addr().unwrap().port();
-    drop(l);
-    p
-}
+/// The down shard's address: `127.0.0.1` port 0.
+///
+/// This used to be a scavenged ephemeral port — bind one, drop the listener,
+/// assume nothing takes it back. Something can: the competing binder is not some
+/// other test binary, since `cargo test` runs those one at a time, but the
+/// sibling test in *this* file. libtest runs up to `available_parallelism()`
+/// tests at once — 2 on the 2-core CI runner, and this binary holds exactly 2 —
+/// so `merges_ranks_and_collapses_cross_host_mirror` is binding its own pair of
+/// `127.0.0.1:0` shards at the same instant, out of the same ephemeral range,
+/// and either of them could be handed the number this one had just released.
+/// Any other process on the machine can take it too. If one did, the "down"
+/// shard would be up. The test mostly survived that (a squatter's reply is not
+/// federation JSON, so the shard still counts as failed) but not for the reason
+/// it claims to be testing.
+///
+/// Port 0 removes the race rather than narrowing it: it is not a usable
+/// destination port, and no process can come to occupy it, because `bind(0)`
+/// means "assign me an ephemeral port" and never yields port 0 itself. The
+/// kernel refuses the connect immediately — measured here as
+/// `connect:Connection refused (os error 111)` in ~0.3 ms — so the shard still
+/// fails the way the assertions below describe, at `connect`, having gone
+/// through URL parse and resolution first, and costs no wall clock waiting on
+/// the 2 s fetch timeout.
+const DEAD_SHARD: &str = "http://127.0.0.1:0";
 
 // Shard A: one high-scoring result on host `a.example`. Its SimHash and shard
 // B's `b.example/y` fingerprint differ in only 2 bits (Hamming 2 <= 3), so they
@@ -118,12 +135,8 @@ async fn partial_when_a_shard_is_down() {
     let la = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let pa = la.local_addr().unwrap().port();
     let sa = serve_shard(la, SHARD_A);
-    let dead = free_port().await; // nothing listening -> connection refused
 
-    let bases = vec![
-        format!("http://127.0.0.1:{pa}"),
-        format!("http://127.0.0.1:{dead}"),
-    ];
+    let bases = vec![format!("http://127.0.0.1:{pa}"), DEAD_SHARD.to_string()];
     let opts = FederatedOpts {
         timeout: std::time::Duration::from_secs(2),
         ..FederatedOpts::default()

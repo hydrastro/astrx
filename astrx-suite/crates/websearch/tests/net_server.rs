@@ -107,7 +107,57 @@ async fn the_connection_cap_defers_the_next_accept() {
     // Occupy the single permit with a half-open request.
     let mut hog = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     hog.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
-    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // `connect` returning says nothing about the server having accepted it: the
+    // kernel completes the handshake into the listen backlog on its own, so at
+    // this point `hog` may still be queued and the only permit unspent. What the
+    // fixed 150 ms sleep that used to stand here was waiting for is the server
+    // task reaching `acquire_owned().await` and `accept()`ing `hog` — scheduler
+    // latency, guessed at rather than observed, and a loaded 2-core runner can
+    // exceed the guess.
+    //
+    // Wait for the observable effect instead: send a complete, well-formed
+    // request on a throwaway connection and see whether it is answered. A reply
+    // means the accept loop is still serving new connections; a read that times
+    // out means it is not, which is the state the assertion below needs.
+    //
+    // Being candid about what this does and does not establish: the timeout
+    // proves the loop is not currently serving anyone, not *why*. Under enough
+    // load the reason could be that the server task has simply not been
+    // scheduled yet rather than that the cap is spent. Either way the assertion
+    // that follows holds, because the backlog is FIFO — `hog` was queued first
+    // and, once accepted, owns the only permit for its full 30 s
+    // `request_timeout` — so `second` cannot be served ahead of it.
+    //
+    // Each probe is dropped at the end of its iteration. That matters: a probe
+    // left open sits in the backlog ahead of `second`, and a probe holding the
+    // permit with no complete head would park there for the whole
+    // `request_timeout`. Sending the head and closing means the drain below
+    // disposes of it immediately.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut probe = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        probe
+            .write_all(b"GET /healthz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut byte = [0u8; 1];
+        if tokio::time::timeout(Duration::from_millis(100), probe.read(&mut byte))
+            .await
+            .is_err()
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the server kept answering new connections with max_connections = 1"
+        );
+        // Answered, so the cap is not spent yet. Space the retries out rather
+        // than spinning: this path only runs when the cap is broken, and a tight
+        // connect loop would leave thousands of sockets in TIME_WAIT on the way
+        // to the failure.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
     // A second, complete request cannot be served while the cap is spent.
     let mut second = TcpStream::connect(("127.0.0.1", port)).await.unwrap();

@@ -52,9 +52,44 @@ fn collapse_stars(s: &str) -> String {
     out
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Scans of the path made by [`glob_match`] on this thread. Test-only:
+    /// nothing in the shipped build counts, reads or allocates it.
+    ///
+    /// Every scan below is one forward `starts_with` / `find` / `ends_with` over
+    /// what is left of the path, and no segment is ever revisited, so a matcher
+    /// that behaves takes at most `segments.len()` of them — exactly one per
+    /// segment it actually looks at, which is every segment but an empty
+    /// trailing one. That is the whole of the ReDoS property: a backtracking
+    /// matcher takes a number of them exponential in the segment count. See
+    /// `pathological_is_bounded`, which pins the count exactly, so that a scan
+    /// loop which stops reporting its work is a failure and not a pass.
+    static GLOB_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Record one forward scan of the path (test builds only).
+#[cfg(test)]
+fn note_glob_scan() {
+    GLOB_SCANS.with(|c| c.set(c.get() + 1));
+}
+
+/// Run `f` and report how many scans [`glob_match`] made while it ran. The
+/// counter is thread-local, so a test using it is unaffected by the other tests
+/// the harness runs beside it.
+#[cfg(test)]
+fn counting_glob_scans<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    GLOB_SCANS.with(|c| c.set(0));
+    let out = f();
+    (out, GLOB_SCANS.with(std::cell::Cell::get))
+}
+
 /// Report whether `path` matches the pre-split robots `segments`: anchored at the
 /// start of `path`, wildcards between literal segments, optional end-anchor.
 pub fn glob_match(segments: &[String], anchored: bool, path: &str) -> bool {
+    // The first scan: the whole-path compare below, or the prefix check under it.
+    #[cfg(test)]
+    note_glob_scan();
     let n = segments.len();
     if n == 1 {
         let seg = segments[0].as_str();
@@ -72,6 +107,8 @@ pub fn glob_match(segments: &[String], anchored: bool, path: &str) -> bool {
         if seg.is_empty() {
             continue;
         }
+        #[cfg(test)]
+        note_glob_scan();
         match path[pos..].find(seg.as_str()) {
             Some(idx) => pos += idx + seg.len(),
             None => return false,
@@ -81,6 +118,8 @@ pub fn glob_match(segments: &[String], anchored: bool, path: &str) -> bool {
     if last.is_empty() {
         return true;
     }
+    #[cfg(test)]
+    note_glob_scan();
     if anchored {
         return path.ends_with(last) && path.len() >= last.len() && path.len() - last.len() >= pos;
     }
@@ -163,13 +202,65 @@ mod tests {
         }
     }
 
+    /// `/a*a*a*…$` against 500 `a`s is the input a backtracking matcher dies on:
+    /// 51 segments, and a regex engine explores a number of paths exponential in
+    /// that. What is asserted is the number of scans of the path, because that
+    /// is the property — one per segment, none of them ever repeated.
+    ///
+    /// This was `elapsed().as_millis() < 100`, the tightest wall-clock bound in
+    /// the workspace, measured at 92 ms against it under load. The bound could
+    /// not have been measuring the guarded failure anyway: the matcher does about
+    /// 50 scans and returns in microseconds, while backtracking does not take
+    /// 150 ms, it takes 2⁵⁰ steps and never returns. The 92 ms was a scheduler
+    /// preemption, i.e. the test was one quantum from failing on a fact about the
+    /// runner rather than about the matcher.
+    ///
+    /// The scan count bounds the whole matcher because each scan is a single
+    /// forward `starts_with` / `find` / `ends_with` over what is left of the
+    /// path, which the stdlib does in linear time: at most `segments.len()`
+    /// scans, so at most `segments.len() * path.len()` character comparisons.
+    ///
+    /// The count is pinned with `assert_eq!`, not bounded from above, because an
+    /// upper bound alone is satisfied by zero. Two mutations make that concrete,
+    /// and both pass `scans <= segments.len()`:
+    ///
+    /// * delete the two `note_glob_scan` calls inside the scan loops and leave
+    ///   the one at the top of `glob_match`: `scans` becomes 1 and the counter no
+    ///   longer tracks the loop whose repetitions are the ReDoS risk. Nothing
+    ///   else notices — it is not dead code and clippy is silent under
+    ///   `-D warnings`.
+    /// * replace the matcher with a backtracking one that reports no scans at
+    ///   all: `scans` becomes 0.
+    ///
+    /// `segments.len() - 1` rather than `segments.len()`: the pattern ends in
+    /// `*`, so the last segment is empty and `glob_match` returns before the
+    /// third scan site. The documented `segments.len()` is a correct bound, but
+    /// this input never reaches it, so asserting it would be asserting slack.
     #[test]
     fn pathological_is_bounded() {
         let (anchored, segments) = compile_glob(&format!("/{}$", "a*".repeat(50)));
         let path = format!("/{}!", "a".repeat(500));
-        let start = std::time::Instant::now();
-        let _ = glob_match(&segments, anchored, &path);
-        assert!(start.elapsed().as_millis() < 100);
+        let (matched, scans) = counting_glob_scans(|| glob_match(&segments, anchored, &path));
+        // The pattern ends in `*`, so the last segment is empty and everything
+        // after the final `a` matches — including the trailing `!`.
+        assert!(matched);
+        // 51 segments: `/a`, then 49 × `a`, then the empty one after the final
+        // `*`. One prefix scan plus one `find` per interior segment = 50.
+        assert_eq!(
+            segments.len(),
+            51,
+            "the input this test's count is taken over"
+        );
+        assert_eq!(
+            scans,
+            segments.len() - 1,
+            "matching {} segments took {scans} scans of the path, not {}: either \
+             the matcher is revisiting segments (which is where the exponent \
+             comes from) or a scan is no longer counted, in which case this test \
+             is no longer watching the loop it exists to bound",
+            segments.len(),
+            segments.len() - 1
+        );
     }
 
     #[test]

@@ -300,6 +300,26 @@ mod tests {
     async fn spoofed_response_is_rejected() {
         use crate::krpc::{parse_message, KrpcMessage};
 
+        // 500 ms — and this one value sets both the observation window and what
+        // the test costs. `match_pending` counts a forged datagram only while its
+        // txn is still in the pending map (it resolves `pend.get(&key)?`, bumps
+        // both counters and returns without removing the entry), and the only
+        // thing that ever removes that entry is this query's own timeout path.
+        // So the query deadline IS the window the rejection has to be seen in,
+        // and the assertion at the bottom — that the genuine query ends in
+        // `Err(QueryError::Timeout)` — cannot resolve until that same deadline
+        // elapses. The test cannot be cheaper than one timeout.
+        //
+        // It was briefly 3 s, on the theory that a loaded 2-core runner could
+        // leave the `current_thread` `recv_loop` unscheduled for half a second
+        // and drop the forged reply into an empty map. Measured, it does not
+        // come close: with the whole `--lib` binary running under a 16-way CPU
+        // load, the datagram was counted 2.12–2.18 ms after the attacker's
+        // `send_to` across 8 runs, so 500 ms is a ~230× margin. The 3 s bought no
+        // safety that was reachable and charged its whole self to `q.await`
+        // below, which made this one test most of the `--lib` binary: measured on
+        // an idle box, that binary runs 3.02–3.06 s with a 3 s timeout here and
+        // 0.93–0.96 s with 500 ms.
         let client = KrpcNode::bind(loopback(), None, Duration::from_millis(500))
             .await
             .unwrap();
@@ -330,11 +350,36 @@ mod tests {
             .await
             .unwrap();
 
-        // The forged reply is rejected on the source-address check; the query
-        // times out (the genuine server never replied from its own address).
-        let result = q.await.unwrap();
-        assert!(matches!(result, Err(QueryError::Timeout)));
+        // Wait for the rejection itself rather than for the query to finish. The
+        // counter reaching 1 IS the event under test, and polling for it takes
+        // the scheduler out of the assertion: the datagram is rejected whenever
+        // the `recv_loop` next runs, which on a busy machine is later than the
+        // send but is still a rejection.
+        //
+        // The deadline is the query's own 500 ms, which is the longest one that
+        // can mean anything: the moment the query times out it takes the pending
+        // entry with it, and from then on `match_pending` cannot count anything,
+        // so a poll loop that outlived the query would spin against counters
+        // frozen at 0 and report the failure late. Against the 2.12–2.18 ms this
+        // actually takes under load, 500 ms is slack enough that reaching the
+        // deadline means spoof detection is broken, not that the machine was
+        // slow.
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while client.stats.spoofed.load(Ordering::Relaxed) != 1 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the forged response was never counted as spoofed"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        // Rejected on the source-address check, and counted once as both. Both
+        // reads land ~2 ms in, while the txn is still pending — nothing removes
+        // it until the query times out at 500 ms, which is `q.await` below.
         assert_eq!(client.stats.spoofed.load(Ordering::Relaxed), 1);
         assert_eq!(client.stats.dropped.load(Ordering::Relaxed), 1);
+        // …and the query it forged a reply to is still pending, so it times out:
+        // the genuine server never replied from its own address.
+        let result = q.await.unwrap();
+        assert!(matches!(result, Err(QueryError::Timeout)));
     }
 }

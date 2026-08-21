@@ -201,6 +201,34 @@ fn read_literal(buf: &[u8], mut i: usize) -> (Vec<u8>, usize) {
     (out, i)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Fragments built by [`StreamFragments`] on this thread. Test-only: nothing
+    /// in the shipped build counts, reads or allocates it.
+    ///
+    /// The lazy iterator exists so that no fragment past `extract_text`'s
+    /// `max_chars` is ever *built*, and the count is that property stated
+    /// directly. It replaces a wall-clock comparison that could not state it —
+    /// see `the_char_cap_stops_extraction_instead_of_trimming_it_afterwards`.
+    static FRAGMENTS_BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Record one fragment built (test builds only).
+#[cfg(test)]
+fn note_fragment_built() {
+    FRAGMENTS_BUILT.with(|c| c.set(c.get() + 1));
+}
+
+/// Run `f` and report how many fragments were built while it ran. The counter is
+/// thread-local, so a test using it is unaffected by the other tests the harness
+/// runs beside it.
+#[cfg(test)]
+fn counting_fragments<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    FRAGMENTS_BUILT.with(|c| c.set(0));
+    let out = f();
+    (out, FRAGMENTS_BUILT.with(std::cell::Cell::get))
+}
+
 /// The text fragments of a decoded content-stream body — `(...)` literals and
 /// `<...>` hex strings — yielded ONE AT A TIME, exactly as Python's
 /// `_extract_from_stream` produces them in order.
@@ -228,6 +256,8 @@ impl Iterator for StreamFragments<'_> {
                 let (s, next) = read_literal(body, self.i + 1);
                 self.i = next;
                 if !s.is_empty() {
+                    #[cfg(test)]
+                    note_fragment_built();
                     return Some(latin1(&s));
                 }
                 continue;
@@ -248,6 +278,8 @@ impl Iterator for StreamFragments<'_> {
                 let decoded = from_hex(&ascii);
                 self.i = j + 1;
                 if let Some(d) = decoded {
+                    #[cfg(test)]
+                    note_fragment_built();
                     return Some(latin1(&d));
                 }
                 continue;
@@ -489,32 +521,35 @@ mod audit_regression {
     /// `(a)Tj` is ~2.6 million one-character `String`s: peak RSS went 20 MB →
     /// 122 MB, about 10 000× the input, and once per `--workers` worker.
     ///
-    /// The observable is a ratio, not a wall-clock threshold: on the SAME PDF, an
-    /// extraction that stops at 100 characters must be several times cheaper than
-    /// one that consumes every fragment. Eagerly, the two do identical work and
-    /// the ratio collapses to ~1 (the shared cost is scanning the stream, which
-    /// both pay).
+    /// The observable is the number of fragments BUILT, counted by the iterator
+    /// itself, which is the property word for word: under a 100-character cap 50
+    /// of the 400 000 fragments are built, and without one, all 400 000. Eagerly,
+    /// both runs build all 400 000.
+    ///
+    /// This was a stopwatch — `capped * 3 < uncapped` over the two extractions —
+    /// and it failed for real (run 7 of a 40-run loop: 134 ms against 379 ms). The
+    /// capped side does 1/8000 of the work, so it is a sub-millisecond
+    /// measurement, and one scheduler preemption on a loaded two-core runner adds
+    /// a whole quantum to it while leaving the uncapped side unmoved in relative
+    /// terms; the 3× ratio was well inside that noise. The counts are 50 against
+    /// 400 000 on any machine, and the eager failure mode lands at 400 000 against
+    /// 400 000 — nothing about the schedule can move either number.
     #[test]
     fn the_char_cap_stops_extraction_instead_of_trimming_it_afterwards() {
         let pdf = pdf_of_tj(400_000);
 
-        let t0 = std::time::Instant::now();
-        let text = extract_text(&pdf, 100);
-        let capped = t0.elapsed();
+        let (text, capped) = counting_fragments(|| extract_text(&pdf, 100));
         // 50 one-character fragments, space-joined, is what a 100-char budget buys.
         assert_eq!(text, "a ".repeat(49) + "a");
-
-        let t1 = std::time::Instant::now();
-        let full = extract_text(&pdf, 100_000_000);
-        let uncapped = t1.elapsed();
-        assert_eq!(full.chars().count(), 400_000 * 2 - 1);
-
-        assert!(
-            capped * 3 < uncapped,
-            "stopping at 100 characters ({capped:?}) was not materially cheaper than \
-             extracting all 400 000 fragments ({uncapped:?}): the cap is still being \
-             applied after every fragment has been built"
+        assert_eq!(
+            capped, 50,
+            "a 100-character cap built {capped} fragments, not the 50 it can spend: \
+             the cap is being applied after fragments are built, not to stop building them"
         );
+
+        let (full, uncapped) = counting_fragments(|| extract_text(&pdf, 100_000_000));
+        assert_eq!(full.chars().count(), 400_000 * 2 - 1);
+        assert_eq!(uncapped, 400_000);
     }
 
     /// The mechanism, asserted directly: producing one fragment must not consume

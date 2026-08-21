@@ -988,19 +988,88 @@ mod audit_regression {
 
     /// Parsing a head was O(headers²): an origin filling the head cap with tens
     /// of thousands of one-byte headers cost ~1 s of crawler CPU per response.
+    ///
+    /// What is asserted is how the cost SCALES with the size of one head, not how
+    /// long any parse took. The two sides parse the SAME 8 000 headers — four
+    /// blocks of 2 000 against one block of 8 000 — so a linear parse costs the
+    /// same on both and the ratio is 1, while a quadratic one costs
+    /// `8000²/(4·2000²) = 4` times more on the single big block.
+    ///
+    /// What makes the ratio survive a loaded runner is the best-of-9 minimum
+    /// below, not any cancellation between the two sides. Contention does not
+    /// cancel out of a quotient: an extra `d` on both sides gives `(L+d)/(S+d)`,
+    /// which is not `L/S` but drifts toward 1, and in practice the perturbations
+    /// are independent, so they do not even land on both sides. Both effects were
+    /// observed here — a run whose small-side minimum was inflated to 22.3 ms
+    /// against a typical 13.5–14.5 ms read 0.711, and a run that caught the large
+    /// side instead read 1.426. What bounds them is that a preemption can only
+    /// ever inflate a sample, so the minimum of nine is the reading closest to the
+    /// work itself, and it only takes one of the nine to run cleanly. Matching the
+    /// two sides' durations (~14 ms each) is still worth doing — it keeps the two
+    /// minima comparable estimators — but it is not what carries the test.
+    ///
+    /// Measured over 16 runs of the whole `--lib` binary under a 16-way CPU load
+    /// on this 2-core box: 1.046–1.426, with the one 0.711 above. Reverting
+    /// `parse_headers` to the linear duplicate scan gives 4.13–4.30 and fails 6 of
+    /// 6 — the predicted 4. The bar of 2.5 sits 1.75× above the worst reading a
+    /// correct parse gave and 1.65× below the best the defect gave.
+    ///
+    /// What this cannot rule out: the two sides have different working sets, 2 000
+    /// rows against 8 000, so a `Vec<(String, String)>` of about 94 KB against
+    /// about 375 KB before the strings themselves. On a machine where the large
+    /// side spills a cache level the small side fits inside, a CORRECT parse's
+    /// ratio rises for a reason that has nothing to do with the exponent. It does
+    /// not happen here — this box has 32 KB of L1d and 1 MB of L2, so both sides
+    /// miss L1 and both fit L2, which is why the readings sit near 1.05 — but a
+    /// box with a 256 KB L2 would straddle the tiers. The margin is what absorbs
+    /// that: the defect this names lands at ~4.2, not at 1.5.
+    ///
+    /// The bound was `elapsed() < 2 s` on a single 20 000-header parse, which was
+    /// wrong in both directions. It sat only 4.3× above what a CORRECT parse
+    /// measured — 62 ms idle, 464 ms under load on two cores — so a runner four
+    /// times slower than this one failed it for no reason. And it barely
+    /// discriminated against the defect it names: the quadratic parse cost about
+    /// 1 s, so a regression landing anywhere under 2 s passed. A ratio has no
+    /// such blind spot, because what it measures is the exponent rather than the
+    /// machine.
     #[test]
     fn many_headers_parse_in_linear_time() {
-        let mut block = String::new();
-        for i in 0..20_000 {
-            block.push_str(&format!("h{i}: v\r\n"));
+        // `h0: v\r\n`, `h1: v\r\n`, … — the shape an origin fills the head with.
+        fn block_of(n: usize) -> String {
+            let mut block = String::new();
+            for i in 0..n {
+                block.push_str(&format!("h{i}: v\r\n"));
+            }
+            block
         }
-        let t = std::time::Instant::now();
-        let h = parse_headers(block.as_bytes());
-        assert_eq!(h.pairs().len(), 20_000);
-        assert!(
-            t.elapsed() < std::time::Duration::from_secs(2),
-            "quadratic header parse: {:?}",
+        // One sample: `reps` parses of `block`, timed together.
+        fn sample(block: &str, reps: usize, want: usize) -> std::time::Duration {
+            let t = std::time::Instant::now();
+            for _ in 0..reps {
+                let h = parse_headers(block.as_bytes());
+                assert_eq!(h.pairs().len(), want);
+            }
             t.elapsed()
+        }
+
+        let small = block_of(2_000);
+        let large = block_of(8_000);
+        // Alternate the two sides so they see the same stretch of whatever else
+        // the machine is doing, and keep the fastest of each: a preemption can
+        // only ever inflate a sample, never shorten it, so the minimum is the
+        // reading closest to the work itself. A mean would carry the scheduler in.
+        let (mut best_small, mut best_large) = (std::time::Duration::MAX, std::time::Duration::MAX);
+        for _ in 0..9 {
+            best_small = best_small.min(sample(&small, 4, 2_000));
+            best_large = best_large.min(sample(&large, 1, 8_000));
+        }
+        // `2 * large < 5 * small`, i.e. a factor of 2.5, in integer arithmetic.
+        assert!(
+            best_large * 2 < best_small * 5,
+            "8 000 headers in one block took {best_large:?} against {best_small:?} for the \
+             same 8 000 in four blocks, a factor of {:.2} where linear is ~1 and quadratic \
+             is ~4: the parse is quadratic again",
+            best_large.as_secs_f64() / best_small.as_secs_f64().max(f64::MIN_POSITIVE)
         );
     }
 }

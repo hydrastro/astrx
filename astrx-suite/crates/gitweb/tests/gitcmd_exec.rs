@@ -357,7 +357,17 @@ fn stdout_is_hard_capped_and_the_child_is_killed() {
         &repo.path,
         &["log", "--format=%H", "main", "--"],
         RunOptions {
-            timeout: Duration::from_secs(15),
+            // The subject here is the byte cap, not speed: `git log` on the
+            // six-commit fixture writes its first chunk and is killed at 8
+            // bytes, and neither assertion below says anything about how long
+            // that took. The timeout is only what turns a child that never
+            // writes into a failed test instead of a hung one, so it is set
+            // above anything scheduling noise on a loaded 2-core runner can
+            // produce rather than at the 15s production default (that default
+            // bounds how long a request may take, which is a different
+            // question). A genuine hang now takes two minutes to surface
+            // instead of fifteen seconds; it still surfaces.
+            timeout: Duration::from_secs(120),
             max_bytes: 8,
             check: false,
         },

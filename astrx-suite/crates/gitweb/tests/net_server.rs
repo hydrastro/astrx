@@ -26,6 +26,49 @@ use tokio::net::{TcpListener, TcpStream};
 // Harness
 // --------------------------------------------------------------------------- //
 
+// Every test here runs on `worker_threads = 1`, not 4.
+//
+// One cannot deadlock, because a test body never occupies a worker in the first
+// place. `#[tokio::test(flavor = "multi_thread", worker_threads = N)]` expands to
+// `Builder::new_multi_thread().worker_threads(N).build().block_on(body)`, and
+// `Runtime::block_on` drives the future on the *calling* thread: in tokio 1.53.1
+// (the version this workspace locks) `multi_thread/mod.rs::block_on` is
+// `enter_runtime(handle, true, |blocking| blocking.block_on(future))`, and that
+// inner `block_on` parks the caller on a `CachedParkThread`
+// (`runtime/context/blocking.rs`). So when a body shells out — `git clone`,
+// `git fetch` and `git_capture` all go through `Command::output()` — what blocks
+// is libtest's thread, not a worker. The worker stays free to run the accept loop
+// and the connection tasks for the whole of that call, which is exactly when the
+// clone needs it.
+//
+// The one worker cannot be starved either. `serve` is an `accept().await` loop
+// that spawns each connection as an ordinary async task, and both blocking steps
+// — `Server::handle` and the response-body stream pump — go to `spawn_blocking`,
+// which draws on the blocking pool rather than on this worker. Nothing on the
+// worker thread blocks, so its tasks multiplex the way async tasks do; and no
+// test here needs two of them running at the same instant anyway, since each
+// drives one client operation at a time.
+//
+// So 1 is picked because it is the smallest count that suffices, not because it
+// is faster: on wall clock the two are a wash. Alternating the counts run-by-run
+// so each sees the same machine, over 7 paired rounds — 3 under a 16-way CPU load
+// (1: 0.84 / 0.93 / 1.07 s, 2: 0.90 / 0.96 / 1.07 s) and 4 idle (1: 0.79 / 0.83 /
+// 0.93 / 1.00 s, 2: 0.71 / 0.89 / 1.01 / 1.09 s) — 1 was ahead in 5, level in 1
+// and behind in 1, every margin under 0.1 s and smaller than the drift between
+// consecutive rounds. What decides it is thread count, not time: two tests run at
+// once, so 1 worker means 2 worker threads on the two cores where 4 meant 8. All
+// 7 tests passed on 1 in every one of those runs.
+//
+// Four was a resource assumption, and the arithmetic under it was wrong twice.
+// Seven tests at 4 workers was never 28 threads: cargo runs each test binary to
+// completion before starting the next, and within one binary libtest runs at most
+// `available_parallelism()` tests at a time — 2 here. At most two runtimes are
+// therefore alive at once, so 4 workers meant at most 8 worker threads, and 1
+// means at most 2. Nor could this binary's load have pushed other crates'
+// timing-sensitive assertions over their thresholds, because those binaries never
+// run while this one does. The load is real, but it lands on the one other test
+// in *this* binary and on the `git` subprocesses the two of them spawn.
+
 /// A server running on loopback for the lifetime of the test.
 struct Live {
     port: u16,
@@ -207,7 +250,7 @@ impl Drop for Scratch {
 // Browsing over a socket
 // --------------------------------------------------------------------------- //
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn pages_blobs_and_archives_round_trip_over_http() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -264,7 +307,7 @@ async fn pages_blobs_and_archives_round_trip_over_http() {
     drop(fx);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn head_gzip_and_keep_alive_behave() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -331,7 +374,7 @@ async fn head_gzip_and_keep_alive_behave() {
     drop(fx);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn access_control_rejects_and_accepts_over_http() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -409,7 +452,7 @@ async fn access_control_rejects_and_accepts_over_http() {
 ///
 /// This plants a hostile askpass helper that records every invocation, runs the
 /// refused clone under it, and asserts the helper was **never called**.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn a_refused_clone_never_prompts_for_credentials() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -487,7 +530,7 @@ async fn a_refused_clone_never_prompts_for_credentials() {
 // Git Smart HTTP: a real `git clone` over the served HTTP
 // --------------------------------------------------------------------------- //
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn git_clone_and_fetch_work_over_the_served_http() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -576,7 +619,7 @@ async fn git_clone_and_fetch_work_over_the_served_http() {
     drop(fx);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn a_clone_against_a_clone_disabled_server_fails_while_browsing_works() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");
@@ -608,7 +651,7 @@ async fn a_clone_against_a_clone_disabled_server_fails_while_browsing_works() {
     drop(fx);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn a_chunked_and_an_over_large_post_body_are_handled() {
     if !common::git_available() {
         eprintln!("skipping: no usable `git` on PATH");

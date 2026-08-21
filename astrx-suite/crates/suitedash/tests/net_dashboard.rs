@@ -24,6 +24,24 @@ use suitedash::{summarize, Dashboard};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+/// Wall-clock slack allowed on top of a deadline before a bounded operation is
+/// declared unbounded.
+///
+/// Every elapsed-time assertion in this file is proving that a hostile backend
+/// cannot wedge the prober. None of them is proving the prober is *fast*. The
+/// failure each one guards against is measured in whole seconds — a head or
+/// body dripped at 0.1 s/byte runs 20 s (`padded_head` pads to 200 bytes), and
+/// the black-hole mock sleeps 30 — so a bound written as a small multiple of a
+/// 500 ms timeout was never discriminating against that. It was measuring the
+/// machine.
+///
+/// This suite runs two dozen tokio tests concurrently, and CI runs it in a
+/// debug build on a two-core runner shared with the rest of the workspace's
+/// test binaries. Descheduling for a second there is ordinary. Three seconds of
+/// slack swallows that and still sits several times below every failure it is
+/// looking for; each assertion names its own margin.
+const CI_SLACK: Duration = Duration::from_secs(3);
+
 // --------------------------------------------------------------------------- //
 // Mock services (the port of tests/mockservice.py)
 // --------------------------------------------------------------------------- //
@@ -124,13 +142,17 @@ async fn spawn_service(routes: &[(&str, Reply)], catch_all: Option<Reply>) -> Mo
     Mock { port, handle }
 }
 
-/// A loopback port with nothing listening, so connecting to it is refused.
-async fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").await.expect("bind probe");
-    let port = l.local_addr().expect("probe addr").port();
-    drop(l);
-    port
-}
+/// A base URL whose connect can only ever be refused.
+///
+/// This used to scavenge a port: bind `127.0.0.1:0`, note what the kernel
+/// assigned, drop the listener, and hand out the number. That port is only
+/// free at the instant it is returned — the tests in this binary run in
+/// parallel and bind ephemeral ports of their own, so one of them can be given
+/// the port another just released, and then "nothing is listening" quietly
+/// becomes "something is". Port 0 removes the race instead of narrowing it:
+/// `bind(0)` means "assign me a port" and never yields 0 itself, so nothing
+/// can ever be listening there, and Linux refuses the connect immediately.
+const DEAD_PORT_URL: &str = "http://127.0.0.1:0";
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
     if hay.len() < needle.len() {
@@ -323,19 +345,20 @@ async fn fetch_rejects_unsupported_schemes() {
 }
 
 #[tokio::test]
-async fn fetch_of_a_dead_port_is_refused_fast() {
-    let port = free_port().await;
-    let started = Instant::now();
-    let err = fetch(
-        &format!("http://127.0.0.1:{port}"),
-        "/health",
-        Duration::from_secs(2),
-    )
-    .await
-    .expect_err("nothing is listening");
+async fn fetch_of_a_dead_port_is_refused_not_waited_on() {
+    let err = fetch(DEAD_PORT_URL, "/health", Duration::from_secs(2))
+        .await
+        .expect_err("nothing is listening");
+    // The variant is the proof, and a better one than a stopwatch: had the
+    // fetch sat on the port until the two-second deadline, it would have come
+    // back `Timeout`. `Refused` can only mean the kernel answered the connect
+    // with RST. This used to also assert `elapsed() < 1s`, which said nothing
+    // the variant does not already say and failed on a loaded runner whenever
+    // the task was descheduled for a second. The test was called
+    // `…_refused_fast`; it never measured "fast" in any sense that survived
+    // the machine being busy, so it is now named for what it checks.
     assert_eq!(err, ProbeError::Refused);
     assert!(err.is_fatal());
-    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[tokio::test]
@@ -410,8 +433,11 @@ async fn slow_drip_body_is_reaped_by_the_total_deadline() {
         .await
         .expect_err("the drip must not complete");
     assert_eq!(err, ProbeError::Timeout);
+    // Unreaped this runs ~20 s (200 body bytes at 0.1 s each), so a 3.5 s
+    // ceiling is still five times below the failure and cannot pass while
+    // broken.
     assert!(
-        started.elapsed() <= 2 * timeout,
+        started.elapsed() <= timeout + CI_SLACK,
         "slow-drip fetch was not reaped near the timeout ({:?})",
         started.elapsed()
     );
@@ -429,8 +455,10 @@ async fn slow_drip_headers_are_reaped_by_the_total_deadline() {
         .await
         .expect_err("the header drip must not complete");
     assert_eq!(err, ProbeError::Timeout);
+    // `padded_head` pads the head to 200 bytes, so unreaped this is the same
+    // ~20 s as the body drip above, against the same 3.5 s ceiling.
     assert!(
-        started.elapsed() <= 2 * timeout,
+        started.elapsed() <= timeout + CI_SLACK,
         "slow-drip HEADER fetch was not reaped near the timeout ({:?})",
         started.elapsed()
     );
@@ -451,9 +479,10 @@ async fn a_header_dribbling_backend_probes_down_within_the_budget() {
     assert!(!r.up);
     assert_eq!(r.error.as_deref(), Some("timeout"));
     // Health tries the configured path + fallbacks within ONE timeout budget, so
-    // the whole probe stays bounded by a small multiple of it.
+    // the whole probe stays bounded by a small multiple of it. The failure is
+    // again the ~20 s unreaped dribble, four times beyond this 4.5 s ceiling.
     assert!(
-        elapsed <= 3 * timeout,
+        elapsed <= 3 * timeout + CI_SLACK,
         "probe_service hung on a header-dribbling backend ({elapsed:?})"
     );
     svc.stop();
@@ -510,7 +539,7 @@ async fn probes_up_via_a_health_fallback_with_json_metrics() {
 
 #[tokio::test]
 async fn probes_down_on_a_refused_connection() {
-    let cfg = ServiceConfig::new("gamma", format!("http://127.0.0.1:{}", free_port().await));
+    let cfg = ServiceConfig::new("gamma", DEAD_PORT_URL);
     let r = probe_service(&cfg, Duration::from_secs(1)).await;
     assert!(!r.up);
     assert!(r.latency_ms.is_none());
@@ -561,7 +590,11 @@ struct Fixture {
 async fn fixture() -> Fixture {
     let prom = prometheus_service().await;
     let json = json_service().await;
-    let slow = slow_service(5.0).await;
+    // 30 s, not 5: nothing ever waits for this service — it exists to be reaped
+    // — so a longer sleep costs nothing and widens the gap between "the sweep
+    // stayed bounded" and "the sweep waited for the straggler", which is what
+    // the two elapsed-time assertions below have to tell apart.
+    let slow = slow_service(30.0).await;
     let services = vec![
         ServiceConfig {
             metrics_keys: vec!["alpha_requests_total".to_string()],
@@ -572,7 +605,7 @@ async fn fixture() -> Fixture {
             metrics_keys: vec!["docs".to_string(), "queue_pending".to_string()],
             ..ServiceConfig::new("beta", json.base_url())
         },
-        ServiceConfig::new("gamma", format!("http://127.0.0.1:{}", free_port().await)),
+        ServiceConfig::new("gamma", DEAD_PORT_URL),
         ServiceConfig::new("delta", slow.base_url()),
     ];
     Fixture {
@@ -639,10 +672,12 @@ async fn a_black_hole_never_stalls_the_sweep() {
     let started = Instant::now();
     let results = poll_all(&f.services, timeout, 0).await;
     let elapsed = started.elapsed();
-    // Concurrent probes -> the whole sweep is ~one timeout, never the sum, and it
-    // never waits on the 5s straggler.
+    // Concurrent probes -> the whole sweep is ~one timeout, never the sum, and
+    // it never waits on the 30 s straggler. A sweep that did wait could not
+    // come in under this 3.6 s ceiling, so the bound still separates the two
+    // outcomes by a factor of eight.
     assert!(
-        elapsed < timeout + Duration::from_millis(1500),
+        elapsed < timeout + CI_SLACK,
         "poll_all did not stay bounded ({elapsed:?})"
     );
     let delta = results.get("delta").expect("delta");
@@ -776,9 +811,12 @@ async fn the_page_renders_badges_metrics_and_stays_bounded() {
     assert!(body.contains("1,000")); // the JSON value, thousands-formatted
     assert!(body.contains("2 of 4 services DOWN"));
     assert!(body.contains("<meta http-equiv=\"refresh\" content=\"7\">"));
-    // timeout 0.6 + slack; the page must not wait on the 5s black hole.
+    // The page must not wait on the 30 s black hole. The dashboard's own probe
+    // budget is 0.6 s, so a render that stayed bounded lands there plus
+    // scheduler noise, and one that waited lands at 30 — the two cannot both
+    // fit under this ceiling.
     assert!(
-        elapsed < Duration::from_millis(2500),
+        elapsed < Duration::from_millis(600) + CI_SLACK,
         "the page did not render within the bound ({elapsed:?})"
     );
 
@@ -848,10 +886,7 @@ async fn healthz_favicon_404_and_head_do_not_poll() {
     let (port, dash) = spawn_dashboard(
         // A black-hole-only service list: if these routes polled, they would take
         // the full timeout; they must answer instantly instead.
-        vec![ServiceConfig::new(
-            "delta",
-            format!("http://127.0.0.1:{}", free_port().await),
-        )],
+        vec![ServiceConfig::new("delta", DEAD_PORT_URL)],
         Vec::new(),
     )
     .await;
