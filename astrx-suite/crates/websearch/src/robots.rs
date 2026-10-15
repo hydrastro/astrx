@@ -67,7 +67,7 @@ impl Robots {
                 }
             }
         }
-        best.map_or(true, |(_, allow)| allow)
+        best.is_none_or(|(_, allow)| allow)
     }
 
     /// The `Crawl-delay` for the chosen agent group, if any.
@@ -220,7 +220,7 @@ pub fn parse(text: &str, user_agent: &str) -> Robots {
             merged.push(Rule::new(*allow, pattern));
         }
         if let Some(dv) = d {
-            if delay.map_or(true, |cur| dv > cur) {
+            if delay.is_none_or(|cur| dv > cur) {
                 delay = Some(dv);
             }
         }

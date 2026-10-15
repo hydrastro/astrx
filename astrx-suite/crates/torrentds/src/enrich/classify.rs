@@ -241,12 +241,12 @@ fn is_word(c: char) -> bool {
 /// Is there a `\b` boundary immediately before byte `i`? Callers only ask at ASCII
 /// lead bytes, so `i` is always a char boundary (`n[..i]` never splits a char).
 fn boundary_before(n: &str, i: usize) -> bool {
-    i == 0 || n[..i].chars().next_back().map_or(true, |c| !is_word(c))
+    i == 0 || n[..i].chars().next_back().is_none_or(|c| !is_word(c))
 }
 
 /// Is there a `\b` boundary immediately after byte `i`?
 fn boundary_after(n: &str, i: usize) -> bool {
-    i == n.len() || n[i..].chars().next().map_or(true, |c| !is_word(c))
+    i == n.len() || n[i..].chars().next().is_none_or(|c| !is_word(c))
 }
 
 /// `\b<needle>\b` over the normalised name. `needle` is ASCII (lowercase, may hold

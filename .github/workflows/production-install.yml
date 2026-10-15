@@ -1,0 +1,16 @@
+name: Production PHP deployment
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and install the production Compose image
+        run: sh tools/ci-production-install.sh

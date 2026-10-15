@@ -110,7 +110,8 @@ namespace {
 
     // A short write must not be published: a full disk would otherwise rename a
     // truncated file into place, which is the exact failure being prevented.
-    check('refuses to publish into a path that cannot be created', !atomicWrite('/proc/astrx/nope.php', 'x'));
+    file_put_contents($TMP . '/not-a-directory', 'x');
+    check('refuses to publish into a path that cannot be created', !atomicWrite($TMP . '/not-a-directory/nope.php', 'x'));
 
     // =========================================================================
     echo "\n2. TemplateEngine cache + PARSE_MODE_PLAIN\n";
@@ -132,7 +133,7 @@ namespace {
 
     $rendered = $engine->renderTemplate('greet', ['name' => 'world']);
     eq('template mode renders from a directory containing $ and "', 'Hello world!', $rendered->unwrap());
-    check('the compiled class was cached', is_file($cacheDir . 'greet.php'));
+    check('the compiled class was cached', is_file($cacheDir . $engine->getTemplateClassName('greet', 'Hello {{name}}!') . '.php'));
     eq('no staging file survives in the cache dir', [], glob($cacheDir . '*.tmp.*') ?: []);
 
     // PARSE_MODE_PLAIN: used to check <name>.html for existence and then read

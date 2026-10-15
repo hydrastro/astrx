@@ -22,6 +22,15 @@ final class Translator
     public const DiagnosticLevel LVL_INVALID_LANGUAGE_ARRAY = DiagnosticLevel::WARNING;
 
     private string $locale;
+    private string $overrideLangDir = '';
+    private bool $fallbackToKey = true;
+
+    #[\AstrX\Config\InjectConfig('lang_dir')]
+    public function setLangDir(string $dir): void { $this->overrideLangDir = $dir; }
+
+    #[\AstrX\Config\InjectConfig('fallback_to_key')]
+    public function setFallbackToKey(bool $enabled): void { $this->fallbackToKey = $enabled; }
+
 
     /** @var array<string, string|callable(array<string,mixed>, Translator): string> */
     private array $catalog = [];
@@ -56,6 +65,10 @@ final class Translator
                 . $domain . '.' . $this->locale . '.php';
 
         $this->loadFile($file);
+        if ($this->overrideLangDir !== '') {
+            $this->loadFile(rtrim($this->overrideLangDir, '/\\') . DIRECTORY_SEPARATOR
+                . $this->locale . DIRECTORY_SEPARATOR . $domain . '.' . $this->locale . '.php');
+        }
     }
 
     public function loadFile(string $file): void
@@ -108,7 +121,7 @@ final class Translator
                             $this->locale,
                             $key
                         ));
-            return $fallback ?? $key;
+            return $fallback ?? ($this->fallbackToKey ? $key : '');
         }
 
         $entry = $this->catalog[$key];

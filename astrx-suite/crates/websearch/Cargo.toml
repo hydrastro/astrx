@@ -2,7 +2,7 @@
 name = "websearch"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/hydrastro/astrx"
 # Not published to crates.io, and the declaration is load-bearing rather than

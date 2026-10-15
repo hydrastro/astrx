@@ -366,9 +366,10 @@ namespace {
     );
 
     // Tampering must be caught by the MAC, not silently decrypted.
-    $tampered = 'enc:v1:' . base64_encode(
-        substr((string) base64_decode(substr($stored, 7), true), 0, -1) . 'X'
-    );
+    $rawEnvelope = (string) base64_decode(substr($stored, 7), true);
+    $last = strlen($rawEnvelope) - 1;
+    $rawEnvelope[$last] = chr(ord($rawEnvelope[$last]) ^ 1);
+    $tampered = 'enc:v1:' . base64_encode($rawEnvelope);
     check('a tampered envelope fails its MAC', $dec->invoke($svc, $tampered) === '');
 
     echo "\n{$PASS} passed, {$FAIL} failed\n";

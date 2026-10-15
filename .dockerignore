@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+**/target
+resources/config
+resources/avatar
+resources/board_uploads
+resources/chat_uploads
+resources/media_uploads
+resources/template/cache
+build

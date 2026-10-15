@@ -364,12 +364,12 @@ impl Store {
             }
         }
         if let Some(s) = opts.since {
-            if p.last_seen.map_or(true, |ls| ls < s) {
+            if p.last_seen.is_none_or(|ls| ls < s) {
                 return false;
             }
         }
         if let Some(u) = opts.until {
-            if p.last_seen.map_or(true, |ls| ls > u) {
+            if p.last_seen.is_none_or(|ls| ls > u) {
                 return false;
             }
         }

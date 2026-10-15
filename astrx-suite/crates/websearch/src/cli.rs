@@ -788,10 +788,7 @@ fn read_index(db: &str) -> Result<Index, String> {
 /// Load an index from a segment directory. A directory that does not exist yet
 /// yields a fresh empty index, exactly as a missing snapshot file does.
 ///
-/// `open_recovering`, not `open`: recovery is the whole point of this layout, and
-/// refusing to start because the last crash tore a segment would waste the
-/// intact 99 % of it. What was lost is *printed* — a repair an operator is not
-/// told about is a data-loss bug wearing a success message.
+/// Read commands never repair or sweep a writer's files.
 fn read_segmented_index(db: &str) -> Result<Index, String> {
     let path = Path::new(db);
     if !path.exists() {
@@ -809,15 +806,7 @@ fn read_segmented_index(db: &str) -> Result<Index, String> {
              (use --store=blob for a snapshot file)"
         ));
     }
-    let (seg, recovery) =
-        SegmentedIndex::open_recovering(db).map_err(|e| segindex::describe(&e))?;
-    for msg in &recovery.rejected_manifests {
-        eprintln!("note: {db}: ignoring unusable manifest ({msg})");
-    }
-    for (id, lost) in &recovery.repaired_segments {
-        eprintln!("warning: {db}: segment {id} was torn; {lost} record(s) could not be recovered");
-    }
-    seg.load().map_err(|e| segindex::describe(&e))
+    SegmentedIndex::read_snapshot(db).map_err(|e| segindex::describe(&e))
 }
 
 /// Load an index the way `--store` says to.
@@ -833,6 +822,13 @@ fn read_index_for(db: &str, store: StoreKind) -> Result<Index, String> {
 // ---------------------------------------------------------------------------
 
 async fn run_crawl(a: CrawlArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let seeds = match read_seeds(a.seeds_file.as_deref(), &a.seeds) {
         Ok(s) => s,
         Err(msg) => {
@@ -1023,7 +1019,8 @@ async fn run_serve(a: ServeArgs) -> ExitCode {
     // `new`, not `with_frontier`: there is no frontier to pass. `--db` is an
     // index snapshot and that format stores documents only, so `/about` here
     // omits the Frontier table (see the module docs).
-    let mut server = SearchServer::new(Arc::new(Mutex::new(index)), base.as_str());
+    let mut server = SearchServer::new(Arc::new(Mutex::new(index)), base.as_str())
+        .with_store_path(a.db.clone(), a.store == StoreKind::Segments);
     if let Some(name) = a.site_name.as_deref() {
         server = server.with_site_name(name);
     }
@@ -1099,6 +1096,13 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
         );
         return ExitCode::from(2);
     }
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.out) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot lock backup destination: {e}");
+            return ExitCode::from(1);
+        }
+    };
     if Path::new(&a.out).exists() {
         eprintln!(
             "error: destination {} already exists (refusing to overwrite)",

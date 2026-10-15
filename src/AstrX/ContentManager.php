@@ -348,50 +348,56 @@ final class ContentManager
         // core incident-response need. Re-load the row per request for a logged-in
         // COOKIE session (the bearer path did its own check above): drop the
         // session if the account is now closed/deleted; otherwise refresh the
-        // cached group so a role change applies immediately. Fails OPEN on a DB
-        // error (a transient hiccup must not mass-logout everyone).
+        // cached group so a role change applies immediately. On a DB error refuse
+        // this request without deleting the session, so it can be retried.
         if (!$bearerPresent) {
             $revSessRes = $this->injector->createClass(\AstrX\User\UserSession::class)->drainTo($this->collector);
             $revRepoRes = $this->injector->createClass(\AstrX\User\UserRepository::class)->drainTo($this->collector);
-            if ($revSessRes->isOk() && $revRepoRes->isOk()) {
-                /** @var \AstrX\User\UserSession $revSess */
-                $revSess = $revSessRes->unwrap();
-                /** @var \AstrX\User\UserRepository $revRepo */
-                $revRepo = $revRepoRes->unwrap();
-                if ($revSess->isLoggedIn() && $revSess->userId() !== '') {
-                    $rowRes = $revRepo->findById($revSess->userId());
-                    $rowRes->drainTo($this->collector);
-                    if ($rowRes->isOk()) {
-                        $row = $rowRes->unwrap();
-                        if (!is_array($row)) {
-                            $revSess->logout();   // row vanished → session no longer valid
-                        } else {
-                            $delMode     = is_scalar($row['deletion_mode'] ?? null) ? (string) $row['deletion_mode'] : '';
-                            $accountOpen = ($delMode === '' || $delMode === 'none');
-                            if (!empty($row['deleted']) || !$accountOpen) {
-                                $revSess->logout();
-                            } else {
-                                if (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
-                                    $revSess->refreshType((int) $row['type']);
-                                }
-                                // R13: session-epoch force-logout. Adopt the DB
-                                // epoch on the first re-validation after login; a
-                                // later admin bump (evict-everywhere) then no longer
-                                // matches, so the session is dropped on its next
-                                // request — instant eviction of a compromised account.
-                                // Known narrow window: a bump landing between login
-                                // and this FIRST check is absorbed (adopted). An
-                                // actively-used stolen session has already adopted
-                                // and is evicted correctly; deleting/banning the
-                                // account evicts regardless via the check above.
-                                $dbEpoch   = is_scalar($row['session_epoch'] ?? null) ? (int) $row['session_epoch'] : 0;
-                                $sessEpoch = $revSess->sessionEpoch();
-                                if ($sessEpoch === null) {
-                                    $revSess->setSessionEpoch($dbEpoch);
-                                } elseif ($sessEpoch !== $dbEpoch) {
-                                    $revSess->logout();
-                                }
-                            }
+            if (!$revSessRes->isOk() || !$revRepoRes->isOk()) {
+                $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
+                return;
+            }
+
+            /** @var \AstrX\User\UserSession $revSess */
+            $revSess = $revSessRes->unwrap();
+            /** @var \AstrX\User\UserRepository $revRepo */
+            $revRepo = $revRepoRes->unwrap();
+            if ($revSess->isLoggedIn() && $revSess->userId() !== '') {
+                $rowRes = $revRepo->findById($revSess->userId());
+                $rowRes->drainTo($this->collector);
+                if (!$rowRes->isOk()) {
+                    $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
+                    return;
+                }
+
+                $row = $rowRes->unwrap();
+                if (!is_array($row)) {
+                    $revSess->logout();   // row vanished → session no longer valid
+                } else {
+                    $delMode     = is_scalar($row['deletion_mode'] ?? null) ? (string) $row['deletion_mode'] : '';
+                    $accountOpen = ($delMode === '' || $delMode === 'none');
+                    if (!empty($row['deleted']) || !$accountOpen) {
+                        $revSess->logout();
+                    } else {
+                        if (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
+                            $revSess->refreshType((int) $row['type']);
+                        }
+                        // R13: session-epoch force-logout. Adopt the DB
+                        // epoch on the first re-validation after login; a
+                        // later admin bump (evict-everywhere) then no longer
+                        // matches, so the session is dropped on its next
+                        // request — instant eviction of a compromised account.
+                        // Known narrow window: a bump landing between login
+                        // and this FIRST check is absorbed (adopted). An
+                        // actively-used stolen session has already adopted
+                        // and is evicted correctly; deleting/banning the
+                        // account evicts regardless via the check above.
+                        $dbEpoch   = is_scalar($row['session_epoch'] ?? null) ? (int) $row['session_epoch'] : 0;
+                        $sessEpoch = $revSess->sessionEpoch();
+                        if ($sessEpoch === null) {
+                            $revSess->setSessionEpoch($dbEpoch);
+                        } elseif ($sessEpoch !== $dbEpoch) {
+                            $revSess->logout();
                         }
                     }
                 }
@@ -619,12 +625,19 @@ final class ContentManager
 
         // Load lang files for the current page and all its ancestors (bottom-up order,
         // so more-specific pages override ancestor values where keys overlap).
-        // This replaces the old 'extra_lang_domains' config list — just add pages to the
-        // hierarchy in the DB and their lang files are loaded automatically.
         // e.g. login → ancestor 'user' → loads User.en.php automatically.
         // Must happen before DefaultTemplateContext::buildBase() so that title/description
         // and keyword translations are already in the catalog.
         $langDir = langDir();
+
+        $extraDomains = $this->config->getConfig('ContentManager', 'extra_lang_domains', []);
+        if (is_array($extraDomains)) {
+            foreach ($extraDomains as $domain) {
+                if (is_string($domain) && preg_match('/\A[A-Za-z][A-Za-z0-9_]*\z/', $domain) === 1) {
+                    $this->translator->loadDomain($langDir, $domain);
+                }
+            }
+        }
 
         // Ancestors first (most general → most specific), then the page itself last
         // so the page's own domain wins on any key conflict.

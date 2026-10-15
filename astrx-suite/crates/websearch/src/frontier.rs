@@ -242,7 +242,7 @@ impl Frontier {
             }
             if let Some(h) = self.hosts.get(&e.host) {
                 let ready = h.next_time <= now;
-                let under = host_budget.map_or(true, |b| h.fetched < b);
+                let under = host_budget.is_none_or(|b| h.fetched < b);
                 if ready && under {
                     consider(&mut best, url, e.depth, e.added_at);
                 }
@@ -296,7 +296,7 @@ impl Frontier {
                 continue;
             }
             if let Some(h) = self.hosts.get(&e.host) {
-                if host_budget.map_or(true, |b| h.fetched < b) {
+                if host_budget.is_none_or(|b| h.fetched < b) {
                     min = Some(min.map_or(h.next_time, |m: f64| m.min(h.next_time)));
                 }
             }

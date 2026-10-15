@@ -754,6 +754,13 @@ fn stats_lines(s: &Stats, dht_nodes: usize) -> Vec<String> {
 
 /// `index` — the port of the Python `cmd_index`.
 async fn run_index(a: IndexArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let store = match read_store(&a.db, DEFAULT_SPAM_THRESHOLD) {
         Ok(s) => Arc::new(Mutex::new(s)),
         Err(msg) => {
@@ -910,7 +917,8 @@ async fn run_search(a: SearchArgs) -> ExitCode {
         peer_store,
         admin_token.as_str(),
     )
-    .with_base_url(base.as_str());
+    .with_base_url(base.as_str())
+    .with_store_path(a.db.clone(), threshold);
 
     let (bound, handle) = match serve_search(server, addr).await {
         Ok(v) => v,
@@ -1057,6 +1065,13 @@ fn run_stats(a: &StatsArgs) -> ExitCode {
 
 /// `block` — the port of the Python `cmd_block`.
 fn run_block(a: &BlockArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut store = match read_store(&a.db, DEFAULT_SPAM_THRESHOLD) {
         Ok(s) => s,
         Err(msg) => {
@@ -1090,6 +1105,13 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
         );
         return ExitCode::from(2);
     }
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.out) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot lock backup destination: {e}");
+            return ExitCode::from(1);
+        }
+    };
     if Path::new(&a.out).exists() {
         eprintln!(
             "error: destination {} already exists (refusing to overwrite)",

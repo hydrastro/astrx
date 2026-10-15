@@ -29,24 +29,6 @@ if (!defined('CLASS_DIR')) {
     define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR);
 }
 
-// Register the PSR-4 autoloader — same as bootstrap.php but without booting the app.
-spl_autoload_register(static function (string $class): void {
-    $prefix = 'AstrX\\';
-    $len    = strlen($prefix);
-    if (strncmp($prefix, $class, $len) !== 0) {
-        return;
-    }
-    $classDir = (string) constant('CLASS_DIR');
-    $file = $classDir . str_replace('\\', '/', substr($class, $len)) . '.php';
-    if (file_exists($file)) {
-        require_once $file;
-    }
-});
-
-// Load the AstrX\\Support\\constants.php helper (configDir(), langDir(), etc.)
-$supportConstants = (string) constant('CLASS_DIR') . 'Support/constants.php';
-if (file_exists($supportConstants)) {
-    require_once $supportConstants;
-}
+require_once __DIR__ . '/autoload.php';
 
 new AstrX\Prelude();

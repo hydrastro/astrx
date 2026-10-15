@@ -101,9 +101,22 @@ VALUES (
 PHP equivalent (for scripted provisioning):
 
 ```php
-$service = $injector->get(ApiKeyService::class);
+use AstrX\Api\ApiKeyService;
+
+$serviceResult = $injector->getClass(ApiKeyService::class);
+if (!$serviceResult->isOk()) {
+    // Report the service-resolution diagnostics through your application's sink.
+    return;
+}
+$service = $serviceResult->unwrap();
+assert($service instanceof ApiKeyService);
+
 $result = $service->create($hexUserId, label: 'My script', expiresAtTs: null);
-$rawKey = $result->unwrap();  // shown ONCE — save it
+if (!$result->isOk()) {
+    // Report the creation failure; no usable key was issued.
+    return;
+}
+$rawKey = $result->unwrap();  // show once through a protected channel; do not log it
 ```
 
 ---

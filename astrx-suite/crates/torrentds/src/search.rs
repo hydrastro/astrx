@@ -954,6 +954,8 @@ pub struct SearchServer {
     peer_store: Option<Arc<Mutex<PeerStore>>>,
     admin_token: String,
     base_url: String,
+    source: Option<(String, f64)>,
+    publication: crawlcore::storefile::SnapshotReader,
 }
 
 impl std::fmt::Debug for SearchServer {
@@ -979,6 +981,8 @@ impl SearchServer {
             peer_store,
             admin_token: admin_token.into(),
             base_url: String::new(),
+            source: None,
+            publication: Default::default(),
         }
     }
 
@@ -989,6 +993,23 @@ impl SearchServer {
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
+    }
+
+    /// Use this snapshot for refreshes and durable blocklist updates.
+    #[must_use]
+    pub fn with_store_path(mut self, path: impl Into<String>, spam_threshold: f64) -> Self {
+        self.source = Some((path.into(), spam_threshold));
+        self
+    }
+
+    fn refresh(&self, store: &mut Store) -> std::io::Result<()> {
+        if let Some((path, threshold)) = &self.source {
+            self.publication.refresh(path, store, |p| {
+                Store::restore(&std::fs::read(p)?, *threshold)
+                    .ok_or_else(|| std::io::Error::other("invalid store snapshot"))
+            })?;
+        }
+        Ok(())
     }
 
     /// Compute local swarm health (seeders, leechers) for a set of results.
@@ -1029,6 +1050,12 @@ impl SearchServer {
             }
             return Resp::json(404, "{\"error\":\"not found\"}".into());
         }
+        if method != "GET" && method != "HEAD" {
+            return Resp::json(405, "{\"error\":\"method not allowed\"}".into());
+        }
+        if self.refresh(&mut self.store.lock().unwrap()).is_err() {
+            return Resp::json(503, "{\"error\":\"published store unavailable\"}".into());
+        }
         let q = p.get("q").cloned().unwrap_or_default();
         let limit = clamp_int(p.get("limit"), 25, 1, 100);
         let offset = clamp_int(p.get("offset"), 0, 0, 1_000_000);
@@ -1042,6 +1069,7 @@ impl SearchServer {
             "/recent" => self.recent_page(limit, offset, &p, show_spam),
             "/browse" => self.browse_page(&p, limit, offset, show_spam),
             "/api/search" => self.api_search(&q, limit, offset, &p, show_spam),
+            "/api/storage" => Resp::json(200, self.publication.status_json()),
             "/api/stats" => Resp::json(200, stats_json(&self.store.lock().unwrap().stats())),
             "/feed" | "/rss" | "/feed.xml" => self.rss(&q, limit, &p, show_spam),
             "/health" => {
@@ -1354,7 +1382,25 @@ impl SearchServer {
             .cloned()
             .unwrap_or_default();
         let value = value.trim();
-        let mut store = self.store.lock().unwrap();
+        let mut current = self.store.lock().unwrap();
+        let _lease = match self
+            .source
+            .as_ref()
+            .map(|(path, _)| crawlcore::storefile::WriterLease::acquire(path))
+            .transpose()
+        {
+            Ok(lease) => lease,
+            Err(_) => {
+                return Resp::json(
+                    503,
+                    "{\"error\":\"store writer unavailable; retry\"}".into(),
+                )
+            }
+        };
+        if self.refresh(&mut current).is_err() {
+            return Resp::json(503, "{\"error\":\"published store unavailable\"}".into());
+        }
+        let mut store = current.clone();
         match kind.as_str() {
             "infohash" => {
                 let ih = value.to_ascii_lowercase();
@@ -1372,12 +1418,19 @@ impl SearchServer {
             }
         }
         let purged = store.purge_blocked();
+        if let Some((path, _)) = &self.source {
+            if crawlcore::atomicfile::write_atomic(path, &store.snapshot()).is_err() {
+                return Resp::json(500, "{\"error\":\"cannot persist blocklist\"}".into());
+            }
+        }
+        *current = store;
         Resp::json(
             200,
             format!(
-                "{{\"ok\":true,\"kind\":{},\"purged\":{}}}",
+                "{{\"ok\":true,\"kind\":{},\"purged\":{},\"persisted\":{}}}",
                 json_str(&kind),
-                purged
+                purged,
+                self.source.is_some()
             ),
         )
     }
@@ -1542,6 +1595,9 @@ fn status_text(code: u16) -> &'static str {
         400 => "Bad Request",
         403 => "Forbidden",
         404 => "Not Found",
+        405 => "Method Not Allowed",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
         _ => "OK",
     }
 }
@@ -1866,5 +1922,68 @@ mod tests {
         assert_eq!(f.min_size, Some(104_857_600));
         assert_eq!(f.since, Some(86400));
         assert_eq!(f.order, Order::Latest);
+    }
+    #[test]
+    fn block_rules_persist_and_readers_refresh() {
+        let path =
+            std::env::temp_dir().join(format!("torrent-block-review-{}", std::process::id()));
+        let make = || {
+            SearchServer::new(Arc::new(Mutex::new(Store::new())), None, "tok")
+                .with_store_path(path.to_str().unwrap(), 1.0)
+        };
+        let first = make();
+        let second = make();
+        let mut headers = Params::new();
+        headers.insert("x-admin-token".into(), "tok".into());
+        let ih = "a".repeat(40);
+        let r = first.route(
+            "POST",
+            "/api/block",
+            &headers,
+            &format!("kind=infohash&value={ih}"),
+        );
+        assert_eq!(r.status, 200);
+        assert!(String::from_utf8(r.body)
+            .unwrap()
+            .contains("\"persisted\":true"));
+        assert_eq!(
+            second
+                .route(
+                    "POST",
+                    "/api/block",
+                    &headers,
+                    "kind=keyword&value=blockedword"
+                )
+                .status,
+            200
+        );
+        let restored = Store::restore(&std::fs::read(&path).unwrap(), 1.0).unwrap();
+        assert!(restored.is_blocked(&ih, "anything"));
+        assert!(restored.is_blocked(&"b".repeat(40), "blockedword release"));
+        assert_eq!(
+            first
+                .route("GET", "/api/storage", &Params::new(), "")
+                .status,
+            200
+        );
+        assert!(first
+            .store
+            .lock()
+            .unwrap()
+            .is_blocked(&"b".repeat(40), "blockedword"));
+        let lease = crawlcore::storefile::WriterLease::acquire(&path).unwrap();
+        assert_eq!(
+            first
+                .route("POST", "/api/block", &headers, "kind=keyword&value=later")
+                .status,
+            503
+        );
+        drop(lease);
+        crawlcore::atomicfile::write_atomic(&path, b"broken").unwrap();
+        assert_eq!(
+            first.route("GET", "/api/stats", &Params::new(), "").status,
+            503
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

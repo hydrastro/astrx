@@ -10,10 +10,5 @@ return [
         'session_key' => 'sid',
         'page_key' => 'page',
         'default_page' => 'WORDING_MAIN',
-        'default_keys' => [
-            'locale_key',
-            'session_key',
-            'page_key',
-        ],
     ],
 ];

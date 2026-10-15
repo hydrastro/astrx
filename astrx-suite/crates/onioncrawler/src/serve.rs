@@ -752,6 +752,7 @@ pub struct SearchServer {
     /// [`std::time::SystemTime`] is not usable here: an NTP step backwards makes
     /// `now - last` negative, which *removes* tokens from every bucket.
     started: Instant,
+    publication: crawlcore::storefile::SnapshotReader,
 }
 
 impl std::fmt::Debug for SearchServer {
@@ -779,6 +780,7 @@ impl SearchServer {
             base_url: base_url.into(),
             config,
             started: Instant::now(),
+            publication: Default::default(),
         }
     }
 
@@ -812,6 +814,41 @@ impl SearchServer {
     pub fn with_abuse(mut self, abuse: Arc<AbuseFilter>) -> Self {
         self.abuse = Some(abuse);
         self
+    }
+
+    fn refresh(&self, store: &mut Store) -> std::io::Result<()> {
+        if let Some(path) = &self.config.store_path {
+            self.publication.refresh(path, store, |p| {
+                Store::restore(&std::fs::read(p)?)
+                    .ok_or_else(|| std::io::Error::other("invalid store snapshot"))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn mutate<T>(&self, change: impl FnOnce(&mut Store) -> (T, bool)) -> Result<(T, Commit), Resp> {
+        let mut current = self.store.lock().expect("store lock");
+        let _lease = self
+            .config
+            .store_path
+            .as_ref()
+            .map(crawlcore::storefile::WriterLease::acquire)
+            .transpose()
+            .map_err(|_| {
+                Resp::json(
+                    503,
+                    "{\"error\":\"store writer unavailable; retry\"}".into(),
+                )
+            })?;
+        self.refresh(&mut current)
+            .map_err(|_| Resp::json(503, "{\"error\":\"published store unavailable\"}".into()))?;
+        let mut staged = current.clone();
+        let (value, changed) = change(&mut staged);
+        let commit = self.commit(&staged, changed);
+        if !matches!(commit, Commit::Failed(_)) {
+            *current = staged;
+        }
+        Ok((value, commit))
     }
 
     fn admin_enabled(&self) -> bool {
@@ -925,7 +962,14 @@ impl SearchServer {
         if method != "GET" && method != "HEAD" {
             return Resp::json(405, "{\"error\":\"method not allowed\"}".to_string());
         }
+        if self
+            .refresh(&mut self.store.lock().expect("store lock"))
+            .is_err()
+        {
+            return Resp::json(503, "{\"error\":\"published store unavailable\"}".into());
+        }
         match path {
+            "/api/storage" => Resp::json(200, self.publication.status_json()),
             "/" | "/search" => self.html_search(&params),
             "/api/search" => self.api_search(&params),
             "/find" => self.html_find(&params),
@@ -1296,10 +1340,9 @@ offline. Text only; no scripts or media.</p>\
             (None, None)
         };
         let now = now_secs();
-        let (summary, commit) = {
-            let mut store = self.store.lock().expect("store lock");
+        let (summary, commit) = match self.mutate(|store| {
             let summary = submit_many(
-                &mut store,
+                store,
                 self.abuse.as_deref(),
                 urls,
                 self.config.allow_v2,
@@ -1311,8 +1354,11 @@ offline. Text only; no scripts or media.</p>\
             // A submission that enqueued nothing (all dup / not-onion / capped)
             // changed no state — an unauthenticated caller must not be able to
             // make us fsync the whole index by POSTing the same URL forever.
-            let commit = self.commit(&store, summary.ok > 0);
-            (summary, commit)
+            let changed = summary.ok > 0;
+            (summary, changed)
+        }) {
+            Ok(value) => value,
+            Err(response) => return response,
         };
         Resp::json(
             commit.status(),
@@ -1343,8 +1389,7 @@ offline. Text only; no scripts or media.</p>\
         if hosts.is_empty() {
             return Resp::json(400, "{\"error\":\"no host provided\"}".to_string());
         }
-        let (purged, commit) = {
-            let mut store = self.store.lock().expect("store lock");
+        let (purged, commit) = match self.mutate(|store| {
             let purged: Vec<String> = hosts
                 .iter()
                 .map(|h| {
@@ -1358,8 +1403,10 @@ offline. Text only; no scripts or media.</p>\
                 .collect();
             // Always a real change even when 0 pages were removed: the host is
             // now `blocked`, which is what keeps it out of future crawls.
-            let commit = self.commit(&store, true);
-            (purged, commit)
+            (purged, true)
+        }) {
+            Ok(value) => value,
+            Err(response) => return response,
         };
         Resp::json(
             commit.status(),
@@ -1377,14 +1424,15 @@ offline. Text only; no scripts or media.</p>\
             return self.auth_error();
         }
         let now = now_secs();
-        let (n, commit) = {
-            let mut store = self.store.lock().expect("store lock");
+        let (n, commit) = match self.mutate(|store| {
             let n = store.mark_recrawl_due(now, self.config.recrawl_interval);
             // Same reasoning as /purge: the requeue is a frontier mutation, so
             // without a commit the next restart serves a frontier that never
             // heard about it. Nothing due ⇒ nothing to write.
-            let commit = self.commit(&store, n > 0);
-            (n, commit)
+            (n, n > 0)
+        }) {
+            Ok(value) => value,
+            Err(response) => return response,
         };
         Resp::json(
             commit.status(),
@@ -2378,23 +2426,17 @@ placeholder='search indexed .onion pages' autofocus>\
     }
 
     #[test]
-    fn a_failed_commit_is_a_500_that_says_so() {
-        // A path under a directory that does not exist: the atomic write cannot
-        // even create its temp sibling.
+    fn unavailable_writer_does_not_mutate_memory() {
         let path = std::env::temp_dir()
-            .join(format!("onioncrawler_no_such_dir_{}", std::process::id()))
+            .join(format!("missing-onion-dir-{}", std::process::id()))
             .join("crawl.db");
         let srv = server_with_pages()
             .with_admin("tok")
             .with_store_path(path.to_str().unwrap());
+        let before = srv.store.lock().unwrap().snapshot();
         let r = srv.route("POST", "/purge", "host=a.onion", Some("Bearer tok"));
-        // The operator is told the takedown is not durable, rather than getting
-        // a 200 for a change that a restart will undo.
-        assert_eq!(r.status, 500);
-        assert!(body(&r).contains("\"persisted\":false"), "{}", body(&r));
-        assert!(body(&r).contains("\"error\":"), "{}", body(&r));
-        // it did still take effect in RAM (strictly safer for a takedown)
-        assert!(body(&srv.route("GET", "/api/search?q=widget", "", None)).contains("\"total\":0"));
+        assert_eq!(r.status, 503);
+        assert_eq!(srv.store.lock().unwrap().snapshot(), before);
     }
 
     #[test]
@@ -2702,5 +2744,57 @@ placeholder='search indexed .onion pages' autofocus>\
         let mut resp = Vec::new();
         c.read_to_end(&mut resp).await.unwrap();
         assert!(String::from_utf8_lossy(&resp).contains("\"total\":1"));
+    }
+    #[test]
+    fn independent_writers_reload_before_mutating() {
+        let path = tmp_db("two-writers", line!());
+        let make = || {
+            SearchServer::new(Arc::new(Mutex::new(Store::new())), "")
+                .with_admin("tok")
+                .with_store_path(path.to_str().unwrap())
+        };
+        let first = make();
+        let second = make();
+        let url = |suffix| format!("url=http://{}.onion/{suffix}", "a".repeat(56));
+        assert_eq!(
+            first
+                .route("POST", "/add", &url("one"), Some("Bearer tok"))
+                .status,
+            200
+        );
+        assert_eq!(
+            second
+                .route("POST", "/add", &url("two"), Some("Bearer tok"))
+                .status,
+            200
+        );
+        assert_eq!(reload(&path).frontier_by_status().get("queued"), Some(&2));
+        assert_eq!(first.route("GET", "/api/stats", "", None).status, 200);
+        assert_eq!(
+            first
+                .store
+                .lock()
+                .unwrap()
+                .frontier_by_status()
+                .get("queued"),
+            Some(&2)
+        );
+        let lease = crawlcore::storefile::WriterLease::acquire(&path).unwrap();
+        assert_eq!(
+            second
+                .route("POST", "/add", &url("three"), Some("Bearer tok"))
+                .status,
+            503
+        );
+        drop(lease);
+        crawlcore::atomicfile::write_atomic(&path, b"corrupt").unwrap();
+        assert_eq!(first.route("GET", "/api/stats", "", None).status, 503);
+        assert_eq!(
+            second
+                .route("POST", "/add", &url("three"), Some("Bearer tok"))
+                .status,
+            503
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

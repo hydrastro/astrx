@@ -59,7 +59,7 @@ fn body(i: usize) -> String {
         "lorem ipsum dolor sit amet consectetur document number {i} \
          {} {} searching indexing segments manifest {}",
         "adipiscing ".repeat(1 + i % 4),
-        if i % 3 == 0 {
+        if i.is_multiple_of(3) {
             "kitten photograph"
         } else {
             "elit sed"
@@ -102,7 +102,7 @@ fn build_corpus(ix: &mut Index, mut checkpoint: impl FnMut(&mut Index)) {
             .collect();
         ix.add_links(&u, &edges);
 
-        if i % 3 == 0 {
+        if i.is_multiple_of(3) {
             ix.replace_images(
                 id,
                 &u,

@@ -1245,6 +1245,13 @@ fn stats_json(store: &Store) -> String {
 
 /// `crawl` — the port of the Python `cmd_crawl`.
 async fn run_crawl(a: CrawlArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut store = match read_store(&a.db) {
         Ok(s) => s,
         Err(msg) => {
@@ -1403,6 +1410,13 @@ fn run_stats(a: &StatsArgs) -> ExitCode {
 
 /// `submit` — the port of the Python `cmd_submit`.
 fn run_submit(a: &SubmitArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut urls = a.urls.clone();
     match read_seeds(a.file.as_deref(), &[]) {
         Ok(from_file) => urls.extend(from_file),
@@ -1448,6 +1462,13 @@ fn run_submit(a: &SubmitArgs) -> ExitCode {
 /// re-enqueue curated roots, bypassing the trap caps (`force`), refusing hosts
 /// on the abuse blocklist.
 fn run_reseed(a: &ReseedArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     // The curated file goes through `load_seed_list` (bounded streaming read +
     // canonical dedup, dropping anything that is not a darknet URL); the
     // repeatable `--seed` flags are appended verbatim, as in the Python
@@ -1516,6 +1537,13 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
             timestamp(now_secs())
         )
     });
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&dest) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot lock backup destination: {e}");
+            return ExitCode::from(1);
+        }
+    };
     if Path::new(&dest).exists() {
         eprintln!("error: destination {dest} already exists (refusing to overwrite)");
         return ExitCode::from(2);
@@ -1544,6 +1572,13 @@ fn run_backup(a: &BackupArgs) -> ExitCode {
 
 /// `authority` — the port of the Python `cmd_authority`.
 fn run_authority(a: &AuthorityArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut store = match read_store(&a.db) {
         Ok(s) => s,
         Err(msg) => {
@@ -1562,6 +1597,13 @@ fn run_authority(a: &AuthorityArgs) -> ExitCode {
 
 /// `cluster` — the port of the Python `cmd_cluster`.
 fn run_cluster(a: &ClusterArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut store = match read_store(&a.db) {
         Ok(s) => s,
         Err(msg) => {
@@ -1580,6 +1622,13 @@ fn run_cluster(a: &ClusterArgs) -> ExitCode {
 
 /// `recrawl` — the port of the Python `cmd_recrawl`.
 fn run_recrawl(a: &RecrawlArgs) -> ExitCode {
+    let _writer = match crawlcore::storefile::WriterLease::acquire(&a.db) {
+        Ok(lease) => lease,
+        Err(e) => {
+            eprintln!("error: cannot acquire store writer lease: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let mut store = match read_store(&a.db) {
         Ok(s) => s,
         Err(msg) => {

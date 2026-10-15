@@ -57,10 +57,10 @@ services:
       # interfaces — a plain "80:80" listens on 0.0.0.0.
       - "127.0.0.1:80:80"
     volumes:
-      - ./public:/app/public
-      - ./src:/app/src
-      - ./resources:/app/resources
-      - ./build:/app/build
+      - ./public:/app/public:ro
+      - ./src:/app/src:ro
+      - ./resources:/app/resources:ro
+      - ./build:/app/build:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks: [php-network]
     depends_on: [phpfpm]
@@ -73,16 +73,25 @@ services:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      target: production
     volumes:
-      - ./public:/app/public
-      - ./src:/app/src
-      - ./resources:/app/resources
-      - ./build:/app/build
+      - ./public:/app/public:ro
+      - ./src:/app/src:ro
+      - ./resources:/app/resources:ro
+      - ./build:/app/build:ro
       # tools/ holds the CLI entry points (e.g. the search crawler). Without
       # this mount /app/tools does not exist in the container, so both
       # `php /app/tools/search_index.php` AND the admin "Rebuild now" button
       # (which exec()s that same path) fail — the job then wedges in 'running'.
-      - ./tools:/app/tools
+      - ./tools:/app/tools:ro
+      - ./resources:/app/resource-seed:ro
+      - app-config:/app/resources/config
+      - template-cache:/app/resources/template/cache
+      - avatars:/app/resources/avatar
+      - catalogs:/app/resources/lang
+      - board-uploads:/app/resources/board_uploads
+      - chat-uploads:/app/resources/chat_uploads
+      - media-uploads:/app/resources/media_uploads
     networks:
       - php-network
       # The suite's no-egress network, so the CMS bridge pages can reach the
@@ -94,7 +103,7 @@ services:
     tty: true
     restart: unless-stopped
     container_name: astrx.mariadb
-    image: mariadb
+    image: ${MARIADB_IMAGE:-mariadb:11.4}
     # The database stays on the internal compose network; do NOT publish it to
     # the host — needless attack surface on a hidden-service box. Uncomment only
     # for local debugging, never in production.
@@ -130,3 +139,10 @@ volumes:
   # compose down -v` silently destroyed every board, page and account. It now
   # has a named volume like every other stateful service in the project.
   mariadb-data:
+  app-config:
+  template-cache:
+  avatars:
+  catalogs:
+  board-uploads:
+  chat-uploads:
+  media-uploads:
