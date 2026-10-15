@@ -5,8 +5,7 @@ declare(strict_types=1);
  * Warm AstrX server-side template cache without booting the web application.
  *
  * This compiles all HTML templates under resources/template into resources/template/cache/*.php
- * and writes the TemplateEngine persistent cache index, so production requests
- * can require compiled template classes without reading/parsing template source.
+ * using the configured source, mode and content-addressed cache identity.
  */
 
 $root = dirname(__DIR__);
@@ -55,23 +54,19 @@ if (is_file($supportConstants)) {
     require_once $supportConstants;
 }
 
-if (!is_dir(TEMPLATE_DIR)) {
-    fwrite(STDERR, "Missing template directory: " . TEMPLATE_DIR . PHP_EOL);
-    exit(1);
-}
-
-if (!is_dir(TEMPLATE_CACHE_DIR) && !mkdir(TEMPLATE_CACHE_DIR, 0775, true) && !is_dir(TEMPLATE_CACHE_DIR)) {
-    fwrite(STDERR, "Could not create template cache directory: " . TEMPLATE_CACHE_DIR . PHP_EOL);
-    exit(1);
-}
-
 $collector = new AstrX\Result\DiagnosticsCollector();
 $engine = new AstrX\Template\TemplateEngine($collector);
-$engine->setTemplateDir(TEMPLATE_DIR);
-$engine->setTemplateCacheDir(TEMPLATE_CACHE_DIR);
-$engine->setTemplateExtension('.html');
-$engine->setParseMode(AstrX\Template\TemplateEngine::PARSE_MODE_TEMPLATE);
+/** @var mixed $loadedConfig */
+$loadedConfig = require CONFIG_DIR . 'TemplateEngine.config.php';
+$cfg = is_array($loadedConfig) && is_array($loadedConfig['TemplateEngine'] ?? null) ? $loadedConfig['TemplateEngine'] : [];
+$engine->setTemplateDir(is_string($cfg['template_dir'] ?? null) ? $cfg['template_dir'] : TEMPLATE_DIR);
+$engine->setTemplateCacheDir(is_string($cfg['template_cache_dir'] ?? null) ? $cfg['template_cache_dir'] : TEMPLATE_CACHE_DIR);
+$engine->setTemplateExtension(is_string($cfg['template_extension'] ?? null) ? $cfg['template_extension'] : '.html');
+$engine->setParseMode(is_int($cfg['parse_mode'] ?? null) ? $cfg['parse_mode'] : 1);
 $engine->setCacheTemplates(true);
+$templateDir = rtrim($engine->getTemplateDir(), '/\\') . DIRECTORY_SEPARATOR;
+$extension = $engine->getTemplateExtension();
+if (!is_dir($templateDir) || $extension === '') { fwrite(STDERR, "Invalid template configuration\n"); exit(1); }
 
 if ($clear) {
     $deleted = $engine->clearCache();
@@ -81,22 +76,22 @@ if ($clear) {
 }
 
 $rii = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator(TEMPLATE_DIR, FilesystemIterator::SKIP_DOTS),
+    new RecursiveDirectoryIterator($templateDir, FilesystemIterator::SKIP_DOTS),
 );
 
 $templates = [];
 foreach ($rii as $file) {
-    if (!$file instanceof SplFileInfo || !$file->isFile() || $file->getExtension() !== 'html') {
+    if (!$file instanceof SplFileInfo || !$file->isFile() || !str_ends_with($file->getFilename(), $extension)) {
         continue;
     }
 
     $path = $file->getPathname();
-    $rel = substr($path, strlen(TEMPLATE_DIR));
+    $rel = substr($path, strlen($templateDir));
     $rel = str_replace(DIRECTORY_SEPARATOR, '/', $rel);
     if (str_starts_with($rel, 'cache/')) {
         continue;
     }
-    $templates[] = substr($rel, 0, -5); // drop .html
+    $templates[] = substr($rel, 0, -strlen($extension));
 }
 
 sort($templates);
@@ -104,7 +99,7 @@ $ok = 0;
 $failed = 0;
 
 foreach ($templates as $template) {
-    $loaded = $engine->loadTemplate($template);
+    $loaded = $engine->loadTemplate($template, $engine->getParseMode());
     if ($loaded !== null) {
         $ok++;
         if (!$quiet) {
@@ -117,13 +112,13 @@ foreach ($templates as $template) {
     fwrite(STDERR, "failed {$template}\n");
 }
 
-unset($engine); // force TemplateEngine::__destruct() to flush .template-index.php
+
 
 $count = count($collector->diagnostics());
 
 if (!$quiet) {
     echo "Template cache warm complete: {$ok} compiled, {$failed} failed, {$count} diagnostics.\n";
-    echo "Cache dir: " . TEMPLATE_CACHE_DIR . PHP_EOL;
+    echo "Cache dir: " . $engine->getTemplateCacheDir() . PHP_EOL;
 }
 
 exit($failed === 0 ? 0 : 1);

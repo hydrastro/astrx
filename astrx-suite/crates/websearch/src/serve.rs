@@ -839,6 +839,8 @@ pub struct SearchServer {
     frontier: Option<Arc<Mutex<Frontier>>>,
     base_url: String,
     site_name: String,
+    source: Option<(String, bool)>,
+    publication: crawlcore::storefile::SnapshotReader,
 }
 
 /// The site name used when the operator has not set one.
@@ -869,7 +871,32 @@ impl SearchServer {
             frontier: None,
             base_url: base_url.into(),
             site_name: DEFAULT_SITE_NAME.to_string(),
+            source: None,
+            publication: Default::default(),
         }
+    }
+
+    /// Refresh from an atomically published blob or segmented store.
+    #[must_use]
+    pub fn with_store_path(mut self, path: impl Into<String>, segmented: bool) -> Self {
+        self.source = Some((path.into(), segmented));
+        self
+    }
+
+    fn refresh(&self) -> std::io::Result<()> {
+        if let Some((path, segmented)) = &self.source {
+            let mut current = self.index.lock().expect("index mutex");
+            self.publication.refresh(path, &mut *current, |p| {
+                if *segmented {
+                    crate::segindex::SegmentedIndex::read_snapshot(p)
+                        .map_err(|e| std::io::Error::other(crate::segindex::describe(&e)))
+                } else {
+                    Index::restore(&std::fs::read(p)?)
+                        .ok_or_else(|| std::io::Error::other("invalid index snapshot"))
+                }
+            })?;
+        }
+        Ok(())
     }
 
     /// Set the site name this node calls itself — the OpenSearch `ShortName` a
@@ -901,6 +928,8 @@ impl SearchServer {
             frontier: Some(frontier),
             base_url: base_url.into(),
             site_name: DEFAULT_SITE_NAME.to_string(),
+            source: None,
+            publication: Default::default(),
         }
     }
 
@@ -920,9 +949,13 @@ impl SearchServer {
         if method != "GET" && method != "HEAD" {
             return Resp::text(405, "method not allowed");
         }
+        if self.refresh().is_err() {
+            return Resp::text(503, "published index unavailable");
+        }
         let s = urlsplit(target, "");
         let params = parse_qsl(&s.query, true);
         match s.path.as_str() {
+            "/api/storage" => Resp::json(200, self.publication.status_json()),
             "/style.css" => Resp::css(STYLE),
             "/healthz" => Resp::text(200, "ok"),
             "/favicon.ico" => Resp {
@@ -2334,5 +2367,58 @@ href='/search?q=rust&amp;format=atom'>"
         // HTML's `&#x27;` form never appears in the feed; XML's `&apos;` is used.
         assert!(!atom.contains("&#x27;"));
         assert!(atom.contains("<id>http://x.example/p?a=1&amp;b=2</id>"));
+    }
+    #[test]
+    fn running_reader_adopts_blob_and_segment_publications() {
+        for segmented in [false, true] {
+            let path = std::env::temp_dir()
+                .join(format!("web-refresh-{}-{segmented}", std::process::id()));
+            let srv = SearchServer::new(Arc::new(Mutex::new(Index::new())), "")
+                .with_store_path(path.to_str().unwrap(), segmented);
+            assert_eq!(srv.route("GET", "/healthz").status, 200);
+            let mut ix = Index::new();
+            ix.upsert_document(
+                "http://a/one",
+                DocFields {
+                    title: "publicationtest",
+                    body: "publicationtest",
+                    host: "a",
+                    ..DocFields::default()
+                },
+            );
+            if segmented {
+                crate::segindex::SegmentedIndex::open(&path)
+                    .unwrap()
+                    .write_whole(&mut ix)
+                    .unwrap();
+            } else {
+                crawlcore::atomicfile::write_atomic(&path, &ix.snapshot()).unwrap();
+            }
+            let reply = srv.route("GET", "/api/search?q=publicationtest");
+            assert_eq!(reply.status, 200);
+            assert!(reply.body.contains("http://a/one"), "{}", reply.body);
+            let generation = srv.route("GET", "/api/storage").body;
+            assert!(!generation.contains("null"));
+            if segmented {
+                // A higher corrupt publication must fail, not fall back or repair it.
+                std::fs::write(
+                    path.join("manifest-99999999999999999999"),
+                    b"not a numeric u64",
+                )
+                .unwrap();
+                std::fs::write(path.join("manifest-00000000000000000999"), b"broken").unwrap();
+            } else {
+                crawlcore::atomicfile::write_atomic(&path, b"broken").unwrap();
+            }
+            assert_eq!(
+                srv.route("GET", "/api/search?q=publicationtest").status,
+                503
+            );
+            if segmented {
+                std::fs::remove_dir_all(path).unwrap();
+            } else {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
     }
 }

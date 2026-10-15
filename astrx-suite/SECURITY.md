@@ -85,7 +85,7 @@ Attack surface is dependency surface. The suite is built to keep both tiny:
   async runtime, under `net`, which implies `rand`). Their small transitive
   closure is governed by `deny.toml` (advisories + a permissive-only licence
   allowlist + version/wildcard bans).
-- **MSRV 1.80**, pinned in `[workspace.package]` and exercised in CI, so builds
+- **MSRV 1.89**, pinned in `[workspace.package]` and exercised in CI, so builds
   are reproducible against a known-good compiler floor.
 
 ## Reporting a vulnerability

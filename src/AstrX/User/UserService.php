@@ -80,11 +80,8 @@ final class UserService
      * shouldShowLoginCaptcha) and no IP rate limiter, that made online guessing
      * a matter of minutes. A config array can be emptied; this cannot.
      *
-     * 12 follows NIST SP 800-63B's length-over-composition guidance — there are
-     * deliberately no "must contain a symbol" rules, which push users toward
-     * predictable substitutions without adding real entropy.
      */
-    public const int MIN_PASSWORD_LENGTH = 12;
+    public const int MIN_PASSWORD_LENGTH = \AstrX\Auth\PasswordPolicy::MIN_LENGTH;
 
     /**
      * Upper bound, also enforced in code. Argon2id hashes whatever it is given:
@@ -92,7 +89,7 @@ final class UserService
      * and memory bandwidth per attempt, which on a small php-fpm pool is a
      * one-request denial of service. 4096 is far above any real passphrase.
      */
-    public const int MAX_PASSWORD_LENGTH = 4096;
+    public const int MAX_PASSWORD_LENGTH = \AstrX\Auth\PasswordPolicy::MAX_BYTES;
 
     /**
      * Reject a password that violates the code-enforced floor/ceiling. Returns
@@ -103,19 +100,15 @@ final class UserService
      */
     private function checkPasswordLength(string $password): ?Result
     {
-        // strlen(), not mb_strlen(): the floor is about how much an attacker has
-        // to guess, and bytes are what they guess. A 12-character CJK passphrase
-        // is comfortably over the byte floor either way.
-        $length = strlen($password);
-        if ($length < self::MIN_PASSWORD_LENGTH) {
+        if (!mb_check_encoding($password, 'UTF-8') || strlen($password) > self::MAX_PASSWORD_LENGTH) {
+            return $this->opErr('invalid_password');
+        }
+        if (!\AstrX\Auth\PasswordPolicy::accepts($password)) {
             return Result::err(null, Diagnostics::of(new UserPasswordTooShortDiagnostic(
                 'astrx.user/password_too_short',
                 DiagnosticLevel::NOTICE,
                 self::MIN_PASSWORD_LENGTH,
             )));
-        }
-        if ($length > self::MAX_PASSWORD_LENGTH) {
-            return $this->opErr('invalid_password');
         }
         return null;
     }
@@ -256,24 +249,26 @@ final class UserService
     // -------------------------------------------------------------------------
 
     /**
-     * Read a user's TOTP state (safe: any error → disabled/empty).
+     * Read TOTP state. Unavailable state is an error, never an implicit opt-out.
      *
-     * @return array{enabled:bool,secret:string,recovery:list<string>,recovery_raw:string,last_step:int}
+     * @return Result<array{enabled:bool,secret:string,recovery:list<string>,recovery_raw:string,last_step:int}>
      */
-    public function totpInfo(string $hexId): array
+    public function totpInfo(string $hexId): Result
     {
         $off = ['enabled' => false, 'secret' => '', 'recovery' => [], 'recovery_raw' => '', 'last_step' => 0];
         $r = $this->repo->getTotp($hexId);
         if (!$r->isOk()) {
-            return $off;
+            return $this->opErr('login_failed');
         }
         $row = $r->unwrap();
         if (!is_array($row)) {
-            return $off;
+            return $this->opErr('login_failed');
         }
-        $storedSecret = is_scalar($row['totp_secret'] ?? null) ? (string) $row['totp_secret'] : '';
-        $secret       = $this->decryptTotpSecret($storedSecret);
-        $enabled      = $this->intVal($row['totp_enabled'] ?? null) === 1 && $secret !== '';
+        $flag = $row['totp_enabled'] ?? null;
+        if ($flag === 0 || $flag === '0') { return Result::ok($off); }
+        if ($flag !== 1 && $flag !== '1') { return $this->opErr('login_failed'); }
+        $secret = $this->decryptTotpSecret(is_string($row['totp_secret'] ?? null) ? $row['totp_secret'] : '');
+        if ($secret === '') { return $this->opErr('login_failed'); }
         $recovery = [];
         $rawRec = $row['totp_recovery'] ?? null;
         if (is_string($rawRec) && $rawRec !== '') {
@@ -286,14 +281,14 @@ final class UserService
                 }
             }
         }
-        return [
-            'enabled'      => $enabled,
+        return Result::ok([
+            'enabled'      => true,
             'secret'       => $secret,
             'recovery'     => $recovery,
             // Exact stored blob, for the compare-and-swap in consumeRecoveryCode().
             'recovery_raw' => is_string($rawRec) ? $rawRec : '',
             'last_step'    => $this->intVal($row['totp_last_step'] ?? null),
-        ];
+        ]);
     }
 
     /**
@@ -314,10 +309,10 @@ final class UserService
         return $r->isOk() && $r->unwrap() === true;
     }
 
-    /** Is TOTP active for this user? */
-    public function isTotpEnabled(string $hexId): bool
+    /** @return Result<bool> Whether TOTP is explicitly enabled. */
+    public function isTotpEnabled(string $hexId): Result
     {
-        return $this->totpInfo($hexId)['enabled'];
+        return $this->totpInfo($hexId)->map(static fn (array $info): bool => $info['enabled']);
     }
 
     /**
@@ -383,8 +378,8 @@ final class UserService
      * this change hold plaintext base32, and refusing them would lock every
      * existing 2FA user out of their account on upgrade. Such a row is re-wrapped
      * the next time the user re-enrols. A value that HAS the prefix but fails its
-     * MAC returns '' — that is a tampered or wrong-key row, and totpInfo() then
-     * reports TOTP as disabled rather than feeding garbage to the code check.
+     * MAC returns '' — that is an unreadable row, and totpInfo() then
+     * returns an unavailable-state error; login must not continue.
      */
     private function decryptTotpSecret(string $stored): string
     {
@@ -697,6 +692,10 @@ final class UserService
 
         // Success: update DB, set session
         $hexId = (is_scalar($row['id']) ? (string)$row['id'] : '');
+
+        if ($hexId === '' || !$this->totpInfo($hexId)->isOk()) {
+            return $this->opErr('login_failed');
+        }
 
         // FIX (rehash-on-verify): transparently upgrade the stored hash if the
         // algorithm/parameters have changed since it was written.

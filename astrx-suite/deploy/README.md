@@ -27,12 +27,15 @@ layer:
 
 ### Why the images are empty
 
-The suite has zero third-party dependencies by default, and the only networking
-dependencies (`tokio`, `getrandom`) are pure Rust. Every engine therefore links
-to a **single statically-linked binary** — no libc, no shell, no package
-manager, no interpreter. Four of the five run `FROM scratch`: the image is one
-executable, `/etc/passwd`, and a data directory. There is nothing to CVE-scan,
-nothing to shell into, and nothing to escalate with.
+The standard-library-only default library builds are distinct from the
+network-enabled service binaries. Networking uses external crates, including
+Tokio/getrandom and their transitive dependencies.
+
+Four service images use `FROM scratch` with statically linked binaries. This
+reduces the operating-system components included in the image, but it does not
+remove embedded runtime code, libc where linked, or dependency vulnerabilities.
+Track the actual build inputs, scan dependencies and rebuild affected releases.
+The absence of a shell is not a general protection against code execution.
 
 `gitweb` is the one documented exception: it is a front-end for the real `git`
 binary, which it execs **argv-only, never through a shell**, so its image is
@@ -100,3 +103,12 @@ make -C deploy clean        remove containers, networks AND volumes (destroys th
 See [FLEET.md](FLEET.md) for the multi-host story: HRW-sharded clearnet
 crawling with a stateless scatter-gather aggregator, and how the other engines
 scale.
+
+## Storage coordination
+
+All snapshot writers must use the patched suite and the same canonical store
+path. A crawler/indexer holds an exclusive writer lease; administrative writes
+return 503 while it is busy. Search readers adopt valid published changes on the
+next request, including segmented web indexes. Torrent blocklist writes persist
+before acknowledgement. See [operations](../../docs/OPERATIONS.md) for backup,
+crash-window and filesystem assumptions. The web fetcher remains HTTP-only.

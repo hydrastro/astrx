@@ -468,8 +468,19 @@ impl SegmentedIndex {
     /// # Errors
     /// I/O or corruption in any segment; a record that fails to decode.
     pub fn load(&self) -> Result<Index> {
+        Self::from_reader(self.store.reader()?)
+    }
+
+    /// Load the latest published index without recovery or filesystem writes.
+    ///
+    /// # Errors
+    /// I/O or corruption in the latest manifest or its segments.
+    pub fn read_snapshot(dir: impl AsRef<Path>) -> Result<Index> {
+        Self::from_reader(Store::<IndexRecord>::read_snapshot(dir)?)
+    }
+
+    fn from_reader(mut reader: crawlcore::segstore::Reader<IndexRecord>) -> Result<Index> {
         let mut ix = Index::new();
-        let mut reader = self.store.reader()?;
         let mut pending_meta: Option<i64> = None;
         reader.for_each(|rec: IndexRecord| match rec {
             IndexRecord::Doc(d) => ix.put_stored_doc(*d),
@@ -696,7 +707,7 @@ impl SegmentedIndex {
 /// # Errors
 /// As [`SegmentedIndex::load`].
 pub fn load_index(dir: impl AsRef<Path>) -> Result<Index> {
-    SegmentedIndex::open(dir)?.load()
+    SegmentedIndex::read_snapshot(dir)
 }
 
 /// Run `crawler` into `seg`, committing a segment every `flush_every` pages.

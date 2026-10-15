@@ -108,7 +108,7 @@ impl RobotsRules {
                 }
             }
         }
-        best.map_or(true, |m| m.allow)
+        best.is_none_or(|m| m.allow)
     }
 
     /// The Crawl-delay applying to *agent*, if any.

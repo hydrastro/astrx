@@ -212,24 +212,24 @@ jobs:
 
   # ------------------------------------------------------ the MSRV is a promise
   msrv:
-    name: MSRV 1.80
+    name: MSRV 1.89
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.80.0
+      - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: astrx-suite }
       # `astrx-suite/rust-toolchain.toml` pins channel = "stable", and rustup
       # honours that file over whatever toolchain an action selected — so this
-      # job used to install 1.80 and then cheerfully build with stable, passing
+      # job used to install the MSRV and then build with stable, passing
       # while testing nothing. RUSTUP_TOOLCHAIN takes precedence over the file.
       - name: Prove the toolchain really is the MSRV
-        run: rustc --version | tee /dev/stderr | grep -q '1\.80\.'
-        env: { RUSTUP_TOOLCHAIN: '1.80.0' }
+        run: rustc --version | tee /dev/stderr | grep -q '1\.89\.'
+        env: { RUSTUP_TOOLCHAIN: '1.89.0' }
       # Build, not test: dev-dependencies and test harnesses may legitimately
       # want newer Rust than the shipped library does.
       - run: cargo build --workspace --locked --all-features
-        env: { RUSTUP_TOOLCHAIN: '1.80.0' }
+        env: { RUSTUP_TOOLCHAIN: '1.89.0' }
 
   # ------------------------------- the project's central claim, asserted not assumed
   zero-deps:

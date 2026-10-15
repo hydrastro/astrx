@@ -230,7 +230,7 @@ the remaining engines land on top:
   can't silently accept unverified data. The crate-root re-export surface was
   completed so `use torrentds::*` can name every type the public APIs hand back.
 - **CI is now real, not just claimed** (`.github/workflows/rust.yml`): fmt +
-  clippy `-D warnings` + `--all-features` test + an MSRV (1.80) job + a
+  clippy `-D warnings` + `--all-features` test + an MSRV (1.89) job + a
   feature-powerset check + the zero-dep assertion + a best-effort fuzz smoke.
 - **`cargo fuzz` harnesses added** (`fuzz/`) for bencode, KRPC, info-dict and
   magnet parsing; plus `deny.toml` (supply-chain policy), `SECURITY.md` (threat
@@ -263,5 +263,5 @@ cross-checks stay byte-identical:
 
 `cargo fmt --check` · `cargo clippy --all-targets --all-features -- -D warnings` ·
 `cargo test --workspace --all-features` · `cargo build --no-default-features`
-(+ empty-dependency-tree assertion) · MSRV 1.80 · `cargo fuzz` smoke for parsers.
+(+ empty-dependency-tree assertion) · MSRV 1.89 · `cargo fuzz` smoke for parsers.
 Wired in `.github/workflows/rust.yml`; all green today.

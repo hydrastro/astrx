@@ -16,10 +16,6 @@ return [
         'config_optional' => true,
         'lang_optional' => true,
     ],
-    'ErrorHandler' => [
-        'failsafe_template' => '/app/resources/template//failsafe.html',
-        'production_mask' => 30711,
-    ],
     'Injector' => [
         'helpers_strict' => true,
     ],

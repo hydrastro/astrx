@@ -226,7 +226,7 @@ pub async fn fetch(
             return FetchResult::failed(
                 url,
                 &current,
-                "https requires the tls feature".to_string(),
+                "HTTPS is not supported by this HTTP-only fetcher".to_string(),
                 redirects,
             );
         }
@@ -543,7 +543,7 @@ impl Fetcher {
             return Err("unsupported-scheme".to_string());
         }
         if scheme == "https" {
-            return Err("https requires the tls feature".to_string());
+            return Err("HTTPS is not supported by this HTTP-only fetcher".to_string());
         }
         let (host, port_str) = host_port(&s.netloc);
         if host.is_empty() {

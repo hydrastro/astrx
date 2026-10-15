@@ -185,7 +185,13 @@ final class UserController extends AbstractController
         // If the account has TOTP on, defer the session grant to /login-2fa; the
         // session is not authenticated until session->login() runs there.
         $uid = is_scalar($userData['id'] ?? null) ? (string) $userData['id'] : '';
-        if ($uid !== '' && $this->userService->isTotpEnabled($uid)) {
+        $factor = $this->userService->isTotpEnabled($uid)->drainTo($this->collector);
+        if (!$factor->isOk()) {
+            unset($_SESSION['astrx_pending_2fa'], $_SESSION['astrx_pending_2fa_data'], $_SESSION['astrx_pending_2fa_ts']);
+            $this->session->clearImapPassword();
+            return;
+        }
+        if ($factor->unwrap()) {
             unset($userData['password']);
             if ($this->webmail->mailserverIsLocal() && $password !== '') {
                 $this->session->storeImapPassword($password);

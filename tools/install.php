@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__) . '/src/AstrX/Auth/PasswordPolicy.php';
 
 /**
  * AstrX CLI installer — `php tools/install.php`
@@ -671,6 +672,9 @@ function removeSeedAdmin(PDO $pdo): string
 
 function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 {
+    if (!\AstrX\Auth\PasswordPolicy::accepts($pass)) {
+        return 'Password must contain at least 12 characters and at most 4096 UTF-8 bytes.';
+    }
     try {
         // R4-20: idempotent. A bare INSERT into the UNIQUE username threw 23000
         // on any re-run of the installer. ON DUPLICATE KEY UPDATE re-provisions
@@ -714,7 +718,7 @@ function printUsage(): void
 
     Admin account:
       --admin-user=NAME      First administrator username (default: admin)
-      --admin-pass=PASS      Admin password, min 8 chars (prompted hidden if omitted)
+      --admin-pass=PASS      Admin password, min 12 chars (prompted hidden if omitted)
       --admin-mailbox=BOX    IMAP local-part (default: same as admin username)
 
     Security / environment:
@@ -856,15 +860,15 @@ if ($adminPass === null) {
     }
     // Interactive: loop until a valid, confirmed password is entered.
     while (true) {
-        $p1 = promptHidden('Admin password (min 8 chars)');
-        if (strlen($p1) < 8) { out("  Password must be at least 8 characters.\n"); continue; }
+        $p1 = promptHidden('Admin password (min 12 chars)');
+        if (!\AstrX\Auth\PasswordPolicy::accepts($p1)) { out("  Password must be at least 12 characters and at most 4096 UTF-8 bytes.\n"); continue; }
         $p2 = promptHidden('Repeat password');
         if ($p1 !== $p2)     { out("  Passwords do not match.\n"); continue; }
         $adminPass = $p1;
         break;
     }
 }
-if (strlen($adminPass) < 8) { fail('Admin password must be at least 8 characters.'); }
+if (!\AstrX\Auth\PasswordPolicy::accepts($adminPass)) { fail('Admin password must be at least 12 characters and at most 4096 UTF-8 bytes.'); }
 
 $adminMailbox = resolve($args, 'admin-mailbox', 'Admin mailbox (IMAP local-part)', $adminUser, $noInput, required: false);
 if ($adminMailbox === '') { $adminMailbox = $adminUser; }
@@ -899,7 +903,7 @@ out("Set environment to '{$envRaw}'\n");
 
 // ── Finalise ────────────────────────────────────────────────────────────────
 // Lock the web installer and drop any one-time setup token it may have created.
-@file_put_contents($configDir . '.setup_complete', date('c'));
+if (@file_put_contents($configDir . '.setup_complete', date('c'), LOCK_EX) === false) { fail('Cannot write setup completion marker.'); }
 @unlink($configDir . '.setup_token');
 
 out("\nInstall complete. Remember to remove public/setup.php from the docroot.\n");

@@ -1,0 +1,34 @@
+<?php
+declare(strict_types=1);
+require dirname(__DIR__) . '/src/autoload.php';
+$dir = sys_get_temp_dir() . '/astrx-config-review-' . bin2hex(random_bytes(5)) . '/';
+mkdir($dir,0700); define('CONFIG_DIR', $dir);
+function check(string $label, bool $ok): void { if (!$ok) { throw new RuntimeException($label); } echo "ok: $label\n"; }
+file_put_contents($dir . 'config.php', '<?php return [];');
+file_put_contents($dir . 'Csrf.config.php', "<?php return ['CsrfHandler' => ['csrf_ttl'=>17, 'csrf_token_bytes'=>20]];");
+file_put_contents($dir . 'Translator.config.php', '<?php return ' . var_export(['Translator'=>['lang_dir'=>$dir . 'override','fallback_to_key'=>false]],true) . ';');
+$collector = new AstrX\Result\DiagnosticsCollector();
+$config = new AstrX\Config\Config($collector, $dir . 'config.php');
+$t = new AstrX\I18n\Translator($collector);
+$loader = new AstrX\Module\ModuleLoader($config,$t,$collector,$dir);
+$loader->setConfigDir($dir);
+$csrf = new AstrX\Csrf\CsrfHandler();
+$loader->onClassCreated($csrf, $csrf::class);
+$before = time(); $token = $csrf->generate('test');
+check('CSRF configured entropy', strlen($token) === 40);
+check('CSRF configured TTL', $_SESSION['CSRF_test']['expires_at'] >= $before + 17 && $_SESSION['CSRF_test']['expires_at'] <= time() + 17);
+mkdir($dir . 'base/en',0700,true); mkdir($dir . 'override/en',0700,true);
+file_put_contents($dir . 'base/en/Test.en.php', "<?php return ['shared'=>'base', 'base'=>'kept'];");
+file_put_contents($dir . 'override/en/Test.en.php', "<?php return ['shared'=>'override'];");
+$loader->onClassCreated($t,$t::class); $t->loadDomain($dir . 'base','Test');
+check('override catalog loaded', $t->t('shared') === 'override');
+check('built-in fallback preserved', $t->t('base') === 'kept');
+check('fallback_to_key disabled', $t->t('unknown') === '');
+check('explicit fallback preserved', $t->t('unknown',fallback:'explicit') === 'explicit');
+$t->setFallbackToKey(true); check('fallback_to_key enabled', $t->t('unknown') === 'unknown');
+file_put_contents($dir . 'Mail.config.php', "<?php return ['WebmailService'=>['mailbox_is_username'=>true]];");
+$ref = new ReflectionClass(AstrX\Controller\RegisterController::class);
+$controller = $ref->newInstanceWithoutConstructor();
+$loader->onClassCreated($controller, $controller::class);
+check('registration receives Mail configuration', $ref->getProperty('mailboxIsUsername')->getValue($controller) === true);
+foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST) as $f) { $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname()); } rmdir($dir);

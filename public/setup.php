@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__) . '/src/AstrX/Auth/PasswordPolicy.php';
 
 /**
  * AstrX First-Run Setup Wizard — single-file, no JS, site-CSS styled.
@@ -35,7 +36,11 @@ if (file_exists($configDir . '.setup_complete')) {
 //     the first admin, and an operator can legitimately re-enter setup.
 // (b) Require a per-install setup token, stored OUTSIDE the docroot in the config
 //     dir (0600, generated on first load), on every step that writes anything.
-$setupToken     = setupToken($configDir);
+try { $setupToken = setupToken($configDir); }
+catch (\RuntimeException) {
+    http_response_code(503);
+    exit('Setup token could not be saved. Check the configuration directory permissions.');
+}
 $submittedToken = post('setup_token', '');
 $tokenValid     = $submittedToken !== '' && hash_equals($setupToken, $submittedToken);
 
@@ -57,15 +62,22 @@ function currentStep(): int { return max(1, min(5, (int)(($_GET['step'] ?? $_POS
 // filesystem and paste it into the form. Generated 0600 on first load.
 function setupToken(string $configDir): string
 {
-    $path = $configDir . '.setup_token';
-    $existing = @file_get_contents($path);
-    if (is_string($existing) && trim($existing) !== '') {
-        return trim($existing);
-    }
-    $token = bin2hex(random_bytes(32));
-    @file_put_contents($path, $token, LOCK_EX);
-    @chmod($path, 0600);
-    return $token;
+    $oldMask = umask(0077);
+    try { $file = @fopen($configDir . '.setup_token', 'c+b'); }
+    finally { umask($oldMask); }
+    if ($file === false) { throw new \RuntimeException('Cannot open setup token'); }
+    try {
+        if (!flock($file, LOCK_EX) || !chmod($configDir . '.setup_token', 0600)) {
+            throw new \RuntimeException('Cannot protect setup token');
+        }
+        $existing = stream_get_contents($file);
+        if ($existing === false) { throw new \RuntimeException('Cannot read setup token'); }
+        if (preg_match('/\A[0-9a-f]{64}\z/', trim($existing)) === 1) { return trim($existing); }
+        $token = bin2hex(random_bytes(32));
+        if (!rewind($file) || !ftruncate($file, 0) || fwrite($file, $token) !== strlen($token)
+            || !fflush($file) || !fsync($file)) { throw new \RuntimeException('Cannot save setup token'); }
+        return $token;
+    } finally { fclose($file); }
 }
 
 // Fail-closed install detection: true only if we can connect to the configured
@@ -418,6 +430,9 @@ function removeSeedAdmin(PDO $pdo): string
 
 function makeAdmin(PDO $pdo, string $user, string $pass, string $mbox): string
 {
+    if (!\AstrX\Auth\PasswordPolicy::accepts($pass)) {
+        return 'Password must contain at least 12 characters and at most 4096 UTF-8 bytes.';
+    }
     try {
         $stmt = $pdo->prepare('INSERT INTO `user` (id,username,mailbox,password,type,verified,deleted) VALUES (UNHEX(:id),:u,:m,:p,1,1,0)');
         $stmt->execute([':id'=>bin2hex(random_bytes(16)),':u'=>$user,':m'=>$mbox,':p'=>password_hash($pass,PASSWORD_ARGON2ID)]);
@@ -494,7 +509,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$tokenValid) {
     elseif ($ps === 3) {
         $au=post('admin_user'); $ap=post('admin_pass'); $ap2=post('admin_pass2'); $am=post('admin_mailbox');
         if ($au===''           ) $errors[]='Username is required.';
-        if (strlen($ap)<8      ) $errors[]='Password must be at least 8 characters.';
+        if (!\AstrX\Auth\PasswordPolicy::accepts($ap)      ) $errors[]='Password must be at least 12 characters and at most 4096 UTF-8 bytes.';
         if ($ap!==$ap2         ) $errors[]='Passwords do not match.';
         if ($errors===[]) {
             $conn = sessionConn();

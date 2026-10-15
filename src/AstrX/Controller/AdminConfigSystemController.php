@@ -405,9 +405,6 @@ final class AdminConfigSystemController extends AbstractController
                 'error_page_url_id' => trim(
                     self::mStr($p, 'error_page_url_id', 'WORDING_ERROR')
                 ),
-                'main_page_id' => trim(
-                    self::mStr($p, 'main_page_id', 'WORDING_MAIN')
-                ),
                 'pages_lang_domain' => trim(
                     self::mStr($p, 'pages_lang_domain', 'pages')
                 ),
@@ -711,14 +708,6 @@ final class AdminConfigSystemController extends AbstractController
             )
         );
         $this->ctx->set(
-            'cfg_main_page_id',
-            $this->config->getConfigString(
-                'ContentManager',
-                'main_page_id',
-                'WORDING_MAIN'
-            )
-        );
-        $this->ctx->set(
             'cfg_pages_lang_domain',
             $this->config->getConfigString(
                 'ContentManager',
@@ -1009,10 +998,6 @@ final class AdminConfigSystemController extends AbstractController
         $this->ctx->set(
             'label_error_page_url_id',
             $this->t->t('admin.config.field.error_page_url_id')
-        );
-        $this->ctx->set(
-            'label_main_page_id',
-            $this->t->t('admin.config.field.main_page_id')
         );
         $this->ctx->set(
             'label_pages_lang_domain',

@@ -67,7 +67,9 @@ final class TwofactorController extends AbstractController
             exit;
         }
 
-        $info    = $this->userService->totpInfo($uid);
+        $state = $this->userService->totpInfo($uid);
+        if (!$state->isOk()) { http_response_code(503); return $state; }
+        $info = $state->unwrap();
         $enabled = $info['enabled'];
         $setup   = is_string($_SESSION['astrx_2fa_setup'] ?? null) ? (string) $_SESSION['astrx_2fa_setup'] : '';
 
@@ -128,9 +130,12 @@ final class TwofactorController extends AbstractController
             return;
         }
 
+        $state = $this->userService->totpInfo($uid)->drainTo($this->collector);
+        if (!$state->isOk()) { return; }
+        $info = $state->unwrap();
         switch (self::mStr($posted, 'action', '')) {
             case 'begin':
-                if ($this->userService->isTotpEnabled($uid)) {
+                if ($info['enabled']) {
                     return;
                 }
                 $_SESSION['astrx_2fa_setup'] = $this->totp->generateSecret();
@@ -141,6 +146,7 @@ final class TwofactorController extends AbstractController
                 return;
 
             case 'confirm':
+                if ($info['enabled']) { return; }
                 $secret = is_string($_SESSION['astrx_2fa_setup'] ?? null) ? (string) $_SESSION['astrx_2fa_setup'] : '';
                 if ($secret === '') {
                     return;
@@ -158,14 +164,17 @@ final class TwofactorController extends AbstractController
                     return;
                 }
                 $rc = $this->totp->generateRecoveryCodes(10);
-                $this->userService->enableTotp($uid, $secret, $rc['hashes'])->drainTo($this->collector);
+                $saved = $this->userService->enableTotp($uid, $secret, $rc['hashes'])->drainTo($this->collector);
+                if (!$saved->isOk() || $saved->unwrap() !== true) {
+                    $this->flash->set('error', $this->t->t('twofactor.bad_code'));
+                    return;
+                }
                 unset($_SESSION['astrx_2fa_setup']);
                 $_SESSION['astrx_2fa_recovery_once'] = $rc['plain'];
                 $this->flash->set('success', $this->t->t('twofactor.enabled'));
                 return;
 
             case 'disable':
-                $info = $this->userService->totpInfo($uid);
                 if (!$info['enabled']) {
                     return;
                 }
@@ -189,7 +198,11 @@ final class TwofactorController extends AbstractController
                     return;
                 }
                 $this->userService->clearAuthFailure($uid);
-                $this->userService->disableTotp($uid)->drainTo($this->collector);
+                $saved = $this->userService->disableTotp($uid)->drainTo($this->collector);
+                if (!$saved->isOk() || $saved->unwrap() !== true) {
+                    $this->flash->set('error', $this->t->t('twofactor.bad_code'));
+                    return;
+                }
                 $this->flash->set('success', $this->t->t('twofactor.disabled'));
                 return;
         }

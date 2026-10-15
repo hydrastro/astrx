@@ -307,6 +307,12 @@ final class Bundle
         self::loadFile(self::CLASS_MAP[\$class]);
     }
 
+    public static function sourceFingerprint(string \$path): string
+    {
+        if (!isset(self::SOURCE[\$path])) { throw new \RuntimeException('Missing bundled source'); }
+        return hash('sha256', self::SOURCE[\$path]);
+    }
+
     public static function loadFile(string \$path): void
     {
         if (isset(self::\$loadedFiles[\$path])) {
@@ -381,7 +387,7 @@ PHP;
             return;
         }
 
-        $cmd = PHP_BINARY . ' ' . escapeshellarg($script) . ' --quiet 2>&1';
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' --quiet 2>&1';
         exec($cmd, $out, $code);
         if ($code !== 0) {
             $this->warnings[] = 'template cache warm failed: ' . implode(' | ', $out);
@@ -659,7 +665,7 @@ PHP;
     private function lint(string $file): void
     {
         $out = [];
-        $cmd = 'php -l ' . escapeshellarg($file) . ' 2>&1';
+        $cmd = escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($file) . ' 2>&1';
         exec($cmd, $out, $code);
         if ($code !== 0) {
             throw new RuntimeException("PHP lint failed for {$file}:\n" . implode("\n", $out));
@@ -684,7 +690,7 @@ PHP;
                     throw new RuntimeException("Could not write temp lint file for {$rel}");
                 }
                 $out = [];
-                $cmd = 'php -l ' . escapeshellarg($tmp) . ' 2>&1';
+                $cmd = escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($tmp) . ' 2>&1';
                 exec($cmd, $out, $exit);
                 if ($exit !== 0) {
                     throw new RuntimeException("PHP lint failed for embedded source {$rel}:\n" . implode("\n", $out));

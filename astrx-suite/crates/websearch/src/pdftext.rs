@@ -560,7 +560,7 @@ mod audit_regression {
         let body = b"BT (a)Tj "
             .iter()
             .copied()
-            .chain(std::iter::repeat(b'z').take(100_000))
+            .chain(std::iter::repeat_n(b'z', 100_000))
             .collect::<Vec<u8>>();
         let mut it = extract_from_stream(&body);
         assert_eq!(it.next().as_deref(), Some("a"));

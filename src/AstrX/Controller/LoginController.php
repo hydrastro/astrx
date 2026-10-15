@@ -125,7 +125,13 @@ final class LoginController extends AbstractController
         // extends an as-yet-UNauthenticated session. API-key logins never reach
         // here, so they are unaffected.
         $uid = is_scalar($userData['id'] ?? null) ? (string) $userData['id'] : '';
-        if ($uid !== '' && $this->userService->isTotpEnabled($uid)) {
+        $factor = $this->userService->isTotpEnabled($uid)->drainTo($this->collector);
+        if (!$factor->isOk()) {
+            unset($_SESSION['astrx_pending_2fa'], $_SESSION['astrx_pending_2fa_data'], $_SESSION['astrx_pending_2fa_ts']);
+            $this->session->clearImapPassword();
+            return $factor;
+        }
+        if ($factor->unwrap()) {
             unset($userData['password']); // never stash the hash in the session
             $this->session->storeImapPassword($password); // encrypted; survives to post-2FA
             $_SESSION['astrx_pending_2fa']      = $uid;

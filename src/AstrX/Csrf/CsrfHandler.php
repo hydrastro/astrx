@@ -31,6 +31,7 @@ use AstrX\Result\Result;
  *       // Re-render form...
  *   }
  */
+#[\AstrX\Config\ConfigDomain('CsrfHandler', file: 'Csrf')]
 final class CsrfHandler
 {
     // -------------------------------------------------------------------------

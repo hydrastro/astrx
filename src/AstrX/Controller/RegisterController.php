@@ -27,6 +27,7 @@ use AstrX\User\UserSession;
  * Registration form controller.
  * Email sending (verification token) is stubbed — wire PHPMailer when ready.
  */
+#[\AstrX\Config\ConfigDomain('WebmailService', file: 'Mail')]
 final class RegisterController extends AbstractController
 {
     private const FORM = 'register';

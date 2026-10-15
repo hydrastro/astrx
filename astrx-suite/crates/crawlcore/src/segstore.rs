@@ -1335,6 +1335,46 @@ impl<R: Record> Store<R> {
         Ok(self.manifest.generation)
     }
 
+    /// Open the newest published generation without creating, repairing or
+    /// sweeping files. Corruption is an error; readers never roll back silently.
+    ///
+    /// # Errors
+    /// I/O errors or an invalid latest manifest. Record integrity is checked by
+    /// the returned reader while scanning.
+    pub fn read_snapshot(dir: impl AsRef<Path>) -> Result<Reader<R>> {
+        let dir = dir.as_ref();
+        let manifest = match list_manifests(dir)?.into_iter().max() {
+            Some(generation) => {
+                let path = manifest_path(dir, generation);
+                Manifest::parse(&path, &std::fs::read(&path).map_err(|e| io_err(&path, e))?)?
+            }
+            None => {
+                return Ok(Reader {
+                    segments: Vec::new(),
+                    generation: 0,
+                    peak_bytes: 0,
+                    _marker: PhantomData,
+                })
+            }
+        };
+        let mut segments = Vec::with_capacity(manifest.segments.len());
+        for info in &manifest.segments {
+            let path = segment_path(dir, info.id);
+            let file = File::open(&path).map_err(|e| io_err(&path, e))?;
+            segments.push(SegFile {
+                info: info.clone(),
+                path,
+                file,
+            });
+        }
+        Ok(Reader {
+            segments,
+            generation: manifest.generation,
+            peak_bytes: 0,
+            _marker: PhantomData,
+        })
+    }
+
     /// A pinned, streaming view of the store as it is right now.
     ///
     /// Opens every live segment immediately — descriptors, not contents — so the

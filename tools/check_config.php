@@ -72,52 +72,6 @@ spl_autoload_register(static function (string $class): void {
 // Plain functions are not autoloadable and the config files call configDir().
 require_once CLASS_DIR . 'Support' . DIRECTORY_SEPARATOR . 'constants.php';
 
-/**
- * Violations this check knows about and deliberately does not fail on, because
- * fixing each one means editing a file outside this change's blast radius.
- * Every entry is a live TODO, not an exemption: if a key here stops reproducing
- * the check FAILS on the stale entry, so the list cannot quietly rot.
- *
- * Key = the stable identifier the check builds for that violation.
- */
-const CFG_KNOWN_GAPS = [
-    // AstrX\Csrf\CsrfHandler declares both setters but no file declares a
-    // 'CsrfHandler' or 'Csrf' section, so both silently never fire and the
-    // hardcoded TTL / token size are the only values the app can ever have.
-    // Fix: add a Csrf.config.php (or move the keys into an existing section).
-    'SETTER:AstrX\\Csrf\\CsrfHandler::setTtl'
-        => 'no CsrfHandler/Csrf section exists — needs a Csrf config section',
-    'SETTER:AstrX\\Csrf\\CsrfHandler::setTokenBytes'
-        => 'no CsrfHandler/Csrf section exists — needs a Csrf config section',
-    // The key exists, but under 'WebmailService', which RegisterController does
-    // not resolve to. Fix: #[ConfigDomain('WebmailService', file: 'Mail')] on
-    // the controller, or read it through getConfigBool('WebmailService', …).
-    'SETTER:AstrX\\Controller\\RegisterController::setMailboxIsUsername'
-        => "key lives in 'WebmailService'; the controller resolves to RegisterController|Controller",
-    // ErrorHandler has no setter for either key and reads neither via
-    // getConfig(); both are inert. Fix: give ErrorHandler #[InjectConfig]
-    // setters, or delete the keys from resources/config/config.php.
-    'CONSUMED:config/ErrorHandler/failsafe_template'
-        => 'ErrorHandler hardcodes its failsafe template path',
-    'CONSUMED:config/ErrorHandler/production_mask'
-        => 'ErrorHandler hardcodes its production error mask',
-    // Translator declares neither property. The admin System page validates
-    // both, writes both, and reads both back to re-render its own form; nothing
-    // else touches them. Fix: give Translator the setters, or drop the fields
-    // from the editor and the keys from Translator.config.php.
-    'CONSUMED:Translator/Translator/lang_dir'
-        => 'Translator has no lang_dir property; only the editor that writes it reads it',
-    'CONSUMED:Translator/Translator/fallback_to_key'
-        => 'Translator has no fallback_to_key property; only the editor that writes it reads it',
-    // Same shape, other owners.
-    'CONSUMED:Routing/Routing/default_keys'
-        => 'no routing code reads default_keys',
-    'CONSUMED:ContentManager/ContentManager/main_page_id'
-        => 'ContentManager never reads main_page_id',
-    'CONSUMED:ContentManager/ContentManager/extra_lang_domains'
-        => 'superseded by per-page lang domains — see the note at ContentManager.php:590',
-];
-
 /** @var array<string,string> $errors stable key => message */
 $errors = [];
 /** @var list<string> $notes */
@@ -456,25 +410,7 @@ foreach ($readKeys as $section => $keys) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Split off the known gaps, and fail on any that no longer reproduce
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** @var array<string,string> $known violations accepted for now */
-$known = [];
-foreach (CFG_KNOWN_GAPS as $key => $why) {
-    if (isset($errors[$key])) {
-        $known[$key] = $errors[$key] . "\n      (known gap: {$why})";
-        unset($errors[$key]);
-        continue;
-    }
-    // The gap was fixed but its entry stayed. Fail: a permanent exemption is
-    // how a checker stops catching the thing it was written for.
-    $errors["STALE:{$key}"] = "STALE KNOWN GAP: '{$key}' no longer reproduces — "
-        . 'delete it from CFG_KNOWN_GAPS in tools/check_config.php';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. Report
+// 4. Report
 // ─────────────────────────────────────────────────────────────────────────────
 
 fwrite(STDOUT, "AstrX config integrity\n======================\n\n");
@@ -491,11 +427,6 @@ foreach (array_unique($notes) as $n) {
 }
 if ($notes !== []) { fwrite(STDOUT, "\n"); }
 
-foreach ($known as $k) {
-    fwrite(STDOUT, "  TODO: {$k}\n");
-}
-if ($known !== []) { fwrite(STDOUT, "\n"); }
-
 foreach ($errors as $e) {
     fwrite(STDERR, "  ERROR: {$e}\n");
 }
@@ -505,6 +436,5 @@ if ($errors !== []) {
     exit(1);
 }
 
-fwrite(STDOUT, 'Config integrity OK'
-    . ($known !== [] ? ' (' . count($known) . " known gap(s) still open)" : '') . ".\n");
+fwrite(STDOUT, "Config integrity OK\n");
 exit(0);

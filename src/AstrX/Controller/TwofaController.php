@@ -112,7 +112,14 @@ final class TwofaController extends AbstractController
         }
 
         $code = trim(self::mStr($posted, 'code', ''));
-        $info = $this->userService->totpInfo($uid);
+        $state = $this->userService->totpInfo($uid)->drainTo($this->collector);
+        if (!$state->isOk() || !$state->unwrap()['enabled']) {
+            $this->clearPending();
+            $this->session->clearImapPassword();
+            $this->flash->set('error', $this->t->t('twofa.bad_code'));
+            return;
+        }
+        $info = $state->unwrap();
 
         // Verify the TOTP code AND enforce single-use (RFC 6238 §5.2): accept only a
         // time-step strictly greater than the last one accepted for this account, so

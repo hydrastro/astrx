@@ -124,7 +124,7 @@ impl Extractor {
                 if let Some(href) = attr("href") {
                     let rel = attr("rel").unwrap_or("").to_lowercase();
                     let nofollow = rel.split_whitespace().any(|r| r == "nofollow");
-                    let under_cap = self.max_links.map_or(true, |m| self.links.len() < m);
+                    let under_cap = self.max_links.is_none_or(|m| self.links.len() < m);
                     if !href.is_empty() && !nofollow && under_cap {
                         self.links.push(href.to_string());
                     }
