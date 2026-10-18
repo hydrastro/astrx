@@ -31,4 +31,4 @@ if (!defined('CLASS_DIR')) {
 
 require_once __DIR__ . '/autoload.php';
 
-new AstrX\Prelude();
+(new AstrX\Prelude())->run();

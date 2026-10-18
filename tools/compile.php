@@ -296,7 +296,7 @@ final class Bundle
     public static function boot(): void
     {
         self::register();
-        new \AstrX\Prelude();
+        (new \AstrX\Prelude())->run();
     }
 
     public static function autoload(string \$class): void
