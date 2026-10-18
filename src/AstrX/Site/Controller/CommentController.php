@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Site\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaService;
 use AstrX\Captcha\CaptchaType;
 use AstrX\Comment\CommentService;
@@ -26,6 +25,7 @@ use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
+use AstrX\Comment\CommentPermission;
 
 /**
  * Public comment display and submission controller.
@@ -121,7 +121,7 @@ final class CommentController extends AbstractController
 
         // Admin quick-moderation
         if (in_array($action, ['hide', 'unhide', 'delete'], true)) {
-            if ($this->gate->can(Permission::ADMIN_COMMENTS)) {
+            if ($this->gate->can(CommentPermission::ADMIN)) {
                 $id = self::mInt($posted, 'id', 0);
                 if ($id > 0) {
                     match ($action) {
@@ -249,7 +249,7 @@ final class CommentController extends AbstractController
             ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)
             : $this->page->urlId;
 
-        $isAdmin       = $this->gate->can(Permission::ADMIN_COMMENTS);
+        $isAdmin       = $this->gate->can(CommentPermission::ADMIN);
         $allowReplies  = $this->commentService->allowReplies();
         $useIdenticons = $this->avatarService->useIdenticons();
         $profileBase   = $this->urlGen->toPage(

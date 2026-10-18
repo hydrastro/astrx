@@ -34,10 +34,10 @@ final class CommentPolicy implements PolicyInterface
     public function governs(): array
     {
         return [
-            Permission::COMMENT_HIDE_OWN,
-            Permission::COMMENT_DELETE_OWN,
-            Permission::COMMENT_HIDE_ANY,
-            Permission::COMMENT_DELETE_ANY,
+            CommentPermission::HIDE_OWN,
+            CommentPermission::DELETE_OWN,
+            CommentPermission::HIDE_ANY,
+            CommentPermission::DELETE_ANY,
         ];
     }
 
@@ -59,12 +59,12 @@ final class CommentPolicy implements PolicyInterface
 
         return match ($permission) {
             // Owners can act on their own comments
-            Permission::COMMENT_HIDE_OWN,
-            Permission::COMMENT_DELETE_OWN => $isSelf ? PolicyVerdict::Allow : PolicyVerdict::Deny,
+            CommentPermission::HIDE_OWN,
+            CommentPermission::DELETE_OWN => $isSelf ? PolicyVerdict::Allow : PolicyVerdict::Deny,
 
             // Mods cannot moderate admin comments
-            Permission::COMMENT_HIDE_ANY,
-            Permission::COMMENT_DELETE_ANY => ($authorGroup === UserGroup::ADMIN
+            CommentPermission::HIDE_ANY,
+            CommentPermission::DELETE_ANY => ($authorGroup === UserGroup::ADMIN
                 && UserGroup::ofIdentity($identity) !== UserGroup::ADMIN)
                 ? PolicyVerdict::Deny
                 : PolicyVerdict::Abstain,

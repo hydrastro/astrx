@@ -7,7 +7,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -25,6 +24,7 @@ use AstrX\Auth\RequiresPermission;
 use AstrX\Template\TemplateVars;
 use AstrX\Template\TemplateEngine;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — System configuration editor.
@@ -45,7 +45,7 @@ use AstrX\Kernel\AbstractController;
  * page ungated. The ADMIN_CONFIG_SYSTEM check in handle() is the finer gate and
  * still runs: a MOD holds ADMIN_ACCESS and must still get a 403 here.
  */
-#[RequiresPermission(Permission::ADMIN_ACCESS)]
+#[RequiresPermission(AdminPermission::ACCESS)]
 final class AdminConfigSystemController extends AbstractController
 {
     private const FORM = 'admin_config_system';
@@ -71,7 +71,7 @@ final class AdminConfigSystemController extends AbstractController
     public function handle()
     : Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             http_response_code(403);
 
             return $this->ok();

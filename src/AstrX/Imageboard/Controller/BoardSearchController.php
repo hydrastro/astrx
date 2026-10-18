@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Imageboard\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Imageboard\BoardNav;
@@ -16,6 +15,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Post/thread search — a no-JavaScript GET form over post subject/body with an
@@ -54,7 +54,7 @@ final class BoardSearchController extends AbstractController
         $this->ctx->set('board_nav_show', true);
         $this->ctx->set('board_top_nav', $this->nav->topNav('search'));
 
-        if ($this->gate->cannot(Permission::BOARD_VIEW)) {
+        if ($this->gate->cannot(ImageboardPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatCensoredDiagnostic;
 use AstrX\Chat\Diagnostic\ChatEmptyDiagnostic;
 use AstrX\Chat\Diagnostic\ChatFloodDiagnostic;
@@ -36,7 +35,7 @@ final class ChatPmService
     /** @return Result<int> */
     public function send(ChatIdentity $from, string $toNick, string $content, ?string $packedIp = null): Result
     {
-        if (!$this->config->allowPm() || $this->gate->cannot(Permission::CHAT_PM)) {
+        if (!$this->config->allowPm() || $this->gate->cannot(ChatPermission::PM)) {
             return $this->err('gate_denied');
         }
         // Guests may be barred from PMs while members keep them.

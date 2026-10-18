@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Admin;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 
 /**
  * Admin navigation registry.
@@ -41,6 +40,6 @@ final class AdminService
 
     public function isAdmin(): bool
     {
-        return $this->gate->can(Permission::ADMIN_ACCESS);
+        return $this->gate->can(AdminPermission::ACCESS);
     }
 }

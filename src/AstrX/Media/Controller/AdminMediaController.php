@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Media\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\UploadedFile;
@@ -20,6 +19,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — media library: a no-JavaScript manager (upload / rename / delete) for
@@ -59,7 +59,7 @@ final class AdminMediaController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Media');
 
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -99,7 +99,7 @@ final class AdminMediaController extends AbstractController
         // Shared media is a site-wide asset: mutating it requires ADMIN_PAGES.
         // Re-gate under the weaker ADMIN_ACCESS entry gate so a MOD cannot add
         // files — mirrors the content editor's ADMIN_PAGES re-check.
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -125,7 +125,7 @@ final class AdminMediaController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function rename(array $posted): string
     {
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -150,7 +150,7 @@ final class AdminMediaController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function delete(array $posted): string
     {
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }

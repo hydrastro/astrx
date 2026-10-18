@@ -5,7 +5,6 @@ namespace AstrX\GitBrowse\Controller;
 
 use AstrX\Template\ContextScope;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\GitBrowse\GitBrowseConfig;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
@@ -13,6 +12,7 @@ use AstrX\Result\Result;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 /**
  * Git browser link-through (/gitbrowse).
@@ -47,7 +47,7 @@ final class GitBrowseController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'GitBrowse');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

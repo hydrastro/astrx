@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
-use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaRenderer;
 use AstrX\Captcha\CaptchaType;
 use AstrX\Config\Config;
@@ -23,6 +22,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Captcha configuration editor.
@@ -68,7 +68,7 @@ final class AdminConfigCaptchaController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_CAPTCHA)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_CAPTCHA)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

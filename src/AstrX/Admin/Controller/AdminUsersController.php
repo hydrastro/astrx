@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -27,6 +26,8 @@ use AstrX\User\UserResource;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
+use AstrX\User\UserPermission;
 
 /**
  * Admin users — user account management + user service configuration on one page.
@@ -72,8 +73,8 @@ final class AdminUsersController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $canManage = $this->gate->can(Permission::ADMIN_USERS);
-        $canConfig = $this->gate->can(Permission::ADMIN_CONFIG_USERS);
+        $canManage = $this->gate->can(AdminPermission::USERS);
+        $canConfig = $this->gate->can(AdminPermission::CONFIG_USERS);
 
         if (!$canManage && !$canConfig) {
             http_response_code(403);
@@ -163,7 +164,7 @@ final class AdminUsersController extends AbstractController
         // user.* permission, so USER_EDIT_ANY / USER_DELETE_ANY / USER_PROMOTE
         // were all decided by the role grant alone and UserPolicy never ran.
         $target = UserResource::fromRow($targetData);
-        if ($this->gate->cannot(Permission::USER_EDIT_ANY, $target)) {
+        if ($this->gate->cannot(UserPermission::EDIT_ANY, $target)) {
             $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
             return;
         }
@@ -192,7 +193,7 @@ final class AdminUsersController extends AbstractController
                     $isSelf      = strtolower($hexId) === strtolower($this->session->userId());
                     $promotionAllowed =
                         $newGroup !== null                                    // must be a real group
-                        && $this->gate->can(Permission::USER_PROMOTE, $target) // must hold USER_PROMOTE
+                        && $this->gate->can(UserPermission::PROMOTE, $target) // must hold USER_PROMOTE
                         && $newGroup->rank() <= $actingRank                    // never above the actor's own rank
                         && !($isSelf && $newGroup->rank() > $currentRank);     // no self-promotion to a higher rank
                     if (!$promotionAllowed) {
@@ -237,7 +238,7 @@ final class AdminUsersController extends AbstractController
                 break;
 
             case 'delete':
-                if ($this->gate->cannot(Permission::USER_DELETE_ANY, $target)) {
+                if ($this->gate->cannot(UserPermission::DELETE_ANY, $target)) {
                     $this->flash->set('error', $this->t->t('admin.users.permission_denied'));
                     return;
                 }
@@ -286,7 +287,7 @@ final class AdminUsersController extends AbstractController
         // open login brute-force / registration spam), permit unverified logins,
         // nor relax the password policy. Same fail-safe-preserve pattern the
         // login_lockout_* keys already use, and the site_url gate (R9-02).
-        $maySetAuthPolicy = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
+        $maySetAuthPolicy = $this->gate->can(AdminPermission::CONFIG_SYSTEM);
         $sections = [
             'UserService' => [
                 'token_expiration_time'          => max(60, self::mInt($p, 'token_expiration_time', 21600)),
@@ -336,7 +337,7 @@ final class AdminUsersController extends AbstractController
         // admin.config.system) can't repoint auth links to a phishing host (R9
         // HIGH-2). Skipping the section for a MOD also means a MOD's users-config
         // save never blanks site_url.
-        if ($this->gate->can(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->can(AdminPermission::CONFIG_SYSTEM)) {
             $sections['EmailService'] = [
                 'site_url'  => self::mStr($p, 'site_url',  ''),
                 'site_name' => self::mStr($p, 'site_name', ''),
@@ -356,7 +357,7 @@ final class AdminUsersController extends AbstractController
                 // R11 (MED): avatar_dir is system-level (repoints where avatars are
                 // written/served); a MOD (admin.config.users) must not relocate it,
                 // so preserve the on-disk value for a non-system actor.
-                'avatar_dir'       => $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM)
+                'avatar_dir'       => $this->gate->can(AdminPermission::CONFIG_SYSTEM)
                     ? trim(self::mStr($p, 'avatar_dir', ''))
                     : $this->config->getConfigString('AvatarService', 'avatar_dir', ''),
                 'avatar_file_size' => max(1024, self::mInt($p, 'avatar_file_size', 1048576)),

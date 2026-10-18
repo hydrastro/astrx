@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Imageboard\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Imageboard\BoardRepository;
@@ -13,6 +12,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Per-board Atom 1.0 feed — no template wrapping (page template=0, raw output).
@@ -47,7 +47,7 @@ final class BoardFeedController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::BOARD_VIEW)) {
+        if ($this->gate->cannot(ImageboardPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

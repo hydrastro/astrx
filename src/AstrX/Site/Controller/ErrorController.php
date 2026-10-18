@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Site\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
@@ -14,6 +13,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Site\DefaultTemplateContext;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\Controller;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Renders the error page for any HTTP error status.
@@ -70,7 +70,7 @@ final class ErrorController implements Controller
         // Previously `|| $isServerError` leaked all of that to any anonymous
         // visitor who could force a 5xx (a DB error, an upload error, or any
         // in-mask PHP warning — recon a Tor hidden service specifically must deny).
-        $isAdmin   = $this->gate->can(Permission::ADMIN_ACCESS);
+        $isAdmin   = $this->gate->can(AdminPermission::ACCESS);
         $showDiag  = $isAdmin;
 
         if ($showDiag) {

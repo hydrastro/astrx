@@ -115,6 +115,8 @@ final class Prelude
                 $registry = $registryResult->unwrap();
                 if ($registry instanceof ModuleRegistry) {
                     $modulePolicies = $registry->enabledPolicies();
+                    // Every permission any feature declares, for the grants editor.
+                    $injector->setClass(ApplicationPermissions::registry($registry));
                 }
             }
             ApplicationPolicies::register($gate, $modulePolicies);

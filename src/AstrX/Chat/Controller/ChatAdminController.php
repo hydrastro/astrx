@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatModerationService;
 use AstrX\Chat\ChatReportService;
@@ -23,6 +22,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserGroup;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * In-chat moderator admin panel — page file_name `chat_admin`, template=1.
@@ -64,7 +64,7 @@ final class ChatAdminController extends AbstractController
         $this->t->loadDomain(langDir(), 'Chat');
 
         // Non-moderators see only the forbidden notice (with the toolbar).
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             http_response_code(403);
             $this->ctx->set('chat_admin_forbidden',     true);
             $this->ctx->set('chat_admin_forbidden_msg', $this->t->t('chat.admin.forbidden'));
@@ -196,7 +196,7 @@ final class ChatAdminController extends AbstractController
         $this->ctx->set('config_url',    $this->urlGen->toPage($this->t->t('WORDING_ADMIN_CONFIG_CHAT')));
         // R12: only ADMIN reaches the chat CONFIG page now (MOD lost admin.config.chat),
         // so hide the link for a MOD rather than show one that 403s.
-        $this->ctx->set('can_config_chat', $this->gate->can(Permission::ADMIN_CONFIG_CHAT));
+        $this->ctx->set('can_config_chat', $this->gate->can(ChatPermission::ADMIN_CONFIG));
 
         // #132 report queue.
         $reportsResult = $this->reports->pending();

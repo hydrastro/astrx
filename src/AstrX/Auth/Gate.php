@@ -10,10 +10,10 @@ use AstrX\Config\InjectConfig;
  *
  * Usage:
  *   // Simple role check:
- *   if (!$this->gate->can(Permission::ADMIN_NEWS)) { ... }
+ *   if (!$this->gate->can(NewsPermission::ADMIN)) { ... }
  *
  *   // Resource-level check (ownership / target privilege):
- *   if (!$this->gate->can(Permission::COMMENT_DELETE_OWN, $commentResource)) { ... }
+ *   if (!$this->gate->can(CommentPermission::DELETE_OWN, $commentResource)) { ... }
  *
  * How it works:
  *   1. Resolve the caller's role name from the Identity (GUEST when logged out).
@@ -113,7 +113,7 @@ final class Gate
         //
         //    This is the shape the UserPolicy bug had: AdminUsersController
         //    passed a `(object) $userRow` (a \stdClass, registered to
-        //    CommentPolicy), asked for Permission::USER_EDIT_ANY, CommentPolicy
+        //    CommentPolicy), asked for UserPermission::EDIT_ANY, CommentPolicy
         //    had no arm for it, and the old code read that silence as "no
         //    opinion" and allowed the edit — so the guard documented as
         //    "mods cannot edit admins" never executed once. Denying here means
@@ -152,7 +152,7 @@ final class Gate
             : Identity::GUEST_ROLE;
 
         $patterns = $this->grants[$roleName] ?? [];
-        $value    = $permission->value;
+        $value    = $permission->id();
 
         foreach ($patterns as $pattern) {
             if ($this->patternMatches($pattern, $value)) {

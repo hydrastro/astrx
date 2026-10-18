@@ -20,6 +20,8 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Mirrors\MirrorsPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_mirrors' => \AstrX\Mirrors\Controller\AdminMirrorsController::class,

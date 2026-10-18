@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Imageboard\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
 use AstrX\Imageboard\BoardNav;
 use AstrX\Imageboard\BoardView;
@@ -17,6 +16,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Overboard — a combined catalog of the newest active threads across every
@@ -55,7 +55,7 @@ final class BoardOverboardController extends AbstractController
         $this->ctx->set('board_nav_show', true);
         $this->ctx->set('board_top_nav', $this->nav->topNav('overboard'));
 
-        if ($this->gate->cannot(Permission::BOARD_VIEW)) {
+        if ($this->gate->cannot(ImageboardPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

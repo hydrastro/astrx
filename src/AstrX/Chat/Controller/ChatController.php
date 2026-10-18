@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatNav;
 use AstrX\Chat\ChatPmService;
@@ -26,6 +25,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * Chat page controller — the STABLE SHELL of a no-JavaScript, le-chat-style
@@ -185,7 +185,7 @@ final class ChatController extends AbstractController
     private function renderPage(): Result
     {
         // Chat-disabled kill switch — non-staff see only the disabled message.
-        if (!$this->config->chatEnabled() && $this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if (!$this->config->chatEnabled() && $this->gate->cannot(ChatPermission::MODERATE)) {
             $msg = $this->config->disabledMessage();
             $this->ctx->set('chat_disabled',         true);
             $this->ctx->set('chat_disabled_message', $msg !== '' ? $msg : $this->t->t('chat.disabled_default'));
@@ -271,7 +271,7 @@ final class ChatController extends AbstractController
             ? $this->urlGen->toPage($this->t->t('WORDING_CHAT_PM'), $refreshParam)
             : '';
 
-        $canPost = $this->gate->can(Permission::CHAT_POST)
+        $canPost = $this->gate->can(ChatPermission::POST)
             && ($identity->isMember || $this->config->guestPosting());
 
         $topic    = $this->chat->effectiveTopic();
@@ -301,7 +301,7 @@ final class ChatController extends AbstractController
         $this->ctx->set('is_member',         $identity->isMember);
         $this->ctx->set('my_nick',           $identity->nick);
         $this->ctx->set('can_post',          $canPost);
-        $this->ctx->set('is_mod',            $this->gate->can(Permission::CHAT_MODERATE));
+        $this->ctx->set('is_mod',            $this->gate->can(ChatPermission::MODERATE));
         $this->ctx->set('max_length',        $this->config->maxLength());
         $this->ctx->set('unread_pm',         $unreadPm);
         $this->ctx->set('has_unread_pm',     $unreadPm > 0);

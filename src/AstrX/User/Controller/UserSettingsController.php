@@ -17,11 +17,11 @@ use AstrX\User\AvatarService;
 use AstrX\User\DeletionMode;
 use AstrX\Api\ApiKeyService;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Theme\ThemeService;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
+use AstrX\Api\ApiPermission;
 
 /**
  * User settings page.
@@ -246,11 +246,11 @@ final class UserSettingsController extends AbstractController
                 break;
 
             case 'create_api_key':
-                // Gate: only users with Permission::API_KEY_CREATE may create keys.
+                // Gate: only users with ApiPermission::KEY_CREATE may create keys.
                 // Configured in Auth.config.php — by default USER and MOD have it,
                 // GUEST does not. Removing it from the USER grant locks all key
                 // creation behind admin provisioning (DB insert by an admin).
-                if ($this->gate->cannot(Permission::API_KEY_CREATE)) {
+                if ($this->gate->cannot(ApiPermission::KEY_CREATE)) {
                     $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyDiagnostic(
                         'astrx.api/key_create_forbidden',
                         \AstrX\Result\DiagnosticLevel::WARNING,
@@ -285,7 +285,7 @@ final class UserSettingsController extends AbstractController
                 break;
 
             case 'revoke_api_key':
-                if ($this->gate->cannot(Permission::API_KEY_REVOKE)) {
+                if ($this->gate->cannot(ApiPermission::KEY_REVOKE)) {
                     $this->emit(new \AstrX\Api\Diagnostic\InvalidApiKeyDiagnostic(
                         'astrx.api/key_revoke_forbidden',
                         \AstrX\Result\DiagnosticLevel::WARNING,
@@ -411,8 +411,8 @@ final class UserSettingsController extends AbstractController
         // refer to the user's OWN keys (the user can always see and manage what
         // they own — independent of the create permission, which is a separate
         // capability some installs may want to lock to admins).
-        $canCreateKeys = $this->gate->can(Permission::API_KEY_CREATE);
-        $canRevokeKeys = $this->gate->can(Permission::API_KEY_REVOKE);
+        $canCreateKeys = $this->gate->can(ApiPermission::KEY_CREATE);
+        $canRevokeKeys = $this->gate->can(ApiPermission::KEY_REVOKE);
         $this->ctx->set('show_api_key_create', $canCreateKeys);
         $this->ctx->set('show_api_key_revoke', $canRevokeKeys);
 

@@ -38,6 +38,10 @@ namespace AstrX\Config {
 namespace {
 
     use AstrX\Auth\Gate;
+
+use AstrX\Comment\CommentPermission;
+use AstrX\News\NewsPermission;
+use AstrX\User\UserPermission;
     use AstrX\ApplicationPolicies;
     use AstrX\Auth\Permission;
     use AstrX\Chat\ChatPolicy;
@@ -67,6 +71,26 @@ namespace {
     }
 
     /** Shipped Auth.config.php grants, plus the one-config-change-away MOD set. */
+    /**
+     * Every permission the application declares: the always-on features'
+     * enums plus every module manifest's (what the grants editor lists).
+     *
+     * @return list<Permission>
+     */
+    function allPermissions(): array
+    {
+        $enums = AstrX\ApplicationPermissions::CORE;
+        foreach (glob(dirname(__DIR__) . '/src/AstrX/*/module.php') ?: [] as $file) {
+            $manifest = require $file;
+            if (is_array($manifest) && is_array($manifest['permissions'] ?? null)) {
+                foreach ($manifest['permissions'] as $enum) {
+                    $enums[] = $enum;
+                }
+            }
+        }
+        return (new AstrX\Auth\PermissionRegistry($enums))->all();
+    }
+
     function gateFor(UserGroup $actor, string $actorId = 'aaaa', bool $modHoldsUserAdmin = false): Gate
     {
         $_SESSION = [
@@ -130,24 +154,24 @@ namespace {
     $modGate = gateFor(UserGroup::MOD, modHoldsUserAdmin: true);
     check(
         'MOD with user.edit.any CANNOT edit an ADMIN (the guard that never ran)',
-        $modGate->cannot(Permission::USER_EDIT_ANY, UserResource::fromRow($adminRow)),
+        $modGate->cannot(UserPermission::EDIT_ANY, UserResource::fromRow($adminRow)),
     );
     check(
         'MOD with user.edit.any CAN still edit an ordinary USER',
-        $modGate->can(Permission::USER_EDIT_ANY, UserResource::fromRow($userRow)),
+        $modGate->can(UserPermission::EDIT_ANY, UserResource::fromRow($userRow)),
     );
     check(
         'MOD with user.delete.any CANNOT delete an ADMIN',
-        $modGate->cannot(Permission::USER_DELETE_ANY, UserResource::fromRow($adminRow)),
+        $modGate->cannot(UserPermission::DELETE_ANY, UserResource::fromRow($adminRow)),
     );
     check(
         'MOD CANNOT promote against an ADMIN target (USER_PROMOTE was unhandled before)',
-        $modGate->cannot(Permission::USER_PROMOTE, UserResource::fromRow($adminRow)),
+        $modGate->cannot(UserPermission::PROMOTE, UserResource::fromRow($adminRow)),
     );
     check(
         'MOD CANNOT edit a peer MOD (equal rank is still a stepping stone)',
         $modGate->cannot(
-            Permission::USER_EDIT_ANY,
+            UserPermission::EDIT_ANY,
             UserResource::fromRow(['id' => 'cccc', 'type' => UserGroup::MOD->value]),
         ),
     );
@@ -156,7 +180,7 @@ namespace {
     check(
         'MOD CAN act on their own row (self is not escalation)',
         $selfGate->can(
-            Permission::USER_EDIT_ANY,
+            UserPermission::EDIT_ANY,
             UserResource::fromRow(['id' => 'cccc', 'type' => UserGroup::MOD->value]),
         ),
     );
@@ -164,24 +188,24 @@ namespace {
     $adminGate = gateFor(UserGroup::ADMIN);
     check(
         'ADMIN CAN edit another ADMIN',
-        $adminGate->can(Permission::USER_EDIT_ANY, UserResource::fromRow($adminRow)),
+        $adminGate->can(UserPermission::EDIT_ANY, UserResource::fromRow($adminRow)),
     );
 
     // The regression itself: the old `(object) $row` shape.
     check(
         'REGRESSION: a \stdClass user row is DENIED for user.edit.any, not silently allowed',
-        $modGate->cannot(Permission::USER_EDIT_ANY, (object) $adminRow),
+        $modGate->cannot(UserPermission::EDIT_ANY, (object) $adminRow),
     );
     check(
         'REGRESSION: a \stdClass user row is DENIED for user.promote too',
-        $modGate->cannot(Permission::USER_PROMOTE, (object) $adminRow),
+        $modGate->cannot(UserPermission::PROMOTE, (object) $adminRow),
     );
 
     // Role check still comes first: no grant, no access, whatever the policy says.
     $plainMod = gateFor(UserGroup::MOD);
     check(
         'a MOD without the user.edit.any grant is denied at role level',
-        $plainMod->cannot(Permission::USER_EDIT_ANY, UserResource::fromRow($userRow)),
+        $plainMod->cannot(UserPermission::EDIT_ANY, UserResource::fromRow($userRow)),
     );
 
     // ── Comment resources keep working through \stdClass ─────────────────────
@@ -189,27 +213,27 @@ namespace {
     check(
         'MOD can hide a guest comment (user_type NULL)',
         $modComments->can(
-            Permission::COMMENT_HIDE_ANY,
+            CommentPermission::HIDE_ANY,
             (object) ['user_id' => null, 'user_type' => null],
         ),
     );
     check(
         'MOD cannot hide an ADMIN comment',
         $modComments->cannot(
-            Permission::COMMENT_HIDE_ANY,
+            CommentPermission::HIDE_ANY,
             (object) ['user_id' => 'ffff', 'user_type' => UserGroup::ADMIN->value],
         ),
     );
     check(
         'a comment resource is DENIED for a permission CommentPolicy does not govern',
-        $modComments->cannot(Permission::COMMENT_POST, (object) ['user_id' => null]),
+        $modComments->cannot(CommentPermission::POST, (object) ['user_id' => null]),
     );
 
     // ── 6. Unregistered resource class ───────────────────────────────────────
     $anon = new class () {};
     check(
         'a resource class with no registered policy is denied, not allowed',
-        $adminGate->cannot(Permission::NEWS_EDIT_ANY, $anon),
+        $adminGate->cannot(NewsPermission::EDIT_ANY, $anon),
     );
 
     // ── 5. Loudness invariant, for every policy ──────────────────────────────
@@ -254,7 +278,7 @@ namespace {
         // And nothing outside governs() is answerable — the arm that used to be
         // `default => null` and silently meant "allow".
         $ungoverned = array_values(array_filter(
-            Permission::cases(),
+            allPermissions(),
             static fn (Permission $p): bool => !in_array($p, $governed, true),
         ));
         $silent = [];

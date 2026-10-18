@@ -5,7 +5,6 @@ namespace AstrX\Imageboard\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -30,6 +29,7 @@ use AstrX\User\UserSession;
 use PDO;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Per-board moderation surface — one hidden template=1 page (WORDING_BOARD_MOD,
@@ -121,14 +121,14 @@ final class BoardModController extends AbstractController
         // narrowed further to BOARD_ADMIN inside their view methods.
         $reportNo = self::queryInt($this->request, 'report');
         if ($reportNo > 0) {
-            if ($this->gate->cannot(Permission::BOARD_POST)) {
+            if ($this->gate->cannot(ImageboardPermission::POST)) {
                 http_response_code(404);
                 exit;
             }
             return $this->viewReportForm($board, $reportNo);
         }
 
-        if ($this->gate->cannot(Permission::BOARD_MODERATE)) {
+        if ($this->gate->cannot(ImageboardPermission::MODERATE)) {
             http_response_code(404);
             exit;
         }
@@ -264,7 +264,7 @@ final class BoardModController extends AbstractController
      */
     private function viewStaff(array $board): Result
     {
-        if ($this->gate->cannot(Permission::BOARD_ADMIN)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN)) {
             http_response_code(404);
             exit;
         }
@@ -293,7 +293,7 @@ final class BoardModController extends AbstractController
      */
     private function viewSettings(array $board): Result
     {
-        if ($this->gate->cannot(Permission::BOARD_ADMIN)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN)) {
             http_response_code(404);
             exit;
         }
@@ -339,7 +339,7 @@ final class BoardModController extends AbstractController
         $this->ctx->set('mp_no',         $no);
         $this->ctx->set('mp_body',       self::mStr($post, 'body_html'));
         $this->ctx->set('mp_post_id',    $pid);
-        $this->ctx->set('mp_can_ban',    $this->gate->can(Permission::BOARD_MODERATE));
+        $this->ctx->set('mp_can_ban',    $this->gate->can(ImageboardPermission::MODERATE));
         $this->ctx->set('mp_has_image',  $this->postImages($pid) !== []);
         $this->ctx->set('mp_thread_url', $this->boardThreadUrl($slug, $tid));
         return $this->ok();
@@ -413,14 +413,14 @@ final class BoardModController extends AbstractController
 
         // Ordinary-poster branch: filing a report needs only BOARD_POST.
         if ($action === 'file_report') {
-            if ($this->gate->cannot(Permission::BOARD_POST)) {
+            if ($this->gate->cannot(ImageboardPermission::POST)) {
                 return $this->boardUrl($slug);
             }
             return $this->doFileReport($board, $posted);
         }
 
         // Everything else is moderator-only (admin-only actions re-check inside).
-        if ($this->gate->cannot(Permission::BOARD_MODERATE)) {
+        if ($this->gate->cannot(ImageboardPermission::MODERATE)) {
             return $this->modBase($slug);
         }
 
@@ -666,7 +666,7 @@ final class BoardModController extends AbstractController
     private function doGrantMod(array $board, array $posted): string
     {
         $slug = self::mStr($board, 'slug');
-        if ($this->gate->cannot(Permission::BOARD_ADMIN)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN)) {
             return $this->modBase($slug) . '&view=staff';
         }
         $bid      = self::mInt($board, 'id');
@@ -693,7 +693,7 @@ final class BoardModController extends AbstractController
     private function doRevokeMod(array $board, array $posted): string
     {
         $slug = self::mStr($board, 'slug');
-        if ($this->gate->cannot(Permission::BOARD_ADMIN)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN)) {
             return $this->modBase($slug) . '&view=staff';
         }
         $bid   = self::mInt($board, 'id');
@@ -712,7 +712,7 @@ final class BoardModController extends AbstractController
     private function doSaveSettings(array $board, array $posted): string
     {
         $slug = self::mStr($board, 'slug');
-        if ($this->gate->cannot(Permission::BOARD_ADMIN)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN)) {
             return $this->modBase($slug) . '&view=settings';
         }
         $bid = self::mInt($board, 'id');
@@ -968,8 +968,8 @@ final class BoardModController extends AbstractController
         $this->ctx->set('settings_url', $base . '&view=settings');
         $this->ctx->set('board_url',    $this->boardUrl($slug));
 
-        $canMod    = $this->gate->can(Permission::BOARD_MODERATE);
-        $canManage = $this->gate->can(Permission::BOARD_ADMIN);
+        $canMod    = $this->gate->can(ImageboardPermission::MODERATE);
+        $canManage = $this->gate->can(ImageboardPermission::ADMIN);
         $this->ctx->set('can_reports', $canMod);
         $this->ctx->set('can_ban',     $canMod);
         $this->ctx->set('can_manage',  $canManage);

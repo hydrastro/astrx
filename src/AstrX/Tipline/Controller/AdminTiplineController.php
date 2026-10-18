@@ -5,7 +5,6 @@ namespace AstrX\Tipline\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -19,6 +18,7 @@ use AstrX\Tipline\TiplineCrypto;
 use AstrX\Tipline\TiplineRepository;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Tipline\TiplinePermission;
 
 /**
  * Admin surface for the anonymous tip line (/admin-tipline).
@@ -53,7 +53,7 @@ final class AdminTiplineController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_TIPLINE)) {
+        if ($this->gate->cannot(TiplinePermission::ADMIN)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

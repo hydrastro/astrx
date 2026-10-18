@@ -5,7 +5,6 @@ namespace AstrX\Blocklist\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Blocklist\BlocklistClient;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -18,6 +17,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Blocklist editor (/admin-blocklist).
@@ -28,7 +28,7 @@ use AstrX\Kernel\AbstractController;
  *   onioncrawler  POST /blocklist   (kind = host | keyword)
  *   torrentds     POST /api/block   (kind = infohash | keyword)
  *
- * Gated with the same Permission::ADMIN_ACCESS the admin section root uses, and
+ * Gated with the same AdminPermission::ACCESS the admin section root uses, and
  * every write goes through the same CSRF-protected PRG form the sibling
  * admin-suite page uses. The engine admin TOKENS come from server-side config
  * only ({@see \AstrX\Blocklist\BlocklistConfig}); they are never placed in the
@@ -72,7 +72,7 @@ final class AdminBlocklistController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Blocklist');
 
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

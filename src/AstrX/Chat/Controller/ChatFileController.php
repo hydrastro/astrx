@@ -4,13 +4,13 @@ declare(strict_types=1);
 namespace AstrX\Chat\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatAttachmentRepository;
 use AstrX\Chat\ChatConfig;
 use AstrX\Http\Request;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * Raw chat-attachment endpoint — no template wrapping (page template=0).
@@ -38,7 +38,7 @@ final class ChatFileController extends AbstractController
 
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_VIEW)) {
+        if ($this->gate->cannot(ChatPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

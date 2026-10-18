@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Content\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Content\ContentPageRepository;
 use AstrX\Content\ContentService;
 use AstrX\Http\Request;
@@ -16,6 +15,8 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
+use AstrX\News\NewsPermission;
 
 /**
  * Public content pages (W/wcms-inspired). One route, three modes:
@@ -50,7 +51,7 @@ final class ContentController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Content');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }
@@ -78,7 +79,7 @@ final class ContentController extends AbstractController
     {
         $r    = $this->repo->bySlug($slug)->drainTo($this->collector);
         $page = $r->isOk() ? $r->unwrap() : null;
-        $isAdmin    = $this->gate->can(Permission::ADMIN_ACCESS);
+        $isAdmin    = $this->gate->can(AdminPermission::ACCESS);
         $isLoggedIn = $this->session->isLoggedIn();
 
         // Visibility gate: a draft/scheduled/expired page is admin-preview only; a

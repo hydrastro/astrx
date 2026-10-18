@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -19,6 +18,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin banlist management.
@@ -54,7 +54,7 @@ final class AdminBanlistController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_BANLIST)) {
+        if ($this->gate->cannot(AdminPermission::BANLIST)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -92,7 +92,7 @@ final class AdminBanlistController extends AbstractController
         // the stronger ADMIN_CONFIG_ACCESS on top of it.
         $routeConfigActions = ['add_route', 'delete_route', 'add_round', 'update_round', 'delete_round'];
         if (in_array($action, $routeConfigActions, true)
-            && $this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+            && $this->gate->cannot(AdminPermission::CONFIG_ACCESS)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }

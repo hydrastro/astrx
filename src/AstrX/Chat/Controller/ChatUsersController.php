@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatModerationService;
 use AstrX\Chat\ChatPresenceService;
@@ -22,6 +21,7 @@ use AstrX\Theme\ThemeService;
 use AstrX\User\UserGroup;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * The auto-refreshing online-users pane, served as an <iframe> body of the chat
@@ -166,7 +166,7 @@ final class ChatUsersController extends AbstractController
 
         $this->presence->heartbeat($identity->ident)->drainTo($this->collector);
 
-        $canMod = $this->gate->can(Permission::CHAT_MODERATE);
+        $canMod = $this->gate->can(ChatPermission::MODERATE);
 
         // Staff also see incognito users (so they remain moderatable).
         $usersResult = $this->presence->onlineUsers($canMod);
@@ -199,7 +199,7 @@ final class ChatUsersController extends AbstractController
      */
     private function renderRoster(array $users, string $viewerIdent): string
     {
-        $canModerate  = $this->gate->can(Permission::CHAT_MODERATE);
+        $canModerate  = $this->gate->can(ChatPermission::MODERATE);
         $linkProfiles = $this->config->namesLinkToProfile();
         $profileBase  = $this->urlGen->toPage($this->t->t('WORDING_PROFILE'));
 

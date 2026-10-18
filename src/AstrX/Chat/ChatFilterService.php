@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
@@ -46,7 +45,7 @@ final class ChatFilterService
      */
     public function all(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {   // R12: filters are a moderation tool
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {   // R12: filters are a moderation tool
             return $this->denied();
         }
         return $this->repo->all();
@@ -55,7 +54,7 @@ final class ChatFilterService
     /** @return Result<int> new filter id */
     public function add(string $pattern, int $kind, int $action, bool $applyToMods): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {   // R12: filters are a moderation tool
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {   // R12: filters are a moderation tool
             return $this->denied();
         }
         $pattern = trim($pattern);
@@ -70,7 +69,7 @@ final class ChatFilterService
     /** @return Result<bool> */
     public function remove(int $id): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {   // R12: filters are a moderation tool
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {   // R12: filters are a moderation tool
             return $this->denied();
         }
         if ($id <= 0) {

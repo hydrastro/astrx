@@ -26,8 +26,8 @@ final class ChatPolicy implements PolicyInterface
     public function governs(): array
     {
         return [
-            Permission::CHAT_DELETE_OWN,
-            Permission::CHAT_DELETE_ANY,
+            ChatPermission::DELETE_OWN,
+            ChatPermission::DELETE_ANY,
         ];
     }
 
@@ -42,7 +42,7 @@ final class ChatPolicy implements PolicyInterface
 
         return match ($permission) {
             // Owners may delete their own messages.
-            Permission::CHAT_DELETE_OWN =>
+            ChatPermission::DELETE_OWN =>
                 (isset($resource->user_id) && $resource->user_id === $identity->userId())
                     ? PolicyVerdict::Allow
                     : PolicyVerdict::Deny,
@@ -50,7 +50,7 @@ final class ChatPolicy implements PolicyInterface
             // Mods cannot delete messages by an author whose rank is >= their
             // own, unless the actor is an admin. Guest messages carry a null
             // user_type (rank 0) and therefore stay moderatable.
-            Permission::CHAT_DELETE_ANY =>
+            ChatPermission::DELETE_ANY =>
                 ($authorType->rank() >= UserGroup::ofIdentity($identity)->rank()
                     && UserGroup::ofIdentity($identity) !== UserGroup::ADMIN)
                     ? PolicyVerdict::Deny

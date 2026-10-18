@@ -13,7 +13,7 @@ use AstrX\Injector\Injector;
  * (src/AstrX/<Module>/module.php) declaring its key, display name, an optional
  * nav contributor + disabled-defaults, page guards, resource policies
  * (resource class => policy class), page controllers (page file_name =>
- * controller class), and a teardown file.
+ * controller class), permission enums, and a teardown file.
  *
  * This class is generic infrastructure: it hands out the CLASS NAMES / instances
  * a manifest declares and never imports the interfaces they implement (page
@@ -27,7 +27,7 @@ use AstrX\Injector\Injector;
  * one bool per key, default ON so existing installs are unaffected). A DISABLED
  * module is never instantiated — its manifest's `nav_defaults` are merged instead.
  *
- * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,teardown:?string}
+ * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string}
  */
 final class ModuleRegistry
 {
@@ -188,6 +188,24 @@ final class ModuleRegistry
     }
 
     /**
+     * Permission enum classes declared by EVERY module manifest, enabled or
+     * not. The grants editor must list a disabled module's permissions too, or
+     * saving would drop that module's grants. See \AstrX\Auth\PermissionRegistry.
+     *
+     * @return list<string>
+     */
+    public function permissionEnums(): array
+    {
+        $out = [];
+        foreach ($this->manifests() as $m) {
+            foreach ($m['permissions'] as $enum) {
+                $out[] = $enum;
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Discover + normalise the module manifests once per request.
      *
      * @return list<Manifest>
@@ -266,6 +284,15 @@ final class ModuleRegistry
             }
         }
 
+        $permissions = [];
+        if (isset($raw['permissions']) && is_array($raw['permissions'])) {
+            foreach ($raw['permissions'] as $enum) {
+                if (is_string($enum) && $enum !== '') {
+                    $permissions[] = $enum;
+                }
+            }
+        }
+
         /** @var array<string,mixed> $navDefaults */
         return [
             'key'          => $raw['key'],
@@ -276,6 +303,7 @@ final class ModuleRegistry
             'guards'       => $guards,
             'policies'     => $policies,
             'controllers'  => $controllers,
+            'permissions'  => $permissions,
             'teardown'     => $teardown,
         ];
     }

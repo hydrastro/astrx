@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Webmail\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -21,6 +20,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
+use AstrX\Webmail\WebmailPermission;
 
 /**
  * Webmail — read, compose, send, manage emails.
@@ -93,7 +93,7 @@ final class WebmailController extends AbstractController
             exit;
         }
 
-        if ($this->gate->cannot(Permission::WEBMAIL_ACCESS)) {
+        if ($this->gate->cannot(WebmailPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('webmail_forbidden', true);
             return $this->ok();

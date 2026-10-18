@@ -7,7 +7,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use function AstrX\Support\configDir;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -24,6 +23,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Mail configuration editor.
@@ -61,7 +61,7 @@ final class AdminConfigMailController extends AbstractController
     public function handle()
     : Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_MAIL)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_MAIL)) {
             http_response_code(403);
 
             return $this->ok();

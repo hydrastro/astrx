@@ -26,13 +26,15 @@ declare(strict_types=1);
 namespace AstrX\Controller {
     // A controller that is an admin surface WITHOUT an Admin* name: proves the
     // attribute is read on its own, not just inferred from the class name.
-    #[\AstrX\Auth\RequiresPermission(\AstrX\Auth\Permission::ADMIN_ACCESS)]
+    #[\AstrX\Auth\RequiresPermission(\AstrX\Admin\AdminPermission::ACCESS)]
     final class AstrxTestWidgetController {}
 }
 
 namespace {
 
     use AstrX\Auth\Permission;
+
+use AstrX\Admin\AdminPermission;
     use AstrX\ContentManager;
     use AstrX\Site\Controller\JsController;
     use AstrX\Page\Page;
@@ -118,7 +120,7 @@ namespace {
     // The page tree route (what already worked): admin_media has the parent row.
     eq(
         'a page with the admin root as a closure ancestor requires ADMIN_ACCESS',
-        Permission::ADMIN_ACCESS,
+        AdminPermission::ACCESS,
         requiredPermission(page('admin_media', ancestors: [
             selfRow(31, 'admin_media'),
             selfRow(18, 'admin'),
@@ -127,26 +129,26 @@ namespace {
 
     eq(
         'the admin root itself requires ADMIN_ACCESS',
-        Permission::ADMIN_ACCESS,
+        AdminPermission::ACCESS,
         requiredPermission(page('admin', ancestors: [selfRow(18, 'admin')])),
     );
 
     // THE DEFECT: only the self row, exactly what the two migrations wrote.
     eq(
         'admin-content is gated even with NO admin ancestor row (the migration bug)',
-        Permission::ADMIN_ACCESS,
+        AdminPermission::ACCESS,
         requiredPermission(page('admin_content', ancestors: [selfRow(41, 'admin_content')])),
     );
     eq(
         'admin-language is gated even with NO admin ancestor row (the migration bug)',
-        Permission::ADMIN_ACCESS,
+        AdminPermission::ACCESS,
         requiredPermission(page('admin_language', ancestors: [selfRow(42, 'admin_language')])),
     );
 
     // The declarative marker, on a class whose name gives nothing away.
     eq(
         '#[RequiresPermission] on the controller class is enforced by itself',
-        Permission::ADMIN_ACCESS,
+        AdminPermission::ACCESS,
         // Passed explicitly: the widget is a test fixture, deliberately absent
         // from the application's controller map (only mapped classes dispatch).
         requiredPermission(page('astrx_test_widget', ancestors: []), AstrX\Controller\AstrxTestWidgetController::class),

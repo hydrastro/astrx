@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Imageboard\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\Http\UploadedFile;
@@ -31,6 +30,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Imageboard dispatcher — one template=1 page (WORDING_BOARD, file_name 'board')
@@ -176,7 +176,7 @@ final class BoardController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Imageboard');
 
-        if ($this->gate->cannot(Permission::BOARD_VIEW)) {
+        if ($this->gate->cannot(ImageboardPermission::VIEW)) {
             http_response_code(404);
             exit;
         }
@@ -446,7 +446,7 @@ final class BoardController extends AbstractController
             $csrf->drainTo($this->collector);
             return $backUrl;
         }
-        if ($this->gate->cannot(Permission::BOARD_POST)) {
+        if ($this->gate->cannot(ImageboardPermission::POST)) {
             return $this->indexUrl($slug);
         }
 
@@ -660,7 +660,7 @@ final class BoardController extends AbstractController
 
         // Moderation link — surfaced to staff who can moderate this board so the
         // BoardModController surface is reachable from the board itself.
-        $canMod = $this->gate->can(Permission::BOARD_MODERATE);
+        $canMod = $this->gate->can(ImageboardPermission::MODERATE);
         $modUrl = $canMod
             ? $this->urlGen->toPage($this->t->t('WORDING_BOARD_MOD')) . '?board=' . rawurlencode($slug)
             : '';
@@ -708,7 +708,7 @@ final class BoardController extends AbstractController
     /** @param array<string,mixed> $board */
     private function setPostForm(array $board, string $actionUrl, bool $isReply): void
     {
-        $this->ctx->set('can_post',    $this->gate->can(Permission::BOARD_POST));
+        $this->ctx->set('can_post',    $this->gate->can(ImageboardPermission::POST));
         $this->ctx->set('form_action', $actionUrl);
         $this->ctx->set('is_reply',    $isReply);
         $this->ctx->set('prg_id',      $this->prg->createId($actionUrl));

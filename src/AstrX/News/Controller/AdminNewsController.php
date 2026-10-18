@@ -5,7 +5,6 @@ namespace AstrX\News\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -19,6 +18,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Page\Page;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 final class AdminNewsController extends AbstractController
 {
@@ -43,7 +43,7 @@ final class AdminNewsController extends AbstractController
 
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_NEWS)) {
+        if ($this->gate->cannot(NewsPermission::ADMIN)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

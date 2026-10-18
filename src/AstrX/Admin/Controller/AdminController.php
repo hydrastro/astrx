@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AdminService;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
@@ -14,6 +13,7 @@ use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin section root — /en/admin
@@ -34,7 +34,7 @@ final class AdminController extends AbstractController
 
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             return $this->ok();

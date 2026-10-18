@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Comment;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Comment\Diagnostic\CommentNotAllowedDiagnostic;
 use AstrX\Comment\Diagnostic\CommentEmptyContentDiagnostic;
 use AstrX\Comment\Diagnostic\CommentInvalidEmailDiagnostic;
@@ -126,7 +125,7 @@ final class CommentService
         ?int    $itemId   = null,
     ): Result {
         // Permission check
-        if ($this->gate->cannot(Permission::COMMENT_POST)) {
+        if ($this->gate->cannot(CommentPermission::POST)) {
             return $this->opErr('not_allowed');
         }
 
@@ -221,7 +220,7 @@ final class CommentService
         // Comment moderators / admins are exempt from the post cooldown.
         // The lookup is page-scoped to match the page-scoped auto-mute and mute
         // check below — the keying is consistent (R3-18).
-        $isStaff = $this->gate->can(Permission::ADMIN_COMMENTS);
+        $isStaff = $this->gate->can(CommentPermission::ADMIN);
         if (!$isStaff && $this->minimumFloodSecs > 0) {
             $lastResult = $this->repo->lastCommentTime($hexUserId, $floodKey, $pageId);
             if ($lastResult->isOk() && $lastResult->unwrap() !== null) {
@@ -259,7 +258,7 @@ final class CommentService
         if ($resource === null) {
             return $this->opErr('comment_not_found');
         }
-        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY, $resource)) {
+        if ($this->gate->cannot(CommentPermission::HIDE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setHidden($commentId, true);
@@ -276,7 +275,7 @@ final class CommentService
         if ($resource === null) {
             return $this->opErr('comment_not_found');
         }
-        if ($this->gate->cannot(Permission::COMMENT_HIDE_ANY, $resource)) {
+        if ($this->gate->cannot(CommentPermission::HIDE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setHidden($commentId, false);
@@ -293,7 +292,7 @@ final class CommentService
         if ($resource === null) {
             return $this->opErr('comment_not_found');
         }
-        if ($this->gate->cannot(Permission::COMMENT_DELETE_ANY, $resource)) {
+        if ($this->gate->cannot(CommentPermission::DELETE_ANY, $resource)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->delete($commentId);
@@ -322,7 +321,7 @@ final class CommentService
     /** @return Result<bool> */
     public function flag(int $commentId): Result
     {
-        if ($this->gate->cannot(Permission::COMMENT_FLAG)) {
+        if ($this->gate->cannot(CommentPermission::FLAG)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setFlagged($commentId, true);

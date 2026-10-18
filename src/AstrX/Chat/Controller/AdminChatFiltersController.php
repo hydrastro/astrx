@@ -5,7 +5,6 @@ namespace AstrX\Chat\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatFilterService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -19,6 +18,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * Admin management for the managed word/link filters (page file_name
@@ -59,7 +59,7 @@ final class AdminChatFiltersController extends AbstractController
         // scoped to CHAT_MODERATE (a MOD keeps it) — distinct from the chat CONFIG
         // page (image_embed, upload_dir, …) which stays ADMIN-only. This restores
         // the proactive-filter surface the R12 MOD-grant tightening removed.
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             http_response_code(403);
             $this->ctx->set('forbidden',         true);
             $this->ctx->set('forbidden_message', $this->t->t('chat.filter.forbidden'));

@@ -27,14 +27,14 @@ final class UserPolicy implements PolicyInterface
     public function governs(): array
     {
         return [
-            Permission::USER_EDIT_OWN,
-            Permission::USER_DELETE_OWN,
-            Permission::USER_EDIT_ANY,
-            Permission::USER_DELETE_ANY,
+            UserPermission::EDIT_OWN,
+            UserPermission::DELETE_OWN,
+            UserPermission::EDIT_ANY,
+            UserPermission::DELETE_ANY,
             // USER_PROMOTE has a call site (AdminUsersController) but was NOT
             // handled by the old match: it fell through `default => null` to
             // "allow" — the exact silent-forget this interface now prevents.
-            Permission::USER_PROMOTE,
+            UserPermission::PROMOTE,
         ];
     }
 
@@ -57,12 +57,12 @@ final class UserPolicy implements PolicyInterface
         $targetOutranksActor = $resource->type->rank() >= UserGroup::ofIdentity($identity)->rank();
 
         return match ($permission) {
-            Permission::USER_EDIT_OWN,
-            Permission::USER_DELETE_OWN => $isSelf ? PolicyVerdict::Allow : PolicyVerdict::Deny,
+            UserPermission::EDIT_OWN,
+            UserPermission::DELETE_OWN => $isSelf ? PolicyVerdict::Allow : PolicyVerdict::Deny,
 
-            Permission::USER_EDIT_ANY,
-            Permission::USER_DELETE_ANY,
-            Permission::USER_PROMOTE =>
+            UserPermission::EDIT_ANY,
+            UserPermission::DELETE_ANY,
+            UserPermission::PROMOTE =>
                 // Admins are unconstrained at this level (callers still apply
                 // their own rules — e.g. AdminUsersController's no-self-promotion
                 // check). Acting on your own row is not escalation. Otherwise:
