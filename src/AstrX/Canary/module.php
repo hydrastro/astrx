@@ -19,5 +19,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_canary' => \AstrX\Canary\Controller\AdminCanaryController::class,
+        'canary' => \AstrX\Canary\Controller\CanaryController::class,
+    ],
     'teardown'     => 'canary.down.sql',
 ];

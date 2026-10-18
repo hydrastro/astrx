@@ -20,5 +20,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_mirrors' => \AstrX\Mirrors\Controller\AdminMirrorsController::class,
+        'mirrors' => \AstrX\Mirrors\Controller\MirrorsController::class,
+    ],
     'teardown'     => 'mirrors.down.sql',
 ];

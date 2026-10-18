@@ -19,5 +19,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'git_browse' => \AstrX\GitBrowse\Controller\GitBrowseController::class,
+    ],
     'teardown'     => 'gitbrowse.down.sql',
 ];

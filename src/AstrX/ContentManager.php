@@ -6,7 +6,7 @@ namespace AstrX;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
-use AstrX\Controller\Controller;
+use AstrX\Kernel\Controller;
 use AstrX\Database\ConnectionFailure;
 use AstrX\Database\Diagnostic\DatabaseConfigIncompleteDiagnostic;
 use AstrX\Database\Diagnostic\DatabaseUnavailableDiagnostic;
@@ -41,8 +41,11 @@ use AstrX\Session\SecureSessionHandler;
 use AstrX\User\UserGroup;
 use AstrX\User\UserSession;
 use AstrX\Auth\RequiresPermission;
+use AstrX\Site\Controller\CommentController;
+use AstrX\Site\ControllerMap;
 use AstrX\Site\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
+use AstrX\Template\TemplateVars;
 use PDO;
 use PDOException;
 use function AstrX\Support\langDir;
@@ -64,6 +67,9 @@ final class ContentManager
     /** PDO.config.php does not declare every credential — no connection is attempted. */
     public const string ID_DB_CONFIG_INCOMPLETE = 'astrx.database/config_incomplete';
     public const DiagnosticLevel LVL_DB_CONFIG_INCOMPLETE = DiagnosticLevel::CRITICAL;
+
+    /** page file_name → controller class; see controllerMap(). */
+    private ?ControllerMap $controllerMap = null;
 
     public function __construct(
         private readonly Injector $injector,
@@ -594,7 +600,7 @@ final class ContentManager
         // visitor who may not enter a page never reaches the code that serves it.
         // requiredPagePermission() merges two independent sources — the page tree
         // (data) and the controller class (code) — see that method.
-        $requiredPermission = self::requiredPagePermission($page);
+        $requiredPermission = self::requiredPagePermission($page, $this->controllerClassFor($page));
         if ($requiredPermission !== null && $this->gate->cannot($requiredPermission)) {
             $loginUrlId = $this->config->getConfig('Routing', 'default_page', 'WORDING_LOGIN');
             // resolve the login URL properly through the translator
@@ -673,6 +679,9 @@ final class ContentManager
 
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
+        // Feature controllers ask for the TemplateVars interface; point it at
+        // THIS request's context (bind() copies the instance registered now).
+        $this->injector->bind(TemplateVars::class, DefaultTemplateContext::class);
         $ctx->buildBase($page);
         if ($adminViewingHidden) {
             $this->collector->emit(new PageHiddenNoticeDiagnostic(
@@ -703,9 +712,9 @@ final class ContentManager
             // Same derivation the entry guard above used, via the shared helper —
             // if the two ever computed a different class name, the guard would be
             // gating a class that dispatch does not run.
-            $fqcn = self::controllerClassFor($page);
+            $fqcn = $this->controllerClassFor($page);
 
-            if (class_exists($fqcn)) {
+            if ($fqcn !== null && class_exists($fqcn)) {
                 $controllerResult = $this->injector->createClass($fqcn)
                     ->drainTo($this->collector);
 
@@ -746,7 +755,7 @@ final class ContentManager
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
             $this->translator->loadDomain(langDir(), 'Comment');
-            $commentFqcn   = 'AstrX\\Controller\\CommentController';
+            $commentFqcn   = CommentController::class;
             if (class_exists($commentFqcn)) {
                 $commentResult = $this->injector->createClass($commentFqcn)
                     ->drainTo($this->collector);
@@ -1069,17 +1078,32 @@ final class ContentManager
     // =========================================================================
 
     /**
-     * The FQCN the reflection router dispatches this page to.
+     * The controller class that serves this page, from the explicit map
+     * (Site\ControllerMap: core pages + module manifests), or null when the
+     * page has no controller or none is mapped. Callers class_exists() it.
      *
-     * 'admin_config_system' → AstrX\Controller\AdminConfigSystemController. The
-     * class may not exist (a page row can name a controller that was never
-     * written); callers class_exists() it.
+     * @return class-string|null
      */
-    private static function controllerClassFor(Page $page): string
+    private function controllerClassFor(Page $page): ?string
     {
-        return 'AstrX\\Controller\\'
-               . str_replace('_', '', ucwords($page->fileName, '_'))
-               . 'Controller';
+        if (!$page->controller) {
+            return null;
+        }
+        return $this->controllerMap()->classFor($page->fileName);
+    }
+
+    /** Built once per request from ModuleRegistry (CORE only if it is unavailable). */
+    private function controllerMap(): ControllerMap
+    {
+        if ($this->controllerMap !== null) {
+            return $this->controllerMap;
+        }
+        $registryResult = $this->injector->getClass(ModuleRegistry::class);
+        $registry = $registryResult->isOk() ? $registryResult->unwrap() : null;
+        $this->controllerMap = $registry instanceof ModuleRegistry
+            ? ControllerMap::forApplication($registry)
+            : new ControllerMap(ControllerMap::CORE);
+        return $this->controllerMap;
     }
 
     /**
@@ -1110,7 +1134,7 @@ final class ContentManager
      * their finer checks: AdminConfigSystemController still answers 403 to a MOD
      * who holds ADMIN_ACCESS but not ADMIN_CONFIG_SYSTEM.
      */
-    private static function requiredPagePermission(Page $page): ?Permission
+    private static function requiredPagePermission(Page $page, ?string $controllerClass): ?Permission
     {
         if ($page->fileName === 'admin'
             || array_any($page->ancestors, static fn($a): bool => $a['file_name'] === 'admin')
@@ -1122,8 +1146,8 @@ final class ContentManager
             return null;
         }
 
-        $fqcn = self::controllerClassFor($page);
-        if (!class_exists($fqcn)) {
+        $fqcn = $controllerClass;
+        if ($fqcn === null || !class_exists($fqcn)) {
             return null;
         }
 
@@ -1136,7 +1160,7 @@ final class ContentManager
             }
         }
 
-        // 'AstrX\Controller\AdminContentController' → short name starts with
+        // 'AstrX\Content\Controller\AdminContentController' → short name starts with
         // 'Admin'. Every one of the 33 Admin*Controller classes is an admin
         // surface; the moderator panels that are deliberately NOT admin
         // (ChatAdminController → CHAT_MODERATE, BoardModController →
@@ -1552,12 +1576,14 @@ final class ContentManager
         if (!$ctxResult->isOk()) { return; }
         /** @var DefaultTemplateContext $ctx */
         $ctx = $ctxResult->unwrap();
+        // Feature controllers ask for the TemplateVars interface; point it at
+        // THIS request's context (bind() copies the instance registered now).
+        $this->injector->bind(TemplateVars::class, DefaultTemplateContext::class);
         $ctx->buildBase($page);
 
         if ($page->controller) {
-            $short = str_replace('_', '', ucwords($page->fileName, '_')) . 'Controller';
-            $fqcn  = 'AstrX\\Controller\\' . $short;
-            if (class_exists($fqcn)) {
+            $fqcn = $this->controllerClassFor($page);
+            if ($fqcn !== null && class_exists($fqcn)) {
                 $controllerResult = $this->injector->createClass($fqcn)
                     ->drainTo($this->collector);
                 if ($controllerResult->isOk()) {

@@ -18,5 +18,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_media' => \AstrX\Media\Controller\AdminMediaController::class,
+        'media_file' => \AstrX\Media\Controller\MediaFileController::class,
+    ],
     'teardown'     => 'media.down.sql',
 ];

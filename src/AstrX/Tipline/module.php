@@ -21,5 +21,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_tipline' => \AstrX\Tipline\Controller\AdminTiplineController::class,
+        'tipline' => \AstrX\Tipline\Controller\TiplineController::class,
+    ],
     'teardown'     => 'tipline.down.sql',
 ];

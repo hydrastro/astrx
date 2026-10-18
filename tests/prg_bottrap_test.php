@@ -31,7 +31,7 @@ namespace AstrX\Config {
 namespace {
 
     use AstrX\BotTrap\BotTrapConfig;
-    use AstrX\Controller\BotTrapController;
+    use AstrX\BotTrap\Controller\BotTrapController;
     use AstrX\Comment\CommentPrgHandler;
     use AstrX\Session\PrgHandler;
 

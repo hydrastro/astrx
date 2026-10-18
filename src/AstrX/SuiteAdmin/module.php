@@ -21,5 +21,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_suite' => \AstrX\SuiteAdmin\Controller\AdminSuiteController::class,
+    ],
     'teardown'     => 'suiteadmin.down.sql',
 ];

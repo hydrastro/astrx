@@ -21,5 +21,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'onion_search' => \AstrX\OnionSearch\Controller\OnionSearchController::class,
+    ],
     'teardown'     => 'onionsearch.down.sql',
 ];

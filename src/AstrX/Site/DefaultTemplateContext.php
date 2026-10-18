@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Site;
 
-use AstrX\Api\ContextScope;
+use AstrX\Template\ContextScope;
 use AstrX\Theme\ThemeService;
 
 use AstrX\Auth\Gate;

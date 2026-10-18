@@ -11,6 +11,7 @@ use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Module\ModuleRegistry;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Theme\ThemePreference;
 use AstrX\User\UserSession;
 use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\ErrorHandler\ErrorHandler;
@@ -96,11 +97,13 @@ final class Prelude
         // Bootstrap PBAC Gate — register all policies once at startup.
         // The security layer depends on the Identity contract, not on the
         // accounts layer: bind the account session as the request's Identity
-        // before anything asks for Gate (or DiagnosticVisibilityChecker).
+        // (and as the visitor's ThemePreference) before anything asks for Gate,
+        // DiagnosticVisibilityChecker or ThemeService.
         // Failure is non-fatal (Gate falls back to deny-all).
         $sessionResult = $injector->createClass(UserSession::class)->drainTo($collector);
         if ($sessionResult->isOk()) {
             $injector->bind(Identity::class, UserSession::class);
+            $injector->bind(ThemePreference::class, UserSession::class);
         }
         $gateResult = $injector->createClass(Gate::class)->drainTo($collector);
         if ($gateResult->isOk()) {

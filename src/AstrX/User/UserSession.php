@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\User;
 
 use AstrX\Auth\Identity;
+use AstrX\Theme\ThemePreference;
 
 /**
  * Typed wrapper around the user portion of $_SESSION.
@@ -19,7 +20,7 @@ use AstrX\Auth\Identity;
  * isLoggedIn() before calling e.g. userId() — they just won't get useful
  * values back and must handle the "not logged in" case separately.
  */
-final class UserSession implements Identity
+final class UserSession implements Identity, ThemePreference
 {
     private const KEY        = 'user';
     private const LOGGED_IN  = 'logged_in';
@@ -162,6 +163,12 @@ final class UserSession implements Identity
     {
         $v = $this->sessionData()['theme'] ?? '';
         return is_scalar($v) ? (string) $v : '';
+    }
+
+    /** ThemePreference contract: the stored theme, only while logged in. */
+    public function preferredTheme(): string
+    {
+        return $this->isLoggedIn() ? $this->userTheme() : '';
     }
 
     /**

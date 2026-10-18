@@ -51,7 +51,7 @@ All paths are relative to the AstrX repo root. Copy each file to the same path.
 src/AstrX/WebSearch/module.php                 # manifest (key 'websearch')
 src/AstrX/WebSearch/WebSearchConfig.php        # #[InjectConfig] config holder
 src/AstrX/WebSearch/WebSearchClient.php        # the bridge: fetch + parse + sanitise
-src/AstrX/Controller/WebSearchController.php    # resolves from file_name 'web_search'
+src/AstrX/WebSearch/Controller/WebSearchController.php    # resolves from file_name 'web_search'
 resources/template/web_search.html             # no-JS GET form + results loop
 resources/config/WebSearch.config.php          # section 'WebSearchConfig'
 resources/lang/en/WebSearch.en.php             # UI strings (domain 'WebSearch')
@@ -64,7 +64,7 @@ src/setup/modules/websearch.down.sql           # teardown for `module.php purge 
 src/AstrX/OnionSearch/module.php               # manifest (key 'onionsearch')
 src/AstrX/OnionSearch/OnionSearchConfig.php     # #[InjectConfig] config holder
 src/AstrX/OnionSearch/OnionSearchClient.php     # the bridge: fetch + parse + sanitise
-src/AstrX/Controller/OnionSearchController.php   # resolves from file_name 'onion_search'
+src/AstrX/OnionSearch/Controller/OnionSearchController.php   # resolves from file_name 'onion_search'
 resources/template/onion_search.html           # no-JS GET form + results loop
 resources/config/OnionSearch.config.php        # section 'OnionSearchConfig'
 resources/lang/en/OnionSearch.en.php           # UI strings (domain 'OnionSearch')
@@ -80,7 +80,7 @@ tests/mock_search_server.php                   # mock engine used by bridge_test
 
 ### How resolution works (AstrX conventions used)
 - **Controller**: a `page` row with `file_name = 'web_search'` resolves to
-  `AstrX\Controller\WebSearchController` via the reflection router
+  `AstrX\WebSearch\Controller\WebSearchController` via the reflection router
   (`str_replace('_','',ucwords('web_search','_')) . 'Controller'`). Same for
   `onion_search` → `OnionSearchController`.
 - **Template**: the shell renders `{{>include}}`, which is built from the page's
@@ -354,7 +354,7 @@ infohash (a row with a non-hex infohash is dropped), never trusted verbatim.
 src/AstrX/TorrentSearch/module.php               # manifest (key 'torrentsearch')
 src/AstrX/TorrentSearch/TorrentSearchConfig.php   # #[InjectConfig] holder (base_url 8804)
 src/AstrX/TorrentSearch/TorrentSearchClient.php   # fetch + parse + sanitise + safe links
-src/AstrX/Controller/TorrentSearchController.php   # resolves from file_name 'torrent_search'
+src/AstrX/TorrentSearch/Controller/TorrentSearchController.php   # resolves from file_name 'torrent_search'
 resources/template/torrent_search.html           # no-JS search + detail views
 resources/config/TorrentSearch.config.php         # section 'TorrentSearchConfig'
 resources/lang/en/TorrentSearch.en.php            # UI strings (domain 'TorrentSearch')
@@ -425,7 +425,7 @@ page (`@`-suppressed transport, tolerant parse).
 src/AstrX/SuiteAdmin/module.php                  # manifest (key 'suiteadmin')
 src/AstrX/SuiteAdmin/SuiteAdminConfig.php         # #[InjectConfig] holder (four base URLs)
 src/AstrX/SuiteAdmin/SuiteAdminClient.php         # probe + Prometheus/JSON parse + POST /add
-src/AstrX/Controller/AdminSuiteController.php      # resolves from file_name 'admin_suite'
+src/AstrX/SuiteAdmin/Controller/AdminSuiteController.php      # resolves from file_name 'admin_suite'
 resources/template/admin/admin_suite.html         # status table + CSRF/PRG seed form
 resources/config/SuiteAdmin.config.php            # section 'SuiteAdminConfig'
 resources/lang/en/SuiteAdmin.en.php               # UI strings (domain 'SuiteAdmin')
@@ -499,7 +499,7 @@ an href.
 ```
 src/AstrX/GitBrowse/module.php                   # manifest (key 'gitbrowse')
 src/AstrX/GitBrowse/GitBrowseConfig.php           # #[InjectConfig] holder (service_url 8801)
-src/AstrX/Controller/GitBrowseController.php       # resolves from file_name 'git_browse'
+src/AstrX/GitBrowse/Controller/GitBrowseController.php       # resolves from file_name 'git_browse'
 resources/template/git_browse.html                # link-through card
 resources/config/GitBrowse.config.php             # section 'GitBrowseConfig'
 resources/lang/en/GitBrowse.en.php                # UI strings (domain 'GitBrowse')
@@ -643,7 +643,7 @@ working. This page does **not** replace the internal `/search` or the dedicated
 src/AstrX/FederatedSearch/module.php               # manifest (key 'fedsearch')
 src/AstrX/FederatedSearch/FederatedSearchConfig.php # #[InjectConfig] holder (3 base URLs 8802/8803/8804)
 src/AstrX/FederatedSearch/FederatedSearchClient.php # bounded/size-capped fan-out fetch + parse + sanitise
-src/AstrX/Controller/FederatedSearchController.php   # resolves from file_name 'federated_search'
+src/AstrX/FederatedSearch/Controller/FederatedSearchController.php   # resolves from file_name 'federated_search'
 resources/template/federated_search.html           # no-JS tab bar + per-source render blocks
 resources/config/FederatedSearch.config.php         # section 'FederatedSearchConfig'
 resources/lang/en/FederatedSearch.en.php            # UI strings (domain 'FederatedSearch')
@@ -711,7 +711,7 @@ configured) is reported as its own flash. A down engine degrades to a friendly
 src/AstrX/Blocklist/module.php                    # manifest (key 'blocklist')
 src/AstrX/Blocklist/BlocklistConfig.php            # #[InjectConfig] holder (2 base URLs + 2 admin TOKENS)
 src/AstrX/Blocklist/BlocklistClient.php            # bounded/size-capped POST + token auth shapes
-src/AstrX/Controller/AdminBlocklistController.php   # resolves from file_name 'admin_blocklist'
+src/AstrX/Blocklist/Controller/AdminBlocklistController.php   # resolves from file_name 'admin_blocklist'
 resources/template/admin/admin_blocklist.html      # two CSRF/PRG forms (onion + torrent)
 resources/config/Blocklist.config.php              # section 'BlocklistConfig'
 resources/lang/en/Blocklist.en.php                 # UI strings (domain 'Blocklist')

@@ -12,7 +12,8 @@ use AstrX\Injector\Injector;
  * Each optional module ships a `module.php` manifest in its namespace directory
  * (src/AstrX/<Module>/module.php) declaring its key, display name, an optional
  * nav contributor + disabled-defaults, page guards, resource policies
- * (resource class => policy class), and a teardown file.
+ * (resource class => policy class), page controllers (page file_name =>
+ * controller class), and a teardown file.
  *
  * This class is generic infrastructure: it hands out the CLASS NAMES / instances
  * a manifest declares and never imports the interfaces they implement (page
@@ -26,7 +27,7 @@ use AstrX\Injector\Injector;
  * one bool per key, default ON so existing installs are unaffected). A DISABLED
  * module is never instantiated — its manifest's `nav_defaults` are merged instead.
  *
- * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,teardown:?string}
+ * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,teardown:?string}
  */
 final class ModuleRegistry
 {
@@ -168,6 +169,25 @@ final class ModuleRegistry
     }
 
     /**
+     * Page controllers declared by EVERY module manifest, enabled or not:
+     * page file_name => controller class. Whether a disabled module's page is
+     * served is ModulePageGuard's call (it 404s it before dispatch); the class
+     * map itself is static knowledge. See \AstrX\Site\ControllerMap.
+     *
+     * @return array<string,string>
+     */
+    public function controllers(): array
+    {
+        $out = [];
+        foreach ($this->manifests() as $m) {
+            foreach ($m['controllers'] as $fileName => $class) {
+                $out[$fileName] = $class;
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Discover + normalise the module manifests once per request.
      *
      * @return list<Manifest>
@@ -237,6 +257,15 @@ final class ModuleRegistry
             }
         }
 
+        $controllers = [];
+        if (isset($raw['controllers']) && is_array($raw['controllers'])) {
+            foreach ($raw['controllers'] as $fileName => $class) {
+                if (is_string($fileName) && $fileName !== '' && is_string($class) && $class !== '') {
+                    $controllers[$fileName] = $class;
+                }
+            }
+        }
+
         /** @var array<string,mixed> $navDefaults */
         return [
             'key'          => $raw['key'],
@@ -246,6 +275,7 @@ final class ModuleRegistry
             'nav_defaults' => $navDefaults,
             'guards'       => $guards,
             'policies'     => $policies,
+            'controllers'  => $controllers,
             'teardown'     => $teardown,
         ];
     }

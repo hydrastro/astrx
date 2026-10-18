@@ -34,7 +34,7 @@ namespace {
 
     use AstrX\Auth\Permission;
     use AstrX\ContentManager;
-    use AstrX\Controller\JsController;
+    use AstrX\Site\Controller\JsController;
     use AstrX\Page\Page;
     use AstrX\Site\DefaultTemplateContext;
 
@@ -86,10 +86,29 @@ namespace {
         return ['id' => $id, 'url_id' => 'WORDING_X', 'i18n' => true, 'file_name' => $fileName];
     }
 
-    function requiredPermission(Page $p): ?Permission
+    /** The application's controller map: CORE + every module manifest's `controllers`. */
+    function controllerMap(): AstrX\Site\ControllerMap
     {
+        static $map = null;
+        if ($map === null) {
+            $entries = AstrX\Site\ControllerMap::CORE;
+            foreach (glob(dirname(__DIR__) . '/src/AstrX/*/module.php') ?: [] as $file) {
+                $manifest = require $file;
+                if (is_array($manifest) && is_array($manifest['controllers'] ?? null)) {
+                    $entries += $manifest['controllers'];
+                }
+            }
+            $map = new AstrX\Site\ControllerMap($entries);
+        }
+        return $map;
+    }
+
+    /** @param string|null $class the class serving $p; default: what the application map says */
+    function requiredPermission(Page $p, ?string $class = null): ?Permission
+    {
+        $class ??= $p->controller ? controllerMap()->classFor($p->fileName) : null;
         /** @var ?Permission $out */
-        $out = (new ReflectionMethod(ContentManager::class, 'requiredPagePermission'))->invoke(null, $p);
+        $out = (new ReflectionMethod(ContentManager::class, 'requiredPagePermission'))->invoke(null, $p, $class);
         return $out;
     }
 
@@ -128,7 +147,9 @@ namespace {
     eq(
         '#[RequiresPermission] on the controller class is enforced by itself',
         Permission::ADMIN_ACCESS,
-        requiredPermission(page('astrx_test_widget', ancestors: [])),
+        // Passed explicitly: the widget is a test fixture, deliberately absent
+        // from the application's controller map (only mapped classes dispatch).
+        requiredPermission(page('astrx_test_widget', ancestors: []), AstrX\Controller\AstrxTestWidgetController::class),
     );
 
     // Public pages stay public.
