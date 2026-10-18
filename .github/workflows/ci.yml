@@ -41,6 +41,12 @@ jobs:
       - name: Module integrity (manifests, contributors, guards, teardown)
         run: php tools/check_modules.php
 
+      # Layered, acyclic namespace graph — what keeps the framework/library/
+      # feature/application split (and the future Composer packages) possible.
+      # An upward import or a new cycle fails here with the file:line.
+      - name: Architecture (layers + no namespace cycles)
+        run: php tools/check_architecture.php
+
       # Section↔file routing, #[InjectConfig] keys, dead keys and write targets —
       # catches an admin page that persists to a config file nothing loads.
       - name: Config integrity (sections, setters, write targets)
