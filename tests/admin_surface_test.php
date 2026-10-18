@@ -35,7 +35,6 @@ namespace {
     use AstrX\Auth\Permission;
 
 use AstrX\Admin\AdminPermission;
-    use AstrX\ContentManager;
     use AstrX\Site\Controller\JsController;
     use AstrX\Page\Page;
     use AstrX\Site\DefaultTemplateContext;
@@ -109,9 +108,7 @@ use AstrX\Admin\AdminPermission;
     function requiredPermission(Page $p, ?string $class = null): ?Permission
     {
         $class ??= $p->controller ? controllerMap()->classFor($p->fileName) : null;
-        /** @var ?Permission $out */
-        $out = (new ReflectionMethod(ContentManager::class, 'requiredPagePermission'))->invoke(null, $p, $class);
-        return $out;
+        return AstrX\Site\PageGate::requiredPermission($p, $class);
     }
 
     // =========================================================================
