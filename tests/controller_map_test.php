@@ -48,14 +48,14 @@ $sources = [];
 foreach (ControllerMap::CORE as $fileName => $class) {
     $sources[$class][] = "CORE['{$fileName}']";
 }
-foreach (glob($root . '/src/AstrX/*/module.php') ?: [] as $file) {
-    $manifest = require $file;
-    if (!is_array($manifest) || !is_array($manifest['controllers'] ?? null)) {
+foreach (AstrX\ApplicationModules::INSTALLED as $module) {
+    $manifest = (new $module())->manifest();
+    if (!is_array($manifest['controllers'] ?? null)) {
         continue;
     }
     foreach ($manifest['controllers'] as $fileName => $class) {
         $entries[$fileName] = $class;
-        $sources[$class][] = basename(dirname($file)) . "/module.php['{$fileName}']";
+        $sources[$class][] = "{$module}['{$fileName}']";
     }
 }
 $map = new ControllerMap($entries);

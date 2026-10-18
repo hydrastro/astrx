@@ -1,0 +1,41 @@
+<?php
+declare(strict_types=1);
+
+namespace AstrX\Downloads;
+
+use AstrX\Module\Module;
+
+/**
+ * Signed-downloads module — the public /downloads release-manifest page
+ * plus its admin editor (WORDING_DOWNLOADS / WORDING_ADMIN_DOWNLOADS). An
+ * independently toggleable module: disabling it 404s both pages and drops their
+ * nav entries, without affecting the sibling transparency pages.
+ *
+ * No nav contributor or guard needed: its navbar entries are DB rows NavbarHandler
+ * drops via page.module when the module is off, and the core ModulePageGuard 404s
+ * its pages. Storage is the shared site_config KV (manifest_* keys), which the
+ * teardown clears on purge. See docs/MODULES.md.
+ */
+final class DownloadsModule implements Module
+{
+    /** @return array<string, mixed> */
+    public function manifest(): array
+    {
+        return [
+            'key'          => 'downloads',
+            'name'         => 'Downloads',
+            'version'      => '1.0.0',
+            'nav'          => null,
+            'nav_defaults' => [],
+            'guards'       => [],
+            // Permission enums this module declares (listed in the grants editor).
+            'permissions'  => [\AstrX\Downloads\DownloadsPermission::class],
+            // Page file_name => controller. Resolved by Site\ControllerMap.
+            'controllers'  => [
+                'admin_downloads' => \AstrX\Downloads\Controller\AdminDownloadsController::class,
+                'downloads' => \AstrX\Downloads\Controller\DownloadsController::class,
+            ],
+            'teardown'     => 'downloads.down.sql',
+        ];
+    }
+}

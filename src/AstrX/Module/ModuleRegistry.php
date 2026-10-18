@@ -7,36 +7,47 @@ use AstrX\Config\Config;
 use AstrX\Injector\Injector;
 
 /**
- * Central switchboard for optional modules — manifest-driven.
+ * Central switchboard for optional modules.
  *
- * Each optional module ships a `module.php` manifest in its namespace directory
- * (src/AstrX/<Module>/module.php) declaring its key, display name, an optional
- * nav contributor + disabled-defaults, page guards, resource policies
- * (resource class => policy class), page controllers (page file_name =>
- * controller class), permission enums, and a teardown file.
+ * The application hands this registry the module classes it installs
+ * (ApplicationModules::INSTALLED). Nothing is discovered by scanning
+ * directories, so modules can live anywhere Composer autoloads from. Each
+ * module's manifest() declares its key, display name, an optional nav
+ * contributor + disabled-defaults, page guards, resource policies (resource
+ * class => policy class), page controllers (page file_name => controller
+ * class), permission enums, and a teardown file.
  *
  * This class is generic infrastructure: it hands out the CLASS NAMES / instances
  * a manifest declares and never imports the interfaces they implement (page
  * guards belong to the CMS, policies to the security layer). The consumer that
- * knows the interface checks it. This
- * registry DISCOVERS those manifests, so adding a module is "drop a manifest and
- * a config flag" — core (ContentManager / DefaultTemplateContext / NavbarHandler)
- * still names no module, and this class no longer hardcodes the module list.
+ * knows the interface checks it. Core (ContentManager / DefaultTemplateContext /
+ * NavbarHandler) names no module.
  *
- * "Is module X on?" is resources/config/Modules.config.php (section 'Modules',
- * one bool per key, default ON so existing installs are unaffected). A DISABLED
- * module is never instantiated — its manifest's `nav_defaults` are merged instead.
+ * Four states, kept apart on purpose:
+ *   - present: the module's code is autoloadable — means nothing by itself;
+ *   - installed: listed in the constructor's $modules;
+ *   - enabled: installed AND `true` in Modules.config.php (section 'Modules');
+ *     a module with no flag there is OFF;
+ *   - migrated: its tables exist (tools/install.php / tools/module.php).
+ * A DISABLED module is never instantiated beyond its manifest — its
+ * `nav_defaults` are merged instead.
  *
  * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string}
  */
 final class ModuleRegistry
 {
-    /** @var list<Manifest>|null Discovered manifests, loaded once per request. */
+    /** @var list<Manifest>|null Normalised manifests, built once per request. */
     private ?array $manifests = null;
 
+    /**
+     * @param list<string> $modules Installed module classes (each implements
+     *        Module). Empty — e.g. a container that was never told — means no
+     *        modules, not "whatever is on disk".
+     */
     public function __construct(
         private readonly Config   $config,
         private readonly Injector $injector,
+        private readonly array    $modules = [],
     ) {
         $this->config->loadModuleConfig('Modules');
     }
@@ -44,12 +55,13 @@ final class ModuleRegistry
     /**
      * Whether an optional module is enabled.
      *
-     * A key that ships a manifest but is missing from Modules.config.php
-     * defaults ON, so an install whose config file predates a new module keeps
-     * behaving as before; tools/check_modules.php fails the build on that gap,
-     * so it cannot survive in the repository.
+     * Only an installed module whose Modules.config.php flag is `true` is on.
+     * A missing flag means OFF: being installed (or merely present on disk)
+     * must not switch a module on. tools/check_modules.php fails the build when
+     * an installed module has no flag, so the repository never relies on this
+     * default.
      *
-     * A key with NO manifest is OFF. This is the rule ModulePageGuard already
+     * A key that is not installed is OFF. This is the rule ModulePageGuard already
      * applies to `page.module`, and the two have to agree: the guard fails
      * closed on an unrecognised owner while this method answered "enabled" for
      * the identical key, so the same typo hid a page in one place and left a
@@ -61,7 +73,7 @@ final class ModuleRegistry
             return false;
         }
 
-        return $this->config->getConfigBool('Modules', $key, true);
+        return $this->config->getConfigBool('Modules', $key, false);
     }
 
     /**
@@ -206,7 +218,7 @@ final class ModuleRegistry
     }
 
     /**
-     * Discover + normalise the module manifests once per request.
+     * Build + normalise the installed modules' manifests once per request.
      *
      * @return list<Manifest>
      */
@@ -216,23 +228,21 @@ final class ModuleRegistry
             return $this->manifests;
         }
 
-        $out = [];
-        // Locate src/AstrX/<Module>/module.php via the CLASS_DIR constant, NOT
-        // dirname(__DIR__): in COMPILED mode this class's code is loaded from the
-        // bundle, so __DIR__ is build/ and dirname(__DIR__) would glob the repo
-        // ROOT's */module.php — matching e.g. tools/module.php and running its CLI
-        // guard. CLASS_DIR resolves to src/AstrX/ in every real entry point.
-        $base = defined('CLASS_DIR')
-            ? rtrim((string) constant('CLASS_DIR'), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
-            : dirname(__DIR__) . DIRECTORY_SEPARATOR;
-        $pattern = $base . '*' . DIRECTORY_SEPARATOR . 'module.php';
-        foreach (glob($pattern) ?: [] as $file) {
-            /** @var mixed $raw */
-            $raw = require $file;
-            $manifest = self::normalise($raw);
-            if ($manifest !== null) {
-                $out[] = $manifest;
+        $out  = [];
+        $keys = [];
+        foreach ($this->modules as $class) {
+            if (!class_exists($class) || !is_subclass_of($class, Module::class)) {
+                throw new \LogicException("Installed module {$class} is not a class implementing " . Module::class . '.');
             }
+            $manifest = self::normalise((new $class())->manifest());
+            if ($manifest === null) {
+                throw new \LogicException("Module {$class} has an unusable manifest (it needs a non-empty 'key').");
+            }
+            if (isset($keys[$manifest['key']])) {
+                throw new \LogicException("Modules {$keys[$manifest['key']]} and {$class} both use the key '{$manifest['key']}'.");
+            }
+            $keys[$manifest['key']] = $class;
+            $out[] = $manifest;
         }
         usort($out, static fn(array $a, array $b): int => strcmp($a['key'], $b['key']));
 

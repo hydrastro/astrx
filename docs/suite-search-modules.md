@@ -48,7 +48,7 @@ All paths are relative to the AstrX repo root. Copy each file to the same path.
 
 ### `websearch` (clear-web)
 ```
-src/AstrX/WebSearch/module.php                 # manifest (key 'websearch')
+src/AstrX/WebSearch/WebSearchModule.php  # module class (key 'websearch')
 src/AstrX/WebSearch/WebSearchConfig.php        # #[InjectConfig] config holder
 src/AstrX/WebSearch/WebSearchClient.php        # the bridge: fetch + parse + sanitise
 src/AstrX/WebSearch/Controller/WebSearchController.php    # resolves from file_name 'web_search'
@@ -61,7 +61,7 @@ src/setup/modules/websearch.down.sql           # teardown for `module.php purge 
 
 ### `onionsearch`
 ```
-src/AstrX/OnionSearch/module.php               # manifest (key 'onionsearch')
+src/AstrX/OnionSearch/OnionSearchModule.php # module class (key 'onionsearch')
 src/AstrX/OnionSearch/OnionSearchConfig.php     # #[InjectConfig] config holder
 src/AstrX/OnionSearch/OnionSearchClient.php     # the bridge: fetch + parse + sanitise
 src/AstrX/OnionSearch/Controller/OnionSearchController.php   # resolves from file_name 'onion_search'
@@ -351,7 +351,7 @@ infohash (a row with a non-hex infohash is dropped), never trusted verbatim.
   `page`** — the page-based UI is translated to `limit`/`offset` in the client.
 
 ```
-src/AstrX/TorrentSearch/module.php               # manifest (key 'torrentsearch')
+src/AstrX/TorrentSearch/TorrentSearchModule.php # module class (key 'torrentsearch')
 src/AstrX/TorrentSearch/TorrentSearchConfig.php   # #[InjectConfig] holder (base_url 8804)
 src/AstrX/TorrentSearch/TorrentSearchClient.php   # fetch + parse + sanitise + safe links
 src/AstrX/TorrentSearch/Controller/TorrentSearchController.php   # resolves from file_name 'torrent_search'
@@ -422,7 +422,7 @@ page (`@`-suppressed transport, tolerant parse).
   clear "submission refused" flash, not a crash.
 
 ```
-src/AstrX/SuiteAdmin/module.php                  # manifest (key 'suiteadmin')
+src/AstrX/SuiteAdmin/SuiteAdminModule.php  # module class (key 'suiteadmin')
 src/AstrX/SuiteAdmin/SuiteAdminConfig.php         # #[InjectConfig] holder (four base URLs)
 src/AstrX/SuiteAdmin/SuiteAdminClient.php         # probe + Prometheus/JSON parse + POST /add
 src/AstrX/SuiteAdmin/Controller/AdminSuiteController.php      # resolves from file_name 'admin_suite'
@@ -497,7 +497,7 @@ that URL, which `GitBrowseConfig` forces to an http(s) address before it becomes
 an href.
 
 ```
-src/AstrX/GitBrowse/module.php                   # manifest (key 'gitbrowse')
+src/AstrX/GitBrowse/GitBrowseModule.php    # module class (key 'gitbrowse')
 src/AstrX/GitBrowse/GitBrowseConfig.php           # #[InjectConfig] holder (service_url 8801)
 src/AstrX/GitBrowse/Controller/GitBrowseController.php       # resolves from file_name 'git_browse'
 resources/template/git_browse.html                # link-through card
@@ -640,7 +640,7 @@ working. This page does **not** replace the internal `/search` or the dedicated
 `/websearch` `/onionsearch` `/torrentsearch` pages — it aggregates them.
 
 ```
-src/AstrX/FederatedSearch/module.php               # manifest (key 'fedsearch')
+src/AstrX/FederatedSearch/FederatedSearchModule.php # module class (key 'fedsearch')
 src/AstrX/FederatedSearch/FederatedSearchConfig.php # #[InjectConfig] holder (3 base URLs 8802/8803/8804)
 src/AstrX/FederatedSearch/FederatedSearchClient.php # bounded/size-capped fan-out fetch + parse + sanitise
 src/AstrX/FederatedSearch/Controller/FederatedSearchController.php   # resolves from file_name 'federated_search'
@@ -708,7 +708,7 @@ configured) is reported as its own flash. A down engine degrades to a friendly
 "unreachable" flash and never 500s the page.
 
 ```
-src/AstrX/Blocklist/module.php                    # manifest (key 'blocklist')
+src/AstrX/Blocklist/BlocklistModule.php     # module class (key 'blocklist')
 src/AstrX/Blocklist/BlocklistConfig.php            # #[InjectConfig] holder (2 base URLs + 2 admin TOKENS)
 src/AstrX/Blocklist/BlocklistClient.php            # bounded/size-capped POST + token auth shapes
 src/AstrX/Blocklist/Controller/AdminBlocklistController.php   # resolves from file_name 'admin_blocklist'

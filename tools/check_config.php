@@ -141,9 +141,9 @@ function cfg_class_names(string $classDir): array
         if (!str_ends_with($path, '.php')) { continue; }
         $rel = substr($path, strlen($classDir));
         $rel = str_replace('\\', '/', $rel);
-        // module.php manifests and the constants.php function file hold no class.
+        // The constants.php function file holds no class.
         $base = basename($rel);
-        if ($base === 'module.php' || $base === 'constants.php') { continue; }
+        if ($base === 'constants.php') { continue; }
         $out[] = 'AstrX\\' . str_replace('/', '\\', substr($rel, 0, -4));
     }
     sort($out);

@@ -80,9 +80,9 @@ use AstrX\User\UserPermission;
     function allPermissions(): array
     {
         $enums = AstrX\ApplicationPermissions::CORE;
-        foreach (glob(dirname(__DIR__) . '/src/AstrX/*/module.php') ?: [] as $file) {
-            $manifest = require $file;
-            if (is_array($manifest) && is_array($manifest['permissions'] ?? null)) {
+        foreach (AstrX\ApplicationModules::INSTALLED as $module) {
+            $manifest = (new $module())->manifest();
+            if (is_array($manifest['permissions'] ?? null)) {
                 foreach ($manifest['permissions'] as $enum) {
                     $enums[] = $enum;
                 }
@@ -113,9 +113,9 @@ use AstrX\User\UserPermission;
             'GUEST' => ['news.view'],
         ]);
         // Same wiring as Prelude: core policies + what an ENABLED module's
-        // manifest declares (chat's ChatPolicy comes from its module.php).
-        $chatManifest = require dirname(__DIR__) . '/src/AstrX/Chat/module.php';
-        assert(is_array($chatManifest) && is_array($chatManifest['policies']));
+        // manifest declares (chat's ChatPolicy comes from ChatModule).
+        $chatManifest = (new AstrX\Chat\ChatModule())->manifest();
+        assert(is_array($chatManifest['policies']));
         /** @var array<string,string> $chatPolicies */
         $chatPolicies = $chatManifest['policies'];
         ApplicationPolicies::register($gate, $chatPolicies);

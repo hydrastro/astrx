@@ -73,6 +73,6 @@ Cache identity includes canonical source path, content, parse mode, PHP-processi
 
 ## Modules and services
 
-Application modules register through `src/AstrX/<Module>/module.php`. Disabling a module affects its routes/navigation and preserves stored data; it does not physically remove the source files. Purging is a different, destructive operation—read [the module guide](MODULES.md) before using it.
+Application modules are classes implementing `Module\Module`, installed by listing them in `ApplicationModules::INSTALLED`; a listed module with no `true` flag in `Modules.config.php` is off. See [the module guide](MODULES.md). Disabling a module affects its routes/navigation and preserves stored data; it does not physically remove the source files. Purging is a different, destructive operation—read [the module guide](MODULES.md) before using it.
 
 The Rust services have a separate Cargo workspace. PHP bridge clients communicate with them over HTTP. The core PHP package should eventually define only the contracts it needs; engine clients, service configuration and the full deployment belong with the application or optional integration packages.

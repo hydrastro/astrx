@@ -61,7 +61,7 @@ const LAYERS = [
         'GitBrowse', 'WebSearch', 'OnionSearch', 'TorrentSearch',
         'FederatedSearch', 'SuiteAdmin',
     ],
-    'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationPolicies', 'ApplicationPermissions'],
+    'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationPolicies', 'ApplicationPermissions', 'ApplicationModules'],
 ];
 
 // --list=layer[,layer]: print members and stop (no scan needed).
@@ -261,7 +261,7 @@ foreach ($it as $file) {
     $owner = $scan['owner'];
     if ($owner === null) {
         // `namespace AstrX;` (top-level class, node = class name) or no namespace
-        // at all (module.php manifests, constants) — attribute by directory.
+        // at all (Support/constants.php) — attribute by directory.
         $sub   = substr($path, strlen($classDir) + 1);
         $owner = str_contains($sub, DIRECTORY_SEPARATOR)
             ? explode(DIRECTORY_SEPARATOR, $sub)[0]

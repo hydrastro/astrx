@@ -10,10 +10,23 @@ Core code never names a module. Everything below is data- and manifest-driven:
 `ContentManager`, `DefaultTemplateContext` and `NavbarHandler` ask
 `AstrX\Module\ModuleRegistry` what the *enabled* modules contribute.
 
+A module goes through three separate states:
+
+| State | Decided by | Effect |
+|---|---|---|
+| **installed** | listed in `ApplicationModules::INSTALLED` (`src/AstrX/ApplicationModules.php`) | the application knows it: its controllers resolve, its permissions show in the grants editor |
+| **enabled** | `true` in `resources/config/Modules.config.php` | its pages, nav, guards and policies are live |
+| **migrated** | `tools/install.php` / `tools/module.php` | its tables exist |
+
+Nothing scans directories: a module's code being present does nothing until it
+is listed, and a listed module with no flag is **off**.
+
 ## Turning modules on and off
 
-The switchboard is `resources/config/Modules.config.php` — one boolean per module
-key (default **on**; unlisted modules also default on):
+The switchboard is `resources/config/Modules.config.php`: one boolean per module
+key. A module with no entry is **off**, and `tools/check_modules.php` fails the
+build when an installed module has no entry, so the file always states every
+module explicitly:
 
 ```php
 return ['Modules' => [
@@ -41,7 +54,9 @@ reinstall the schema (`tools/install.php`) to bring a purged module back.
 
 A module is four things, none of which live in core:
 
-1. **A manifest** — `src/AstrX/<Module>/module.php` — that declares the module.
+1. **A module class** — `src/AstrX/<Module>/<Module>Module.php`, implementing
+   `AstrX\Module\Module` — whose `manifest()` declares the module, listed in
+   `ApplicationModules::INSTALLED`.
 2. **Page ownership** — every page carries a `page.module` tag; the core
    `ModulePageGuard` 404s a page whose module is off, and `NavbarHandler` drops
    nav entries pointing at it. Pages are tagged by a migration.
@@ -57,26 +72,40 @@ A module is four things, none of which live in core:
 <?php
 declare(strict_types=1);
 
-return [
-    'key'          => 'imageboard',                 // on/off key + page.module tag; [a-z][a-z0-9_]*
-    'name'         => 'Imageboard',                 // display name
-    'version'      => '1.0.0',
-    'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class, // or null
-    'nav_defaults' => ['board_nav' => false],       // vars merged when the module is OFF
-    'guards'       => [],                            // list of PageGuard classes
-    'policies'     => [],                            // resource class => policy class (Gate)
-    'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class], // permission enums it declares
-    'controllers'  => [                              // page file_name => controller class
-        'board'     => \AstrX\Imageboard\Controller\BoardController::class,
-        'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
-        // …
-    ],
-    'teardown'     => 'imageboard.down.sql',         // file in src/setup/modules/, or null
-];
+namespace AstrX\Imageboard;
+
+use AstrX\Module\Module;
+
+final class ImageboardModule implements Module
+{
+    /** @return array<string, mixed> */
+    public function manifest(): array
+    {
+        return [
+            'key'          => 'imageboard',                 // on/off key + page.module tag; [a-z][a-z0-9_]*
+            'name'         => 'Imageboard',                 // display name
+            'version'      => '1.0.0',
+            'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class, // or null
+            'nav_defaults' => ['board_nav' => false],       // vars merged when the module is OFF
+            'guards'       => [],                            // list of PageGuard classes
+            'policies'     => [],                            // resource class => policy class (Gate)
+            'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class], // permission enums it declares
+            'controllers'  => [                              // page file_name => controller class
+                'board'     => \AstrX\Imageboard\Controller\BoardController::class,
+                'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
+                // …
+            ],
+            'teardown'     => 'imageboard.down.sql',         // file in src/setup/modules/, or null
+        ];
+    }
+}
 ```
 
-`ModuleRegistry` discovers every `src/AstrX/*/module.php` at runtime (cached per
-request), so a module exists the moment its manifest does.
+`manifest()` must be cheap and side-effect free: it is read for disabled
+modules too (the controller map and the grants editor need their declarations).
+`ModuleRegistry` receives the installed list from `Prelude` and builds each
+manifest once per request. A listed class that does not implement `Module`, an
+empty key, or two modules sharing a key fail loudly instead of being skipped.
 
 ### Nav contributor (optional)
 
@@ -215,12 +244,12 @@ DELETE ne FROM `navbar_entry` ne
 php tools/make_module.php forum --nav --guard
 ```
 
-scaffolds `src/AstrX/Forum/module.php` (+ a `ForumNavContributor` and
+scaffolds `src/AstrX/Forum/ForumModule.php` (+ a `ForumNavContributor` and
 `ForumPageGuard` if you passed `--nav`/`--guard`) and
 `src/setup/modules/forum.down.sql`, then prints the remaining steps:
 
-1. Add `'forum' => true` to `resources/config/Modules.config.php` (optional —
-   unlisted defaults on).
+1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`
+   and `'forum' => true` to `resources/config/Modules.config.php` (no flag = off).
 2. Tag its pages in a migration: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
 3. Fill in the teardown `DROP TABLE`s and the nav/guard stubs.
 4. Add `Forum` to the `feature` layer in `tools/check_architecture.php`.
