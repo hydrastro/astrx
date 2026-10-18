@@ -42,6 +42,7 @@ namespace {
     use AstrX\Auth\Gate;
     use AstrX\Config\Config;
     use AstrX\ContentManager;
+    use AstrX\Database\ConnectionFactory;
     use AstrX\Database\ConnectionFailure;
     use AstrX\Database\Diagnostic\DatabaseConfigIncompleteDiagnostic;
     use AstrX\Database\Diagnostic\DatabaseUnavailableDiagnostic;
@@ -198,13 +199,10 @@ namespace {
         @unlink(CONFIG_DIR . 'PDO.config.php');
     }
 
-    /** Call the private initPDO() and hand back its Result. @return Result<PDO> */
-    function initPdo(ContentManager $cm): Result
+    /** Open a connection exactly as the request pipeline does. @return Result<PDO> */
+    function initPdo(Config $config): Result
     {
-        $m = new ReflectionMethod(ContentManager::class, 'initPDO');
-        /** @var Result<PDO> $r */
-        $r = $m->invoke($cm);
-        return $r;
+        return (new ConnectionFactory($config))->connect();
     }
 
     /** @return list<DiagnosticInterface> */
@@ -262,9 +260,9 @@ namespace {
         "Access denied for user '" . SECRET_USER . "'@'10.0.0.7' (using password: YES)");
 
     $resolveDiag = DatabaseUnavailableDiagnostic::fromException(
-        ContentManager::ID_DB_UNAVAILABLE, ContentManager::LVL_DB_UNAVAILABLE, 'mysql', $resolveFailure);
+        ConnectionFactory::ID_DB_UNAVAILABLE, ConnectionFactory::LVL_DB_UNAVAILABLE, 'mysql', $resolveFailure);
     $authDiag = DatabaseUnavailableDiagnostic::fromException(
-        ContentManager::ID_DB_UNAVAILABLE, ContentManager::LVL_DB_UNAVAILABLE, 'mysql', $authFailure);
+        ConnectionFactory::ID_DB_UNAVAILABLE, ConnectionFactory::LVL_DB_UNAVAILABLE, 'mysql', $authFailure);
 
     eq('the resolve failure keeps its SQLSTATE',   'HY000', $resolveDiag->sqlState());
     eq('the resolve failure keeps its driver code', 2002,   $resolveDiag->driverCode());
@@ -280,7 +278,7 @@ namespace {
     // A message-only PDOException (PDO's own failures carry no errorInfo).
     $driverless = new PDOException('could not find driver');
     $driverlessDiag = DatabaseUnavailableDiagnostic::fromException(
-        ContentManager::ID_DB_UNAVAILABLE, ContentManager::LVL_DB_UNAVAILABLE, 'mysql', $driverless);
+        ConnectionFactory::ID_DB_UNAVAILABLE, ConnectionFactory::LVL_DB_UNAVAILABLE, 'mysql', $driverless);
     eq('a message-only exception yields no invented SQLSTATE', '', $driverlessDiag->sqlState());
     eq('a message-only exception yields no invented driver code', 0, $driverlessDiag->driverCode());
 
@@ -299,8 +297,8 @@ namespace {
         foreach ([
             'connect_failed'    => $authDiag,
             'config_incomplete' => new DatabaseConfigIncompleteDiagnostic(
-                ContentManager::ID_DB_CONFIG_INCOMPLETE,
-                ContentManager::LVL_DB_CONFIG_INCOMPLETE,
+                ConnectionFactory::ID_DB_CONFIG_INCOMPLETE,
+                ConnectionFactory::LVL_DB_CONFIG_INCOMPLETE,
                 ['db_username', 'db_password'],
             ),
         ] as $what => $diag) {
@@ -316,8 +314,8 @@ namespace {
         check("[{$locale}] the auth failure reports its driver code", str_contains($auth, '1045'));
 
         $incomplete = $renderer->render(new DatabaseConfigIncompleteDiagnostic(
-            ContentManager::ID_DB_CONFIG_INCOMPLETE,
-            ContentManager::LVL_DB_CONFIG_INCOMPLETE,
+            ConnectionFactory::ID_DB_CONFIG_INCOMPLETE,
+            ConnectionFactory::LVL_DB_CONFIG_INCOMPLETE,
             ['db_username', 'db_password'],
         ));
         check("[{$locale}] the incomplete config names every missing key",
@@ -348,7 +346,7 @@ namespace {
 
     $config = new Config(new DiagnosticsCollector());
     $config->loadModuleConfig('PDO');
-    $refused = initPdo(managerWith($config));
+    $refused = initPdo($config);
 
     check('a refused connection returns an err Result rather than throwing', $refused->isErr());
     $refusedDiags = diagList($refused);
@@ -357,7 +355,7 @@ namespace {
     check('the diagnostic is a DatabaseUnavailableDiagnostic',
         $refusedDiag instanceof DatabaseUnavailableDiagnostic);
     if ($refusedDiag instanceof DatabaseUnavailableDiagnostic) {
-        eq('with the connect_failed id', ContentManager::ID_DB_UNAVAILABLE, $refusedDiag->id());
+        eq('with the connect_failed id', ConnectionFactory::ID_DB_UNAVAILABLE, $refusedDiag->id());
         eq('at CRITICAL',                DiagnosticLevel::CRITICAL,         $refusedDiag->level());
         eq('naming the configured driver', 'mysql',                         $refusedDiag->driver());
         checkNoLeak('refused connection', $refusedDiag);
@@ -368,7 +366,7 @@ namespace {
     removePdoConfig();
     $config = new Config(new DiagnosticsCollector());
     $config->loadModuleConfig('PDO');
-    $noConfig = initPdo(managerWith($config));
+    $noConfig = initPdo($config);
 
     check('a missing PDO section returns an err Result', $noConfig->isErr());
     $noConfigDiags = diagList($noConfig);
@@ -377,7 +375,7 @@ namespace {
         $noConfigDiag instanceof DatabaseConfigIncompleteDiagnostic);
     if ($noConfigDiag instanceof DatabaseConfigIncompleteDiagnostic) {
         eq('with the config_incomplete id',
-            ContentManager::ID_DB_CONFIG_INCOMPLETE, $noConfigDiag->id());
+            ConnectionFactory::ID_DB_CONFIG_INCOMPLETE, $noConfigDiag->id());
         eq('naming every required key, in order',
             ['db_host', 'db_name', 'db_username', 'db_password'], $noConfigDiag->missingKeys());
     }
@@ -403,7 +401,7 @@ namespace {
     ]);
     $config = new Config(new DiagnosticsCollector());
     $config->loadModuleConfig('PDO');
-    $noPass = initPdo(managerWith($config));
+    $noPass = initPdo($config);
     $noPassDiag = diagList($noPass)[0] ?? null;
     check('an absent db_password alone is a named failure, not a guessed password',
         $noPassDiag instanceof DatabaseConfigIncompleteDiagnostic);
@@ -426,7 +424,7 @@ namespace {
     ]);
     $config = new Config(new DiagnosticsCollector());
     $config->loadModuleConfig('PDO');
-    $emptyPass = initPdo(managerWith($config));
+    $emptyPass = initPdo($config);
     check('an empty password is a value, not an absence — the connection is attempted',
         (diagList($emptyPass)[0] ?? null) instanceof DatabaseUnavailableDiagnostic);
 
@@ -445,7 +443,7 @@ namespace {
     ]);
     $config = new Config(new DiagnosticsCollector());
     $config->loadModuleConfig('PDO');
-    $noDriver = initPdo(managerWith($config));
+    $noDriver = initPdo($config);
     $noDriverDiag = diagList($noDriver)[0] ?? null;
     check('an unavailable driver is reported as such, not attempted',
         $noDriverDiag instanceof DatabaseUnavailableDiagnostic);
@@ -460,7 +458,7 @@ namespace {
 
     echo "\n== initPDO() source contract ==\n";
 
-    $rm    = new ReflectionMethod(ContentManager::class, 'initPDO');
+    $rm    = new ReflectionMethod(ConnectionFactory::class, 'connect');
     $lines = file((string) $rm->getFileName()) ?: [];
     // Comment lines are dropped: the method's comments QUOTE the removed
     // defaults to explain why they are gone, and a check that cannot tell a
@@ -512,8 +510,8 @@ namespace {
 
         // The exact diagnostic initPDO() emits for a rejected credential.
         $collector->emit(DatabaseUnavailableDiagnostic::fromException(
-            ContentManager::ID_DB_UNAVAILABLE,
-            ContentManager::LVL_DB_UNAVAILABLE,
+            ConnectionFactory::ID_DB_UNAVAILABLE,
+            ConnectionFactory::LVL_DB_UNAVAILABLE,
             'mysql',
             pdoConnError('28000', 1045,
                 "Access denied for user '" . SECRET_USER . "'@'10.0.0.7' (using password: YES)"),

@@ -57,25 +57,31 @@ function rt_err(string $s): void { fwrite(STDERR, $s); }
 /** @return never */
 function rt_fail(string $msg): void { rt_err("\nERROR: {$msg}\n"); exit(1); }
 
-/** Build a PDO from the persisted PDO.config.php, mirroring ContentManager::initPDO. */
+/**
+ * Open the database exactly as the web request does (Database\ConnectionFactory):
+ * no guessable credential defaults. On failure, exit naming what went wrong,
+ * without echoing the DSN or the account.
+ */
 function rt_build_pdo(Config $config): PDO
 {
-    $driver = $config->getConfigString('PDO', 'db_type', 'mysql');
-    $host   = $config->getConfigString('PDO', 'db_host', 'localhost');
-    $dbname = $config->getConfigString('PDO', 'db_name', 'content_manager');
-    $user   = $config->getConfigString('PDO', 'db_username', 'root');
-    $pass   = $config->getConfigString('PDO', 'db_password', '');
-    $port   = $config->getConfigInt('PDO', 'db_port', 3306);
-
-    $dsn = $driver . ':host=' . $host . ';port=' . $port . ';dbname=' . $dbname . ';charset=utf8mb4';
-    $pdo = new PDO($dsn, $user, $pass);
-    $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $config->getConfigBool('PDO', 'emulate_prepares', false));
-    $pdo->setAttribute(
-        PDO::ATTR_ERRMODE,
-        $config->getConfigBool('PDO', 'errmode_exception', true) ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT,
-    );
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    return $pdo;
+    $result = (new \AstrX\Database\ConnectionFactory($config))->connect();
+    if ($result->isOk()) {
+        $pdo = $result->unwrap();
+        \assert($pdo instanceof PDO);
+        return $pdo;
+    }
+    $why = [];
+    foreach ($result->diagnostics() as $d) {
+        if ($d instanceof \AstrX\Database\Diagnostic\DatabaseConfigIncompleteDiagnostic) {
+            $why[] = 'PDO.config.php is missing ' . implode(', ', $d->missingKeys());
+        } elseif ($d instanceof \AstrX\Database\Diagnostic\DatabaseUnavailableDiagnostic) {
+            $why[] = $d->driver() . ' ' . $d->reason()->name
+                . ($d->sqlState() !== '' ? ' (SQLSTATE ' . $d->sqlState() . ')' : '');
+        } else {
+            $why[] = $d->id();
+        }
+    }
+    rt_fail('database connection failed: ' . implode('; ', $why));
 }
 
 /** @var list<string> $argv */
@@ -94,11 +100,7 @@ $collector = new DiagnosticsCollector();
 $config    = new Config($collector);
 $config->loadModuleConfig('PDO');
 
-try {
-    $pdo = rt_build_pdo($config);
-} catch (PDOException $e) {
-    rt_fail('database connection failed: ' . $e->getMessage());
-}
+$pdo = rt_build_pdo($config);
 
 // Configure the imageboard/chat configs (their upload dirs drive the orphan-file
 // reaper) exactly as the module loader does in the web app: load the domain, then
