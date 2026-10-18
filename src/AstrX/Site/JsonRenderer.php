@@ -3,14 +3,13 @@ declare(strict_types=1);
 
 namespace AstrX\Site;
 
-use AstrX\Auth\DiagnosticVisibilityChecker;
+use AstrX\Admin\DiagnosticVisibilityChecker;
 use AstrX\Http\Request;
 use AstrX\Result\DiagnosticContextInterface;
 use AstrX\Result\DiagnosticInterface;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
-use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Render the controller's output as a JSON envelope for API consumers.

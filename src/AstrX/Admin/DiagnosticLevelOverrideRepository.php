@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Auth;
+namespace AstrX\Admin;
 
-use AstrX\Auth\Diagnostic\DiagnosticVisibilityDbDiagnostic;
+use AstrX\Admin\Diagnostic\DiagnosticVisibilityDbDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;

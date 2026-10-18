@@ -27,7 +27,7 @@ Lower layers reach upward only through narrow contracts that the application bin
 - `Auth\Identity`: the caller as authorization sees it (`isLoggedIn`, `userId`, `roleName`). `Gate`, policies and diagnostic visibility use it. `User\UserSession` implements it.
 - `Theme\ThemePreference`: the visitor's own theme choice. `UserSession` implements it, and without it `ThemeService` uses the global theme.
 - `Template\TemplateVars`: the write side of a page's variables (`set`, `setShared`, `ContextScope`). Feature controllers use it and never touch `Site\DefaultTemplateContext`.
-- `Result\DiagnosticFilter`: which diagnostics a viewer may see. `I18n\DiagnosticRenderer` uses it, and `Auth\DiagnosticVisibilityChecker` implements it.
+- `Result\DiagnosticFilter`: which diagnostics a viewer may see. `I18n\DiagnosticRenderer` uses it, and `Admin\DiagnosticVisibilityChecker` implements it.
 
 Each feature owns its controllers (`src/AstrX/<Feature>/Controller/`), its policies and its manifest. `Site` holds this website's own pages and its page context.
 

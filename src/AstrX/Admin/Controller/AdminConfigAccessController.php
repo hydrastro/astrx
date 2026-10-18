@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
-use AstrX\Auth\DiagnosticLevelOverrideRepository;
-use AstrX\Auth\DiagnosticVisibilityRepository;
+use AstrX\Admin\DiagnosticLevelOverrideRepository;
+use AstrX\Admin\DiagnosticVisibilityRepository;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\Config\Config;
