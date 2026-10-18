@@ -270,7 +270,7 @@ namespace {
 
     $controller = (new ReflectionClass(AdminConfigSystemController::class))->newInstanceArgs([
         new DiagnosticsCollector(),
-        $stub(AstrX\Template\DefaultTemplateContext::class),
+        $stub(AstrX\Site\DefaultTemplateContext::class),
         $stub(AstrX\Http\Request::class),
         $stub(AstrX\Config\Config::class),
         new ConfigWriter(),

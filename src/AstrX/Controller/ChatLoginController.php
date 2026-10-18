@@ -28,7 +28,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\UserGroup;
 use AstrX\User\UserRepository;
 use AstrX\User\UserSession;

@@ -12,7 +12,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Admin section root — /en/admin

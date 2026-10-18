@@ -18,6 +18,8 @@ use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Module\ModuleRegistry;
+use AstrX\Page\ModulePageGuard;
+use AstrX\Page\PageGuard;
 use AstrX\Navbar\NavbarHandler;
 use AstrX\Page\Page;
 use AstrX\Page\Diagnostic\ControllerMissingDiagnostic;
@@ -25,7 +27,7 @@ use AstrX\Page\Diagnostic\PageHiddenNoticeDiagnostic;
 use AstrX\Page\PageHandler;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
-use AstrX\Result\DiagnosticRenderer;
+use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Theme\ThemeService;
@@ -38,8 +40,8 @@ use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
 use AstrX\User\UserGroup;
 use AstrX\User\UserSession;
-use AstrX\Support\RequiresPermission;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Auth\RequiresPermission;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 use PDO;
 use PDOException;
@@ -564,7 +566,15 @@ final class ContentManager
         if ($registryResult->isOk()) {
             $registry = $registryResult->unwrap();
             if ($registry instanceof ModuleRegistry) {
-                foreach ($registry->pageGuards() as $guard) {
+                // The CMS owns the guard interface; the registry only hands out
+                // what enabled modules declared. Module ownership goes first.
+                $guards = [new ModulePageGuard($registry)];
+                foreach ($registry->enabledGuards() as $contributed) {
+                    if ($contributed instanceof PageGuard) {
+                        $guards[] = $contributed;
+                    }
+                }
+                foreach ($guards as $guard) {
                     if (!$guard->shouldSwapToError($page)) {
                         continue;
                     }
@@ -874,13 +884,13 @@ final class ContentManager
                     return;
                 }
 
-                $rendererResult = $this->injector->createClass(\AstrX\Api\JsonRenderer::class)
+                $rendererResult = $this->injector->createClass(\AstrX\Site\JsonRenderer::class)
                     ->drainTo($this->collector);
                 if (!$rendererResult->isOk()) {
                     $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
                     return;
                 }
-                /** @var \AstrX\Api\JsonRenderer $jsonRenderer */
+                /** @var \AstrX\Site\JsonRenderer $jsonRenderer */
                 $jsonRenderer = $rendererResult->unwrap();
 
                 $html = $renderResult->isOk() ? (string) $renderResult->unwrap() : '';

@@ -1,9 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Module;
-
-use AstrX\Page\Page;
+namespace AstrX\Page;
 
 /**
  * A module's veto over a page. Before running a page's controller, ContentManager

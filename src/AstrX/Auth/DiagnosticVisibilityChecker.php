@@ -4,10 +4,9 @@ declare(strict_types = 1);
 
 namespace AstrX\Auth;
 
+use AstrX\Result\DiagnosticFilter;
 use AstrX\Result\DiagnosticInterface;
 use AstrX\Result\DiagnosticLevel;
-use AstrX\User\UserGroup;
-use AstrX\User\UserSession;
 
 /**
  * Decides whether the current user may see a given diagnostic.
@@ -19,19 +18,22 @@ use AstrX\User\UserSession;
  *   the stored level replaces the class-declared level for all purposes
  *   (filtering by minLevel AND visibility checks both use the effective level).
  * Usage:
- *   Inject into DiagnosticRenderer via renderFiltered() to filter the
+ *   Pass to I18n\DiagnosticRenderer::renderFiltered() as its DiagnosticFilter to filter the
  *   status bar. The checker is loaded lazily — DB queries are deferred
  *   until the first canSee() call.
  */
-final class DiagnosticVisibilityChecker
+final class DiagnosticVisibilityChecker implements DiagnosticFilter
 {
+    /** The role that always sees every diagnostic (the 'ADMIN' group). */
+    private const ADMIN_ROLE = 'ADMIN';
+
     /** @var array<string, list<string>>|null  code → list of group_names that can see it */
     private ?array $visibilityMap = null;
     /** @var array<string, DiagnosticLevel>|null  code → override level */
     private ?array $levelOverrides = null;
 
     public function __construct(
-        private readonly UserSession $session,
+        private readonly Identity $identity,
         private readonly DiagnosticVisibilityRepository $visibilityRepo,
         private readonly DiagnosticLevelOverrideRepository $levelRepo,
     ) {
@@ -44,7 +46,7 @@ final class DiagnosticVisibilityChecker
     public function canSee(DiagnosticInterface $diagnostic)
     : bool {
         // ADMIN has full access — short-circuit before any DB hit.
-        if ($this->session->isAdmin()) {
+        if ($this->identity->isLoggedIn() && $this->identity->roleName() === self::ADMIN_ROLE) {
             return true;
         }
 
@@ -56,8 +58,9 @@ final class DiagnosticVisibilityChecker
             return false; // default deny
         }
 
-        $groupName = $this->session->isLoggedIn() ?
-            $this->session->userType()->name : UserGroup::GUEST->name;
+        $groupName = $this->identity->isLoggedIn()
+            ? $this->identity->roleName()
+            : Identity::GUEST_ROLE;
 
         return in_array($groupName, $groups, true);
     }

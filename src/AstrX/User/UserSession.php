@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\User;
 
+use AstrX\Auth\Identity;
+
 /**
  * Typed wrapper around the user portion of $_SESSION.
  *
@@ -17,7 +19,7 @@ namespace AstrX\User;
  * isLoggedIn() before calling e.g. userId() — they just won't get useful
  * values back and must handle the "not logged in" case separately.
  */
-final class UserSession
+final class UserSession implements Identity
 {
     private const KEY        = 'user';
     private const LOGGED_IN  = 'logged_in';
@@ -60,6 +62,15 @@ final class UserSession
         $t = $this->sessionData()['type'] ?? UserGroup::GUEST->value;
         $raw = is_int($t) ? $t : (is_numeric($t) ? (int)$t : UserGroup::GUEST->value);
         return UserGroup::tryFrom($raw) ?? UserGroup::GUEST;
+    }
+
+    /**
+     * Identity contract: the stored group's name, NOT gated on isLoggedIn()
+     * (Gate applies the logged-out ⇒ GUEST rule itself; see Identity).
+     */
+    public function roleName(): string
+    {
+        return $this->userType()->name;
     }
 
     public function isVerified(): bool

@@ -15,7 +15,7 @@ use AstrX\Result\Result;
 use AstrX\Retention\RetentionService;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Data-retention / ephemerality console (/admin-retention).

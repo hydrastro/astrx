@@ -11,7 +11,13 @@ use AstrX\Injector\Injector;
  *
  * Each optional module ships a `module.php` manifest in its namespace directory
  * (src/AstrX/<Module>/module.php) declaring its key, display name, an optional
- * nav contributor + disabled-defaults, page guards, and a teardown file. This
+ * nav contributor + disabled-defaults, page guards, resource policies
+ * (resource class => policy class), and a teardown file.
+ *
+ * This class is generic infrastructure: it hands out the CLASS NAMES / instances
+ * a manifest declares and never imports the interfaces they implement (page
+ * guards belong to the CMS, policies to the security layer). The consumer that
+ * knows the interface checks it. This
  * registry DISCOVERS those manifests, so adding a module is "drop a manifest and
  * a config flag" — core (ContentManager / DefaultTemplateContext / NavbarHandler)
  * still names no module, and this class no longer hardcodes the module list.
@@ -20,7 +26,7 @@ use AstrX\Injector\Injector;
  * one bool per key, default ON so existing installs are unaffected). A DISABLED
  * module is never instantiated — its manifest's `nav_defaults` are merged instead.
  *
- * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,teardown:?string}
+ * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,teardown:?string}
  */
 final class ModuleRegistry
 {
@@ -115,23 +121,47 @@ final class ModuleRegistry
     }
 
     /**
-     * Page guards: the core module guard (hides any page whose module is off, via
-     * page.module) first, then the guards ENABLED modules contribute.
+     * Instances of the `guards` declared by ENABLED modules, built through the
+     * injector. The caller (the CMS page pipeline) filters them by its own guard
+     * interface and prepends its module-ownership guard; see
+     * \AstrX\Page\ModulePageGuard.
      *
-     * @return list<PageGuard>
+     * @return list<object>
      */
-    public function pageGuards(): array
+    public function enabledGuards(): array
     {
-        $out = [new ModulePageGuard($this)];
+        $out = [];
         foreach ($this->manifests() as $m) {
             if (!$this->enabled($m['key'])) {
                 continue;
             }
             foreach ($m['guards'] as $class) {
                 $guard = $this->build($class);
-                if ($guard instanceof PageGuard) {
+                if ($guard !== null) {
                     $out[] = $guard;
                 }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Resource policies declared by ENABLED modules: resource class => policy
+     * class. Registering them with the Gate is the composition root's job, so
+     * a disabled module's policy is never registered (and Gate denies any
+     * resource-scoped check for a resource nobody rules on).
+     *
+     * @return array<string,string>
+     */
+    public function enabledPolicies(): array
+    {
+        $out = [];
+        foreach ($this->manifests() as $m) {
+            if (!$this->enabled($m['key'])) {
+                continue;
+            }
+            foreach ($m['policies'] as $resource => $policy) {
+                $out[$resource] = $policy;
             }
         }
         return $out;
@@ -198,6 +228,15 @@ final class ModuleRegistry
             }
         }
 
+        $policies = [];
+        if (isset($raw['policies']) && is_array($raw['policies'])) {
+            foreach ($raw['policies'] as $resource => $policy) {
+                if (is_string($resource) && $resource !== '' && is_string($policy) && $policy !== '') {
+                    $policies[$resource] = $policy;
+                }
+            }
+        }
+
         /** @var array<string,mixed> $navDefaults */
         return [
             'key'          => $raw['key'],
@@ -206,6 +245,7 @@ final class ModuleRegistry
             'nav'          => $nav,
             'nav_defaults' => $navDefaults,
             'guards'       => $guards,
+            'policies'     => $policies,
             'teardown'     => $teardown,
         ];
     }

@@ -4,12 +4,14 @@ declare(strict_types=1);
 namespace AstrX;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\GateBootstrapper;
+use AstrX\Auth\Identity;
 use AstrX\Config\Config;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
+use AstrX\Module\ModuleRegistry;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\User\UserSession;
 use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\ErrorHandler\ErrorHandler;
 use AstrX\ContentManager;
@@ -92,20 +94,27 @@ final class Prelude
         $injector->setClass($this);
 
         // Bootstrap PBAC Gate — register all policies once at startup.
-        // The Gate itself is auto-wired by the Injector when first requested.
-        // We create it explicitly here so policies are registered before any
-        // controller runs. Failure is non-fatal (Gate falls back to deny-all).
+        // The security layer depends on the Identity contract, not on the
+        // accounts layer: bind the account session as the request's Identity
+        // before anything asks for Gate (or DiagnosticVisibilityChecker).
+        // Failure is non-fatal (Gate falls back to deny-all).
+        $sessionResult = $injector->createClass(UserSession::class)->drainTo($collector);
+        if ($sessionResult->isOk()) {
+            $injector->bind(Identity::class, UserSession::class);
+        }
         $gateResult = $injector->createClass(Gate::class)->drainTo($collector);
         if ($gateResult->isOk()) {
             $gate = $gateResult->unwrap();
             assert($gate instanceof Gate);
-            $bootstrapResult = $injector->createClass(GateBootstrapper::class)
-                ->drainTo($collector);
-            if ($bootstrapResult->isOk()) {
-                /** @var \AstrX\Auth\GateBootstrapper $bootstrapper */
-                $bootstrapper = $bootstrapResult->unwrap();
-                $bootstrapper->registerAll($gate);
+            $modulePolicies = [];
+            $registryResult = $injector->getClass(ModuleRegistry::class)->drainTo($collector);
+            if ($registryResult->isOk()) {
+                $registry = $registryResult->unwrap();
+                if ($registry instanceof ModuleRegistry) {
+                    $modulePolicies = $registry->enabledPolicies();
+                }
             }
+            ApplicationPolicies::register($gate, $modulePolicies);
             $injector->setClass($gate);
         }
 

@@ -52,7 +52,7 @@ namespace {
     use AstrX\Module\ModuleLoader;
     use AstrX\Result\DiagnosticInterface;
     use AstrX\Result\DiagnosticLevel;
-    use AstrX\Result\DiagnosticRenderer;
+    use AstrX\I18n\DiagnosticRenderer;
     use AstrX\Result\DiagnosticsCollector;
     use AstrX\Result\Result;
     use AstrX\User\UserSession;

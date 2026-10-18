@@ -16,13 +16,13 @@ use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
 use AstrX\Result\DiagnosticLevel;
-use AstrX\Result\DiagnosticRenderer;
+use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Admin — Access configuration editor.

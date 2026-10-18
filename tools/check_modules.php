@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 
+use AstrX\Auth\PolicyInterface;
 use AstrX\Module\NavContributor;
-use AstrX\Module\PageGuard;
+use AstrX\Page\PageGuard;
 
 /**
  * AstrX module integrity check — `php tools/check_modules.php`
@@ -12,6 +13,8 @@ use AstrX\Module\PageGuard;
  *   - it loads and returns an array with a non-empty `key` (unique) + `version`;
  *   - its `nav` (if any) is a class that implements NavContributor;
  *   - every `guards` entry is a class that implements PageGuard;
+ *   - every `policies` entry maps an existing resource class/interface to a
+ *     class that implements PolicyInterface;
  *   - its `teardown` (if named) exists under src/setup/modules/;
  *   - its key is listed in resources/config/Modules.config.php (warning only —
  *     unlisted modules default ON).
@@ -123,6 +126,25 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
                 $errors[] = "{$key}: guard " . (is_string($g) ? "'{$g}'" : gettype($g)) . ' not found';
             } elseif (!is_subclass_of($g, PageGuard::class)) {
                 $errors[] = "{$key}: guard '{$g}' does not implement " . PageGuard::class;
+            }
+        }
+    }
+
+    // policies: resource class => policy class
+    if (isset($raw['policies'])) {
+        if (!is_array($raw['policies'])) {
+            $errors[] = "{$key}: 'policies' must be an array of resource class => policy class";
+        } else {
+            /** @var mixed $policy */
+            foreach ($raw['policies'] as $resource => $policy) {
+                if (!is_string($resource) || !(class_exists($resource) || interface_exists($resource))) {
+                    $errors[] = "{$key}: policy resource " . (is_string($resource) ? "'{$resource}'" : gettype($resource)) . ' not found';
+                }
+                if (!is_string($policy) || !class_exists($policy)) {
+                    $errors[] = "{$key}: policy " . (is_string($policy) ? "'{$policy}'" : gettype($policy)) . ' not found';
+                } elseif (!is_subclass_of($policy, PolicyInterface::class)) {
+                    $errors[] = "{$key}: policy '{$policy}' does not implement " . PolicyInterface::class;
+                }
             }
         }
     }

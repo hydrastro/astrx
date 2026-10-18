@@ -1,14 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Auth\Policy;
+namespace AstrX\User;
 
+use AstrX\Auth\Identity;
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Auth\PolicyVerdict;
-use AstrX\User\UserGroup;
-use AstrX\User\UserResource;
-use AstrX\User\UserSession;
 
 /**
  * Resource-level policy for USER accounts.
@@ -40,7 +38,7 @@ final class UserPolicy implements PolicyInterface
         ];
     }
 
-    public function evaluate(Permission $permission, UserSession $session, object $resource): PolicyVerdict
+    public function evaluate(Permission $permission, Identity $identity, object $resource): PolicyVerdict
     {
         // Registered for UserResource only. A different object here means a
         // caller passed the wrong resource type for a user.* permission (the
@@ -49,14 +47,14 @@ final class UserPolicy implements PolicyInterface
             return PolicyVerdict::Deny;
         }
 
-        $isSelf = $session->isLoggedIn()
+        $isSelf = $identity->isLoggedIn()
             && $resource->id !== ''
-            && $resource->id === strtolower($session->userId());
+            && $resource->id === strtolower($identity->userId());
 
         // Compare by PRIVILEGE RANK, never the raw enum value: UserGroup's
         // integers are not privilege-ordered (USER=0, ADMIN=1, MOD=2, GUEST=3),
         // so a numeric comparison would rank a MOD (2) above an ADMIN (1).
-        $targetOutranksActor = $resource->type->rank() >= $session->userType()->rank();
+        $targetOutranksActor = $resource->type->rank() >= UserGroup::ofIdentity($identity)->rank();
 
         return match ($permission) {
             Permission::USER_EDIT_OWN,
@@ -71,7 +69,7 @@ final class UserPolicy implements PolicyInterface
                 // refuse a target ranking at or above the actor, so a MOD cannot
                 // reach an ADMIN — nor a peer MOD, whose account is an equally
                 // good stepping stone to one.
-                ($session->userType() === UserGroup::ADMIN || $isSelf || !$targetOutranksActor)
+                (UserGroup::ofIdentity($identity) === UserGroup::ADMIN || $isSelf || !$targetOutranksActor)
                     ? PolicyVerdict::Abstain
                     : PolicyVerdict::Deny,
 

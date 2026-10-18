@@ -1,13 +1,13 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Auth\Policy;
+namespace AstrX\Comment;
 
+use AstrX\Auth\Identity;
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Auth\PolicyVerdict;
 use AstrX\User\UserGroup;
-use AstrX\User\UserSession;
 
 /**
  * Resource-level policy for Comment objects.
@@ -41,7 +41,7 @@ final class CommentPolicy implements PolicyInterface
         ];
     }
 
-    public function evaluate(Permission $permission, UserSession $session, object $resource): PolicyVerdict
+    public function evaluate(Permission $permission, Identity $identity, object $resource): PolicyVerdict
     {
         $userIdRaw = $resource->user_id ?? null;
         $userId    = is_scalar($userIdRaw) ? (string) $userIdRaw : '';
@@ -55,7 +55,7 @@ final class CommentPolicy implements PolicyInterface
                 : (is_numeric($authorTypeRaw) ? (int) $authorTypeRaw : UserGroup::GUEST->value)
         ) ?? UserGroup::GUEST;
 
-        $isSelf = $session->isLoggedIn() && $userId !== '' && $userId === $session->userId();
+        $isSelf = $identity->isLoggedIn() && $userId !== '' && $userId === $identity->userId();
 
         return match ($permission) {
             // Owners can act on their own comments
@@ -65,7 +65,7 @@ final class CommentPolicy implements PolicyInterface
             // Mods cannot moderate admin comments
             Permission::COMMENT_HIDE_ANY,
             Permission::COMMENT_DELETE_ANY => ($authorGroup === UserGroup::ADMIN
-                && $session->userType() !== UserGroup::ADMIN)
+                && UserGroup::ofIdentity($identity) !== UserGroup::ADMIN)
                 ? PolicyVerdict::Deny
                 : PolicyVerdict::Abstain,
 

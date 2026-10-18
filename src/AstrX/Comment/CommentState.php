@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace AstrX\Template;
+namespace AstrX\Comment;
 
 /**
  * Immutable snapshot of the comment pagination state.

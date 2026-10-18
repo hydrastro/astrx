@@ -1,16 +1,16 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Api;
+namespace AstrX\Site;
 
 use AstrX\Auth\DiagnosticVisibilityChecker;
 use AstrX\Http\Request;
 use AstrX\Result\DiagnosticContextInterface;
 use AstrX\Result\DiagnosticInterface;
 use AstrX\Result\DiagnosticLevel;
-use AstrX\Result\DiagnosticRenderer;
+use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Render the controller's output as a JSON envelope for API consumers.

@@ -29,7 +29,7 @@ use AstrX\User\UserSession;
  * guest-posting toggle, word censor, mute, and flood (with auto-mute). Messages
  * are rendered through BbcodeRenderer honouring the BBCode/link-conversion
  * config toggles. Deletion is authorised via the Gate + ChatPolicy (registered
- * at boot by GateBootstrapper). All settings come from the injected ChatConfig.
+ * at boot from the chat module manifest's `policies`). All settings come from the injected ChatConfig.
  */
 final class ChatService
 {

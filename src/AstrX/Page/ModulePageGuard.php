@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Module;
+namespace AstrX\Page;
 
-use AstrX\Page\Page;
+use AstrX\Module\ModuleRegistry;
 
 /**
  * Core guard: hide a page whose owning module is disabled.

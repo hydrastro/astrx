@@ -21,8 +21,8 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Support\RequiresPermission;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Auth\RequiresPermission;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
 
 /**

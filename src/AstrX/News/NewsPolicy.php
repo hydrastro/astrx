@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Auth\Policy;
+namespace AstrX\News;
 
+use AstrX\Auth\Identity;
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Auth\PolicyVerdict;
-use AstrX\User\UserSession;
 
 /**
  * Resource-level policy for News items.
@@ -26,7 +26,7 @@ final class NewsPolicy implements PolicyInterface
         return [];
     }
 
-    public function evaluate(Permission $permission, UserSession $session, object $resource): PolicyVerdict
+    public function evaluate(Permission $permission, Identity $identity, object $resource): PolicyVerdict
     {
         // Unreachable: Gate only calls evaluate() for permissions in governs(),
         // which is empty. Throwing here means "somebody added a permission to

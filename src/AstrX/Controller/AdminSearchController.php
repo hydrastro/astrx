@@ -17,7 +17,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Search\SearchIndexer;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use function AstrX\Support\indexDir;
 
 /**

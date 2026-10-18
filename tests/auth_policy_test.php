@@ -38,12 +38,12 @@ namespace AstrX\Config {
 namespace {
 
     use AstrX\Auth\Gate;
-    use AstrX\Auth\GateBootstrapper;
+    use AstrX\ApplicationPolicies;
     use AstrX\Auth\Permission;
-    use AstrX\Auth\Policy\ChatPolicy;
-    use AstrX\Auth\Policy\CommentPolicy;
-    use AstrX\Auth\Policy\NewsPolicy;
-    use AstrX\Auth\Policy\UserPolicy;
+    use AstrX\Chat\ChatPolicy;
+    use AstrX\Comment\CommentPolicy;
+    use AstrX\News\NewsPolicy;
+    use AstrX\User\UserPolicy;
     use AstrX\Auth\PolicyInterface;
     use AstrX\Auth\PolicyVerdict;
     use AstrX\User\UserGroup;
@@ -88,7 +88,13 @@ namespace {
             'USER'  => ['user.edit.own', 'user.delete.own'],
             'GUEST' => ['news.view'],
         ]);
-        (new GateBootstrapper())->registerAll($gate);
+        // Same wiring as Prelude: core policies + what an ENABLED module's
+        // manifest declares (chat's ChatPolicy comes from its module.php).
+        $chatManifest = require dirname(__DIR__) . '/src/AstrX/Chat/module.php';
+        assert(is_array($chatManifest) && is_array($chatManifest['policies']));
+        /** @var array<string,string> $chatPolicies */
+        $chatPolicies = $chatManifest['policies'];
+        ApplicationPolicies::register($gate, $chatPolicies);
 
         return $gate;
     }

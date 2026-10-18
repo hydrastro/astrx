@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Template;
+namespace AstrX\Site;
 
 use AstrX\Api\ContextScope;
 use AstrX\Theme\ThemeService;
@@ -16,13 +16,13 @@ use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Page\Page;
 use AstrX\Pagination\Pagination;
-use AstrX\Template\SubPageState;
-use AstrX\Template\CommentState;
+use AstrX\Comment\CommentState;
 use AstrX\Auth\DiagnosticVisibilityChecker;
-use AstrX\Result\DiagnosticRenderer;
+use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Module\ModuleRegistry;
+use AstrX\Template\TemplateVars;
 use function AstrX\Support\templateDir;
 
 /**
@@ -47,7 +47,7 @@ use function AstrX\Support\templateDir;
  *   lang/{locale}/DefaultTemplateContext.{locale}.php
  *   lang/{locale}/{ControllerName}.{locale}.php
  */
-final class DefaultTemplateContext
+final class DefaultTemplateContext implements TemplateVars
 {
     /** @var array<string, mixed> */
     private array $vars = [];

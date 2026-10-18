@@ -1,10 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Result;
+namespace AstrX\I18n;
 
-use AstrX\Auth\DiagnosticVisibilityChecker;
-use AstrX\I18n\Translator;
+use AstrX\Result\DiagnosticFilter;
+use AstrX\Result\DiagnosticInterface;
+use AstrX\Result\DiagnosticLevel;
+use AstrX\Result\Diagnostics;
 
 /**
  * Renders a DiagnosticInterface into a human-readable, locale-aware string.
@@ -168,7 +170,7 @@ final class DiagnosticRenderer
     public function renderFiltered(
         Diagnostics                   $diagnostics,
         DiagnosticLevel               $minLevel,
-        ?DiagnosticVisibilityChecker  $checker = null,
+        ?DiagnosticFilter             $checker = null,
     ): array {
         $out = [];
         foreach ($diagnostics as $d) {
