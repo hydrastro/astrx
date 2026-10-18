@@ -2,11 +2,12 @@
 
 declare(strict_types = 1);
 
-namespace AstrX\Auth;
+namespace AstrX\Admin;
 
 use AstrX\Result\DiagnosticFilter;
 use AstrX\Result\DiagnosticInterface;
 use AstrX\Result\DiagnosticLevel;
+use AstrX\Auth\Identity;
 
 /**
  * Decides whether the current user may see a given diagnostic.

@@ -9,7 +9,7 @@ namespace AstrX\Result;
  * Rendering (I18n\DiagnosticRenderer) takes this contract instead of a concrete
  * checker, so the diagnostics layer never imports the security or accounts
  * layers. The application supplies the implementation
- * (Auth\DiagnosticVisibilityChecker, backed by the admin-editable tables).
+ * (Admin\DiagnosticVisibilityChecker, backed by the admin-editable tables).
  */
 interface DiagnosticFilter
 {

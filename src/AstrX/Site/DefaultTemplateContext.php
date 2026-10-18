@@ -17,7 +17,7 @@ use AstrX\I18n\Translator;
 use AstrX\Page\Page;
 use AstrX\Pagination\Pagination;
 use AstrX\Comment\CommentState;
-use AstrX\Auth\DiagnosticVisibilityChecker;
+use AstrX\Admin\DiagnosticVisibilityChecker;
 use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
