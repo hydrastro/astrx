@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace AstrX\Auth;
 
-use AstrX\User\UserSession;
-
 /**
  * Optional resource-level policy interface.
  *
@@ -35,12 +33,12 @@ interface PolicyInterface
 
     /**
      * @param Permission  $permission  The permission being checked; always one of governs().
-     * @param UserSession $session     The current user
+     * @param Identity    $identity    The caller
      * @param object      $resource    The resource being acted on
      */
     public function evaluate(
         Permission  $permission,
-        UserSession $session,
+        Identity    $identity,
         object      $resource,
     ): PolicyVerdict;
 }

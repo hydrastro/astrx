@@ -7,7 +7,7 @@ use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
 use AstrX\Routing\UrlGenerator;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Template\TemplateVars;
 
 /**
  * Populates the chat toolbar context — a small chat-scoped nav bar
@@ -28,7 +28,7 @@ final class ChatNav
     ) {}
 
     /** @param string $active which toolbar item is current: 'chat' | 'profile' | 'help' */
-    public function apply(DefaultTemplateContext $ctx, string $active): void
+    public function apply(TemplateVars $ctx, string $active): void
     {
         $settingsUrl = $this->urlGen->toPage($this->t->t('WORDING_CHAT_SETTINGS'));
         $helpUrl     = $this->urlGen->toPage($this->t->t('WORDING_CHAT_HELP'));

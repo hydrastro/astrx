@@ -4,8 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Auth;
 
 use AstrX\Config\InjectConfig;
-use AstrX\User\UserGroup;
-use AstrX\User\UserSession;
 
 /**
  * Permission gate — the single entry point for all access checks.
@@ -18,7 +16,7 @@ use AstrX\User\UserSession;
  *   if (!$this->gate->can(Permission::COMMENT_DELETE_OWN, $commentResource)) { ... }
  *
  * How it works:
- *   1. Resolve the current user's role (UserGroup) from UserSession.
+ *   1. Resolve the caller's role name from the Identity (GUEST when logged out).
  *   2. Look up the permission in the role→permission map (from config).
  *   3. If the permission is granted at role level AND a resource was supplied,
  *      a Policy registered for that resource's class rules on it.
@@ -49,7 +47,7 @@ final class Gate
     private array $policies = [];
 
     public function __construct(
-        private readonly UserSession $session,
+        private readonly Identity $identity,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -126,7 +124,7 @@ final class Gate
             return false;
         }
 
-        return match ($policy->evaluate($permission, $this->session, $resource)) {
+        return match ($policy->evaluate($permission, $this->identity, $resource)) {
             PolicyVerdict::Allow   => true,
             PolicyVerdict::Deny    => false,
             // Deliberate abstention: the policy had a rule and it did not fire,
@@ -149,11 +147,9 @@ final class Gate
 
     private function roleAllows(Permission $permission): bool
     {
-        if (!$this->session->isLoggedIn()) {
-            $roleName = UserGroup::GUEST->name;
-        } else {
-            $roleName = $this->session->userType()->name;
-        }
+        $roleName = $this->identity->isLoggedIn()
+            ? $this->identity->roleName()
+            : Identity::GUEST_ROLE;
 
         $patterns = $this->grants[$roleName] ?? [];
         $value    = $permission->value;

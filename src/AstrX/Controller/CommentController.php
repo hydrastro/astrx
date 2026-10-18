@@ -20,9 +20,9 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Config\Config;
 use AstrX\Session\CommentPrgHandler;
 use AstrX\Session\FlashBag;
-use AstrX\Template\CommentState;
+use AstrX\Comment\CommentState;
 use AstrX\Api\ContextScope;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\UserSession;
 

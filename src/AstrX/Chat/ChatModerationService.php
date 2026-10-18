@@ -233,7 +233,7 @@ final class ChatModerationService
     /**
      * Rank guard — refuse when the TARGET's chat rank is >= the ACTOR's own,
      * unless the actor is an ADMIN. The CHAT_MODERATE analogue of the
-     * CHAT_DELETE_ANY rule in {@see \AstrX\Auth\Policy\ChatPolicy}: it stops a MOD
+     * CHAT_DELETE_ANY rule in {@see \AstrX\Chat\ChatPolicy}: it stops a MOD
      * kicking/muting/banning/purging a peer MOD or an ADMIN. The target's rank
      * comes from the presence row's `role` (the UserGroup value stored at join,
      * resolved exactly as ChatPolicy resolves its author type); the actor's from

@@ -7,7 +7,7 @@ use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Off-site exit interstitial (/exit?to=<url>).

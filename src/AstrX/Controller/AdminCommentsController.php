@@ -6,7 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
-use AstrX\Auth\Policy\CommentPolicy;
+use AstrX\Comment\CommentPolicy;
 use AstrX\Comment\CommentRepository;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -21,7 +21,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 
 /**
  * Admin comments — moderation + comment service configuration on one page.

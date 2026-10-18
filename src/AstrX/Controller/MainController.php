@@ -14,8 +14,8 @@ use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Api\ContextScope;
-use AstrX\Template\DefaultTemplateContext;
-use AstrX\Template\SubPageState;
+use AstrX\Site\DefaultTemplateContext;
+use AstrX\Site\SubPageState;
 
 final class MainController extends AbstractController
 {

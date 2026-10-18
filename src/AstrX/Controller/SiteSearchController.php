@@ -11,7 +11,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Search\SiteSearchService;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use function AstrX\Support\langDir;
 
 /**

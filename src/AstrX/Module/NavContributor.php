@@ -7,7 +7,7 @@ namespace AstrX\Module;
  * A module's contribution to the site-wide template context: the navigation
  * partial slots it registers and any header/footer vars it sets (e.g. the
  * bot-trap honeypot link). Implemented by a small class inside each module and
- * wired in {@see ModuleRegistry}; {@see \AstrX\Template\DefaultTemplateContext}
+ * wired in {@see ModuleRegistry}; {@see \AstrX\Site\DefaultTemplateContext}
  * merges the vars from every ENABLED module and never names a module itself.
  *
  * Returned keys are ordinary template context vars. A partial slot is a var

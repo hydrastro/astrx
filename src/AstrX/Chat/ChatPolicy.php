@@ -1,13 +1,13 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Auth\Policy;
+namespace AstrX\Chat;
 
+use AstrX\Auth\Identity;
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Auth\PolicyVerdict;
 use AstrX\User\UserGroup;
-use AstrX\User\UserSession;
 
 /**
  * Resource-level policy for chat messages.
@@ -31,7 +31,7 @@ final class ChatPolicy implements PolicyInterface
         ];
     }
 
-    public function evaluate(Permission $permission, UserSession $session, object $resource): PolicyVerdict
+    public function evaluate(Permission $permission, Identity $identity, object $resource): PolicyVerdict
     {
         $authorTypeRaw = $resource->user_type ?? null;
         // A null/unknown author type is a GUEST message (rank 0) — NOT USER, whose
@@ -43,7 +43,7 @@ final class ChatPolicy implements PolicyInterface
         return match ($permission) {
             // Owners may delete their own messages.
             Permission::CHAT_DELETE_OWN =>
-                (isset($resource->user_id) && $resource->user_id === $session->userId())
+                (isset($resource->user_id) && $resource->user_id === $identity->userId())
                     ? PolicyVerdict::Allow
                     : PolicyVerdict::Deny,
 
@@ -51,8 +51,8 @@ final class ChatPolicy implements PolicyInterface
             // own, unless the actor is an admin. Guest messages carry a null
             // user_type (rank 0) and therefore stay moderatable.
             Permission::CHAT_DELETE_ANY =>
-                ($authorType->rank() >= $session->userType()->rank()
-                    && $session->userType() !== UserGroup::ADMIN)
+                ($authorType->rank() >= UserGroup::ofIdentity($identity)->rank()
+                    && UserGroup::ofIdentity($identity) !== UserGroup::ADMIN)
                     ? PolicyVerdict::Deny
                     : PolicyVerdict::Abstain,
 

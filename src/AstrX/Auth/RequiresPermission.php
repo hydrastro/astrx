@@ -1,9 +1,8 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Support;
+namespace AstrX\Auth;
 
-use AstrX\Auth\Permission;
 use Attribute;
 
 /**
@@ -28,9 +27,10 @@ use Attribute;
  * but not ADMIN_CONFIG_SYSTEM. It only states the coarse "may this visitor open
  * this page at all" gate that the page tree was supposed to express.
  *
- * Lives in Support rather than Auth because Support is loaded in every run mode
- * (bootstrap, tools/*, and the compiled single-file bundle) and carries no
- * dependency of its own beyond the Permission enum.
+ * Lives in Auth, next to the Permission enum it carries: the security layer owns
+ * permission declarations. (It used to sit in Support, which made the generic
+ * Support helpers depend on Auth. Every run mode — bootstrap, tools/*, the
+ * compiled bundle — autoloads Auth just the same.)
  */
 #[Attribute(Attribute::TARGET_CLASS)]
 final class RequiresPermission

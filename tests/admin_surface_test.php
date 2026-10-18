@@ -26,7 +26,7 @@ declare(strict_types=1);
 namespace AstrX\Controller {
     // A controller that is an admin surface WITHOUT an Admin* name: proves the
     // attribute is read on its own, not just inferred from the class name.
-    #[\AstrX\Support\RequiresPermission(\AstrX\Auth\Permission::ADMIN_ACCESS)]
+    #[\AstrX\Auth\RequiresPermission(\AstrX\Auth\Permission::ADMIN_ACCESS)]
     final class AstrxTestWidgetController {}
 }
 
@@ -36,7 +36,7 @@ namespace {
     use AstrX\ContentManager;
     use AstrX\Controller\JsController;
     use AstrX\Page\Page;
-    use AstrX\Template\DefaultTemplateContext;
+    use AstrX\Site\DefaultTemplateContext;
 
     $ROOT      = dirname(__DIR__);
     $CLASS_DIR = $ROOT . '/src/AstrX/';

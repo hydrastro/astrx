@@ -8,7 +8,7 @@ use AstrX\Chat\ChatNav;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use function AstrX\Support\langDir;
 
 /**

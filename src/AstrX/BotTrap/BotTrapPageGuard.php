@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\BotTrap;
 
-use AstrX\Module\PageGuard;
+use AstrX\Page\PageGuard;
 use AstrX\Page\Page;
 
 /**

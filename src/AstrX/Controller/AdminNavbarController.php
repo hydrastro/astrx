@@ -17,7 +17,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use PDO;
 use AstrX\Result\DiagnosticLevel;
 

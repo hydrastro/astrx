@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace AstrX\Template;
+namespace AstrX\Site;
 
 /**
  * Immutable snapshot of the primary controller's pagination state.

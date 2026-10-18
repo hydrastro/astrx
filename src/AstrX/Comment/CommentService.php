@@ -5,7 +5,6 @@ namespace AstrX\Comment;
 
 use AstrX\Auth\Gate;
 use AstrX\Auth\Permission;
-use AstrX\Auth\Policy\CommentPolicy;
 use AstrX\Comment\Diagnostic\CommentNotAllowedDiagnostic;
 use AstrX\Comment\Diagnostic\CommentEmptyContentDiagnostic;
 use AstrX\Comment\Diagnostic\CommentInvalidEmailDiagnostic;

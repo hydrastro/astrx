@@ -12,7 +12,7 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 

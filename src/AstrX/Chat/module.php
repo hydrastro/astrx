@@ -9,5 +9,7 @@ return [
     'nav'          => \AstrX\Chat\ChatNavContributor::class,
     'nav_defaults' => ['chat_nav' => false],
     'guards'       => [],
+    // Registered with the Gate only while chat is enabled.
+    'policies'     => [\AstrX\Chat\ChatMessageResource::class => \AstrX\Chat\ChatPolicy::class],
     'teardown'     => 'chat.down.sql',
 ];

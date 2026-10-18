@@ -12,7 +12,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Api\ContextScope;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\AvatarService;
 use AstrX\User\UserGroup;
 use AstrX\User\UserRepository;

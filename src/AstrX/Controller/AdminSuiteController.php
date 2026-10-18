@@ -15,7 +15,7 @@ use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\SuiteAdmin\SuiteAdminClient;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use function AstrX\Support\langDir;
 
 /**

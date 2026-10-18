@@ -19,7 +19,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
-use AstrX\Template\DefaultTemplateContext;
+use AstrX\Site\DefaultTemplateContext;
 use AstrX\User\UserGroup;
 use AstrX\User\DeletionMode;
 use AstrX\User\UserRepository;
