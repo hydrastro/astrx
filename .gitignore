@@ -2,6 +2,7 @@
 # Tooling / generated artifacts — kept locally, never committed
 # ─────────────────────────────────────────────────────────────
 /phpstan.phar
+/vendor/
 /build/
 /xdebug-profiles/
 /diff
