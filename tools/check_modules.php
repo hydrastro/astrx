@@ -26,6 +26,8 @@ use AstrX\Page\PageGuard;
  *   - every `controllers` entry maps a page file_name to an existing class that
  *     implements Kernel\Controller and lives in the module's own namespace;
  *   - its `teardown` (if named) exists under src/setup/modules/;
+ *   - its `resources` (if named) is a directory inside the module's own
+ *     directory (templates, catalogs, default config, SQL);
  *   - its key has a boolean flag in resources/config/Modules.config.php (an
  *     installed module without one is OFF, so a missing flag is an error).
  * A Module class present on disk but not installed is reported as a warning.
@@ -228,6 +230,17 @@ foreach (cm_installed() as $class) {
             $errors[] = "{$key}: teardown 'src/setup/modules/{$raw['teardown']}' not found";
         } else {
             $teardownLabel = $raw['teardown'];
+        }
+    }
+
+    // resources: a directory next to the module class
+    if (isset($raw['resources'])) {
+        $res = $raw['resources'];
+        $dir = dirname((string) (new ReflectionClass($class))->getFileName());
+        if (!is_string($res) || $res === '' || str_contains($res, '..') || str_starts_with($res, '/')) {
+            $errors[] = "{$key}: 'resources' must be a relative directory inside the module";
+        } elseif (!is_dir($dir . DIRECTORY_SEPARATOR . $res)) {
+            $errors[] = "{$key}: resources directory '{$res}' not found next to " . basename((string) (new ReflectionClass($class))->getFileName());
         }
     }
 

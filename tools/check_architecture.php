@@ -252,6 +252,10 @@ foreach ($it as $file) {
         continue;
     }
     $path = $file->getPathname();
+    // A module's resources/ (catalogs, default config) is data, not code.
+    if (str_contains($path, DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR)) {
+        continue;
+    }
     $rel  = substr($path, strlen($root) + 1);
     $code = file_get_contents($path);
     if ($code === false) {

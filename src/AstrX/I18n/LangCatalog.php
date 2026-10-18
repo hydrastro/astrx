@@ -7,6 +7,7 @@ use AstrX\I18n\Diagnostic\LangWriteDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\Support\ResourceRoots;
 
 use function AstrX\Support\langDir;
 
@@ -32,6 +33,14 @@ use function AstrX\Support\langDir;
  * rename() into place (atomic on POSIX), opcache_invalidate(). Values are
  * single-quoted PHP strings with addcslashes() escaping.
  *
+ * MODULE CATALOGS: installed modules ship their own lang/ directories (see
+ * ResourceRoots). The editor shows each domain merged the way the Translator
+ * loads it — module files first, the site's on top — and always WRITES to the
+ * site's directory: a module's files are read-only (under vendor/ once modules
+ * are packages). For a domain a module ships, only the keys whose text differs
+ * from the module's are written, so the site file holds just the overrides and
+ * keys the module adds later still show up.
+ *
  * SAFETY: a domain whose catalog holds a non-string value (a callable entry,
  * which the Translator also accepts) is reported non-editable — a closure
  * cannot be re-serialised to source, so saving would silently drop it. Such a
@@ -40,6 +49,13 @@ use function AstrX\Support\langDir;
  */
 final class LangCatalog
 {
+    private readonly ResourceRoots $roots;
+
+    public function __construct(?ResourceRoots $roots = null)
+    {
+        $this->roots = $roots ?? new ResourceRoots();
+    }
+
     private const string PRIMARY = 'en';
 
     /** Domain basenames: letters, digits, underscore; letter-initial. */
@@ -92,14 +108,16 @@ final class LangCatalog
      */
     public function domains(): array
     {
-        $dir = $this->localeDir(self::PRIMARY);
         $out = [];
-        foreach (glob($dir . '*.' . self::PRIMARY . '.php') ?: [] as $file) {
-            $base = basename($file, '.' . self::PRIMARY . '.php');
-            if ($base !== '' && preg_match(self::DOMAIN_RE, $base) === 1) {
-                $out[] = $base;
+        foreach ([...$this->moduleLocaleDirs(self::PRIMARY), $this->localeDir(self::PRIMARY)] as $dir) {
+            foreach (glob($dir . '*.' . self::PRIMARY . '.php') ?: [] as $file) {
+                $base = basename($file, '.' . self::PRIMARY . '.php');
+                if ($base !== '' && preg_match(self::DOMAIN_RE, $base) === 1) {
+                    $out[$base] = true;
+                }
             }
         }
+        $out = array_keys($out);
         sort($out);
         return $out;
     }
@@ -119,7 +137,7 @@ final class LangCatalog
         $values   = [];
         $editable = true;
         foreach ($locales as $locale) {
-            $raw              = $this->readRaw($this->file($domain, $locale));
+            $raw              = $this->readMerged($domain, $locale);
             $values[$locale]  = $this->stringsOnly($raw);
             $editable         = $editable && $this->allStrings($raw);
         }
@@ -137,7 +155,7 @@ final class LangCatalog
     {
         $out = [];
         foreach ($this->domains() as $domain) {
-            $keys = array_keys($this->stringsOnly($this->readRaw($this->file($domain, self::PRIMARY))));
+            $keys = array_keys($this->stringsOnly($this->readMerged($domain, self::PRIMARY)));
             sort($keys);
             $out[$domain] = $keys;
         }
@@ -168,7 +186,7 @@ final class LangCatalog
         $order   = [];
         $seen    = [];
         foreach ($locales as $locale) {
-            $raw = $this->readRaw($this->file($domain, $locale));
+            $raw = $this->readMerged($domain, $locale);
             if (!$this->allStrings($raw)) {
                 return $this->fail(
                     'astrx.i18n/lang_not_editable',
@@ -190,6 +208,19 @@ final class LangCatalog
             $out    = [];
             foreach ($order as $key) {
                 $out[$key] = $posted[$key] ?? $cur[$key] ?? '';
+            }
+
+            // A module ships this domain: keep only what the site changes.
+            $module = $this->stringsOnly($this->readModules($domain, $locale));
+            if ($module !== []) {
+                $out = array_filter(
+                    $out,
+                    static fn(string $v, string $k): bool => !array_key_exists($k, $module) || $module[$k] !== $v,
+                    ARRAY_FILTER_USE_BOTH,
+                );
+                if ($out === [] && !is_file($this->file($domain, $locale))) {
+                    continue;
+                }
             }
             $w = $this->writeFile($domain, $locale, $out);
             if (!$w->isOk()) {
@@ -221,7 +252,20 @@ final class LangCatalog
             return $this->fail('astrx.i18n/lang_source_missing', "Source language '{$source}' does not exist.");
         }
 
-        return $this->cloneTree($this->localeDir($source), $this->localeDir($code), $source, $code);
+        $r = $this->cloneTree($this->localeDir($source), $this->localeDir($code), $source, $code);
+        if (!$r->isOk()) {
+            return $r;
+        }
+        // The new locale is the site's to translate, so the modules' catalogs
+        // are copied into the site's directory too (merged under any override
+        // the site already has for the source locale).
+        foreach ($this->moduleLocaleDirs($source) as $moduleDir) {
+            $r = $this->cloneTree($moduleDir, $this->localeDir($code), $source, $code, mergeUnder: true);
+            if (!$r->isOk()) {
+                return $r;
+            }
+        }
+        return Result::ok(true);
     }
 
     /**
@@ -276,8 +320,13 @@ final class LangCatalog
         return Result::ok(true);
     }
 
-    /** @return Result<bool> */
-    private function cloneTree(string $srcDir, string $dstDir, string $source, string $code): Result
+    /**
+     * @param bool $mergeUnder the destination may already hold a file of the
+     *        same name (the site's override): keep it on top of the copied
+     *        strings instead of skipping or replacing it
+     * @return Result<bool>
+     */
+    private function cloneTree(string $srcDir, string $dstDir, string $source, string $code, bool $mergeUnder = false): Result
     {
         if (!is_dir($dstDir) && !mkdir($dstDir, 0o775, true) && !is_dir($dstDir)) {
             return $this->fail('astrx.i18n/lang_mkdir_failed', "Could not create {$dstDir}.");
@@ -290,7 +339,7 @@ final class LangCatalog
             }
             $srcPath = $srcDir . $entry;
             if (is_dir($srcPath)) {
-                $r = $this->cloneTree($srcPath . DIRECTORY_SEPARATOR, $dstDir . $entry . DIRECTORY_SEPARATOR, $source, $code);
+                $r = $this->cloneTree($srcPath . DIRECTORY_SEPARATOR, $dstDir . $entry . DIRECTORY_SEPARATOR, $source, $code, $mergeUnder);
                 if (!$r->isOk()) {
                     return $r;
                 }
@@ -299,6 +348,20 @@ final class LangCatalog
             if (is_file($srcPath) && str_ends_with($entry, $suffix)) {
                 $base    = substr($entry, 0, -strlen($suffix));
                 $dstPath = $dstDir . $base . '.' . $code . '.php';
+                if ($mergeUnder && is_file($dstPath)) {
+                    $under = $this->readRaw($srcPath);
+                    $over  = $this->readRaw($dstPath);
+                    if ($this->allStrings($under) && $this->allStrings($over)) {
+                        $w = $this->writePath($dstPath, $base, $code, array_merge(
+                            $this->stringsOnly($under),
+                            $this->stringsOnly($over),
+                        ));
+                        if (!$w->isOk()) {
+                            return $w;
+                        }
+                    }
+                    continue;
+                }
                 if (!copy($srcPath, $dstPath)) {
                     return $this->fail('astrx.i18n/lang_copy_failed', "Could not copy {$srcPath}.");
                 }
@@ -313,7 +376,15 @@ final class LangCatalog
      */
     private function writeFile(string $domain, string $locale, array $values): Result
     {
-        $path = $this->file($domain, $locale);
+        return $this->writePath($this->file($domain, $locale), $domain, $locale, $values);
+    }
+
+    /**
+     * @param array<string,string> $values
+     * @return Result<bool>
+     */
+    private function writePath(string $path, string $domain, string $locale, array $values): Result
+    {
         $php  = $this->render($domain, $locale, $values);
         $tmp  = $path . '.tmp.' . bin2hex(random_bytes(4));
 
@@ -397,6 +468,48 @@ final class LangCatalog
     private function safeDomain(string $domain): bool
     {
         return preg_match(self::DOMAIN_RE, $domain) === 1;
+    }
+
+    /**
+     * The domain as the Translator sees it — the site's value wins over a
+     * module's for the same key — listed in the site file's order, followed by
+     * the keys only the modules have.
+     *
+     * @return array<mixed,mixed>
+     */
+    private function readMerged(string $domain, string $locale): array
+    {
+        return $this->readRaw($this->file($domain, $locale)) + $this->readModules($domain, $locale);
+    }
+
+    /**
+     * The domain from the modules' directories alone.
+     *
+     * @return array<mixed,mixed>
+     */
+    private function readModules(string $domain, string $locale): array
+    {
+        $out = [];
+        foreach ($this->moduleLocaleDirs($locale) as $dir) {
+            $out = array_merge($out, $this->readRaw($dir . $domain . '.' . $locale . '.php'));
+        }
+        return $out;
+    }
+
+    /**
+     * Each module's lang/<locale>/ directory that exists, lowest precedence first.
+     *
+     * @return list<string>
+     */
+    private function moduleLocaleDirs(string $locale): array
+    {
+        $out = [];
+        foreach ($this->roots->of(ResourceRoots::LANG) as $dir) {
+            if (is_dir($dir . $locale)) {
+                $out[] = $dir . $locale . DIRECTORY_SEPARATOR;
+            }
+        }
+        return $out;
     }
 
     private function localeDir(string $locale): string

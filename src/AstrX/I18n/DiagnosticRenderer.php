@@ -78,8 +78,21 @@ final class DiagnosticRenderer
      * Sources 1/2 and 3 are independent: if both a main file and split files
      * exist, all are loaded. Split files can add or override entries.
      * Later calls for the same key always overwrite earlier ones.
+     *
+     * The three sources are read from every installed module's lang/ directory
+     * first, then from $langDir.
      */
     public function loadDomain(string $langDir, string $domain): void
+    {
+        // Each installed module's lang/ first, the caller's (the site's) last,
+        // so the site overrides a module's entry for the same id.
+        foreach ($this->translator->moduleLangDirs() as $moduleDir) {
+            $this->loadDomainFrom($moduleDir, $domain);
+        }
+        $this->loadDomainFrom($langDir, $domain);
+    }
+
+    private function loadDomainFrom(string $langDir, string $domain): void
     {
         $locale = $this->translator->getLocale();
         $dir    = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR;

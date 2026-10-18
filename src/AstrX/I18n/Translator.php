@@ -8,6 +8,7 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\I18n\Diagnostic\InvalidLanguageArrayDiagnostic;
 use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
 use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
+use AstrX\Support\ResourceRoots;
 
 final class Translator
 {
@@ -37,10 +38,32 @@ final class Translator
 
     private ?DiagnosticSinkInterface $sink = null;
 
-    public function __construct(?DiagnosticSinkInterface $sink = null)
+    /** The installed modules' lang/ directories, lowest precedence first. */
+    private readonly ResourceRoots $roots;
+
+    /**
+     * @param ResourceRoots|null $roots the installed modules' resource
+     *        directories. A domain is loaded from each module's lang/ first and
+     *        from the directory the caller names last, so the site's own
+     *        catalog overrides a module's key by key.
+     */
+    public function __construct(?DiagnosticSinkInterface $sink = null, ?ResourceRoots $roots = null)
     {
         $this->locale = 'en';
         $this->sink   = $sink;
+        $this->roots  = $roots ?? new ResourceRoots();
+    }
+
+    /**
+     * The modules' lang/ directories, lowest precedence first. Anything that
+     * loads catalogs itself (DiagnosticRenderer, the language editor) reads
+     * them in this order, below the site's directory.
+     *
+     * @return list<string>
+     */
+    public function moduleLangDirs(): array
+    {
+        return $this->roots->of(ResourceRoots::LANG);
     }
 
     public function setDiagnosticSink(?DiagnosticSinkInterface $sink): void
@@ -60,6 +83,11 @@ final class Translator
 
     public function loadDomain(string $langDir, string $domain): void
     {
+        foreach ($this->moduleLangDirs() as $moduleDir) {
+            $this->loadFile($moduleDir . $this->locale . DIRECTORY_SEPARATOR
+                . $domain . '.' . $this->locale . '.php');
+        }
+
         $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR
                 . $domain . '.' . $this->locale . '.php';
