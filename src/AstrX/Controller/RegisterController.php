@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Controller;
 
 use AstrX\Captcha\CaptchaService;
-use AstrX\Mail\EmailService;
+use AstrX\User\EmailService;
 use AstrX\User\UserRepository;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;

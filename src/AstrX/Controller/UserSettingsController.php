@@ -6,7 +6,7 @@ namespace AstrX\Controller;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
-use AstrX\Mail\EmailService;
+use AstrX\User\EmailService;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;

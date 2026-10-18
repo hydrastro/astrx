@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Mail;
+namespace AstrX\Webmail;
 
-use AstrX\Mail\Diagnostic\TrustCheckFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustAddFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustRemoveFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustListFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustCheckFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustAddFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustRemoveFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustListFailedDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;

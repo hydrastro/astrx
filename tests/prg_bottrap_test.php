@@ -32,7 +32,7 @@ namespace {
 
     use AstrX\BotTrap\BotTrapConfig;
     use AstrX\Controller\BotTrapController;
-    use AstrX\Session\CommentPrgHandler;
+    use AstrX\Comment\CommentPrgHandler;
     use AstrX\Session\PrgHandler;
 
     $CLASS_DIR = dirname(__DIR__) . '/src/AstrX/';

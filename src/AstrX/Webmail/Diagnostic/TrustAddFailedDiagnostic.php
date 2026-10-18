@@ -1,13 +1,14 @@
 <?php
-declare(strict_types=1);
 
-namespace AstrX\Mail\Diagnostic;
+declare(strict_types = 1);
+
+namespace AstrX\Webmail\Diagnostic;
 
 use AstrX\Result\AbstractDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 
-/** PDO error while removing a trusted sender. detail = exception message. */
-final class TrustRemoveFailedDiagnostic extends AbstractDiagnostic
+/** PDO error while adding a trusted sender. detail = exception message. */
+final class TrustAddFailedDiagnostic extends AbstractDiagnostic
 {
     public function __construct(
         string $id,

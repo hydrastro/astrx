@@ -18,7 +18,7 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Config\Config;
-use AstrX\Session\CommentPrgHandler;
+use AstrX\Comment\CommentPrgHandler;
 use AstrX\Session\FlashBag;
 use AstrX\Comment\CommentState;
 use AstrX\Api\ContextScope;
