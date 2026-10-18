@@ -29,6 +29,9 @@ final class PrgIntake
     public const string ID_INVALID_PRG_ID = 'astrx.session/invalid_prg_id';
     public const DiagnosticLevel LVL_INVALID_PRG_ID = DiagnosticLevel::WARNING;
 
+    /** Basename prefix of the temp copies parked by redirect(). */
+    public const string TEMP_PREFIX = 'astrx_upload_';
+
     public function __construct(private readonly DiagnosticsCollector $collector) {}
 
     /** Is this a form POST that must go through the PRG redirect? */
@@ -95,7 +98,7 @@ final class PrgIntake
                 if (!$uploadedFile instanceof UploadedFile || $uploadedFile->hasError()) {
                     continue;
                 }
-                $tmpDest = sys_get_temp_dir() . '/astrx_upload_' . bin2hex(random_bytes(8));
+                $tmpDest = sys_get_temp_dir() . '/' . self::TEMP_PREFIX . bin2hex(random_bytes(8));
                 if (move_uploaded_file($uploadedFile->tempPath(), $tmpDest)) {
                     $fileMeta[(string) $fieldName] = [
                         'client_filename'   => $uploadedFile->clientFilename(),
@@ -124,42 +127,69 @@ final class PrgIntake
      * On the settling GET, put the files parked by redirect() back into the
      * request's FileBag (peeking at the payload, not consuming it) so
      * controllers read them through $request->files() as usual.
+     *
+     * The parked copies are this request's to clean up. A controller may move
+     * one into storage (UploadedFile::moveTo renames it), but most read and
+     * re-encode the bytes, which leaves the original in the temp dir. Once
+     * the payload has been consumed, AbstractPrgHandler's GC can no longer
+     * find it, so without this the user's original upload (EXIF and all)
+     * would stay in the temp dir indefinitely. At shutdown, any restored file
+     * that still exists is deleted, unless the payload is still pending (then
+     * the GC owns it, as for an abandoned redirect).
      */
     public function restoreUploads(Request $request, PrgHandler $prg): void
     {
-    // Restore uploaded files that were persisted through the PRG cycle.
-    // ContentManager stored them as __files__ in the PRG payload on POST.
-    // We peek at the payload here (without consuming it) and inject the
-    // reconstructed UploadedFile objects into the request FileBag so
-    // controllers can read them via $request->files() as normal.
-    $prgTokenForFiles = $request->query()->get($prg->tokenQueryKey());
-    if (is_string($prgTokenForFiles) && $prgTokenForFiles !== '') {
-        $peeked = $prg->get($prgTokenForFiles);
-        if (is_array($peeked) && isset($peeked['__files__'])) {
-            $filesRaw = $peeked['__files__'];
-            {
-                /** @var array<string,array<string,mixed>> $filesArr */
-                $filesArr = $filesRaw;
-                foreach ($filesArr as $fieldName => $rawMeta) {
-                    /** @var array<string,mixed> $meta */
-                    $meta = $rawMeta;
-                    if (!array_key_exists('temp_path', $meta)) { continue; }
-                    $tmpPathRaw = $meta['temp_path'] ?? '';
-                    if (!is_string($tmpPathRaw) || !file_exists($tmpPathRaw)) { continue; }
-                    $tmpPath   = $tmpPathRaw;
-                    $clientFnR = $meta['client_filename'] ?? '';
-                    $clientFn  = is_string($clientFnR) ? $clientFnR : '';
-                    $mediaTypeR = $meta['client_media_type'] ?? 'application/octet-stream';
-                    $mediaType = is_string($mediaTypeR) ? $mediaTypeR : 'application/octet-stream';
-                    $szR = $meta['size'] ?? 0;
-                    $sz  = is_int($szR) ? $szR : 0;
-                    $request->files()->set(
-                        (string)$fieldName,
-                        UploadedFile::fromTempPath($clientFn, $mediaType, $tmpPath, $sz),
-                    );
-                }
+        $token = $request->query()->get($prg->tokenQueryKey());
+        if (!is_string($token) || $token === '') {
+            return;
+        }
+        $peeked = $prg->get($token);
+        if (!is_array($peeked) || !is_array($peeked['__files__'] ?? null)) {
+            return;
+        }
+
+        $restored = [];
+        foreach ($peeked['__files__'] as $fieldName => $meta) {
+            if (!is_array($meta) || !array_key_exists('temp_path', $meta)) {
+                continue;
             }
+            $tmpPath = $meta['temp_path'] ?? '';
+            if (!is_string($tmpPath) || !file_exists($tmpPath)) {
+                continue;
+            }
+            $clientFn  = is_string($meta['client_filename'] ?? null) ? $meta['client_filename'] : '';
+            $mediaType = is_string($meta['client_media_type'] ?? null)
+                ? $meta['client_media_type'] : 'application/octet-stream';
+            $size      = is_int($meta['size'] ?? null) ? $meta['size'] : 0;
+            $request->files()->set(
+                (string) $fieldName,
+                UploadedFile::fromTempPath($clientFn, $mediaType, $tmpPath, $size),
+            );
+            $restored[] = $tmpPath;
+        }
+
+        if ($restored !== []) {
+            register_shutdown_function(static function () use ($prg, $token, $restored): void {
+                if ($prg->has($token)) {
+                    return; // not consumed this request: the PRG GC owns these files
+                }
+                self::deleteTemps($restored);
+            });
         }
     }
+
+    /**
+     * Delete parked upload copies. Only files this class created (basename
+     * prefix TEMP_PREFIX) are ever touched.
+     *
+     * @param list<string> $paths
+     */
+    public static function deleteTemps(array $paths): void
+    {
+        foreach ($paths as $path) {
+            if (str_starts_with(basename($path), self::TEMP_PREFIX) && is_file($path)) {
+                @unlink($path);
+            }
+        }
     }
 }

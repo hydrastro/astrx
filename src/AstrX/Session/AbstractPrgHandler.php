@@ -200,7 +200,7 @@ abstract class AbstractPrgHandler
      * (R3-27). A payload is stored on submit and consumed by pull() on the
      * settling GET; if the user abandons the redirect (or it fails validation
      * and is never pulled), the payload — and any upload files ContentManager
-     * moved into the system temp dir and recorded under __files__ — would linger
+     * moved into the system temp dir and recorded under __files__ (Site\PrgIntake) — would linger
      * forever. Prune payloads older than the PRG TTL, unlinking their temp files
      * first. A missing meta timestamp means a pre-fix (legacy) entry, also aged
      * out. Runs on store() and createId(), the frequent PRG entry points.
@@ -232,7 +232,7 @@ abstract class AbstractPrgHandler
 
     /**
      * Unlink upload temp files recorded in a PRG payload's __files__ block. Only
-     * paths whose basename carries ContentManager's 'astrx_upload_' prefix are
+     * paths whose basename carries Site\PrgIntake::TEMP_PREFIX ('astrx_upload_') are
      * touched, so the sweep can never remove anything it did not create.
      *
      * @param array<string,mixed> $payload
