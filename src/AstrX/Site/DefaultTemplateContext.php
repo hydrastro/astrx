@@ -7,7 +7,6 @@ use AstrX\Template\ContextScope;
 use AstrX\Theme\ThemeService;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
@@ -24,6 +23,7 @@ use AstrX\Result\DiagnosticLevel;
 use AstrX\Module\ModuleRegistry;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\templateDir;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Mutable template variable bag.
@@ -443,7 +443,7 @@ final class DefaultTemplateContext implements TemplateVars
         // ---- Admin nav --------------------------------------------------------
         // DB-driven: ContentManager pre-loads navbar id=3 entries into db_admin_nav.
         // The Gate check still controls visibility.
-        $isAdmin = $this->gate->can(Permission::ADMIN_ACCESS);
+        $isAdmin = $this->gate->can(AdminPermission::ACCESS);
         $this->vars['is_admin'] = $isAdmin;
 
         if ($isAdmin) {

@@ -402,7 +402,7 @@ SELECT @ts_nav_id, @ts_page_id WHERE @ts_page_id IS NOT NULL AND @ts_nav_id IS N
 ## `suiteadmin` — AstrX ADMIN status/control panel
 
 An AstrX **admin** page (file_name `admin_suite`, child of the admin root),
-gated with `Permission::ADMIN_ACCESS` — the same permission the admin section
+gated with `AdminPermission::ACCESS` — the same permission the admin section
 root (`AdminController`) uses. It probes all four engines and renders a status
 panel; a down backend degrades to a friendly **DOWN** row and can never 500 the
 page (`@`-suppressed transport, tolerant parse).
@@ -691,7 +691,7 @@ SELECT @fs_nav_id, @fs_page_id WHERE @fs_page_id IS NOT NULL AND @fs_nav_id IS N
 ## `blocklist` — AstrX ADMIN blocklist editor
 
 An AstrX **admin** page (file_name `admin_blocklist`, child of the admin root),
-gated with `Permission::ADMIN_ACCESS` — the same permission the admin section root
+gated with `AdminPermission::ACCESS` — the same permission the admin section root
 uses — and behind the same **CSRF-protected PRG** form the `admin_suite` page uses.
 It lets an admin add abuse-blocklist entries and pushes them over loopback HTTP to
 the two write-capable engines:

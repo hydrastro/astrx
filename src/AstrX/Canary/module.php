@@ -19,6 +19,8 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Canary\CanaryPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_canary' => \AstrX\Canary\Controller\AdminCanaryController::class,

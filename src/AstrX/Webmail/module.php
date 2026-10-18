@@ -18,6 +18,8 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Webmail\WebmailPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_config_webmail' => \AstrX\Webmail\Controller\AdminConfigWebmailController::class,

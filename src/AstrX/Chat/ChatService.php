@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatCensoredDiagnostic;
 use AstrX\Chat\Diagnostic\ChatEmptyDiagnostic;
 use AstrX\Chat\Diagnostic\ChatFilterBlockedDiagnostic;
@@ -134,7 +133,7 @@ final class ChatService
      */
     public function post(ChatIdentity $identity, string $content, ?string $packedIp, ?UploadedFile $attachment = null): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_POST)) {
+        if ($this->gate->cannot(ChatPermission::POST)) {
             return $this->opErr('gate_denied');
         }
         if (!$identity->isMember && !$this->config->guestPosting()) {
@@ -169,7 +168,7 @@ final class ChatService
         // cosmetic censor stars anything out — so a kick fires on what the poster
         // actually typed. Staff (CHAT_MODERATE) are exempt unless a filter opts
         // them in. Block rejects the post; kick also removes the poster.
-        $hit = $this->filters->match($content, $this->gate->can(Permission::CHAT_MODERATE));
+        $hit = $this->filters->match($content, $this->gate->can(ChatPermission::MODERATE));
         if ($hit !== null) {
             if ($this->int($hit, 'action', 0) === ChatFilterService::ACTION_KICK) {
                 // A filter kick removes the poster live AND enforces through the
@@ -309,7 +308,7 @@ final class ChatService
      */
     public function broadcast(string $byNick, string $message): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->opErr('gate_denied');
         }
         $message = trim($message);
@@ -369,7 +368,7 @@ final class ChatService
         /** @var array<string,mixed> $row */
         $resource   = $this->toResource($row);
         $isOwn      = $this->isOwn($resource);
-        $permission = $isOwn ? Permission::CHAT_DELETE_OWN : Permission::CHAT_DELETE_ANY;
+        $permission = $isOwn ? ChatPermission::DELETE_OWN : ChatPermission::DELETE_ANY;
 
         if ($this->gate->cannot($permission, $resource)) {
             return $this->opErr('gate_denied');
@@ -386,14 +385,14 @@ final class ChatService
     public function canDeleteMessage(array $row): bool
     {
         $resource   = $this->toResource($row);
-        $permission = $this->isOwn($resource) ? Permission::CHAT_DELETE_OWN : Permission::CHAT_DELETE_ANY;
+        $permission = $this->isOwn($resource) ? ChatPermission::DELETE_OWN : ChatPermission::DELETE_ANY;
         return $this->gate->can($permission, $resource);
     }
 
     /** @return Result<int> rows removed */
     public function cleanRoom(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->deleteRoomMessages($this->roomId());
@@ -407,7 +406,7 @@ final class ChatService
      */
     public function cleanByNick(string $nick): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->opErr('gate_denied');
         }
         $nick = trim($nick);
@@ -424,7 +423,7 @@ final class ChatService
      */
     public function setTopic(string $topic): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->opErr('gate_denied');
         }
         return $this->repo->setRoomTopic($this->roomId(), mb_substr(trim($topic), 0, 255));

@@ -5,7 +5,6 @@ namespace AstrX\Comment\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Comment\CommentPolicy;
 use AstrX\Comment\CommentRepository;
 use AstrX\Config\Config;
@@ -23,6 +22,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Comment\CommentPermission;
 
 /**
  * Admin comments — moderation + comment service configuration on one page.
@@ -65,8 +65,8 @@ final class AdminCommentsController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $canModerate = $this->gate->can(Permission::ADMIN_COMMENTS);
-        $canConfig   = $this->gate->can(Permission::ADMIN_CONFIG_COMMENTS);
+        $canModerate = $this->gate->can(CommentPermission::ADMIN);
+        $canConfig   = $this->gate->can(CommentPermission::ADMIN_CONFIG);
 
         if (!$canModerate && !$canConfig) {
             http_response_code(403);
@@ -148,8 +148,8 @@ final class AdminCommentsController extends AbstractController
             }
             $resource    = (object) $row;
             $checkPerm   = $action === 'delete'
-                ? Permission::COMMENT_DELETE_ANY
-                : Permission::COMMENT_HIDE_ANY;
+                ? CommentPermission::DELETE_ANY
+                : CommentPermission::HIDE_ANY;
             if ($this->gate->cannot($checkPerm, $resource)) {
                 $this->flash->set('error', $this->t->t('admin.comments.permission_denied'));
                 return;

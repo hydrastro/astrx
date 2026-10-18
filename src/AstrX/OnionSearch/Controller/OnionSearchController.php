@@ -5,7 +5,6 @@ namespace AstrX\OnionSearch\Controller;
 
 use AstrX\Template\ContextScope;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\OnionSearch\OnionSearchClient;
@@ -15,6 +14,7 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 /**
  * Onion search — a no-JavaScript GET form that bridges to the standalone,
@@ -53,7 +53,7 @@ final class OnionSearchController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'OnionSearch');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

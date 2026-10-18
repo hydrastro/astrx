@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
@@ -64,6 +63,6 @@ final class ChatNav
         $ctx->set('nav_show_rules',   !$this->config->hideRulesButton());
         $ctx->set('nav_show_help',    !$this->config->hideHelpButton());
         $ctx->set('nav_show_clone',   !$this->config->hideCloneButton());
-        $ctx->set('nav_show_admin',   !$this->config->hideAdminButton() && $this->gate->can(Permission::CHAT_MODERATE));
+        $ctx->set('nav_show_admin',   !$this->config->hideAdminButton() && $this->gate->can(ChatPermission::MODERATE));
     }
 }

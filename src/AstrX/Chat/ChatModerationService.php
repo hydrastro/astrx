@@ -5,7 +5,6 @@ namespace AstrX\Chat;
 
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
@@ -45,7 +44,7 @@ final class ChatModerationService
      */
     public function kick(string $ident, string $penaltyReason = ''): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $p    = $this->presenceRow($ident);
@@ -69,7 +68,7 @@ final class ChatModerationService
     /** @return Result<bool> */
     public function mute(string $ident, int $secs): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $p = $this->presenceRow($ident);
@@ -90,7 +89,7 @@ final class ChatModerationService
     /** @return Result<bool> */
     public function ban(string $ident, int $durationSecs, string $reason): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $p = $this->presenceRow($ident);
@@ -137,7 +136,7 @@ final class ChatModerationService
      */
     public function purge(string $ident): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $p = $this->presenceRow($ident);
@@ -168,7 +167,7 @@ final class ChatModerationService
      */
     public function approve(string $ident): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $p    = $this->presenceRow($ident);
@@ -188,7 +187,7 @@ final class ChatModerationService
      */
     public function deny(string $ident): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         return $this->presence->leave($ident);
@@ -201,7 +200,7 @@ final class ChatModerationService
      */
     public function logoutInactive(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         return $this->presence->logoutInactive();
@@ -215,7 +214,7 @@ final class ChatModerationService
      */
     public function kickAllGuests(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         return $this->presence->kickGuests();

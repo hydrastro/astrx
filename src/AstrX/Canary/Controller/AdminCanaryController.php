@@ -5,7 +5,6 @@ namespace AstrX\Canary\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -17,6 +16,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Canary\CanaryPermission;
 
 /**
  * Admin editor for the warrant canary (/admin-canary).
@@ -49,7 +49,7 @@ final class AdminCanaryController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CANARY)) {
+        if ($this->gate->cannot(CanaryPermission::ADMIN)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

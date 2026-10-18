@@ -5,7 +5,6 @@ namespace AstrX\Imageboard\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -21,6 +20,8 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Admin — Imageboard global configuration editor.
@@ -65,7 +66,7 @@ final class AdminConfigImageboardController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_IMAGEBOARD)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN_CONFIG)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -108,7 +109,7 @@ final class AdminConfigImageboardController extends AbstractController
         // MOD may hold. Without this re-check a mod could create/delete boards
         // (and cascade-destroy their threads/posts).
         if (in_array($action, ['board_create', 'board_update', 'board_delete'], true)
-            && $this->gate->cannot(Permission::BOARD_ADMIN)) {
+            && $this->gate->cannot(ImageboardPermission::ADMIN)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return;
         }
@@ -230,7 +231,7 @@ final class AdminConfigImageboardController extends AbstractController
         // are system-level. So a non-system actor's save PRESERVES the current
         // persisted values (mirrors the R9-02 site_url precedent); only an actor
         // with ADMIN_CONFIG_SYSTEM can change them.
-        $maySetAnonymity = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
+        $maySetAnonymity = $this->gate->can(AdminPermission::CONFIG_SYSTEM);
         $stripExif     = $maySetAnonymity ? self::mBool($p, 'strip_exif')      : $this->config->stripExif();
         $storePosterIp = $maySetAnonymity ? self::mBool($p, 'store_poster_ip') : $this->config->storePosterIp();
 

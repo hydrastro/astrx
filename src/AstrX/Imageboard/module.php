@@ -17,6 +17,8 @@ return [
     'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class,
     'nav_defaults' => ['board_nav' => false],
     'guards'       => [],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_boards' => \AstrX\Imageboard\Controller\AdminBoardsController::class,

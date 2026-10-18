@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Kernel\Controller;
 use AstrX\Module\NavContributor;
@@ -16,6 +17,8 @@ use AstrX\Page\PageGuard;
  *   - every `guards` entry is a class that implements PageGuard;
  *   - every `policies` entry maps an existing resource class/interface to a
  *     class that implements PolicyInterface;
+ *   - every `permissions` entry is a string-backed enum in the module's own
+ *     namespace that implements Auth\Permission;
  *   - every `controllers` entry maps a page file_name to an existing class that
  *     implements Kernel\Controller and lives in the module's own namespace;
  *   - its `teardown` (if named) exists under src/setup/modules/;
@@ -147,6 +150,25 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
                     $errors[] = "{$key}: policy " . (is_string($policy) ? "'{$policy}'" : gettype($policy)) . ' not found';
                 } elseif (!is_subclass_of($policy, PolicyInterface::class)) {
                     $errors[] = "{$key}: policy '{$policy}' does not implement " . PolicyInterface::class;
+                }
+            }
+        }
+    }
+
+    // permissions: enum classes owned by this module
+    if (isset($raw['permissions'])) {
+        if (!is_array($raw['permissions'])) {
+            $errors[] = "{$key}: 'permissions' must be a list of permission enum classes";
+        } else {
+            $ownNs = 'AstrX\\' . basename(dirname($file)) . '\\';
+            /** @var mixed $enum */
+            foreach ($raw['permissions'] as $enum) {
+                if (!is_string($enum) || !enum_exists($enum)) {
+                    $errors[] = "{$key}: permission enum " . (is_string($enum) ? "'{$enum}'" : gettype($enum)) . ' not found';
+                } elseif (!is_subclass_of($enum, Permission::class)) {
+                    $errors[] = "{$key}: '{$enum}' does not implement " . Permission::class;
+                } elseif (!str_starts_with($enum, $ownNs)) {
+                    $errors[] = "{$key}: permission enum '{$enum}' is outside the module namespace {$ownNs}";
                 }
             }
         }

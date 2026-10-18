@@ -5,7 +5,6 @@ namespace AstrX\Search\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -20,6 +19,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\indexDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Search index control panel.
@@ -74,7 +74,7 @@ final class AdminSearchController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -128,7 +128,7 @@ final class AdminSearchController extends AbstractController
     {
         // R4-14: resetting a wedged job clears crawler state and re-enables the
         // Rebuild button — same privilege bar as rebuild_now.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return;
         }
@@ -148,7 +148,7 @@ final class AdminSearchController extends AbstractController
         // R4-14: the page enters on blanket ADMIN_ACCESS, but a live rebuild
         // forks an OS process + full index crawl — too heavy for a plain MOD to
         // spam. Re-gate the expensive action on ADMIN_CONFIG_SYSTEM.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return;
         }
@@ -175,7 +175,7 @@ final class AdminSearchController extends AbstractController
         // then runs the identical full crawl rebuild_now would fork inline. Hold
         // it to the same ADMIN_CONFIG_SYSTEM bar or a plain MOD bypasses the
         // heavy-op gate via the queue.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return;
         }

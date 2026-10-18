@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -17,6 +16,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Panic / lockdown control (/admin-panic).
@@ -51,7 +51,7 @@ final class AdminPanicController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_PANIC)) {
+        if ($this->gate->cannot(AdminPermission::PANIC)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

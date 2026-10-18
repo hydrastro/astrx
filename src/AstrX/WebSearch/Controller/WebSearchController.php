@@ -5,7 +5,6 @@ namespace AstrX\WebSearch\Controller;
 
 use AstrX\Template\ContextScope;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
@@ -15,6 +14,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\WebSearch\WebSearchClient;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 /**
  * Clear-web search — a no-JavaScript GET form that bridges to the standalone,
@@ -63,7 +63,7 @@ final class WebSearchController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'WebSearch');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

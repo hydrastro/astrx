@@ -5,7 +5,6 @@ namespace AstrX\Chat\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\ChatConfig;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -21,6 +20,8 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
+use AstrX\Chat\ChatPermission;
 
 /**
  * Admin — Chat configuration editor.
@@ -63,7 +64,7 @@ final class AdminConfigChatController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_CHAT)) {
+        if ($this->gate->cannot(ChatPermission::ADMIN_CONFIG)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -123,7 +124,7 @@ final class AdminConfigChatController extends AbstractController
         // the CHAT_VIEW-gated, Tor-hardened file controller. The page gate is only
         // ADMIN_CONFIG_CHAT (a MOD may hold it); these two are admin-only, so a
         // non-system actor's save PRESERVES the current on-disk values (R10 pattern).
-        $maySetSystem = $this->gate->can(Permission::ADMIN_CONFIG_SYSTEM);
+        $maySetSystem = $this->gate->can(AdminPermission::CONFIG_SYSTEM);
         return [
             // ── Access ──────────────────────────────────────────────────────
             'guest_posting'           => self::mBool($p, 'guest_posting'),

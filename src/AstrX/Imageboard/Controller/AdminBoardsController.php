@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Imageboard\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\I18n\Translator;
 use AstrX\Imageboard\BoardRepository;
 use AstrX\Result\DiagnosticsCollector;
@@ -12,6 +11,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Imageboard\ImageboardPermission;
 
 /**
  * Admin — Imageboard board list (read-only overview).
@@ -38,7 +38,7 @@ final class AdminBoardsController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_IMAGEBOARD)) {
+        if ($this->gate->cannot(ImageboardPermission::ADMIN_CONFIG)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

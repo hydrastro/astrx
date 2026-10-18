@@ -5,7 +5,6 @@ namespace AstrX\Mirrors\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -17,6 +16,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Mirrors\MirrorsPermission;
 
 /**
  * Admin editor for the onion / mirror anti-phishing data (/admin-mirrors).
@@ -47,7 +47,7 @@ final class AdminMirrorsController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_MIRRORS)) {
+        if ($this->gate->cannot(MirrorsPermission::ADMIN)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

@@ -6,7 +6,6 @@ namespace AstrX\Webmail\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigDomain;
 use AstrX\Config\ConfigDomainResolver;
@@ -23,6 +22,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Webmail / IMAP configuration editor.
@@ -72,7 +72,7 @@ final class AdminConfigWebmailController extends AbstractController
     public function handle()
     : Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_MAIL)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_MAIL)) {
             http_response_code(403);
 
             return $this->ok();

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Admin\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
@@ -19,6 +18,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — invitations: a no-JavaScript page to mint one-time invite codes for
@@ -63,7 +63,7 @@ final class AdminInvitesController extends AbstractController
         // deployment, so the whole page (not just mint/revoke) requires
         // ADMIN_CONFIG_ACCESS — a view-only MOD must not be able to read and
         // redistribute unused codes (R8 review MEDIUM-2).
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -101,7 +101,7 @@ final class AdminInvitesController extends AbstractController
     {
         // Re-gate: minting an invite hands out site access. Entry is ADMIN_ACCESS
         // (a MOD may see the list), but only ADMIN_CONFIG_ACCESS may issue codes.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_ACCESS)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -124,7 +124,7 @@ final class AdminInvitesController extends AbstractController
     /** @param array<string,mixed> $posted */
     private function revoke(array $posted): string
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_ACCESS)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }

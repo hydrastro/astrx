@@ -49,6 +49,7 @@ use AstrX\Template\TemplateVars;
 use PDO;
 use PDOException;
 use function AstrX\Support\langDir;
+use AstrX\Admin\AdminPermission;
 
 final class ContentManager
 {
@@ -470,7 +471,7 @@ final class ContentManager
                 $files = $request->files()->all();
                 $lockedForActor = $files !== []
                     && $this->panicActive()
-                    && $this->gate->cannot(Permission::ADMIN_PANIC);
+                    && $this->gate->cannot(AdminPermission::PANIC);
                 $payload = $request->body()->all();
                 $fileMeta = [];
                 foreach (($lockedForActor ? [] : $files) as $fieldName => $uploadedFile) {
@@ -551,7 +552,7 @@ final class ContentManager
 
         $page = $this->resolvePage($pageHandler, $pageToken);
         $this->injector->setClass($page);
-        $adminViewingHidden = $page->hidden && $this->gate->can(Permission::ADMIN_ACCESS);
+        $adminViewingHidden = $page->hidden && $this->gate->can(AdminPermission::ACCESS);
         if (!$adminViewingHidden && $page->hidden) {
             http_response_code(HttpStatus::NOT_FOUND->value);
             $errorUrlId = $this->config->getConfig('ContentManager','error_page_url_id','WORDING_ERROR');
@@ -633,7 +634,7 @@ final class ContentManager
         // who could lift the lockdown is exempt from it, so a compromised MOD is
         // sealed like every other non-operator.
         if ($this->panicActive()
-            && $this->gate->cannot(Permission::ADMIN_PANIC)
+            && $this->gate->cannot(AdminPermission::PANIC)
             && !self::isPanicExempt($page)) {
             $this->renderPanicLockdown($request);
             return;
@@ -751,7 +752,7 @@ final class ContentManager
         // sealed non-exempt pages, but an exempt page that happened to have
         // comments enabled would otherwise still accept a guest comment — deny it.
         if ($page->comments
-            && !($this->panicActive() && $this->gate->cannot(Permission::ADMIN_PANIC))) {
+            && !($this->panicActive() && $this->gate->cannot(AdminPermission::PANIC))) {
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
             $this->translator->loadDomain(langDir(), 'Comment');
@@ -1139,7 +1140,7 @@ final class ContentManager
         if ($page->fileName === 'admin'
             || array_any($page->ancestors, static fn($a): bool => $a['file_name'] === 'admin')
         ) {
-            return Permission::ADMIN_ACCESS;
+            return AdminPermission::ACCESS;
         }
 
         if (!$page->controller) {
@@ -1166,7 +1167,7 @@ final class ContentManager
         // (ChatAdminController → CHAT_MODERATE, BoardModController →
         // BOARD_MODERATE) do not match this prefix and keep their own gates.
         $short = substr($fqcn, strrpos($fqcn, '\\') + 1);
-        return str_starts_with($short, 'Admin') ? Permission::ADMIN_ACCESS : null;
+        return str_starts_with($short, 'Admin') ? AdminPermission::ACCESS : null;
     }
 
     private function isJsBrowserContentRequest(Request $request): bool

@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -22,6 +21,7 @@ use AstrX\I18n\Translator;
 use function AstrX\Support\configDir;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Languages: a no-JavaScript translation console.
@@ -67,7 +67,7 @@ final class AdminLanguageController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Admin');
 
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -108,7 +108,7 @@ final class AdminLanguageController extends AbstractController
         // writing translation strings overwrites core/module locale files —
         // re-gate on ADMIN_CONFIG_SYSTEM so a view-only MOD cannot rewrite them.
         // Mirrors AdminContentController::save()/delete() and AdminSearchController.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -148,7 +148,7 @@ final class AdminLanguageController extends AbstractController
         // Re-gate: adding a language clones a whole locale tree AND rewrites
         // resources/config/config.php (available_languages) via ConfigWriter —
         // a config-system mutation, not a plain-MOD action. See save().
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -177,7 +177,7 @@ final class AdminLanguageController extends AbstractController
         // Re-gate: deleting a language recursively removes its locale file tree
         // (rmTree/unlink/rmdir) AND rewrites resources/config/config.php — a
         // config-system mutation, not a plain-MOD action. See save().
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }

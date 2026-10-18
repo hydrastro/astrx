@@ -88,6 +88,8 @@ return [
     'guards'       => {$guardRef},
     // Resource class => policy class, registered with the Gate while enabled.
     'policies'     => [],
+    // Permission enums this module declares (implementing Auth\\Permission).
+    'permissions'  => [],
     // Page file_name => controller class (resolved by Site\\ControllerMap).
     'controllers'  => [
         '{$key}' => \\AstrX\\{$studly}\\Controller\\{$studly}Controller::class,

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Chat;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Chat\Diagnostic\ChatGateDeniedDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
@@ -51,7 +50,7 @@ final class ChatReportService
      */
     public function pending(): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $r = $this->repo->pending();
@@ -80,7 +79,7 @@ final class ChatReportService
      */
     public function dismiss(int $messageId): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         return $this->repo->resolveMessage($messageId);
@@ -94,7 +93,7 @@ final class ChatReportService
      */
     public function blockLink(int $messageId): Result
     {
-        if ($this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if ($this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->denied();
         }
         $cr      = $this->repo->messageContent($messageId);

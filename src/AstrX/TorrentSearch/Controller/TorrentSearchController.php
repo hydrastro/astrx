@@ -5,7 +5,6 @@ namespace AstrX\TorrentSearch\Controller;
 
 use AstrX\Template\ContextScope;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
@@ -15,6 +14,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\TorrentSearch\TorrentSearchClient;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 /**
  * Torrent search — a no-JavaScript GET form that bridges to the standalone,
@@ -58,7 +58,7 @@ final class TorrentSearchController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'TorrentSearch');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

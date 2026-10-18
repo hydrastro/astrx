@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
@@ -14,6 +13,7 @@ use AstrX\Result\Result;
 use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Audit log viewer.
@@ -45,7 +45,7 @@ final class AdminAuditLogController extends AbstractController
 
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_AUDIT_LOG)) {
+        if ($this->gate->cannot(AdminPermission::AUDIT_LOG)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

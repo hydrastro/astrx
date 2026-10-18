@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\BotTrap\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\BotTrap\BotTrapConfig;
 use AstrX\BotTrap\BotTrapLogRepository;
 use AstrX\Config\ConfigWriter;
@@ -21,6 +20,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Bot-trap control panel + log viewer.
@@ -67,7 +67,7 @@ final class AdminTrapController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -110,7 +110,7 @@ final class AdminTrapController extends AbstractController
         // MOD may view it, but WRITING it requires ADMIN_CONFIG_SYSTEM (which a MOD
         // lacks) — otherwise a moderator could silently disable the trap. Mirrors
         // the AdminSearch/AdminLanguage config re-gates.
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return;
         }

@@ -19,6 +19,8 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Downloads\DownloadsPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_downloads' => \AstrX\Downloads\Controller\AdminDownloadsController::class,

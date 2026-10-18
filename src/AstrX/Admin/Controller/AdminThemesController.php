@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -21,6 +20,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\Template\TemplateEngine;
 use AstrX\Theme\ThemeService;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Theme manager.
@@ -59,7 +59,7 @@ final class AdminThemesController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_SYSTEM)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_SYSTEM)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

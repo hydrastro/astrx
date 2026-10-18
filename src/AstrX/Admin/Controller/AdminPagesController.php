@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 use AstrX\Admin\AuditLogger;
 use AstrX\Admin\Diagnostic\AdminDbDiagnostic;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Config\Config;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -22,6 +21,7 @@ use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Full page management — listing, editing, adding, deleting.
@@ -63,7 +63,7 @@ final class AdminPagesController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

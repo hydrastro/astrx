@@ -5,7 +5,6 @@ namespace AstrX\FederatedSearch\Controller;
 
 use AstrX\Template\ContextScope;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\FederatedSearch\FederatedSearchClient;
 use AstrX\Http\Request;
 use AstrX\I18n\Translator;
@@ -16,6 +15,7 @@ use AstrX\Search\SiteSearchService;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\News\NewsPermission;
 
 /**
  * Unified (federated) search — a no-JavaScript GET page with ONE query box that
@@ -70,7 +70,7 @@ final class FederatedSearchController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'FederatedSearch');
 
-        if ($this->gate->cannot(Permission::NEWS_VIEW)) {
+        if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);
             exit;
         }

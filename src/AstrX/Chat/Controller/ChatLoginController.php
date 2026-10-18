@@ -5,7 +5,6 @@ namespace AstrX\Chat\Controller;
 
 use AstrX\Admin\BanlistRepository;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Captcha\CaptchaService;
 use AstrX\Chat\ChatConfig;
 use AstrX\Chat\ChatFilterService;
@@ -33,6 +32,7 @@ use AstrX\User\UserGroup;
 use AstrX\User\UserRepository;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
+use AstrX\Chat\ChatPermission;
 
 /**
  * Chat entry / guest-login controller — page file_name `chat_login`, template=1.
@@ -85,7 +85,7 @@ final class ChatLoginController extends AbstractController
         $this->t->loadDomain(\AstrX\Support\langDir(), 'Chat');
 
         // Chat-disabled kill switch — non-staff see only the disabled message.
-        if (!$this->config->chatEnabled() && $this->gate->cannot(Permission::CHAT_MODERATE)) {
+        if (!$this->config->chatEnabled() && $this->gate->cannot(ChatPermission::MODERATE)) {
             return $this->renderDisabled();
         }
 

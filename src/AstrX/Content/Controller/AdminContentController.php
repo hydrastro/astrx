@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Content\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Content\ContentPageRepository;
 use AstrX\Content\ContentService;
 use AstrX\Csrf\CsrfHandler;
@@ -19,6 +18,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — content pages: a no-JavaScript editor (create / edit / delete Markdown
@@ -51,7 +51,7 @@ final class AdminContentController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'Content');
 
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -91,7 +91,7 @@ final class AdminContentController extends AbstractController
         // view), but mutating them requires ADMIN_PAGES. Re-gate here so a MOD
         // cannot deface or replace live content — mirrors board CRUD's
         // BOARD_ADMIN re-check under a weaker entry gate.
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }
@@ -129,7 +129,7 @@ final class AdminContentController extends AbstractController
     {
         // Deleting a public content page is a page mutation: re-gate on
         // ADMIN_PAGES so a view-only MOD cannot remove live pages.
-        if ($this->gate->cannot(Permission::ADMIN_PAGES)) {
+        if ($this->gate->cannot(AdminPermission::PAGES)) {
             $this->flash->set('error', $this->t->t('admin.forbidden'));
             return '';
         }

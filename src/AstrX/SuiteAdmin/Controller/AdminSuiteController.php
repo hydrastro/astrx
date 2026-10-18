@@ -5,7 +5,6 @@ namespace AstrX\SuiteAdmin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -18,6 +17,7 @@ use AstrX\SuiteAdmin\SuiteAdminClient;
 use AstrX\Template\TemplateVars;
 use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Suite status / control panel (/admin-suite).
@@ -27,7 +27,7 @@ use AstrX\Kernel\AbstractController;
  * torrentds), and exposes the ONE control action any of them offers: submitting
  * an onion seed to onioncrawler's `GET/POST /add`. Every engine has NO other
  * write endpoint, so the rest of the panel is deliberately display-only (see the
- * README). ADMIN-only, gated with the same Permission::ADMIN_ACCESS the admin
+ * README). ADMIN-only, gated with the same AdminPermission::ACCESS the admin
  * section root uses.
  *
  * Seeded with file_name 'admin_suite' as a child of the admin root, so the
@@ -62,7 +62,7 @@ final class AdminSuiteController extends AbstractController
     {
         $this->t->loadDomain(langDir(), 'SuiteAdmin');
 
-        if ($this->gate->cannot(Permission::ADMIN_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

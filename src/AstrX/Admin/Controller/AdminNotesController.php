@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AstrX\Admin\Controller;
 
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
 use AstrX\Http\Response;
@@ -17,6 +16,7 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use PDO;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin personal notes scratchpad.
@@ -50,7 +50,7 @@ final class AdminNotesController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_NOTES)) {
+        if ($this->gate->cannot(AdminPermission::NOTES)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));

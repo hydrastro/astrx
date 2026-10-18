@@ -11,6 +11,8 @@ return [
     'guards'       => [],
     // Registered with the Gate only while chat is enabled.
     'policies'     => [\AstrX\Chat\ChatMessageResource::class => \AstrX\Chat\ChatPolicy::class],
+    // Permission enums this module declares (listed in the grants editor).
+    'permissions'  => [\AstrX\Chat\ChatPermission::class],
     // Page file_name => controller. Resolved by Site\ControllerMap.
     'controllers'  => [
         'admin_chat_filters' => \AstrX\Chat\Controller\AdminChatFiltersController::class,

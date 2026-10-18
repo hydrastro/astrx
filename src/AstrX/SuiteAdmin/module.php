@@ -12,7 +12,7 @@ declare(strict_types=1);
  * No nav contributor or guard needed: its admin-navbar entry is a DB row that
  * NavbarHandler drops when the module is off (via page.module); the core
  * ModulePageGuard 404s its page, and the controller additionally gates on
- * Permission::ADMIN_ACCESS. See {@see \AstrX\Module\ModuleRegistry}.
+ * AdminPermission::ACCESS. See {@see \AstrX\Module\ModuleRegistry}.
  */
 return [
     'key'          => 'suiteadmin',

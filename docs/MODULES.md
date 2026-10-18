@@ -65,6 +65,7 @@ return [
     'nav_defaults' => ['board_nav' => false],       // vars merged when the module is OFF
     'guards'       => [],                            // list of PageGuard classes
     'policies'     => [],                            // resource class => policy class (Gate)
+    'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class], // permission enums it declares
     'controllers'  => [                              // page file_name => controller class
         'board'     => \AstrX\Imageboard\Controller\BoardController::class,
         'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
@@ -144,6 +145,26 @@ variables through `Template\TemplateVars` (`set()`, `setShared()`), **not**
 through the application's concrete `Site\DefaultTemplateContext`. That keeps
 the module free of application-layer imports, which
 `tools/check_architecture.php` enforces.
+
+### Permissions
+
+A module declares its permissions as a string-backed enum in its own namespace
+that implements `Auth\Permission`, and lists it in the manifest:
+
+```php
+enum ImageboardPermission: string implements Permission
+{
+    use PermissionId;
+
+    case VIEW     = 'board.view';
+    case MODERATE = 'board.moderate';
+}
+```
+
+The values are what `Auth.config.php` grants to roles. Wildcards like
+`'board.*'` match by prefix. Every module's permissions are listed in the
+admin grants editor, including disabled modules', because saving the editor
+rebuilds each role's list from what it shows.
 
 ### Policies
 

@@ -7,7 +7,7 @@ use AstrX\Admin\AuditLogger;
 use AstrX\Admin\DiagnosticLevelOverrideRepository;
 use AstrX\Admin\DiagnosticVisibilityRepository;
 use AstrX\Auth\Gate;
-use AstrX\Auth\Permission;
+use AstrX\Auth\PermissionRegistry;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -24,6 +24,7 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminPermission;
 
 /**
  * Admin — Access configuration editor.
@@ -48,6 +49,7 @@ final class AdminConfigAccessController extends AbstractController
         'admin'   => 'admin.config.access.prefix_admin',
     ];
 
+
     public function __construct(
         DiagnosticsCollector                   $collector,
         private readonly TemplateVars $ctx,
@@ -65,6 +67,7 @@ final class AdminConfigAccessController extends AbstractController
         private readonly DiagnosticVisibilityRepository $visibilityRepo,
         private readonly DiagnosticLevelOverrideRepository $levelRepo,
         private readonly AuditLogger $audit,
+        private readonly PermissionRegistry $permissions,
     ) {
         parent::__construct($collector);
     }
@@ -72,7 +75,7 @@ final class AdminConfigAccessController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        if ($this->gate->cannot(Permission::ADMIN_CONFIG_ACCESS)) {
+        if ($this->gate->cannot(AdminPermission::CONFIG_ACCESS)) {
             http_response_code(403);
             $this->ctx->set('admin_forbidden', true);
             $this->ctx->set('forbidden_message', $this->t->t('admin.forbidden'));
@@ -142,10 +145,10 @@ final class AdminConfigAccessController extends AbstractController
         $editableGroups = array_filter(array_keys($existing), fn($g) => $g !== 'ADMIN');
         foreach ($editableGroups as $group) {
             $perms = [];
-            foreach (Permission::cases() as $perm) {
-                $field = 'perm_' . $group . '_' . str_replace('.', '__', $perm->value);
+            foreach ($this->permissions->all() as $perm) {
+                $field = 'perm_' . $group . '_' . str_replace('.', '__', $perm->id());
                 if (!empty($p[$field])) {
-                    $perms[] = $perm->value;
+                    $perms[] = $perm->id();
                 }
             }
             $grants[$group] = $perms;
@@ -275,18 +278,20 @@ final class AdminConfigAccessController extends AbstractController
         $prefixSections = [];
         foreach (self::PREFIX_LABELS as $prefix => $labelKey) {
             $rows = [];
-            foreach (Permission::cases() as $perm) {
-                if (!str_starts_with($perm->value, $prefix . '.')) { continue; }
+            foreach ($this->permissions->all() as $perm) {
+                if (!str_starts_with($perm->id(), $prefix . '.')) { continue; }
                 $cells = [];
                 foreach ($editableGroups as $group) {
                     $groupGrants = (array) ($grants[$group] ?? []);
-                    $granted     = in_array($perm->value, $groupGrants, true);
-                    $field       = 'perm_' . $group . '_' . str_replace('.', '__', $perm->value);
+                    $granted     = in_array($perm->id(), $groupGrants, true);
+                    $field       = 'perm_' . $group . '_' . str_replace('.', '__', $perm->id());
                     $cells[]     = ['group' => $group, 'field' => $field, 'granted' => $granted];
                 }
                 $rows[] = [
-                    'perm_value' => $perm->value,
-                    'perm_name'  => $perm->name,
+                    'perm_value' => $perm->id(),
+                    // 'admin.config.chat' → 'ADMIN_CONFIG_CHAT': the label the
+                    // single Permission enum's case names used to give.
+                    'perm_name'  => strtoupper(str_replace('.', '_', $perm->id())),
                     'cells'      => $cells,
                 ];
             }
