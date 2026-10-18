@@ -24,8 +24,11 @@ declare(strict_types=1);
  * ::class so both this gate and PHPStan can see the reference.
  *
  * Options:
- *   --graph  print every namespace → namespace edge with its reference count
- *   --dot    print the graph in Graphviz DOT format (layers as clusters)
+ *   --graph            print every namespace → namespace edge with its reference count
+ *   --dot              print the graph in Graphviz DOT format (layers as clusters)
+ *   --list=a,b         print the namespaces of the named layers, one per line
+ *                      (tests/framework_isolation_test.php uses this so the
+ *                      framework's file set has exactly one definition)
  *
  * Exit 0 when the graph is clean, 1 otherwise.
  */
@@ -60,6 +63,22 @@ const LAYERS = [
     ],
     'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationPolicies'],
 ];
+
+// --list=layer[,layer]: print members and stop (no scan needed).
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--list=')) {
+        foreach (explode(',', substr($arg, 7)) as $layer) {
+            if (!isset(LAYERS[$layer])) {
+                fwrite(STDERR, "unknown layer '{$layer}'\n");
+                exit(1);
+            }
+            foreach (LAYERS[$layer] as $ns) {
+                fwrite(STDOUT, $ns . "\n");
+            }
+        }
+        exit(0);
+    }
+}
 
 $root     = dirname(__DIR__);
 $classDir = $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'AstrX';

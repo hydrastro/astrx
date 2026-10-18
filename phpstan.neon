@@ -4,6 +4,7 @@ parameters:
         - src
         - public
         - tools
+        - examples
     treatPhpDocTypesAsCertain: false
     excludePaths:
         analyseAndScan:
