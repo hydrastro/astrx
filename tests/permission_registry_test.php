@@ -166,5 +166,22 @@ check('the same enum listed twice is harmless', count((new PermissionRegistry([
 ]))->all()) === count(AstrX\Chat\ChatPermission::cases()));
 check('get() finds a permission by id', $registry->get('chat.moderate') === AstrX\Chat\ChatPermission::MODERATE);
 
+echo "\n5. The grants editor shows every permission\n";
+// saveGrants() rebuilds each role from the checkboxes, so a permission with no
+// row reads as "unchecked". Before this check existed, the matrix rendered only
+// news/comment/user/ban/admin, and saving it silently revoked every chat,
+// board, api and webmail grant.
+$editor = (new ReflectionClass(AstrX\Admin\Controller\AdminConfigAccessController::class))->newInstanceWithoutConstructor();
+$t = new AstrX\I18n\Translator(new AstrX\Result\DiagnosticsCollector());
+$t->setLocale('en');
+foreach (['t' => $t, 'permissions' => $registry] as $prop => $value) {
+    (new ReflectionProperty($editor, $prop))->setValue($editor, $value);
+}
+/** @var array<string,string> $sections */
+$sections = (new ReflectionMethod($editor, 'grantSections'))->invoke($editor);
+$prefixes = array_values(array_unique(array_map(static fn(string $id): string => explode('.', $id, 2)[0], $ids)));
+$unshown  = array_values(array_diff($prefixes, array_keys($sections)));
+check('every permission prefix has a section (' . count($prefixes) . ' prefixes)', $unshown === [], implode(', ', $unshown));
+
 echo "\n" . str_repeat('=', 40) . "\n{$PASS} passed, {$FAIL} failed\n";
 exit($FAIL === 0 ? 0 : 1);

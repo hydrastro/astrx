@@ -7,6 +7,7 @@ use AstrX\Admin\AuditLogger;
 use AstrX\Admin\DiagnosticLevelOverrideRepository;
 use AstrX\Admin\DiagnosticVisibilityRepository;
 use AstrX\Auth\Gate;
+use AstrX\Auth\Permission;
 use AstrX\Auth\PermissionRegistry;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
@@ -46,9 +47,33 @@ final class AdminConfigAccessController extends AbstractController
         'comment' => 'admin.config.access.prefix_comment',
         'user'    => 'admin.config.access.prefix_user',
         'ban'     => 'admin.config.access.prefix_ban',
+        'board'   => 'admin.config.access.prefix_board',
+        'chat'    => 'admin.config.access.prefix_chat',
+        'webmail' => 'admin.config.access.prefix_webmail',
+        'api'     => 'admin.config.access.prefix_api',
         'admin'   => 'admin.config.access.prefix_admin',
     ];
 
+    /**
+     * Section order and headings for the grants matrix: the labelled prefixes
+     * above first, then any other prefix a feature declares (heading = the
+     * prefix itself). EVERY registered permission gets a row — saveGrants()
+     * relies on that, since an unshown permission would read as "unchecked".
+     *
+     * @return array<string, string> prefix => heading
+     */
+    private function grantSections(): array
+    {
+        $sections = [];
+        foreach (self::PREFIX_LABELS as $prefix => $labelKey) {
+            $sections[$prefix] = $this->t->t($labelKey, fallback: $prefix);
+        }
+        foreach ($this->permissions->all() as $perm) {
+            $prefix = explode('.', $perm->id(), 2)[0];
+            $sections[$prefix] ??= $prefix;
+        }
+        return $sections;
+    }
 
     public function __construct(
         DiagnosticsCollector                   $collector,
@@ -143,8 +168,19 @@ final class AdminConfigAccessController extends AbstractController
         $grants   = ['ADMIN' => ['*']];
 
         $editableGroups = array_filter(array_keys($existing), fn($g) => $g !== 'ADMIN');
+        $shown = array_map(static fn(Permission $perm): string => $perm->id(), $this->permissions->all());
         foreach ($editableGroups as $group) {
+            // Never drop what the form did not show: wildcard patterns
+            // ('comment.*') and ids no feature declares have no checkbox, so
+            // their absence from $p is not a revocation. (Rebuilding from the
+            // checkboxes alone used to silently revoke every chat/board/api/
+            // webmail grant, whose rows the matrix did not render.)
             $perms = [];
+            foreach ((array) ($existing[$group] ?? []) as $kept) {
+                if (is_string($kept) && !in_array($kept, $shown, true)) {
+                    $perms[] = $kept;
+                }
+            }
             foreach ($this->permissions->all() as $perm) {
                 $field = 'perm_' . $group . '_' . str_replace('.', '__', $perm->id());
                 if (!empty($p[$field])) {
@@ -276,7 +312,7 @@ final class AdminConfigAccessController extends AbstractController
 
         // Permission rows grouped by prefix.
         $prefixSections = [];
-        foreach (self::PREFIX_LABELS as $prefix => $labelKey) {
+        foreach ($this->grantSections() as $prefix => $heading) {
             $rows = [];
             foreach ($this->permissions->all() as $perm) {
                 if (!str_starts_with($perm->id(), $prefix . '.')) { continue; }
@@ -297,7 +333,7 @@ final class AdminConfigAccessController extends AbstractController
             }
             if ($rows !== []) {
                 $prefixSections[] = [
-                    'prefix_label' => $this->t->t($labelKey, fallback: $prefix),
+                    'prefix_label' => $heading,
                     'rows'         => $rows,
                 ];
             }
