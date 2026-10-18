@@ -17,8 +17,15 @@ use AstrX\ErrorHandler\EnvironmentType;
 use AstrX\ErrorHandler\ErrorHandler;
 use AstrX\ContentManager;
 
+/**
+ * The composition root: builds the application, then run() handles the
+ * request. Constructing it starts no session and sends no output — that
+ * happens in run().
+ */
 final class Prelude
 {
+    private readonly ContentManager $contentManager;
+
     public function __construct()
     {
         // Force UTC for every date()/timestamp render, independent of the host's
@@ -140,6 +147,12 @@ final class Prelude
 
         $cm = $cmResult->unwrap();
         assert($cm instanceof ContentManager);
-        $cm->init();
+        $this->contentManager = $cm;
+    }
+
+    /** Handle the current request: session, routing, dispatch, rendering. */
+    public function run(): void
+    {
+        $this->contentManager->init();
     }
 }
