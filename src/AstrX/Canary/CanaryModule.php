@@ -36,6 +36,8 @@ final class CanaryModule implements Module
                 'canary' => \AstrX\Canary\Controller\CanaryController::class,
             ],
             'teardown'     => 'canary.down.sql',
+            // Templates, translations (incl. its page titles and nav labels).
+            'resources'    => 'resources',
         ];
     }
 }

@@ -190,17 +190,6 @@ return [
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',
     'admin.notes.saved' => 'Note salvate.',
 
-    // ---- Editor warrant canary ----------------------------------------------
-    'admin.canary.heading'       => 'Warrant canary',
-    'admin.canary.intro'         => 'Incolla la tua attestazione firmata (firmala offline — nessuna chiave è salvata sul server). "Salva e attesta" registra il momento su cui si basa il controllo di scadenza della pagina pubblica.',
-    'admin.canary.statement'     => 'Dichiarazione firmata',
-    'admin.canary.interval'      => 'Scade dopo (giorni)',
-    'admin.canary.enabled'       => 'Pubblica il canary',
-    'admin.canary.last_attested' => 'Ultima attestazione',
-    'admin.canary.save'          => 'Salva e attesta',
-    'admin.canary.saved'         => 'Canary salvato e attestato.',
-    'admin.canary.cleared'       => 'Canary cancellato.',
-
     // Mirror onion
     'admin.mirrors.heading'     => 'Mirror onion / anti-phishing',
     'admin.mirrors.intro'       => 'Dichiara il tuo .onion canonico (emesso come header Onion-Location) e la lista dei mirror mostrata sulla pagina pubblica /mirrors. Incolla una dichiarazione firmata offline degli indirizzi affinché i visitatori possano verificarli fuori banda.',

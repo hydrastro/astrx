@@ -55,7 +55,6 @@ return [
     'WORDING_ADMIN_TRAP.label'            => 'Bot trap',
 
     // Public navbar — transparency / trust pages (each an optional module)
-    'WORDING_CANARY.label'                => 'Canary',
     'WORDING_DOWNLOADS.label'             => 'Downloads',
     'WORDING_MIRRORS.label'               => 'Mirrors',
     'WORDING_TIPLINE.label'               => 'Tip Line',
@@ -64,7 +63,6 @@ return [
     'WORDING_TWOFACTOR.label'             => 'Two-Factor Auth',
 
     // Admin navbar — transparency editors + safety/retention tools
-    'WORDING_ADMIN_CANARY.label'          => 'Canary',
     'WORDING_ADMIN_DOWNLOADS.label'       => 'Downloads',
     'WORDING_ADMIN_MIRRORS.label'         => 'Mirrors',
     'WORDING_ADMIN_TIPLINE.label'         => 'Tip Line',
