@@ -15,7 +15,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Site\DefaultTemplateContext;
-use AstrX\Mail\WebmailService;
+use AstrX\Webmail\WebmailService;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 

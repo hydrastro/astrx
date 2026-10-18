@@ -354,6 +354,20 @@ function baseOnlyRoot(string $realRoot, ?string $tablesSql = null): string
     if (!@copy($realRoot . '/tools/install.php', $tmp . '/tools/install.php')) {
         throw new RuntimeException('Could not copy tools/install.php into the scratch installer root');
     }
+    // install.php also require_once's PHP files relative to the root (e.g.
+    // src/AstrX/Auth/PasswordPolicy.php). Copy exactly those — read from the
+    // installer itself so this list cannot drift — and nothing from
+    // src/setup beyond tables.sql, so the root still holds no migrations.
+    $installer = (string) file_get_contents($realRoot . '/tools/install.php');
+    preg_match_all("~require(?:_once)?\\s+dirname\\(__DIR__\\)\\s*\\.\\s*'(/[^']+\\.php)'~", $installer, $m);
+    foreach ($m[1] as $rel) {
+        if (!@mkdir(dirname($tmp . $rel), 0o700, true) && !is_dir(dirname($tmp . $rel))) {
+            throw new RuntimeException('Could not create ' . dirname($tmp . $rel));
+        }
+        if (!@copy($realRoot . $rel, $tmp . $rel)) {
+            throw new RuntimeException("Could not copy {$rel} (required by tools/install.php) into the scratch installer root");
+        }
+    }
     $ok = $tablesSql === null
         ? @copy($realRoot . '/src/setup/tables.sql', $tmp . '/src/setup/tables.sql')
         : (bool) @file_put_contents($tmp . '/src/setup/tables.sql', $tablesSql);

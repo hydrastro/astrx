@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Mail;
+namespace AstrX\Webmail;
 
 /**
  * Sanitises an HTML email body for safe display inside a webmail UI.

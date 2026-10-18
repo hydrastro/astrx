@@ -1,13 +1,16 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Mail;
+namespace AstrX\Webmail;
 
+use AstrX\Config\ConfigDomain;
 use AstrX\Config\InjectConfig;
 use AstrX\Mail\Diagnostic\MailInvalidRecipientDiagnostic;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
+use AstrX\Mail\ImapClient;
+use AstrX\Mail\Mailer;
 
 /**
  * Orchestrates IMAP (read) and SMTP (send) for the webmail UI.
@@ -23,6 +26,7 @@ use AstrX\Result\Result;
  *   sent_folder         IMAP folder name used for sent messages (default 'Sent').
  *   drafts_folder       IMAP folder name for drafts (default 'Drafts').
  */
+#[ConfigDomain('WebmailService', file: 'Mail')]
 final class WebmailService
 {
     private int    $messagesPerPage = 25;

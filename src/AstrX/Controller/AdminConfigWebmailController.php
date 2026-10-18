@@ -30,7 +30,7 @@ use AstrX\Site\DefaultTemplateContext;
  *   folders  — WebmailService folder names (trash, sent, drafts) + per-page count
  *
  * Both sections live in Mail.config.php — that is what `AstrX\Mail\ImapClient`
- * and `AstrX\Mail\WebmailService` are configured from (ModuleLoader resolves the
+ * and `AstrX\Webmail\WebmailService` are configured from (ModuleLoader resolves the
  * section from the class short name, and reaches the file through the
  * parent-namespace fallback). This editor used to write `Imap.config.php`
  * instead: a file no code path loads. Saving reported success and wrote an audit

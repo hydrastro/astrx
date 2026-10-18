@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace AstrX\Mail;
+namespace AstrX\User;
 
+use AstrX\Config\ConfigDomain;
 use AstrX\Config\InjectConfig;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticLevel;
@@ -10,6 +11,7 @@ use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateEngine;
+use AstrX\Mail\Mailer;
 
 /**
  * High-level email orchestration.
@@ -32,6 +34,7 @@ use AstrX\Template\TemplateEngine;
  * Subject lines and any prose-rich text live in resources/lang/{en,it}/Email.{en,it}.php
  * so they can be edited without touching code.
  */
+#[ConfigDomain('EmailService', file: 'User')]
 final class EmailService
 {
     /** Base URL of the site (e.g. "https://example.com") used to build absolute links in emails. */

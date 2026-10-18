@@ -2,7 +2,9 @@
 
 declare(strict_types = 1);
 
-namespace AstrX\Session;
+namespace AstrX\Comment;
+
+use AstrX\Session\AbstractPrgHandler;
 
 /**
  * Dedicated PRG namespace for comment forms.

@@ -11,10 +11,10 @@ use AstrX\Mail\Diagnostic\MailInvalidPayloadDiagnostic;
 use AstrX\Mail\Diagnostic\MailInvalidRecipientDiagnostic;
 use AstrX\Mail\Diagnostic\MailSendFailedDiagnostic;
 use AstrX\Mail\Diagnostic\MailerNotConfiguredDiagnostic;
-use AstrX\Mail\Diagnostic\TrustAddFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustCheckFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustListFailedDiagnostic;
-use AstrX\Mail\Diagnostic\TrustRemoveFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustAddFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustCheckFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustListFailedDiagnostic;
+use AstrX\Webmail\Diagnostic\TrustRemoveFailedDiagnostic;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticInterface;
 

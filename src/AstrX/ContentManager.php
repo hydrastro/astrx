@@ -34,7 +34,7 @@ use AstrX\Theme\ThemeService;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlStack;
 use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
-use AstrX\Session\CommentPrgHandler;
+use AstrX\Comment\CommentPrgHandler;
 use AstrX\Http\UploadedFile;
 use AstrX\Session\PrgHandler;
 use AstrX\Session\SecureSessionHandler;
@@ -430,7 +430,7 @@ final class ContentManager
             $isCommentForm = $request->body()->has('_comment');
 
             if ($isCommentForm) {
-                $commentPrg = new \AstrX\Session\CommentPrgHandler();
+                $commentPrg = new \AstrX\Comment\CommentPrgHandler();
                 if ($prgId === null || !$commentPrg->hasTarget($prgId)) {
                     $this->collector->emit(new InvalidPrgIdDiagnostic(
                                                self::ID_INVALID_PRG_ID,
