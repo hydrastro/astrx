@@ -76,6 +76,8 @@ $dynamicPrefixes = [];
 
 foreach (diag_php_files([$root . '/src', $root . '/public', $root . '/tools']) as $path) {
     if (str_ends_with($path, DIRECTORY_SEPARATOR . 'check_diagnostics.php')) { continue; }
+    // A module's resources/ holds its catalogs: the ids there are entries, not emissions.
+    if (str_contains($path, DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR)) { continue; }
     $src = (string) file_get_contents($path);
     $rel = substr($path, strlen($root) + 1);
 
@@ -119,13 +121,20 @@ if ($locales === []) {
     exit(2);
 }
 
+// The site's catalogs and every installed module's (DiagnosticRenderer loads both).
+require $root . '/src/autoload.php';
+$moduleLangDirs = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+    ->of(AstrX\Support\ResourceRoots::LANG);
+
 /** @var array<string,array<string,true>> $catalog locale => id => true */
 $catalog = [];
 foreach ($locales as $locale) {
     $catalog[$locale] = [];
-    $dir = $langRoot . '/' . $locale . '/Diagnostics';
-    if (!is_dir($dir)) { continue; }
-    foreach (diag_php_files([$dir]) as $file) {
+    $dirs = [];
+    foreach ([$langRoot . '/', ...$moduleLangDirs] as $base) {
+        $dirs[] = $base . $locale . '/Diagnostics';
+    }
+    foreach (diag_php_files($dirs) as $file) {
         // Parse rather than require: a catalog entry is a closure whose keys are
         // all we need, and requiring one twice (en and it declare the same
         // `use` aliases) is fine but pointlessly expensive.

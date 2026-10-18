@@ -15,6 +15,7 @@ use AstrX\Template\Diagnostic\TemplateFileNotFoundDiagnostic;
 use AstrX\Template\Diagnostic\TemplateFileReadFailedDiagnostic;
 use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
 use Throwable;
+use AstrX\Support\ResourceRoots;
 use function AstrX\Support\atomicWrite;
 use function AstrX\Support\cacheDir;
 use function AstrX\Support\templateDir;
@@ -105,9 +106,19 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
      */
     private DiagnosticSinkInterface $sink;
 
-    public function __construct(?DiagnosticSinkInterface $sink = null)
+    /** The installed modules' template/ directories, searched after the site's. */
+    private readonly ResourceRoots $roots;
+
+    /**
+     * @param ResourceRoots|null $roots the installed modules' resource
+     *        directories. A template name resolves to the site's template_dir
+     *        first, then to the first module that ships it, so a site overrides
+     *        any module template by putting a file at the same name.
+     */
+    public function __construct(?DiagnosticSinkInterface $sink = null, ?ResourceRoots $roots = null)
     {
-        $this->sink = $sink??new DiagnosticsCollector();
+        $this->sink  = $sink??new DiagnosticsCollector();
+        $this->roots = $roots ?? new ResourceRoots();
 
         $this->templateDir = defined('TEMPLATE_DIR') ? templateDir() :
             __DIR__ . '/../template/';
@@ -264,8 +275,8 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             return null;
         }
 
-        $templateFile = $this->templateDir . $template . $this->templateExtension;
-        if (!file_exists($templateFile)) {
+        [$templateFile, $root] = $this->locate($template);
+        if ($root === null) {
             $this->sink->emit(new TemplateFileNotFoundDiagnostic(
                                   self::ID_TEMPLATE_FILE_NOT_FOUND,
                                   self::LVL_TEMPLATE_FILE_NOT_FOUND,
@@ -274,9 +285,10 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             return null;
         }
 
-        // Assert the resolved file really lives inside the template directory.
-        // Catches symlink escapes and any traversal the string checks miss.
-        $realBase = realpath($this->templateDir);
+        // Assert the resolved file really lives inside the directory it was
+        // found in. Catches symlink escapes and any traversal the string checks
+        // miss.
+        $realBase = realpath($root);
         $realFile = realpath($templateFile);
         if ($realBase === false || $realFile === false
             || !str_starts_with($realFile, $realBase . DIRECTORY_SEPARATOR)
@@ -346,6 +358,34 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         if ($this->cacheTemplates) { atomicWrite($cacheFile, $code); }
 
         return $this->getTemplateClass($className);
+    }
+
+    /**
+     * Every directory a template name is looked up in, in order: the site's
+     * template_dir, then each installed module's template/.
+     *
+     * @return list<string>
+     */
+    public function templateRoots(): array
+    {
+        return [$this->templateDir, ...$this->roots->of(ResourceRoots::TEMPLATE)];
+    }
+
+    /**
+     * The file a template name resolves to and the root it was found in, or
+     * the site's would-be path and null when no root has it.
+     *
+     * @return array{string, ?string}
+     */
+    private function locate(string $template): array
+    {
+        $relative = $template . $this->templateExtension;
+        foreach ($this->templateRoots() as $root) {
+            if (file_exists($root . $relative)) {
+                return [$root . $relative, $root];
+            }
+        }
+        return [$this->templateDir . $relative, null];
     }
 
     public function getTemplateClass(string $className): object
@@ -443,7 +483,10 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         bool $phpProcessing = false,
         ?string $sourcePath = null,
     ): string {
-        $sourcePath ??= realpath($this->templateDir . $templateName . $this->templateExtension) ?: $this->templateDir . $templateName . $this->templateExtension;
+        if ($sourcePath === null) {
+            [$file] = $this->locate($templateName);
+            $sourcePath = realpath($file) ?: $file;
+        }
         $identity = serialize([$sourcePath, $templateName, $templateContent,
             $parseMode ?? $this->parseMode, $phpProcessing, $this->compilerFingerprint()]);
         return self::TEMPLATE_CLASS_PREFIX . hash('sha256', $identity);

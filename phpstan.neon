@@ -10,6 +10,7 @@ parameters:
         analyseAndScan:
             - build/*
             - resources/template/cache/*
+            - src/AstrX/*/resources/*
             - public/compiled.php
             - public/compile/index.php
             - public/setup.php

@@ -10,6 +10,7 @@ use AstrX\Config\Diagnostic\ConfigFileInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic;
 use AstrX\Config\Diagnostic\ConfigNotABoolDiagnostic;
+use AstrX\Support\ResourceRoots;
 use ReflectionObject;
 use function AstrX\Support\configDir;
 
@@ -28,10 +29,20 @@ final class Config
     /** @var array<string, true> — domains whose keys have been checked for unused */
     private array $checkedDomains = [];
 
+    /** Module config directories, lowest precedence first; the site's CONFIG_DIR sits above them. */
+    private readonly ResourceRoots $roots;
+
+    /**
+     * @param ResourceRoots|null $roots the installed modules' resource
+     *        directories: their config/ files are the defaults the site's own
+     *        CONFIG_DIR files override key by key.
+     */
     public function __construct(
         private readonly DiagnosticSinkInterface $sink,
         ?string $configFile = null,
+        ?ResourceRoots $roots = null,
     ) {
+        $this->roots = $roots ?? new ResourceRoots();
         $file = $configFile ?? (configDir() . 'config.php');
 
         $loaded = is_file($file) ? require $file : [];
@@ -90,26 +101,64 @@ final class Config
         return null;
     }
 
-    /** Loads optional per-module config file: CONFIG_DIR/{Domain}.config.php */
+    /**
+     * Load the config file {Domain}.config.php: each installed module's copy
+     * (its defaults) first, then the site's CONFIG_DIR copy, merged per section
+     * KEY BY KEY — so the site file only needs the keys it changes, and a key a
+     * module adds later still reaches a site whose file predates it.
+     *
+     * Every section the file declares replaces the in-memory section of that
+     * name wholesale, exactly as one file used to: reloading after an admin
+     * save picks up removed keys too.
+     */
     public function loadModuleConfig(string $domain): void
     {
-        $path = (configDir()) . $domain . '.config.php';
-        if (!file_exists($path)) {
+        $layered = [];
+        $found   = false;
+        foreach ($this->configFilesFor($domain) as $path) {
+            $loaded = require $path;
+            if (!is_array($loaded)) {
+                $this->sink->emit(new ConfigFileInvalidDiagnostic(
+                                      id:    'astrx.config/config_file.invalid',
+                                      level: DiagnosticLevel::ERROR,
+                                      file:  $path,
+                                  ));
+                continue;
+            }
+            $found = true;
+            foreach ($loaded as $section => $keys) {
+                if (!is_string($section)) {
+                    continue;
+                }
+                $prev = $layered[$section] ?? null;
+                $layered[$section] = (is_array($prev) && is_array($keys)) ? array_merge($prev, $keys) : $keys;
+            }
+        }
+
+        if (!$found) {
             return;
         }
 
-        $loaded = require $path;
-        if (!is_array($loaded)) {
-            $this->sink->emit(new ConfigFileInvalidDiagnostic(
-                                  id:    'astrx.config/config_file.invalid',
-                                  level: DiagnosticLevel::ERROR,
-                                  file:  $path,
-                              ));
-            return;
-        }
+        /** @var array<string, array<string, mixed>> $layered */
+        $this->configuration = array_merge($this->configuration, $layered);
+    }
 
-        /** @var array<string, array<string, mixed>> $loaded */
-        $this->configuration = array_merge($this->configuration, $loaded);
+    /**
+     * The existing {Domain}.config.php files, lowest precedence first: the
+     * modules' defaults, then the site's.
+     *
+     * @return list<string>
+     */
+    public function configFilesFor(string $domain): array
+    {
+        $out = [];
+        foreach ([...$this->roots->of(ResourceRoots::CONFIG), configDir()] as $dir) {
+            $path = $dir . $domain . '.config.php';
+            if (file_exists($path)) {
+                $out[] = $path;
+            }
+        }
+        return $out;
     }
 
     /** Applies the config section for $domain to $instance. */

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Config;
 
+use AstrX\Support\ResourceRoots;
 use ReflectionClass;
 use function AstrX\Support\configDir;
 
@@ -18,9 +19,10 @@ use function AstrX\Support\configDir;
  *      unannotated class behaves exactly as before.
  *
  * {@see fileForSection()} answers the writer's question by scanning the config
- * directory for the file that actually declares a section. That scan is the
- * ground truth: it reads the same files {@see Config::loadModuleConfig()} reads,
- * so reader and writer cannot disagree about where a section lives.
+ * directories for the file that actually declares a section. That scan is the
+ * ground truth: it reads the same files {@see Config::loadModuleConfig()} reads
+ * (the site's directory, then each installed module's config/ defaults), so
+ * reader and writer cannot disagree about where a section lives.
  */
 final class ConfigDomainResolver
 {
@@ -36,12 +38,45 @@ final class ConfigDomainResolver
      * @param string $configDir Config directory override; empty uses CONFIG_DIR.
      *                          Injected in tests so the scan does not depend on
      *                          global constants.
+     * @param ResourceRoots|null $roots the installed modules' resource
+     *                          directories, whose config/ holds defaults.
      */
-    public function __construct(private string $configDir = '')
+    public function __construct(private string $configDir = '', ?ResourceRoots $roots = null)
     {
         if ($this->configDir === '') {
             $this->configDir = configDir();
         }
+        $this->roots = $roots ?? new ResourceRoots();
+    }
+
+    private readonly ResourceRoots $roots;
+
+    /**
+     * Every directory a config file may come from: the site's first (it names
+     * the file when both declare a section), then the modules' defaults.
+     *
+     * @return list<string>
+     */
+    private function dirs(): array
+    {
+        return [$this->configDir(), ...$this->roots->of(ResourceRoots::CONFIG)];
+    }
+
+    /** The same resolver over a different site config directory (same module defaults). */
+    public function withConfigDir(string $configDir): self
+    {
+        return new self($configDir, $this->roots);
+    }
+
+    /** Whether {$fileBaseName}.config.php exists in the site's or a module's config directory. */
+    public function hasFile(string $fileBaseName): bool
+    {
+        foreach ($this->dirs() as $dir) {
+            if (is_file($dir . $fileBaseName . '.config.php')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The config directory this resolver scans, with a trailing separator. */
@@ -117,7 +152,13 @@ final class ConfigDomainResolver
         }
 
         $map = [];
-        foreach (self::configFiles($this->configDir) as $base => $path) {
+        $files = [];
+        foreach ($this->dirs() as $dir) {
+            foreach (self::configFiles($dir) as $base => $path) {
+                $files[] = [$base, $path];
+            }
+        }
+        foreach ($files as [$base, $path]) {
             /** @var mixed $loaded */
             $loaded = @include $path;
             if (!is_array($loaded)) {
@@ -176,7 +217,7 @@ final class ConfigDomainResolver
 
         // Only fall back to the parent namespace when the class has no config
         // file of its own — matching ModuleLoader's original resolution order.
-        if (is_file(rtrim($this->configDir, '/\\') . DIRECTORY_SEPARATOR . $short . '.config.php')) {
+        if ($this->hasFile($short)) {
             return $out;
         }
 

@@ -6,7 +6,8 @@ declare(strict_types=1);
  *
  * Compares every array language file under resources/lang/en (recursively,
  * including the Diagnostics/ subdirectory) against its resources/lang/it
- * counterpart and reports:
+ * counterpart — and the same for every installed module's own lang/
+ * directory — and reports:
  *
  *   - FILE MISSING : a language file that exists in one locale but not the other
  *   - MISMATCH     : keys present in one locale's file but absent from the other
@@ -19,7 +20,7 @@ declare(strict_types=1);
  * Only keys are compared; values may be plain strings or callables (the
  * Diagnostics catalogs). Requiring a catalog file is safe here because closure
  * parameter types are resolved lazily at call time — the closures are never
- * invoked, so no AstrX class needs to be autoloadable.
+ * invoked. (The autoloader is only needed to find the modules' directories.)
  *
  * Exit codes:
  *   0  full parity
@@ -33,12 +34,19 @@ declare(strict_types=1);
 const PARITY_LOCALE_A = 'en';
 const PARITY_LOCALE_B = 'it';
 
-$langRoot = dirname(__DIR__) . '/resources/lang';
-$dirA     = $langRoot . '/' . PARITY_LOCALE_A;
-$dirB     = $langRoot . '/' . PARITY_LOCALE_B;
+$root = dirname(__DIR__);
+require $root . '/src/autoload.php';
 
-if (!is_dir($dirA) || !is_dir($dirB)) {
-    fwrite(STDERR, "Language directory not found:\n  {$dirA}\n  {$dirB}\n");
+/** @var array<string,string> $langRoots label => directory holding en/ and it/ */
+$langRoots = ['resources/lang' => $root . '/resources/lang'];
+foreach (AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+             ->of(AstrX\Support\ResourceRoots::LANG) as $dir) {
+    $langRoots[ltrim(substr(rtrim($dir, '/'), strlen($root)), '/')] = rtrim($dir, '/');
+}
+
+if (!is_dir($langRoots['resources/lang'] . '/' . PARITY_LOCALE_A)
+    || !is_dir($langRoots['resources/lang'] . '/' . PARITY_LOCALE_B)) {
+    fwrite(STDERR, "Language directory not found under {$langRoots['resources/lang']}\n");
     exit(2);
 }
 
@@ -97,60 +105,66 @@ function parity_keys(string $path): ?array
     return $keys;
 }
 
-$filesA = parity_collect($dirA, PARITY_LOCALE_A);
-$filesB = parity_collect($dirB, PARITY_LOCALE_B);
-
-$allRel = array_keys($filesA + $filesB);
-sort($allRel);
-
 $problems = 0;
 $report   = [];
+$checked  = 0;
 
-foreach ($allRel as $rel) {
-    $labelA = PARITY_LOCALE_A . '/' . $rel . '.' . PARITY_LOCALE_A . '.php';
-    $labelB = PARITY_LOCALE_B . '/' . $rel . '.' . PARITY_LOCALE_B . '.php';
+foreach ($langRoots as $label => $langRoot) {
+    $dirA   = $langRoot . '/' . PARITY_LOCALE_A;
+    $dirB   = $langRoot . '/' . PARITY_LOCALE_B;
+    $filesA = is_dir($dirA) ? parity_collect($dirA, PARITY_LOCALE_A) : [];
+    $filesB = is_dir($dirB) ? parity_collect($dirB, PARITY_LOCALE_B) : [];
 
-    $hasA = isset($filesA[$rel]);
-    $hasB = isset($filesB[$rel]);
+    $allRel = array_keys($filesA + $filesB);
+    sort($allRel);
+    $checked += count($allRel);
 
-    if (!$hasA || !$hasB) {
+    foreach ($allRel as $rel) {
+        $labelA = $label . '/' . PARITY_LOCALE_A . '/' . $rel . '.' . PARITY_LOCALE_A . '.php';
+        $labelB = $label . '/' . PARITY_LOCALE_B . '/' . $rel . '.' . PARITY_LOCALE_B . '.php';
+
+        $hasA = isset($filesA[$rel]);
+        $hasB = isset($filesB[$rel]);
+
+        if (!$hasA || !$hasB) {
+            $problems++;
+            $missingLocale = $hasA ? PARITY_LOCALE_B : PARITY_LOCALE_A;
+            $presentLabel  = $hasA ? $labelA : $labelB;
+            $report[]      = "FILE MISSING: {$presentLabel} has no {$missingLocale} counterpart";
+            continue;
+        }
+
+        $keysA = parity_keys($filesA[$rel]);
+        $keysB = parity_keys($filesB[$rel]);
+
+        if ($keysA === null) { $problems++; $report[] = "NOT AN ARRAY: {$labelA}"; }
+        if ($keysB === null) { $problems++; $report[] = "NOT AN ARRAY: {$labelB}"; }
+        if ($keysA === null || $keysB === null) {
+            continue;
+        }
+
+        $missingInB = array_values(array_diff($keysA, $keysB)); // in A, absent from B
+        $missingInA = array_values(array_diff($keysB, $keysA)); // in B, absent from A
+
+        if ($missingInB === [] && $missingInA === []) {
+            continue;
+        }
+
         $problems++;
-        $missingLocale = $hasA ? PARITY_LOCALE_B : PARITY_LOCALE_A;
-        $presentLabel  = $hasA ? $labelA : $labelB;
-        $report[]      = "FILE MISSING: {$presentLabel} has no {$missingLocale} counterpart";
-        continue;
+        $lines = ["MISMATCH: {$label}/{$rel}"];
+        foreach ($missingInB as $key) {
+            $lines[] = "  in {$labelA} but missing from {$labelB}: {$key}";
+        }
+        foreach ($missingInA as $key) {
+            $lines[] = "  in {$labelB} but missing from {$labelA}: {$key}";
+        }
+        $report[] = implode("\n", $lines);
     }
-
-    $keysA = parity_keys($filesA[$rel]);
-    $keysB = parity_keys($filesB[$rel]);
-
-    if ($keysA === null) { $problems++; $report[] = "NOT AN ARRAY: {$labelA}"; }
-    if ($keysB === null) { $problems++; $report[] = "NOT AN ARRAY: {$labelB}"; }
-    if ($keysA === null || $keysB === null) {
-        continue;
-    }
-
-    $missingInB = array_values(array_diff($keysA, $keysB)); // in A, absent from B
-    $missingInA = array_values(array_diff($keysB, $keysA)); // in B, absent from A
-
-    if ($missingInB === [] && $missingInA === []) {
-        continue;
-    }
-
-    $problems++;
-    $lines = ["MISMATCH: {$rel}"];
-    foreach ($missingInB as $key) {
-        $lines[] = "  in {$labelA} but missing from {$labelB}: {$key}";
-    }
-    foreach ($missingInA as $key) {
-        $lines[] = "  in {$labelB} but missing from {$labelA}: {$key}";
-    }
-    $report[] = implode("\n", $lines);
 }
 
 if ($problems === 0) {
     echo 'Language parity OK: ' . PARITY_LOCALE_A . ' and ' . PARITY_LOCALE_B
-        . ' match across ' . count($allRel) . " file(s).\n";
+        . ' match across ' . $checked . ' file(s) in ' . count($langRoots) . " lang root(s).\n";
     exit(0);
 }
 

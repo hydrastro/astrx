@@ -4,8 +4,10 @@ declare(strict_types=1);
 /**
  * Warm AstrX server-side template cache without booting the web application.
  *
- * This compiles all HTML templates under resources/template into resources/template/cache/*.php
- * using the configured source, mode and content-addressed cache identity.
+ * This compiles all HTML templates under resources/template — and every
+ * installed module's template/ directory — into resources/template/cache/*.php
+ * using the configured source, mode and content-addressed cache identity. A
+ * name the site overrides is compiled once, from the site's file.
  */
 
 $root = dirname(__DIR__);
@@ -55,7 +57,8 @@ if (is_file($supportConstants)) {
 }
 
 $collector = new AstrX\Result\DiagnosticsCollector();
-$engine = new AstrX\Template\TemplateEngine($collector);
+$roots = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);
+$engine = new AstrX\Template\TemplateEngine($collector, $roots);
 /** @var mixed $loadedConfig */
 $loadedConfig = require CONFIG_DIR . 'TemplateEngine.config.php';
 $cfg = is_array($loadedConfig) && is_array($loadedConfig['TemplateEngine'] ?? null) ? $loadedConfig['TemplateEngine'] : [];
@@ -75,24 +78,30 @@ if ($clear) {
     }
 }
 
-$rii = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($templateDir, FilesystemIterator::SKIP_DOTS),
-);
-
 $templates = [];
-foreach ($rii as $file) {
-    if (!$file instanceof SplFileInfo || !$file->isFile() || !str_ends_with($file->getFilename(), $extension)) {
+foreach ($engine->templateRoots() as $i => $rootDir) {
+    $rootDir = rtrim($rootDir, '/\\') . DIRECTORY_SEPARATOR;
+    if (!is_dir($rootDir)) {
         continue;
     }
+    $rii = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($rootDir, FilesystemIterator::SKIP_DOTS),
+    );
+    foreach ($rii as $file) {
+        if (!$file instanceof SplFileInfo || !$file->isFile() || !str_ends_with($file->getFilename(), $extension)) {
+            continue;
+        }
 
-    $path = $file->getPathname();
-    $rel = substr($path, strlen($templateDir));
-    $rel = str_replace(DIRECTORY_SEPARATOR, '/', $rel);
-    if (str_starts_with($rel, 'cache/')) {
-        continue;
+        $path = $file->getPathname();
+        $rel = substr($path, strlen($rootDir));
+        $rel = str_replace(DIRECTORY_SEPARATOR, '/', $rel);
+        if ($i === 0 && str_starts_with($rel, 'cache/')) {
+            continue;
+        }
+        $templates[substr($rel, 0, -strlen($extension))] = true;
     }
-    $templates[] = substr($rel, 0, -strlen($extension));
 }
+$templates = array_keys($templates);
 
 sort($templates);
 $ok = 0;

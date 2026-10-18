@@ -105,7 +105,7 @@ final class ModuleLoader
         if ($dir === '' || !is_dir($dir)) {
             return;
         }
-        $this->domains = new ConfigDomainResolver(rtrim($dir, '/\\') . DIRECTORY_SEPARATOR);
+        $this->domains = $this->domains->withConfigDir(rtrim($dir, '/\\') . DIRECTORY_SEPARATOR);
     }
 
     /** False → warn when a class with #[InjectConfig] setters has no config file. */
@@ -196,12 +196,11 @@ final class ModuleLoader
         if (!$this->configOptional && $hasInjectConfig) {
             $missing = null;
             foreach ($candidates as $candidate) {
-                $path = $this->domains->configDir() . $candidate['file'] . '.config.php';
-                if (is_file($path)) {
+                if ($this->domains->hasFile($candidate['file'])) {
                     $missing = null;
                     break;
                 }
-                $missing ??= $path;
+                $missing ??= $this->domains->configDir() . $candidate['file'] . '.config.php';
             }
             if ($missing !== null) {
                 $this->emitResourceMissing($missing);
@@ -264,13 +263,16 @@ final class ModuleLoader
         }
 
         $locale = $this->translator->getLocale();
-        $base   = rtrim($this->langDir, '/\\') . DIRECTORY_SEPARATOR . $locale
+        $site   = rtrim($this->langDir, '/\\') . DIRECTORY_SEPARATOR . $locale
                 . DIRECTORY_SEPARATOR . $domain;
-        if (is_file($base . '.' . $locale . '.php') || is_file($base . '.php') || is_dir($base)) {
-            return;
+        foreach ([...$this->translator->moduleLangDirs(), $this->langDir] as $dir) {
+            $base = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR . $domain;
+            if (is_file($base . '.' . $locale . '.php') || is_file($base . '.php') || is_dir($base)) {
+                return;
+            }
         }
 
-        $this->emitResourceMissing($base . '.' . $locale . '.php');
+        $this->emitResourceMissing($site . '.' . $locale . '.php');
     }
 
     /**

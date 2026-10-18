@@ -6,6 +6,7 @@ namespace AstrX;
 use AstrX\Auth\Gate;
 use AstrX\Auth\Identity;
 use AstrX\Config\Config;
+use AstrX\Config\ConfigDomainResolver;
 use AstrX\I18n\Translator;
 use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
@@ -39,7 +40,12 @@ final class Prelude
 
         $errorHandler = new ErrorHandler($collector);
 
-        $config = new Config($collector);
+        // Where the installed modules keep their templates, translations and
+        // default config. Needed before Config itself, whose module sections
+        // default from those files; the site's resources/ overrides all of them.
+        $roots = ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED);
+
+        $config = new Config($collector, null, $roots);
 
         // Environment setup — must happen before anything else so that PHP error
         // reporting and assert behaviour are configured for the right environment.
@@ -52,9 +58,10 @@ final class Prelude
         );
         $errorHandler->setEnvironment($env);
 
-        $translator = new Translator($collector);
+        $translator = new Translator($collector, $roots);
 
-        $moduleLoader = new ModuleLoader($config, $translator, $collector);
+        $configDomains = new ConfigDomainResolver('', $roots);
+        $moduleLoader  = new ModuleLoader($config, $translator, $collector, '', $configDomains);
 
         $injector = new Injector();
 
@@ -94,6 +101,8 @@ final class Prelude
 
         // Register shared instances
         $injector->setClass($collector);
+        $injector->setClass($roots);
+        $injector->setClass($configDomains);
         $injector->setClass($errorHandler);
         $injector->setClass($config);
         $injector->setClass($translator);

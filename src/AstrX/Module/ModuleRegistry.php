@@ -5,6 +5,7 @@ namespace AstrX\Module;
 
 use AstrX\Config\Config;
 use AstrX\Injector\Injector;
+use AstrX\Support\ResourceRoots;
 
 /**
  * Central switchboard for optional modules.
@@ -15,7 +16,9 @@ use AstrX\Injector\Injector;
  * module's manifest() declares its key, display name, an optional nav
  * contributor + disabled-defaults, page guards, resource policies (resource
  * class => policy class), page controllers (page file_name => controller
- * class), permission enums, and a teardown file.
+ * class), permission enums, a teardown file, and the directory holding its
+ * templates, translations, default config and SQL (`resources`, relative to
+ * the module class's own directory).
  *
  * This class is generic infrastructure: it hands out the CLASS NAMES / instances
  * a manifest declares and never imports the interfaces they implement (page
@@ -32,7 +35,7 @@ use AstrX\Injector\Injector;
  * A DISABLED module is never instantiated beyond its manifest — its
  * `nav_defaults` are merged instead.
  *
- * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string}
+ * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string,resources:?string}
  */
 final class ModuleRegistry
 {
@@ -224,17 +227,26 @@ final class ModuleRegistry
      */
     private function manifests(): array
     {
-        if ($this->manifests !== null) {
-            return $this->manifests;
-        }
+        return $this->manifests ??= self::buildManifests($this->modules);
+    }
 
+    /**
+     * Instantiate, validate and normalise the manifests of $modules, sorted by
+     * key. Throws on a class that is not a Module or a duplicate key: a broken
+     * module list must fail loudly, not run with a module silently missing.
+     *
+     * @param list<string> $modules
+     * @return list<Manifest>
+     */
+    private static function buildManifests(array $modules): array
+    {
         $out  = [];
         $keys = [];
-        foreach ($this->modules as $class) {
+        foreach ($modules as $class) {
             if (!class_exists($class) || !is_subclass_of($class, Module::class)) {
                 throw new \LogicException("Installed module {$class} is not a class implementing " . Module::class . '.');
             }
-            $manifest = self::normalise((new $class())->manifest());
+            $manifest = self::normalise((new $class())->manifest(), $class);
             if ($manifest === null) {
                 throw new \LogicException("Module {$class} has an unusable manifest (it needs a non-empty 'key').");
             }
@@ -246,8 +258,70 @@ final class ModuleRegistry
         }
         usort($out, static fn(array $a, array $b): int => strcmp($a['key'], $b['key']));
 
-        $this->manifests = $out;
         return $out;
+    }
+
+    /**
+     * The resource directories of every installed module, enabled or not (a
+     * disabled module's translations still label its grants in the grants
+     * editor, and its templates cost nothing while its pages 404).
+     */
+    public function resourceRoots(): ResourceRoots
+    {
+        return self::rootsOf($this->manifests());
+    }
+
+    /**
+     * Same as resourceRoots(), for callers that have no Config yet: the
+     * composition root needs the roots to build Config itself, and the tools
+     * need them without booting the application.
+     *
+     * @param list<string> $modules installed module classes
+     */
+    public static function resourceRootsFor(array $modules): ResourceRoots
+    {
+        return self::rootsOf(self::buildManifests($modules));
+    }
+
+    /** @param list<Manifest> $manifests */
+    private static function rootsOf(array $manifests): ResourceRoots
+    {
+        $dirs = [];
+        foreach ($manifests as $m) {
+            if ($m['resources'] !== null) {
+                $dirs[] = $m['resources'];
+            }
+        }
+        return new ResourceRoots($dirs);
+    }
+
+    /**
+     * The directory a module class lives in, or null if it cannot be found.
+     *
+     * Normally the class's own file. The compiled single-file build evaluates
+     * every class from a string, so reflection reports no real file there; the
+     * bundle then names the source path it was built from, relative to the
+     * project root (INDEX_DIR), where the module's resources are deployed.
+     */
+    private static function classDir(string $class): ?string
+    {
+        if (!class_exists($class)) {
+            return null;
+        }
+        $file = (new \ReflectionClass($class))->getFileName();
+        if (is_string($file) && is_file($file)) {
+            return dirname($file);
+        }
+
+        // The bundle is generated, so it is named as a string, never imported.
+        $sourcePath = 'AstrX\\Compiled\\Bundle::sourcePath';
+        if (is_callable($sourcePath)) {
+            $rel = $sourcePath($class);
+            if (is_string($rel) && $rel !== '') {
+                return rtrim(\AstrX\Support\indexDir(), '/\\') . DIRECTORY_SEPARATOR . dirname($rel);
+            }
+        }
+        return null;
     }
 
     /**
@@ -255,7 +329,7 @@ final class ModuleRegistry
      *
      * @return Manifest|null
      */
-    private static function normalise(mixed $raw): ?array
+    private static function normalise(mixed $raw, string $class): ?array
     {
         if (!is_array($raw) || !isset($raw['key']) || !is_string($raw['key']) || $raw['key'] === '') {
             return null;
@@ -266,6 +340,23 @@ final class ModuleRegistry
         $nav         = (isset($raw['nav']) && is_string($raw['nav']) && $raw['nav'] !== '') ? $raw['nav'] : null;
         $navDefaults = (isset($raw['nav_defaults']) && is_array($raw['nav_defaults'])) ? $raw['nav_defaults'] : [];
         $teardown    = (isset($raw['teardown']) && is_string($raw['teardown']) && $raw['teardown'] !== '') ? $raw['teardown'] : null;
+
+        // 'resources' names a directory relative to the module class's own
+        // directory. A declared directory that does not exist is a packaging
+        // mistake: fail loudly rather than run with untranslated pages.
+        $resources = null;
+        if (isset($raw['resources']) && is_string($raw['resources']) && $raw['resources'] !== '') {
+            $rel = $raw['resources'];
+            if (str_contains($rel, '..') || str_starts_with($rel, '/') || str_starts_with($rel, '\\')) {
+                throw new \LogicException("Module {$class}: 'resources' must be a path inside the module's directory.");
+            }
+            $base = self::classDir($class);
+            $dir  = $base !== null ? $base . DIRECTORY_SEPARATOR . $rel : null;
+            if ($dir === null || !is_dir($dir)) {
+                throw new \LogicException("Module {$class} declares resources '{$rel}', which is not a directory next to it.");
+            }
+            $resources = $dir;
+        }
 
         $guards = [];
         if (isset($raw['guards']) && is_array($raw['guards'])) {
@@ -315,6 +406,7 @@ final class ModuleRegistry
             'controllers'  => $controllers,
             'permissions'  => $permissions,
             'teardown'     => $teardown,
+            'resources'    => $resources,
         ];
     }
 

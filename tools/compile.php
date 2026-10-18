@@ -175,6 +175,12 @@ final class AstrXCompiler
             'setup',
             'src/setup',
         ];
+        // Each module's own resources. Unlike the site's config (per-install and
+        // mutable, so never embedded), a module's config/ holds shipped
+        // defaults and travels with it.
+        foreach (glob($this->root . '/src/AstrX/*/resources', GLOB_ONLYDIR) ?: [] as $dir) {
+            $resourceRoots[] = $this->slash($this->relative($dir));
+        }
 
         foreach ($resourceRoots as $rootRel) {
             $root = $this->root . '/' . $rootRel;
@@ -224,6 +230,7 @@ final class AstrXCompiler
         if (str_starts_with($rel, 'resources/config/')) {
             return true;
         }
+
         if (str_contains($rel, '/.')) {
             return true;
         }
@@ -305,6 +312,15 @@ final class Bundle
             return;
         }
         self::loadFile(self::CLASS_MAP[\$class]);
+    }
+
+    /**
+     * The project-relative source file a class was bundled from. Modules find
+     * their resources/ directory beside it (ModuleRegistry).
+     */
+    public static function sourcePath(string \$class): ?string
+    {
+        return self::CLASS_MAP[\$class] ?? null;
     }
 
     public static function sourceFingerprint(string \$path): string
@@ -570,11 +586,22 @@ PHP;
 
         $files = [];
         foreach ($rii as $file) {
-            if ($file instanceof SplFileInfo && $file->isFile() && $file->getExtension() === 'php') {
+            if ($file instanceof SplFileInfo && $file->isFile() && $file->getExtension() === 'php'
+                && !$this->isModuleResource($this->slash($this->relative($file->getPathname())))) {
                 $files[] = $file;
             }
         }
         return $files;
+    }
+
+    /**
+     * A file under a module's resources/ directory (src/AstrX/<Module>/resources/…):
+     * a template, catalog, default config or SQL file, never source. Catalogs
+     * and config are .php files, so without this they would be bundled as code.
+     */
+    private function isModuleResource(string $rel): bool
+    {
+        return preg_match('#^src/AstrX/[^/]+/resources/#', $rel) === 1;
     }
 
     /** @return list<string> */

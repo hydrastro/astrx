@@ -86,7 +86,19 @@ $sections = [];
 /** @var array<string,true> $configFileNames base names that exist on disk */
 $configFileNames = [];
 
-foreach (ConfigDomainResolver::configFiles(CONFIG_DIR) as $base => $path) {
+// The site's config files, then every installed module's config/ defaults. A
+// module's file and the site's file of the same name are ONE file as far as the
+// loader is concerned (the site's keys override the module's), so a section
+// declared in both is not a duplicate: its keys are the union.
+$roots = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);
+$configFiles = [];
+foreach ([CONFIG_DIR, ...$roots->of(AstrX\Support\ResourceRoots::CONFIG)] as $dir) {
+    foreach (ConfigDomainResolver::configFiles($dir) as $base => $path) {
+        $configFiles[] = [$base, $path];
+    }
+}
+
+foreach ($configFiles as [$base, $path]) {
     $configFileNames[$base] = true;
     /** @var mixed $loaded */
     $loaded = require $path;
@@ -100,15 +112,17 @@ foreach (ConfigDomainResolver::configFiles(CONFIG_DIR) as $base => $path) {
             $errors["LAYOUT:{$base}:nonstring"] = "LAYOUT: {$base} declares a non-string section key";
             continue;
         }
-        if (isset($sections[$section])) {
+        if (isset($sections[$section]) && $sections[$section]['file'] !== $base) {
             $errors["LAYOUT:dup:{$section}"] = "LAYOUT: section '{$section}' is declared twice — in "
                 . $sections[$section]['file'] . " and in {$base}";
             continue;
         }
-        $keyNames = [];
+        $keyNames = $sections[$section]['keys'] ?? [];
         if (is_array($keys)) {
             foreach (array_keys($keys) as $k) {
-                $keyNames[] = (string) $k;
+                if (!in_array((string) $k, $keyNames, true)) {
+                    $keyNames[] = (string) $k;
+                }
             }
         }
         $sections[$section] = ['file' => $base, 'keys' => $keyNames];
@@ -139,6 +153,8 @@ function cfg_class_names(string $classDir): array
         if (!$file instanceof SplFileInfo || !$file->isFile()) { continue; }
         $path = $file->getPathname();
         if (!str_ends_with($path, '.php')) { continue; }
+        // A module's resources/ holds catalogs and config, not classes.
+        if (str_contains($path, DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR)) { continue; }
         $rel = substr($path, strlen($classDir));
         $rel = str_replace('\\', '/', $rel);
         // The constants.php function file holds no class.
@@ -174,7 +190,7 @@ function cfg_php_files(array $roots): array
     return $out;
 }
 
-$resolver = new ConfigDomainResolver(CONFIG_DIR);
+$resolver = new ConfigDomainResolver(CONFIG_DIR, $roots);
 
 /** @var array<string,true> $reached sections some class resolves to */
 $reached = [];
@@ -377,7 +393,7 @@ foreach ($writeSites as $site) {
     if (!isset($configFileNames[$site['target']])) {
         $errors["WRITE:{$site['file']}:{$site['line']}"] =
             "WRITE TARGET: {$site['file']}:{$site['line']} persists to "
-            . "'{$site['target']}.config.php', which does not exist in resources/config/ — "
+            . "'{$site['target']}.config.php', which no config directory (the site's or a module's) declares — "
             . 'nothing loads it, so the save is a no-op';
         continue;
     }
