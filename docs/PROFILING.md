@@ -98,7 +98,7 @@ Start with inclusive time for:
 - `AstrX\\Navbar\\NavbarHandler::*`
 - `AstrX\\Template\\TemplateEngine::*`
 - `AstrX\\Theme\\ThemeService::*`
-- `AstrX\\Controller\\JsController::buildTemplateCache`
+- `AstrX\\Site\\Controller\\JsController::buildTemplateCache`
 
 If `buildTemplateCache` dominates, the template bundle should be written to disk as a real precompiled artifact instead of rebuilt by PHP on each ETag validation.
 

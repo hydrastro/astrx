@@ -20,5 +20,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_blocklist' => \AstrX\Blocklist\Controller\AdminBlocklistController::class,
+    ],
     'teardown'     => 'blocklist.down.sql',
 ];

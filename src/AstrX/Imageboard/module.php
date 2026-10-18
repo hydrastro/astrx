@@ -17,5 +17,16 @@ return [
     'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class,
     'nav_defaults' => ['board_nav' => false],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_boards' => \AstrX\Imageboard\Controller\AdminBoardsController::class,
+        'admin_config_imageboard' => \AstrX\Imageboard\Controller\AdminConfigImageboardController::class,
+        'board' => \AstrX\Imageboard\Controller\BoardController::class,
+        'board_feed' => \AstrX\Imageboard\Controller\BoardFeedController::class,
+        'board_file' => \AstrX\Imageboard\Controller\BoardFileController::class,
+        'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
+        'board_overboard' => \AstrX\Imageboard\Controller\BoardOverboardController::class,
+        'board_search' => \AstrX\Imageboard\Controller\BoardSearchController::class,
+    ],
     'teardown'     => 'imageboard.down.sql',
 ];

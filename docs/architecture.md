@@ -6,9 +6,30 @@ This page describes the current repository. The proposed core/application separa
 
 `public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths, loads `src/autoload.php` and constructs `Prelude`. The autoloader can also be included on its own without booting the application.
 
-`Prelude` builds shared services for configuration, diagnostics, translation, module loading and dependency injection. It registers authorization policies and creates `ContentManager`. That manager initializes the current request, resolves its page/controller, collects diagnostics and renders the response.
+`Prelude` builds shared services for configuration, diagnostics, translation, module loading and dependency injection. It binds the account session as the request's `Auth\Identity` and `Theme\ThemePreference`, registers authorization policies (`ApplicationPolicies` plus each enabled module's manifest) and creates `ContentManager`. That manager initializes the current request, resolves its page, picks the controller from `Site\ControllerMap`, collects diagnostics and renders the response.
 
 Pages and localized route identifiers are part of the bundled application's database model. Routing supports rewritten URLs and query-based requests. This is currently an application bootstrap: including it is not an inert way to load a general-purpose library.
+
+## Layers
+
+Every top-level namespace under `src/AstrX` belongs to one layer. A namespace may depend on its own layer or a lower one, and the namespace graph has no cycles. `tools/check_architecture.php` enforces both in CI, with the offending `file:line`. The layers are the planned package boundaries:
+
+| Layer | Namespaces | Becomes |
+|---|---|---|
+| foundation | `Result`, `Support` | framework |
+| component | `Config`, `Injector`, `Http`, `Routing`, `ErrorHandler`, `I18n`, `Template`, `Session`, `Csrf`, `Module`, `Pagination`, `Kernel` | framework |
+| library | `Database`, `Image`, `Auth`, `Api`, `Captcha`, `Identicon`, `Mail` | optional building blocks |
+| feature | `User`, `Admin`, `Page` (CMS), `Content`, `Navbar`, `Theme`, `Comment`, `News`, `Chat`, `Imageboard`, `Webmail`, … | optional modules |
+| application | `Site`, `ContentManager`, `Prelude`, `ApplicationPolicies` | this website |
+
+Lower layers reach upward only through narrow contracts that the application binds:
+
+- `Auth\Identity`: the caller as authorization sees it (`isLoggedIn`, `userId`, `roleName`). `Gate`, policies and diagnostic visibility use it. `User\UserSession` implements it.
+- `Theme\ThemePreference`: the visitor's own theme choice. `UserSession` implements it, and without it `ThemeService` uses the global theme.
+- `Template\TemplateVars`: the write side of a page's variables (`set`, `setShared`, `ContextScope`). Feature controllers use it and never touch `Site\DefaultTemplateContext`.
+- `Result\DiagnosticFilter`: which diagnostics a viewer may see. `I18n\DiagnosticRenderer` uses it, and `Auth\DiagnosticVisibilityChecker` implements it.
+
+Each feature owns its controllers (`src/AstrX/<Feature>/Controller/`), its policies and its manifest. `Site` holds this website's own pages and its page context.
 
 ## Results and diagnostics
 
@@ -40,7 +61,7 @@ The handwritten composition root is useful for making application-wide decisions
 
 ## Authorization and sessions
 
-`Gate` evaluates `Permission` enum values and resource-specific policies. Session records are database-backed; their encrypted contents are authenticated using keys derived from the installation secret. Session record liveness, current account status, current role and account session epoch are different checks.
+`Gate` evaluates `Permission` enum values against the caller's `Identity` and resource-specific policies. Policies live with the feature they protect (`User\UserPolicy`, `Comment\CommentPolicy`, `News\NewsPolicy`, `Chat\ChatPolicy`). `ApplicationPolicies` registers the always-on ones; an optional module declares its own in its manifest's `policies` key, and they are registered only while it is enabled. A resource-scoped check that no policy rules on is denied. Session records are database-backed; their encrypted contents are authenticated using keys derived from the installation secret. Session record liveness, current account status, current role and account session epoch are different checks.
 
 The normal request pipeline refreshes account status and role and compares epochs. Any separate web entry point handling privileged data must perform equivalent checks rather than trusting a previously stored role. Encryption of a session does not make its privileges current.
 

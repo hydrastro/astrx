@@ -22,5 +22,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'torrent_search' => \AstrX\TorrentSearch\Controller\TorrentSearchController::class,
+    ],
     'teardown'     => 'torrentsearch.down.sql',
 ];

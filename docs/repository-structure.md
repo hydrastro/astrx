@@ -21,9 +21,10 @@ These are dependency boundaries before they are repository boundaries. Start by 
 ## Steps
 
 1. **Done:** `src/autoload.php` loads classes without starting a session, database or response; `examples/components.php` exercises Results and injection independently.
+1. **Done:** the namespace graph is layered and acyclic (foundation → component → library → feature → application; see [architecture](architecture.md#layers)), and `tools/check_architecture.php` keeps it that way in CI. Features own their controllers, policies and manifests, and pages resolve through an explicit controller map. The layers are the intended package boundaries.
 2. Let an application provide configuration, paths, routes and optional adapters. Remove mandatory dependencies on CMS page rows and installation-global constants from the reusable surface.
 3. Have the CMS consume the same core API as a second small example application.
-4. Composer metadata now describes the application checkout. Choose explicit PHP licensing, finish package boundaries and make tagged releases before advertising a reusable core distribution. No third-party Composer runtime packages are required.
+4. Add Composer metadata. Choose explicit PHP licensing, finish package boundaries and make tagged releases before advertising a reusable core distribution. No third-party Composer runtime packages are required.
 5. Specify compatibility for the PHP/Rust HTTP APIs and test the PHP clients against actual pinned Rust binaries, alongside existing mock tests.
 6. If independent maintenance is useful, move the application and Rust workspace into their own repositories using reviewed history extraction in disposable clones.
 

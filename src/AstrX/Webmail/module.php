@@ -18,5 +18,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_config_webmail' => \AstrX\Webmail\Controller\AdminConfigWebmailController::class,
+        'webmail' => \AstrX\Webmail\Controller\WebmailController::class,
+    ],
     'teardown'     => 'webmail.down.sql',
 ];

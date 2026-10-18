@@ -45,8 +45,9 @@ A module is four things, none of which live in core:
 2. **Page ownership** — every page carries a `page.module` tag; the core
    `ModulePageGuard` 404s a page whose module is off, and `NavbarHandler` drops
    nav entries pointing at it. Pages are tagged by a migration.
-3. **(Optional) a nav contributor and/or page guards** — small classes the
-   manifest points at.
+3. **(Optional) a nav contributor, page guards, resource policies and page
+   controllers** — classes the manifest points at, all inside the module's own
+   namespace (`AstrX\<Module>\…`).
 4. **(Optional) a teardown file** — `src/setup/modules/<key>.down.sql` — that
    `purge` runs.
 
@@ -63,6 +64,12 @@ return [
     'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class, // or null
     'nav_defaults' => ['board_nav' => false],       // vars merged when the module is OFF
     'guards'       => [],                            // list of PageGuard classes
+    'policies'     => [],                            // resource class => policy class (Gate)
+    'controllers'  => [                              // page file_name => controller class
+        'board'     => \AstrX\Imageboard\Controller\BoardController::class,
+        'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
+        // …
+    ],
     'teardown'     => 'imageboard.down.sql',         // file in src/setup/modules/, or null
 ];
 ```
@@ -105,8 +112,8 @@ missing while the trap *feature* is off even though the module is on):
 ```php
 namespace AstrX\BotTrap;
 
-use AstrX\Module\PageGuard;
 use AstrX\Page\Page;
+use AstrX\Page\PageGuard;
 
 final class BotTrapPageGuard implements PageGuard
 {
@@ -116,6 +123,40 @@ final class BotTrapPageGuard implements PageGuard
     }
 }
 ```
+
+### Controllers
+
+A module's controllers live in `src/AstrX/<Module>/Controller/` and are listed
+in the manifest's `controllers` key: page `file_name` => class.
+`Site\ControllerMap` resolves a page through that map (plus its `CORE` list
+for always-on features and the site's own pages). Lookup ignores case and
+underscores, exactly as the old `AstrX\Controller\<Studly>Controller`
+derivation did, so existing page rows keep resolving. A page whose
+`file_name` has no entry has no controller. Nothing derives a class name
+from a database value any more.
+
+Disabled modules' controllers stay in the map: `ModulePageGuard` 404s their
+pages before dispatch, and the entry gate still reads `#[RequiresPermission]`
+from the class.
+
+A feature controller extends `Kernel\AbstractController` and writes page
+variables through `Template\TemplateVars` (`set()`, `setShared()`), **not**
+through the application's concrete `Site\DefaultTemplateContext`. That keeps
+the module free of application-layer imports, which
+`tools/check_architecture.php` enforces.
+
+### Policies
+
+If the module needs resource-level authorization (e.g. "a moderator may not
+delete an admin's message"), put the policy class in the module and declare it:
+
+```php
+'policies' => [\AstrX\Chat\ChatMessageResource::class => \AstrX\Chat\ChatPolicy::class],
+```
+
+It is registered with the `Gate` only while the module is enabled. Policies
+type-hint `Auth\Identity`, not the account session; use
+`User\UserGroup::ofIdentity()` when comparing roles.
 
 ### Page ownership (tagging)
 
@@ -161,25 +202,29 @@ scaffolds `src/AstrX/Forum/module.php` (+ a `ForumNavContributor` and
    unlisted defaults on).
 2. Tag its pages in a migration: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
 3. Fill in the teardown `DROP TABLE`s and the nav/guard stubs.
-4. `php tools/check_modules.php`.
+4. Add `Forum` to the `feature` layer in `tools/check_architecture.php`.
+5. `php tools/check_modules.php && php tools/check_architecture.php`.
 
-The module's controllers, services, templates, config and language files follow
-AstrX's normal conventions (a page row with `file_name` `forum` resolves to
-`AstrX\Controller\ForumController`; `Forum.config.php` and
+The scaffold includes `Controller/ForumController.php`, already mapped to the
+`forum` page in the manifest's `controllers`. Services, templates, config and
+language files follow AstrX's normal conventions (`Forum.config.php` and
 `resources/lang/{en,it}/Forum.*.php` auto-load by naming convention).
 
 ## Verifying
 
-Three gates, run in CI (`.github/workflows/ci.yml`) and locally:
+Four gates, run in CI (`.github/workflows/ci.yml`) and locally:
 
 ```
 php phpstan.phar analyse -l 10 --no-progress   # types (level 10)
 php tools/check_lang_parity.php                # en/it language parity
 php tools/check_modules.php                     # every manifest wired correctly
+php tools/check_architecture.php                # layered, acyclic namespaces
 ```
 
 `check_modules.php` verifies each manifest loads, has a `key`/`version`, its nav
-contributor implements `NavContributor`, its guards implement `PageGuard`, and its
-teardown file exists. CI additionally installs against MariaDB and boots the app
+contributor implements `NavContributor`, its guards implement `PageGuard`, its
+policies implement `PolicyInterface`, its controllers implement
+`Kernel\Controller` and live in the module's namespace, and its teardown file
+exists. CI additionally installs against MariaDB and boots the app
 with each module off (and with all modules off) to prove they are independently
 optional.

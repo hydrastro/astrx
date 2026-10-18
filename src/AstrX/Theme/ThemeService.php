@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Theme;
 
 use AstrX\Config\InjectConfig;
-use AstrX\User\UserSession;
 use function AstrX\Support\templateDir;
 
 /**
@@ -30,8 +29,13 @@ final class ThemeService
     private string $globalTheme       = 'default';
     private bool   $allowUserOverride = true;
 
+    /**
+     * @param ThemePreference|null $preference The visitor's own choice, when the
+     *        application has one (accounts bind User\UserSession). Without it —
+     *        a site with no accounts — the configured global theme applies.
+     */
     public function __construct(
-        private readonly UserSession $session,
+        private readonly ?ThemePreference $preference = null,
     ) {}
 
     #[InjectConfig('theme')]
@@ -59,8 +63,8 @@ final class ThemeService
     public function activeTheme(): string
     {
         // Step 1: per-user override
-        if ($this->allowUserOverride && $this->session->isLoggedIn()) {
-            $userTheme = $this->session->userTheme();
+        if ($this->allowUserOverride && $this->preference !== null) {
+            $userTheme = $this->preference->preferredTheme();
             if ($userTheme !== '' && $this->themeExists($userTheme)) {
                 return $userTheme;
             }

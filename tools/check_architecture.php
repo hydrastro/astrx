@@ -48,7 +48,7 @@ const LAYERS = [
     'foundation'  => ['Result', 'Support'],
     'component'   => [
         'Config', 'Injector', 'Http', 'Routing', 'ErrorHandler', 'I18n',
-        'Template', 'Session', 'Csrf', 'Module', 'Pagination',
+        'Template', 'Session', 'Csrf', 'Module', 'Pagination', 'Kernel',
     ],
     'library'     => ['Database', 'Image', 'Auth', 'Api', 'Captcha', 'Identicon', 'Mail'],
     'feature'     => [
@@ -58,7 +58,7 @@ const LAYERS = [
         'GitBrowse', 'WebSearch', 'OnionSearch', 'TorrentSearch',
         'FederatedSearch', 'SuiteAdmin',
     ],
-    'application' => ['Site', 'Controller', 'ContentManager', 'Prelude', 'ApplicationPolicies'],
+    'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationPolicies'],
 ];
 
 $root     = dirname(__DIR__);

@@ -23,5 +23,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'federated_search' => \AstrX\FederatedSearch\Controller\FederatedSearchController::class,
+    ],
     'teardown'     => 'fedsearch.down.sql',
 ];

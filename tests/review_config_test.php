@@ -27,7 +27,7 @@ check('fallback_to_key disabled', $t->t('unknown') === '');
 check('explicit fallback preserved', $t->t('unknown',fallback:'explicit') === 'explicit');
 $t->setFallbackToKey(true); check('fallback_to_key enabled', $t->t('unknown') === 'unknown');
 file_put_contents($dir . 'Mail.config.php', "<?php return ['WebmailService'=>['mailbox_is_username'=>true]];");
-$ref = new ReflectionClass(AstrX\Controller\RegisterController::class);
+$ref = new ReflectionClass(AstrX\User\Controller\RegisterController::class);
 $controller = $ref->newInstanceWithoutConstructor();
 $loader->onClassCreated($controller, $controller::class);
 check('registration receives Mail configuration', $ref->getProperty('mailboxIsUsername')->getValue($controller) === true);

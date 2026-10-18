@@ -16,5 +16,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_content' => \AstrX\Content\Controller\AdminContentController::class,
+        'content' => \AstrX\Content\Controller\ContentController::class,
+    ],
     'teardown'     => 'content.down.sql',
 ];

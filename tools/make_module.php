@@ -6,6 +6,7 @@ declare(strict_types=1);
  *
  * Generates a new optional-module skeleton so adding one is a single command:
  *   - src/AstrX/<Studly>/module.php          the manifest (discovered by ModuleRegistry)
+ *   - src/AstrX/<Studly>/Controller/<Studly>Controller.php  its page controller
  *   - src/AstrX/<Studly>/<Studly>NavContributor.php   (only with --nav)
  *   - src/AstrX/<Studly>/<Studly>PageGuard.php         (only with --guard)
  *   - src/setup/modules/<key>.down.sql       teardown stub for `module.php purge`
@@ -85,6 +86,12 @@ return [
     'nav'          => {$navRef},
     'nav_defaults' => [],
     'guards'       => {$guardRef},
+    // Resource class => policy class, registered with the Gate while enabled.
+    'policies'     => [],
+    // Page file_name => controller class (resolved by Site\\ControllerMap).
+    'controllers'  => [
+        '{$key}' => \\AstrX\\{$studly}\\Controller\\{$studly}Controller::class,
+    ],
     'teardown'     => '{$key}.down.sql',
 ];
 
@@ -123,8 +130,8 @@ declare(strict_types=1);
 
 namespace AstrX\\{$studly};
 
-use AstrX\\Module\\PageGuard;
 use AstrX\\Page\\Page;
+use AstrX\\Page\\PageGuard;
 
 /**
  * Optional per-page veto for {$studly} (swap a page for the themed error page).
@@ -141,6 +148,46 @@ final class {$studly}PageGuard implements PageGuard
 
 PHP);
 }
+
+if (!is_dir("{$moduleDir}/Controller") && !@mkdir("{$moduleDir}/Controller", 0o755, true)) {
+    mk_fail("could not create {$moduleDir}/Controller");
+}
+$emit("{$moduleDir}/Controller/{$studly}Controller.php", <<<PHP
+<?php
+declare(strict_types=1);
+
+namespace AstrX\\{$studly}\\Controller;
+
+use AstrX\\Kernel\\AbstractController;
+use AstrX\\Result\\DiagnosticsCollector;
+use AstrX\\Result\\Result;
+use AstrX\\Template\\TemplateVars;
+
+/**
+ * Serves the '{$key}' page. Mapped in the manifest's `controllers`.
+ *
+ * Feature controllers depend on Template\\TemplateVars, never on the
+ * application's page context, so the module stays packageable on its own
+ * (tools/check_architecture.php enforces it).
+ */
+final class {$studly}Controller extends AbstractController
+{
+    public function __construct(
+        DiagnosticsCollector \$collector,
+        private readonly TemplateVars \$ctx,
+    ) {
+        parent::__construct(\$collector);
+    }
+
+    /** @return Result<mixed> */
+    public function handle(): Result
+    {
+        \$this->ctx->set('{$key}_heading', '{$studly}');
+        return \$this->ok();
+    }
+}
+
+PHP);
 
 $emit($downFile, <<<SQL
 -- Teardown for the {$studly} module (tools/module.php purge {$key}).
@@ -171,7 +218,9 @@ Next steps:
   2. Tag its pages so they can be gated — in a migrate_*.sql, e.g.:
          UPDATE `page` SET `module` = '{$key}' WHERE `file_name` LIKE '{$key}%';
   3. Fill in the {$key}.down.sql DROP TABLEs (and the nav/guard stubs if generated).
-  4. Verify:  php tools/check_modules.php
+  4. Add the module's namespace to LAYERS in tools/check_architecture.php
+     (usually 'feature').
+  5. Verify:  php tools/check_modules.php && php tools/check_architecture.php
 
 TXT);
 exit(0);

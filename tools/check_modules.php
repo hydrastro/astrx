@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use AstrX\Auth\PolicyInterface;
+use AstrX\Kernel\Controller;
 use AstrX\Module\NavContributor;
 use AstrX\Page\PageGuard;
 
@@ -15,6 +16,8 @@ use AstrX\Page\PageGuard;
  *   - every `guards` entry is a class that implements PageGuard;
  *   - every `policies` entry maps an existing resource class/interface to a
  *     class that implements PolicyInterface;
+ *   - every `controllers` entry maps a page file_name to an existing class that
+ *     implements Kernel\Controller and lives in the module's own namespace;
  *   - its `teardown` (if named) exists under src/setup/modules/;
  *   - its key is listed in resources/config/Modules.config.php (warning only —
  *     unlisted modules default ON).
@@ -144,6 +147,28 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
                     $errors[] = "{$key}: policy " . (is_string($policy) ? "'{$policy}'" : gettype($policy)) . ' not found';
                 } elseif (!is_subclass_of($policy, PolicyInterface::class)) {
                     $errors[] = "{$key}: policy '{$policy}' does not implement " . PolicyInterface::class;
+                }
+            }
+        }
+    }
+
+    // controllers: page file_name => controller class, owned by this module
+    if (isset($raw['controllers'])) {
+        if (!is_array($raw['controllers'])) {
+            $errors[] = "{$key}: 'controllers' must be an array of page file_name => controller class";
+        } else {
+            $moduleNs = 'AstrX\\' . basename(dirname($file)) . '\\';
+            /** @var mixed $class */
+            foreach ($raw['controllers'] as $fileName => $class) {
+                if (!is_string($fileName) || $fileName === '') {
+                    $errors[] = "{$key}: controller key must be a page file_name";
+                }
+                if (!is_string($class) || !class_exists($class)) {
+                    $errors[] = "{$key}: controller " . (is_string($class) ? "'{$class}'" : gettype($class)) . ' not found';
+                } elseif (!is_subclass_of($class, Controller::class)) {
+                    $errors[] = "{$key}: controller '{$class}' does not implement " . Controller::class;
+                } elseif (!str_starts_with($class, $moduleNs)) {
+                    $errors[] = "{$key}: controller '{$class}' is outside the module namespace {$moduleNs}";
                 }
             }
         }

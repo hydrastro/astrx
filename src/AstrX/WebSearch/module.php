@@ -20,5 +20,9 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'web_search' => \AstrX\WebSearch\Controller\WebSearchController::class,
+    ],
     'teardown'     => 'websearch.down.sql',
 ];

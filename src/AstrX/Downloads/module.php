@@ -19,5 +19,10 @@ return [
     'nav'          => null,
     'nav_defaults' => [],
     'guards'       => [],
+    // Page file_name => controller. Resolved by Site\ControllerMap.
+    'controllers'  => [
+        'admin_downloads' => \AstrX\Downloads\Controller\AdminDownloadsController::class,
+        'downloads' => \AstrX\Downloads\Controller\DownloadsController::class,
+    ],
     'teardown'     => 'downloads.down.sql',
 ];

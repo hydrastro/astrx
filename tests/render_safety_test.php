@@ -31,7 +31,7 @@ declare(strict_types=1);
 namespace {
 
     use AstrX\Config\ConfigWriter;
-    use AstrX\Controller\AdminConfigSystemController;
+    use AstrX\Admin\Controller\AdminConfigSystemController;
     use AstrX\Imageboard\BoardView;
     use AstrX\Page\Page;
     use AstrX\Result\DiagnosticsCollector;
