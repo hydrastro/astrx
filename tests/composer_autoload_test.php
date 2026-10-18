@@ -80,7 +80,7 @@ foreach ($it as $file) {
         }
     }
     if ($decl === []) {
-        continue; // module.php manifests, Support/constants.php (functions only)
+        continue; // Support/constants.php (functions only)
     }
     $expected = str_replace('/', '\\', substr($rel, 0, -4));
     if (count($decl) !== 1 || $decl[0] !== $expected) {

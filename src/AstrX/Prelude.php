@@ -94,6 +94,11 @@ final class Prelude
         $injector->setClass($injector);
         $injector->setClass($this);
 
+        // The installed modules, explicitly: the registry is built here, never
+        // autowired, so no part of the application can get one that silently
+        // knows about a different (or empty) set of modules.
+        $injector->setClass(new ModuleRegistry($config, $injector, ApplicationModules::INSTALLED));
+
         // Bootstrap PBAC Gate — register all policies once at startup.
         // The security layer depends on the Identity contract, not on the
         // accounts layer: bind the account session as the request's Identity

@@ -211,7 +211,7 @@ jobs:
       - name: Matrix — each module OFF then ON; home must stay up (200)
         run: |
           set -euo pipefail
-          MODULES=$(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"])&&is_string($m["key"]))echo $m["key"]," ";}')
+          MODULES=$(php tools/module.php keys | tr '\n' ' ')
           # Word splitting is the point here: count what was discovered.
           count=$(set -- $MODULES; echo "$#")
           echo "modules ($count): $MODULES"
@@ -225,7 +225,7 @@ jobs:
           # NOTE: duplicated verbatim in the core-only step below.
           MIN_MODULES=8
           if [ "$count" -lt "$MIN_MODULES" ]; then
-            echo "module discovery found $count manifest(s) matching src/AstrX/*/module.php, expected at least $MIN_MODULES"
+            echo "tools/module.php keys listed $count installed module(s), expected at least $MIN_MODULES"
             echo "the layout or the manifest format changed — this step would otherwise pass having tested nothing"
             exit 1
           fi
@@ -302,7 +302,7 @@ jobs:
       - name: Matrix — core-only (every module OFF) still boots
         run: |
           set -euo pipefail
-          MODULES=$(php -r 'foreach (glob("src/AstrX/*/module.php") as $f){$m=require $f; if(is_array($m)&&isset($m["key"])&&is_string($m["key"]))echo $m["key"]," ";}')
+          MODULES=$(php tools/module.php keys | tr '\n' ' ')
           count=$(set -- $MODULES; echo "$#")
           echo "modules ($count): $MODULES"
 
@@ -311,7 +311,7 @@ jobs:
           # by a fully-enabled site. Same floor, same reason.
           MIN_MODULES=8
           if [ "$count" -lt "$MIN_MODULES" ]; then
-            echo "module discovery found $count manifest(s) matching src/AstrX/*/module.php, expected at least $MIN_MODULES"
+            echo "tools/module.php keys listed $count installed module(s), expected at least $MIN_MODULES"
             echo "nothing would be disabled — 'core-only' would assert against a fully-enabled site"
             exit 1
           fi

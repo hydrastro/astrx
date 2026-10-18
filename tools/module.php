@@ -9,6 +9,7 @@ declare(strict_types=1);
  * runtime) and, for teardown, runs a module's src/setup/modules/<module>.down.sql.
  *
  *   status                 List every manageable module: enabled? installed pages?
+ *   keys                   The installed modules' keys, one per line (for CI).
  *   enable  <module>       Turn a module on  (its nav + pages reappear).
  *   disable <module>       Turn a module off (nav entries drop, pages 404). Reversible.
  *   purge   <module>       disable + DROP the module's tables and DELETE its pages.
@@ -40,11 +41,10 @@ $configDir  = $root . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 
 $modulesCfg = $configDir . 'Modules.config.php';
 $modulesDir = $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup' . DIRECTORY_SEPARATOR . 'modules' . DIRECTORY_SEPARATOR;
 
-// AstrX\Support\atomicWrite() — plain functions are not autoloadable, and this
-// file is what ConfigWriter uses to publish a config file without any reader
-// ever seeing a truncated one. Required directly so this CLI needs no bootstrap.
-require_once $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'AstrX'
-    . DIRECTORY_SEPARATOR . 'Support' . DIRECTORY_SEPARATOR . 'constants.php';
+// The inert autoloader: classes (the installed module list) plus the Support
+// functions, notably atomicWrite(), which publishes a config file without any
+// reader ever seeing a truncated one. Loading it starts nothing.
+require_once $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'autoload.php';
 
 /**
  * Current enabled/disabled map from Modules.config.php.
@@ -66,27 +66,39 @@ function m_read_modules(string $file): array
 }
 
 /**
- * Every manageable module = manifest keys ∪ config keys ∪ modules that ship a
- * teardown file. Manifests (src/AstrX/<Module>/module.php) are the primary
- * source of truth; the other two keep the list complete for partially-wired ones.
+ * Every manageable module = installed modules' keys (ApplicationModules) ∪
+ * config keys ∪ modules that ship a teardown file. The installed list is the
+ * source of truth; the other two keep the list complete for a module that was
+ * uninstalled but still has a flag or tables to purge.
  *
  * @param  array<string,bool> $configured
  * @return list<string>
  */
-function m_known_modules(array $configured, string $modulesDir, string $classDir): array
+function m_known_modules(array $configured, string $modulesDir): array
 {
-    $keys = array_keys($configured);
+    $keys = array_merge(array_keys($configured), m_installed_keys());
     foreach (glob($modulesDir . '*.down.sql') ?: [] as $f) {
         $keys[] = basename($f, '.down.sql');
     }
-    foreach (glob($classDir . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $f) {
-        /** @var mixed $m */
-        $m = require $f;
-        if (is_array($m) && isset($m['key']) && is_string($m['key']) && $m['key'] !== '') {
-            $keys[] = $m['key'];
+    $keys = array_values(array_unique($keys));
+    sort($keys);
+    return $keys;
+}
+
+/**
+ * Keys of the modules listed in ApplicationModules::INSTALLED.
+ *
+ * @return list<string>
+ */
+function m_installed_keys(): array
+{
+    $keys = [];
+    foreach (\AstrX\ApplicationModules::INSTALLED as $class) {
+        $manifest = (new $class())->manifest();
+        if (isset($manifest['key']) && is_string($manifest['key']) && $manifest['key'] !== '') {
+            $keys[] = $manifest['key'];
         }
     }
-    $keys = array_values(array_unique($keys));
     sort($keys);
     return $keys;
 }
@@ -356,12 +368,13 @@ function m_cmd_status(array $configured, array $known, string $configDir): void
     $counts = $pdo instanceof PDO ? m_page_counts($pdo) : [];
 
     m_out("AstrX modules\n=============\n\n");
-    m_out(sprintf("  %-14s %-9s %s\n", 'MODULE', 'STATE', $pdo instanceof PDO ? 'PAGES' : ''));
+    m_out(sprintf("  %-14s %-13s %s\n", 'MODULE', 'STATE', $pdo instanceof PDO ? 'PAGES' : ''));
     foreach ($known as $mod) {
-        $on    = $configured[$mod] ?? true; // default ON, matching ModuleRegistry
-        $state = $on ? 'enabled' : 'disabled';
+        // A missing flag is OFF, matching ModuleRegistry; say so explicitly.
+        $state = !array_key_exists($mod, $configured) ? 'off (no flag)'
+            : ($configured[$mod] ? 'enabled' : 'disabled');
         $pages = $pdo instanceof PDO ? (string) ($counts[$mod] ?? 0) : '';
-        m_out(sprintf("  %-14s %-9s %s\n", $mod, $state, $pages));
+        m_out(sprintf("  %-14s %-13s %s\n", $mod, $state, $pages));
     }
     if (!$pdo instanceof PDO) {
         m_out("\n(no DB connection — page counts hidden; configure resources/config/PDO.config.php)\n");
@@ -442,9 +455,12 @@ function m_usage(): void
                            DESTRUCTIVE. Restore with:
                              php tools/install.php --schema-only
                              php tools/module.php enable <module>
+      keys                 Print the installed modules' keys, one per line.
       help                 Show this message.
 
     Modules are also toggled by editing resources/config/Modules.config.php.
+    Only modules listed in ApplicationModules::INSTALLED exist for the site;
+    an installed module with no flag in Modules.config.php is OFF.
 
     TXT);
 }
@@ -458,11 +474,16 @@ $argv = $argv ?? [];
 $cmd  = $argv[1] ?? 'status';
 $mod  = $argv[2] ?? '';
 
-$classDir   = $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'AstrX' . DIRECTORY_SEPARATOR;
 $configured = m_read_modules($modulesCfg);
-$known      = m_known_modules($configured, $modulesDir, $classDir);
+$known      = m_known_modules($configured, $modulesDir);
 
 switch ($cmd) {
+    case 'keys':
+        // Machine-readable: the installed modules' keys, one per line (CI).
+        foreach (m_installed_keys() as $k) {
+            m_out($k . "\n");
+        }
+        break;
     case 'status':
     case 'list':
         m_cmd_status($configured, $known, $configDir);

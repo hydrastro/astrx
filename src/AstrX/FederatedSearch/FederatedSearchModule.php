@@ -1,8 +1,12 @@
 <?php
 declare(strict_types=1);
 
+namespace AstrX\FederatedSearch;
+
+use AstrX\Module\Module;
+
 /**
- * Unified (federated) search module manifest (the /search-all page). A thin
+ * Unified (federated) search module (the /search-all page). A thin
  * aggregator that fans ONE query out to four sources behind no-JS `?source=`
  * tabs: internal AstrX content (in-process, via SiteSearchService) plus the three
  * standalone localhost engines — websearch, onioncrawler and torrentds — queried
@@ -16,16 +20,23 @@ declare(strict_types=1);
  * onionsearch / torrentsearch); it aggregates them. See
  * {@see \AstrX\Module\ModuleRegistry}.
  */
-return [
-    'key'          => 'fedsearch',
-    'name'         => 'Federated search',
-    'version'      => '1.0.0',
-    'nav'          => null,
-    'nav_defaults' => [],
-    'guards'       => [],
-    // Page file_name => controller. Resolved by Site\ControllerMap.
-    'controllers'  => [
-        'federated_search' => \AstrX\FederatedSearch\Controller\FederatedSearchController::class,
-    ],
-    'teardown'     => 'fedsearch.down.sql',
-];
+final class FederatedSearchModule implements Module
+{
+    /** @return array<string, mixed> */
+    public function manifest(): array
+    {
+        return [
+            'key'          => 'fedsearch',
+            'name'         => 'Federated search',
+            'version'      => '1.0.0',
+            'nav'          => null,
+            'nav_defaults' => [],
+            'guards'       => [],
+            // Page file_name => controller. Resolved by Site\ControllerMap.
+            'controllers'  => [
+                'federated_search' => \AstrX\FederatedSearch\Controller\FederatedSearchController::class,
+            ],
+            'teardown'     => 'fedsearch.down.sql',
+        ];
+    }
+}

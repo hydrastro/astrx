@@ -5,12 +5,13 @@ declare(strict_types=1);
  * AstrX module scaffolder — `php tools/make_module.php <key> [--nav] [--guard]`
  *
  * Generates a new optional-module skeleton so adding one is a single command:
- *   - src/AstrX/<Studly>/module.php          the manifest (discovered by ModuleRegistry)
+ *   - src/AstrX/<Studly>/<Studly>Module.php  the module class (its manifest())
  *   - src/AstrX/<Studly>/Controller/<Studly>Controller.php  its page controller
  *   - src/AstrX/<Studly>/<Studly>NavContributor.php   (only with --nav)
  *   - src/AstrX/<Studly>/<Studly>PageGuard.php         (only with --guard)
  *   - src/setup/modules/<key>.down.sql       teardown stub for `module.php purge`
- * then prints the remaining manual steps (config flag, page tagging, controller).
+ * then prints the remaining manual steps (install it in ApplicationModules,
+ * config flag, page tagging, architecture layer).
  *
  * <key> is lowercase [a-z0-9_], the on/off key used in Modules.config.php and the
  * page.module tag; the namespace dir is its StudlyCase form. Never overwrites
@@ -48,11 +49,11 @@ $studly = str_replace(' ', '', ucwords(str_replace('_', ' ', $key)));
 
 $root      = dirname(__DIR__);
 $moduleDir = $root . "/src/AstrX/{$studly}";
-$manifest  = "{$moduleDir}/module.php";
+$manifest  = "{$moduleDir}/{$studly}Module.php";
 $downFile  = $root . "/src/setup/modules/{$key}.down.sql";
 
 if (is_file($manifest)) {
-    mk_fail("module already exists: src/AstrX/{$studly}/module.php");
+    mk_fail("module already exists: src/AstrX/{$studly}/{$studly}Module.php");
 }
 if (!is_dir($moduleDir) && !@mkdir($moduleDir, 0o755, true) && !is_dir($moduleDir)) {
     mk_fail("could not create {$moduleDir}");
@@ -75,27 +76,39 @@ $emit($manifest, <<<PHP
 <?php
 declare(strict_types=1);
 
+namespace AstrX\\{$studly};
+
+use AstrX\\Module\\Module;
+
 /**
- * {$studly} module manifest — discovered by AstrX\\Module\\ModuleRegistry.
+ * {$studly} module. Install it by listing {$studly}Module::class in
+ * ApplicationModules::INSTALLED; switch it on in Modules.config.php.
  * See docs/MODULES.md for the full contract.
  */
-return [
-    'key'          => '{$key}',
-    'name'         => '{$studly}',
-    'version'      => '0.1.0',
-    'nav'          => {$navRef},
-    'nav_defaults' => [],
-    'guards'       => {$guardRef},
-    // Resource class => policy class, registered with the Gate while enabled.
-    'policies'     => [],
-    // Permission enums this module declares (implementing Auth\\Permission).
-    'permissions'  => [],
-    // Page file_name => controller class (resolved by Site\\ControllerMap).
-    'controllers'  => [
-        '{$key}' => \\AstrX\\{$studly}\\Controller\\{$studly}Controller::class,
-    ],
-    'teardown'     => '{$key}.down.sql',
-];
+final class {$studly}Module implements Module
+{
+    /** @return array<string, mixed> */
+    public function manifest(): array
+    {
+        return [
+            'key'          => '{$key}',
+            'name'         => '{$studly}',
+            'version'      => '0.1.0',
+            'nav'          => {$navRef},
+            'nav_defaults' => [],
+            'guards'       => {$guardRef},
+            // Resource class => policy class, registered with the Gate while enabled.
+            'policies'     => [],
+            // Permission enums this module declares (implementing Auth\\Permission).
+            'permissions'  => [],
+            // Page file_name => controller class (resolved by Site\\ControllerMap).
+            'controllers'  => [
+                '{$key}' => \\AstrX\\{$studly}\\Controller\\{$studly}Controller::class,
+            ],
+            'teardown'     => '{$key}.down.sql',
+        ];
+    }
+}
 
 PHP);
 
@@ -216,7 +229,9 @@ foreach ($written as $w) {
 mk_out(<<<TXT
 
 Next steps:
-  1. Add   '{$key}' => true   to resources/config/Modules.config.php.
+  1. Install it: add  {$studly}\\{$studly}Module::class  to
+     ApplicationModules::INSTALLED (src/AstrX/ApplicationModules.php), and
+     '{$key}' => true  to resources/config/Modules.config.php (no flag = off).
   2. Tag its pages so they can be gated — in a migrate_*.sql, e.g.:
          UPDATE `page` SET `module` = '{$key}' WHERE `file_name` LIKE '{$key}%';
   3. Fill in the {$key}.down.sql DROP TABLEs (and the nav/guard stubs if generated).

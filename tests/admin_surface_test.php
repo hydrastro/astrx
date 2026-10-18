@@ -94,9 +94,9 @@ use AstrX\Admin\AdminPermission;
         static $map = null;
         if ($map === null) {
             $entries = AstrX\Site\ControllerMap::CORE;
-            foreach (glob(dirname(__DIR__) . '/src/AstrX/*/module.php') ?: [] as $file) {
-                $manifest = require $file;
-                if (is_array($manifest) && is_array($manifest['controllers'] ?? null)) {
+            foreach (AstrX\ApplicationModules::INSTALLED as $module) {
+                $manifest = (new $module())->manifest();
+                if (is_array($manifest['controllers'] ?? null)) {
                     $entries += $manifest['controllers'];
                 }
             }

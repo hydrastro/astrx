@@ -1,9 +1,11 @@
 <?php
 declare(strict_types=1);
 
+use AstrX\ApplicationModules;
 use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Kernel\Controller;
+use AstrX\Module\Module;
 use AstrX\Module\NavContributor;
 use AstrX\Page\PageGuard;
 
@@ -11,8 +13,10 @@ use AstrX\Page\PageGuard;
  * AstrX module integrity check — `php tools/check_modules.php`
  *
  * A zero-dependency, database-free CI gate that validates every optional-module
- * manifest so a broken module can't merge. For each src/AstrX/<Module>/module.php:
- *   - it loads and returns an array with a non-empty `key` (unique) + `version`;
+ * manifest so a broken module can't merge. For each class listed in
+ * ApplicationModules::INSTALLED:
+ *   - it implements Module\Module and manifest() returns an array with a
+ *     non-empty `key` (unique) + `version`;
  *   - its `nav` (if any) is a class that implements NavContributor;
  *   - every `guards` entry is a class that implements PageGuard;
  *   - every `policies` entry maps an existing resource class/interface to a
@@ -22,8 +26,9 @@ use AstrX\Page\PageGuard;
  *   - every `controllers` entry maps a page file_name to an existing class that
  *     implements Kernel\Controller and lives in the module's own namespace;
  *   - its `teardown` (if named) exists under src/setup/modules/;
- *   - its key is listed in resources/config/Modules.config.php (warning only —
- *     unlisted modules default ON).
+ *   - its key has a boolean flag in resources/config/Modules.config.php (an
+ *     installed module without one is OFF, so a missing flag is an error).
+ * A Module class present on disk but not installed is reported as a warning.
  *
  * Exit 0 when all manifests are valid (warnings don't fail); exit 1 on any error.
  * Pairs with PHPStan (types) and check_lang_parity.php (i18n) as the third gate.
@@ -48,6 +53,17 @@ spl_autoload_register(static function (string $class): void {
         require_once $file;
     }
 });
+
+/**
+ * The installed list as plain strings: the constant is declared
+ * list<class-string<Module>>, but checking that promise is this tool's job.
+ *
+ * @return list<string>
+ */
+function cm_installed(): array
+{
+    return ApplicationModules::INSTALLED;
+}
 
 /** @var list<string> $errors */
 $errors = [];
@@ -79,15 +95,26 @@ if (is_file($configFile)) {
 
 $modulesDir = SRC_DIR . 'setup' . DIRECTORY_SEPARATOR . 'modules' . DIRECTORY_SEPARATOR;
 
-foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $file) {
-    $rel = substr($file, strlen($root) + 1);
-    /** @var mixed $raw */
-    $raw = require $file;
+// Present but not installed: a Module class on disk that the application
+// does not list is inert — worth a warning, since it is usually a forgotten
+// ApplicationModules entry.
+foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . '*Module.php') ?: [] as $file) {
+    $class = 'AstrX\\' . basename(dirname($file)) . '\\' . basename($file, '.php');
+    if (class_exists($class) && is_subclass_of($class, Module::class)
+        && !in_array($class, cm_installed(), true)) {
+        $warnings[] = "{$class} is present but not listed in ApplicationModules::INSTALLED (inert)";
+    }
+}
 
-    if (!is_array($raw)) {
-        $errors[] = "{$rel}: manifest must return an array";
+foreach (cm_installed() as $class) {
+    $rel = $class;
+    if (!class_exists($class) || !is_subclass_of($class, Module::class)) {
+        $errors[] = "{$rel}: listed in ApplicationModules::INSTALLED but not a class implementing " . Module::class;
         continue;
     }
+    // Declarations must live in the module's own namespace.
+    $moduleNs = substr($class, 0, (int) strrpos($class, '\\') + 1);
+    $raw = (new $class())->manifest();
 
     $key = (isset($raw['key']) && is_string($raw['key'])) ? $raw['key'] : '';
     if ($key === '') {
@@ -160,15 +187,14 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
         if (!is_array($raw['permissions'])) {
             $errors[] = "{$key}: 'permissions' must be a list of permission enum classes";
         } else {
-            $ownNs = 'AstrX\\' . basename(dirname($file)) . '\\';
             /** @var mixed $enum */
             foreach ($raw['permissions'] as $enum) {
                 if (!is_string($enum) || !enum_exists($enum)) {
                     $errors[] = "{$key}: permission enum " . (is_string($enum) ? "'{$enum}'" : gettype($enum)) . ' not found';
                 } elseif (!is_subclass_of($enum, Permission::class)) {
                     $errors[] = "{$key}: '{$enum}' does not implement " . Permission::class;
-                } elseif (!str_starts_with($enum, $ownNs)) {
-                    $errors[] = "{$key}: permission enum '{$enum}' is outside the module namespace {$ownNs}";
+                } elseif (!str_starts_with($enum, $moduleNs)) {
+                    $errors[] = "{$key}: permission enum '{$enum}' is outside the module namespace {$moduleNs}";
                 }
             }
         }
@@ -179,18 +205,17 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
         if (!is_array($raw['controllers'])) {
             $errors[] = "{$key}: 'controllers' must be an array of page file_name => controller class";
         } else {
-            $moduleNs = 'AstrX\\' . basename(dirname($file)) . '\\';
-            /** @var mixed $class */
-            foreach ($raw['controllers'] as $fileName => $class) {
+            /** @var mixed $ctrl */
+            foreach ($raw['controllers'] as $fileName => $ctrl) {
                 if (!is_string($fileName) || $fileName === '') {
                     $errors[] = "{$key}: controller key must be a page file_name";
                 }
-                if (!is_string($class) || !class_exists($class)) {
-                    $errors[] = "{$key}: controller " . (is_string($class) ? "'{$class}'" : gettype($class)) . ' not found';
-                } elseif (!is_subclass_of($class, Controller::class)) {
-                    $errors[] = "{$key}: controller '{$class}' does not implement " . Controller::class;
-                } elseif (!str_starts_with($class, $moduleNs)) {
-                    $errors[] = "{$key}: controller '{$class}' is outside the module namespace {$moduleNs}";
+                if (!is_string($ctrl) || !class_exists($ctrl)) {
+                    $errors[] = "{$key}: controller " . (is_string($ctrl) ? "'{$ctrl}'" : gettype($ctrl)) . ' not found';
+                } elseif (!is_subclass_of($ctrl, Controller::class)) {
+                    $errors[] = "{$key}: controller '{$ctrl}' does not implement " . Controller::class;
+                } elseif (!str_starts_with($ctrl, $moduleNs)) {
+                    $errors[] = "{$key}: controller '{$ctrl}' is outside the module namespace {$moduleNs}";
                 }
             }
         }
@@ -206,10 +231,10 @@ foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . 'module.php') ?: [] as $fi
         }
     }
 
-    // An unlisted module is an ERROR, not a warning. "Unlisted defaults ON" is
-    // an unwritten rule: an operator who wants the module off opens
-    // Modules.config.php, does not find it there, and has nothing to flip.
-    // Seven of eighteen manifests had drifted off the list exactly this way.
+    // An installed module without a flag is an ERROR, not a warning: it is OFF
+    // at runtime (ModuleRegistry's default), which is safe but invisible — the
+    // operator opens Modules.config.php and finds nothing to flip. Seven of
+    // eighteen manifests once drifted off the list exactly this way.
     if (!array_key_exists($key, $configured)) {
         $errors[] = "{$key}: not listed in Modules.config.php — add \"'{$key}' => true,\" "
             . 'to the Modules section so the module can be switched off';

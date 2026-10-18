@@ -101,9 +101,9 @@ const LEGACY_IDS = [
 ];
 
 $enums = ApplicationPermissions::CORE;
-foreach (glob($root . '/src/AstrX/*/module.php') ?: [] as $file) {
-    $manifest = require $file;
-    if (is_array($manifest) && is_array($manifest['permissions'] ?? null)) {
+foreach (AstrX\ApplicationModules::INSTALLED as $module) {
+    $manifest = (new $module())->manifest();
+    if (is_array($manifest['permissions'] ?? null)) {
         foreach ($manifest['permissions'] as $enum) {
             $enums[] = $enum;
         }
