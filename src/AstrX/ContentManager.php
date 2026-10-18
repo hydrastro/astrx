@@ -28,20 +28,18 @@ use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
-use AstrX\Routing\UrlStack;
-use AstrX\Session\Diagnostic\InvalidPrgIdDiagnostic;
-use AstrX\Comment\CommentPrgHandler;
-use AstrX\Http\UploadedFile;
+use AstrX\Routing\RouteParser;
 use AstrX\Session\PrgHandler;
-use AstrX\Session\SecureSessionHandler;
-use AstrX\User\UserGroup;
 use AstrX\User\UserSession;
 use AstrX\Auth\RequiresPermission;
 use AstrX\Site\Controller\CommentController;
 use AstrX\Site\ControllerMap;
 use AstrX\Site\ErrorResponder;
 use AstrX\Site\PanicLockdown;
+use AstrX\Site\PrgIntake;
+use AstrX\Site\RequestIdentity;
 use AstrX\Site\SecurityHeaders;
+use AstrX\Site\SessionStarter;
 use AstrX\Site\SiteFlags;
 use AstrX\Site\DefaultTemplateContext;
 use AstrX\Template\TemplateEngine;
@@ -52,9 +50,6 @@ use AstrX\Admin\AdminPermission;
 
 final class ContentManager
 {
-    public const string ID_INVALID_PRG_ID = 'astrx.session/invalid_prg_id';
-    public const DiagnosticLevel LVL_INVALID_PRG_ID = DiagnosticLevel::WARNING;
-
     /** page file_name → controller class; see controllerMap(). */
     private ?ControllerMap $controllerMap = null;
 
@@ -75,45 +70,12 @@ final class ContentManager
         $this->config->loadModuleConfig('ContentManager');
         $this->config->loadModuleConfig('PDO');
 
-        $urlRewrite = $this->config->getConfig('Routing', 'url_rewrite', true);
-        assert(is_bool($urlRewrite));
-
-        $basePath = $this->config->getConfig('Routing', 'base_path', '/');
-        assert(is_string($basePath));
-
-        $localeKey = $this->config->getConfig('Routing', 'locale_key', 'lang');
-        assert(is_string($localeKey));
-
-        $sessionKey = $this->config->getConfig('Routing', 'session_key', 'sid');
-        assert(is_string($sessionKey));
-
-        $pageKey = $this->config->getConfig('Routing', 'page_key', 'page');
-        assert(is_string($pageKey));
-
-        $defaultPageToken = $this->config->getConfig('Routing', 'default_page', 'WORDING_MAIN');
-        assert(is_string($defaultPageToken));
-
-        $availableLocales = $this->config->getConfig('Prelude', 'available_languages', ['en']);
-        assert(is_array($availableLocales));
-        $availableLocales = array_values(array_filter($availableLocales, 'is_string'));
-
-        $defaultLocaleStr = $this->config->getConfig('Prelude', 'default_language', 'en');
-        assert(is_string($defaultLocaleStr));
-
-        // A locale is a plain string validated against available_languages
-        // (config), NOT a fixed enum — so an admin can add a language from the
-        // Language admin page without a code change. Fall back to the first
-        // available locale, then 'en'.
-        $defaultLocale = in_array($defaultLocaleStr, $availableLocales, true)
-            ? $defaultLocaleStr
-            : ($availableLocales[0] ?? 'en');
-
-        $sessionUseCookies = $this->config->getConfig('Session', 'use_cookies', true);
-        assert(is_bool($sessionUseCookies));
-
-        $sessionIdRegex = $this->config->getConfig('Session', 'session_id_regex', '/^[\da-fA-F]{256}$/');
-        assert(is_string($sessionIdRegex));
-        assert(@preg_match($sessionIdRegex, '') !== false);
+        // Routing keys this method still needs after parsing (the parser reads
+        // its own configuration).
+        $sessionUseCookies = $this->config->getConfigBool('Session', 'use_cookies', true);
+        $sessionKey        = $this->config->getConfigString('Routing', 'session_key', 'sid');
+        $pageKey           = $this->config->getConfigString('Routing', 'page_key', 'page');
+        $defaultPageToken  = $this->config->getConfigString('Routing', 'default_page', 'WORDING_MAIN');
 
         $prgTokenKey = $this->config->getConfig('Session', 'prg_token_key', 'prg');
         assert(is_string($prgTokenKey));
@@ -128,20 +90,12 @@ final class ContentManager
 
         $current = new CurrentUrl();
 
-        [$locale, $sidCandidate, $pageToken] = $this->parseRoutingHead(
-            urlRewrite:        $urlRewrite,
-            request:           $request,
-            basePath:          $basePath,
-            availableLocales:  $availableLocales,
-            defaultLocale:     $defaultLocale,
-            sessionUseCookies: $sessionUseCookies,
-            sessionIdRegex:    $sessionIdRegex,
-            localeKey:         $localeKey,
-            sessionKey:        $sessionKey,
-            pageKey:           $pageKey,
-            defaultPageToken:  $defaultPageToken,
-            current:           $current,
-        );
+        $uriRaw = $_SERVER['REQUEST_URI'] ?? '/';
+        $route  = RouteParser::fromConfig($this->config)
+            ->parse($request, $current, is_string($uriRaw) ? $uriRaw : '/');
+        $locale       = $route->locale;
+        $sidCandidate = $route->sidCandidate;
+        $pageToken    = $route->pageToken;
 
         // Register the now-populated CurrentUrl so that injectable services
         // (e.g. NavbarHandler) can receive the current locale, session id, etc.
@@ -195,208 +149,24 @@ final class ContentManager
         }
         $this->injector->setClass($pdoResult->unwrap());
 
-        $sessionResult = $this->injector->createClass(SecureSessionHandler::class)
-            ->drainTo($this->collector);
-
-        if (!$sessionResult->isOk()) {
+        // Bearer/API requests must be STATELESS (see SessionStarter); the same
+        // flag later decides whether to authenticate by API key or revalidate a
+        // cookie session.
+        $bearerPresent = (($request->bearerToken() ?? '') !== '');
+        $sessionStarter = new SessionStarter($this->injector, $this->config, $this->collector);
+        if (!$sessionStarter->start($request, $sidCandidate, $bearerPresent)) {
             $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
             return;
         }
 
-        /** @var SecureSessionHandler $sessionHandler */
-        $sessionHandler = $sessionResult->unwrap();
-
-        session_set_save_handler($sessionHandler, true);
-
-        // Bearer/API requests must be STATELESS: never mint or reuse a browser
-        // cookie session for them. Otherwise a cookie-jar client that sends the
-        // key once keeps an authenticated session cookie that (a) then works
-        // WITHOUT the key and (b) survives key revocation/expiry — defeating the
-        // credential's primary control. Detect the bearer before session_start,
-        // ignore any inbound session cookie (so a bearer call can't hijack or
-        // overwrite the caller's own browser session), and suppress Set-Cookie
-        // via the ini flags set just below.
-        $bearerPresent = (($request->bearerToken() ?? '') !== '');
-        if ($bearerPresent) {
-            unset($_COOKIE[session_name()]);
-        }
-
-        // R10: exclude bearer requests from URL-sid adoption too. In cookieless
-        // mode the sid rides in the URL; without this guard a bearer call would
-        // adopt a victim-supplied sid and loginFromApiKey() would then overwrite
-        // THAT session with the API-key identity — poisoning the victim's session.
-        // A bearer request must run on a throwaway session (mirrors the cookie
-        // unset above).
-        if (!$sessionUseCookies && $sidCandidate !== null && !$bearerPresent) {
-            if ($sessionHandler->validateId($sidCandidate)) {
-                session_id($sidCandidate);
-            }
-        }
-
-        // Harden session cookie: HttpOnly (no JS access), SameSite=Lax (CSRF
-        // mitigation). The Secure flag is set only when the request is over HTTPS
-        // so that local HTTP development still works. In production behind a TLS
-        // terminator, $_SERVER['HTTPS'] is set to 'on' by the web server or by the
-        // X-Forwarded-Proto header (if your proxy sets it).
-        // X-Forwarded-Proto is client-settable, so only honour it when the operator
-        // has declared a trusted TLS-terminating proxy. Default off → the Secure
-        // flag follows the real connection only. This matters on a plain-HTTP
-        // hidden service, where a spoofed header would otherwise set Secure and
-        // stop the session cookie being sent at all.
-        $trustFwdProto = $this->config->getConfig('ContentManager', 'trust_forwarded_proto', false) === true;
-        $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || ($trustFwdProto
-                    && isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
-                    && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-        $existingParams = session_get_cookie_params();
-        session_set_cookie_params([
-            'lifetime' => $existingParams['lifetime'],
-            /** @phpstan-ignore notIdentical.alwaysTrue */
-            'path'     => $existingParams['path'] !== '' ? $existingParams['path'] : '/',
-            'domain'   => $existingParams['domain'],
-            'secure'   => $isHttps,
-            'httponly' => true,
-            'samesite' => 'Lax',
-        ]);
-
-        if (session_status() === PHP_SESSION_NONE) {
-            // Enforce strict session mode regardless of php.ini so an
-            // uninitialised/attacker-supplied session ID is never adopted.
-            // This activates SecureSessionHandler::validateId() on the incoming ID.
-            ini_set('session.use_strict_mode', '1');
-            // Genuinely honour a cookieless deployment (php.ini ships
-            // use_cookies=1, so the mode was silently still emitting cookies), and
-            // force cookieless for stateless bearer requests — no Set-Cookie is
-            // emitted in either case.
-            if (!$sessionUseCookies || $bearerPresent) {
-                ini_set('session.use_cookies', '0');
-                ini_set('session.use_only_cookies', '0');
-            }
-            session_start();
-        }
-
         $sid = (string) session_id();
         $current->set($sessionKey, $sid);
         $request->query()->set($sessionKey, $sid);
 
-        // ── Session ID regeneration ───────────────────────────────────────────
-        // Regenerate the session ID on privilege changes (login/logout/role change)
-        // and on a time-based interval configurable per UserGroup.
-        $this->maybeRegenerateSession($sessionHandler);
-
-        // Update $sid after possible regeneration
-        $sid = (string) session_id();
-        $current->set($sessionKey, $sid);
-        $request->query()->set($sessionKey, $sid);
-
-        // ── Bearer / API-key authentication ───────────────────────────────────
-        // Must run AFTER session_start so the identity survives, and after
-        // regeneration so a stateless API call doesn't rotate a guest session.
-        // loginFromApiKey() omits _regen_force, so it triggers no further regen.
-        $bearer = $request->bearerToken();
-        if ($bearer !== null && $bearer !== '') {
-            $apiKeyResult = $this->injector->createClass(\AstrX\Api\ApiKeyService::class)
-                ->drainTo($this->collector);
-            if ($apiKeyResult->isOk()) {
-                /** @var \AstrX\Api\ApiKeyService $apiKeySvc */
-                $apiKeySvc = $apiKeyResult->unwrap();
-                $authedUserId = $apiKeySvc->validate($bearer);
-                if ($authedUserId !== null) {
-                    $request->setApiKeyUser($authedUserId);
-                    $userRepoResult = $this->injector->createClass(\AstrX\User\UserRepository::class)
-                        ->drainTo($this->collector);
-                    $userSessResult = $this->injector->createClass(\AstrX\User\UserSession::class)
-                        ->drainTo($this->collector);
-                    if ($userRepoResult->isOk() && $userSessResult->isOk()) {
-                        /** @var \AstrX\User\UserRepository $userRepo */
-                        $userRepo = $userRepoResult->unwrap();
-                        /** @var \AstrX\User\UserSession $userSess */
-                        $userSess = $userSessResult->unwrap();
-                        $userRow = $userRepo->findById($authedUserId);
-                        $userRow->drainTo($this->collector);
-                        if ($userRow->isOk()) {
-                            $row = $userRow->unwrap();
-                            // A closed account (keep_visible keeps deleted=0 for
-                            // content visibility) must not authenticate via its API
-                            // key either — password login already blocks non-'none'
-                            // deletion_mode; mirror that on the bearer path so a
-                            // key can't outlive the account being closed.
-                            $delMode = (is_array($row) && is_scalar($row['deletion_mode'] ?? null))
-                                ? (string) $row['deletion_mode'] : '';
-                            $accountOpen = ($delMode === '' || $delMode === 'none');
-                            if (is_array($row) && !empty($row['id']) && empty($row['deleted']) && $accountOpen) {
-                                /** @var array{id:string,username:string,display_name:string,type:int,verified:int|bool,avatar:int|bool,mailbox?:string,theme?:string|null} $row */
-                                $userSess->loginFromApiKey($row);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Cookie-session re-validation (R11, MED) ───────────────────────────
-        // The Gate resolves a request's role from SESSION state, written once at
-        // login and never re-checked against the DB. Without this, an admin action
-        // that demotes, bans, or deletes a user does NOT take effect until that
-        // user logs out or the session expires (up to the remember-me lifetime) —
-        // so a rogue/compromised privileged account can't be evicted, which is a
-        // core incident-response need. Re-load the row per request for a logged-in
-        // COOKIE session (the bearer path did its own check above): drop the
-        // session if the account is now closed/deleted; otherwise refresh the
-        // cached group so a role change applies immediately. On a DB error refuse
-        // this request without deleting the session, so it can be retried.
-        if (!$bearerPresent) {
-            $revSessRes = $this->injector->createClass(\AstrX\User\UserSession::class)->drainTo($this->collector);
-            $revRepoRes = $this->injector->createClass(\AstrX\User\UserRepository::class)->drainTo($this->collector);
-            if (!$revSessRes->isOk() || !$revRepoRes->isOk()) {
-                $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
-                return;
-            }
-
-            /** @var \AstrX\User\UserSession $revSess */
-            $revSess = $revSessRes->unwrap();
-            /** @var \AstrX\User\UserRepository $revRepo */
-            $revRepo = $revRepoRes->unwrap();
-            if ($revSess->isLoggedIn() && $revSess->userId() !== '') {
-                $rowRes = $revRepo->findById($revSess->userId());
-                $rowRes->drainTo($this->collector);
-                if (!$rowRes->isOk()) {
-                    $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
-                    return;
-                }
-
-                $row = $rowRes->unwrap();
-                if (!is_array($row)) {
-                    $revSess->logout();   // row vanished → session no longer valid
-                } else {
-                    $delMode     = is_scalar($row['deletion_mode'] ?? null) ? (string) $row['deletion_mode'] : '';
-                    $accountOpen = ($delMode === '' || $delMode === 'none');
-                    if (!empty($row['deleted']) || !$accountOpen) {
-                        $revSess->logout();
-                    } else {
-                        if (is_scalar($row['type'] ?? null) && (int) $row['type'] !== $revSess->userType()->value) {
-                            $revSess->refreshType((int) $row['type']);
-                        }
-                        // R13: session-epoch force-logout. Adopt the DB
-                        // epoch on the first re-validation after login; a
-                        // later admin bump (evict-everywhere) then no longer
-                        // matches, so the session is dropped on its next
-                        // request — instant eviction of a compromised account.
-                        // Known narrow window: a bump landing between login
-                        // and this FIRST check is absorbed (adopted). An
-                        // actively-used stolen session has already adopted
-                        // and is evicted correctly; deleting/banning the
-                        // account evicts regardless via the check above.
-                        $dbEpoch   = is_scalar($row['session_epoch'] ?? null) ? (int) $row['session_epoch'] : 0;
-                        $sessEpoch = $revSess->sessionEpoch();
-                        if ($sessEpoch === null) {
-                            $revSess->setSessionEpoch($dbEpoch);
-                        } elseif ($sessEpoch !== $dbEpoch) {
-                            $revSess->logout();
-                        }
-                    }
-                }
-            }
+        // ── Who is calling: API key, or a re-validated cookie session ─────────
+        if (!(new RequestIdentity($this->injector, $this->collector))->establish($request, $bearerPresent)) {
+            $this->renderError(HttpStatus::SERVICE_UNAVAILABLE);
+            return;
         }
 
         $pageToken = ($pageToken === '' ? $defaultPageToken : $pageToken);
@@ -412,118 +182,20 @@ final class ContentManager
         /** @var PrgHandler $prgHandler */
         $prgHandler = $prgResult->unwrap();
 
-        if ($request->body()->all() !== [] && $request->body()->has('prg_id')) {
-            $prgIdResult = $request->body()->getString('prg_id')->drainTo($this->collector);
-            $prgIdRaw = $prgIdResult->valueOr(null);
-            $prgId = is_string($prgIdRaw) ? $prgIdRaw : null;
-
-            // Comment forms include '_comment=1' in their body — route them through
-            // CommentPrgHandler (separate session namespace + _cp query key) so that
-            // other page controllers cannot steal the token before CommentController runs.
-            $isCommentForm = $request->body()->has('_comment');
-
-            if ($isCommentForm) {
-                $commentPrg = new \AstrX\Comment\CommentPrgHandler();
-                if ($prgId === null || !$commentPrg->hasTarget($prgId)) {
-                    $this->collector->emit(new InvalidPrgIdDiagnostic(
-                                               self::ID_INVALID_PRG_ID,
-                                               self::LVL_INVALID_PRG_ID,
-                                               $prgId,
-                                           ));
-                    $this->renderError(HttpStatus::BAD_REQUEST);
-                    return;
-                }
-                $token = $commentPrg->storeFromPayload($request->body()->all());
-                $sendResult = Response::redirect($commentPrg->getUrl($prgId, $token))->send()
-                    ->drainTo($this->collector);
-            } else {
-                if ($prgId === null || !$prgHandler->hasTarget($prgId)) {
-                    $this->collector->emit(new InvalidPrgIdDiagnostic(
-                                               self::ID_INVALID_PRG_ID,
-                                               self::LVL_INVALID_PRG_ID,
-                                               $prgId,
-                                           ));
-                    $this->renderError(HttpStatus::BAD_REQUEST);
-                    return;
-                }
-                // Persist uploaded files through the PRG cycle: move each file to a
-                // persistent temp path and store its metadata in __files__ so the
-                // GET side can reconstruct UploadedFile objects before routing.
-                // During a lockdown a non-operator's settling GET is sealed anyway,
-                // so don't move their files to temp at all — otherwise a pre-obtained
-                // upload token could spool junk into the temp dir while locked. The
-                // panicActive() check only runs for requests that actually carry
-                // files, so the common (file-less) POST intake is untouched.
-                $files = $request->files()->all();
-                $lockedForActor = $files !== []
-                    && $this->panicActive()
-                    && $this->gate->cannot(AdminPermission::PANIC);
-                $payload = $request->body()->all();
-                $fileMeta = [];
-                foreach (($lockedForActor ? [] : $files) as $fieldName => $uploadedFile) {
-                    if (!$uploadedFile instanceof UploadedFile || $uploadedFile->hasError()) {
-                        continue;
-                    }
-                    $tmpDest = sys_get_temp_dir() . '/astrx_upload_' . bin2hex(random_bytes(8));
-                    if (move_uploaded_file($uploadedFile->tempPath(), $tmpDest)) {
-                        $fileMeta[(string) $fieldName] = [
-                            'client_filename'   => $uploadedFile->clientFilename(),
-                            'client_media_type' => $uploadedFile->clientMediaType(),
-                            'temp_path'         => $tmpDest,
-                            'size'              => $uploadedFile->size(),
-                        ];
-                    }
-                }
-                // ALWAYS overwrite the reserved __files__ key (even with []) so a
-                // user-supplied __files__ (e.g. a crafted temp_path) can never
-                // survive into the stored PRG payload and later reach @unlink (PRG
-                // GC) or a file read via UploadedFile::fromTempPath.
-                $payload['__files__'] = $fileMeta;
-                $token = $prgHandler->storeFromPayload($payload);
-                $sendResult = Response::redirect($prgHandler->getUrl($prgId, $token))->send()
-                    ->drainTo($this->collector);
-            }
-            if (!$sendResult->isOk()) {
-                $this->renderError(HttpStatus::INTERNAL_SERVER_ERROR);
+        $prgIntake = new PrgIntake($this->collector);
+        if ($prgIntake->isPrgPost($request)) {
+            $prgError = $prgIntake->redirect(
+                $request,
+                $prgHandler,
+                fn(): bool => $this->panicActive() && $this->gate->cannot(AdminPermission::PANIC),
+            );
+            if ($prgError !== null) {
+                $this->renderError($prgError);
                 return;
             }
             exit;
         }
-
-        // Restore uploaded files that were persisted through the PRG cycle.
-        // ContentManager stored them as __files__ in the PRG payload on POST.
-        // We peek at the payload here (without consuming it) and inject the
-        // reconstructed UploadedFile objects into the request FileBag so
-        // controllers can read them via $request->files() as normal.
-        $prgTokenForFiles = $request->query()->get($prgHandler->tokenQueryKey());
-        if (is_string($prgTokenForFiles) && $prgTokenForFiles !== '') {
-            $peeked = $prgHandler->get($prgTokenForFiles);
-            if (is_array($peeked) && isset($peeked['__files__'])) {
-                $filesRaw = $peeked['__files__'];
-                {
-                    /** @var array<string,array<string,mixed>> $filesArr */
-                    $filesArr = $filesRaw;
-                    foreach ($filesArr as $fieldName => $rawMeta) {
-                        /** @var array<string,mixed> $meta */
-                        $meta = $rawMeta;
-                        if (!array_key_exists('temp_path', $meta)) { continue; }
-                        $tmpPathRaw = $meta['temp_path'] ?? '';
-                        if (!is_string($tmpPathRaw) || !file_exists($tmpPathRaw)) { continue; }
-                        $tmpPath   = $tmpPathRaw;
-                        $clientFnR = $meta['client_filename'] ?? '';
-                        $clientFn  = is_string($clientFnR) ? $clientFnR : '';
-                        $mediaTypeR = $meta['client_media_type'] ?? 'application/octet-stream';
-                        $mediaType = is_string($mediaTypeR) ? $mediaTypeR : 'application/octet-stream';
-                        $szR = $meta['size'] ?? 0;
-                        $sz  = is_int($szR) ? $szR : 0;
-                        $request->files()->set(
-                            (string)$fieldName,
-                            UploadedFile::fromTempPath($clientFn, $mediaType, $tmpPath, $sz),
-                        );
-                    }
-                }
-            }
-        }
+        $prgIntake->restoreUploads($request, $prgHandler);
 
         $pageHandlerResult = $this->injector->createClass(PageHandler::class)
             ->drainTo($this->collector);
@@ -945,121 +617,6 @@ final class ContentManager
         }
     }
 
-    /**
-     * @param list<string> $availableLocales
-     * @return array{string, ?string, string}
-     */
-    private function parseRoutingHead(
-        bool $urlRewrite,
-        Request $request,
-        string $basePath,
-        /** @param list<string> $availableLocales */
-        array $availableLocales,
-        string $defaultLocale,
-        bool $sessionUseCookies,
-        string $sessionIdRegex,
-        string $localeKey,
-        string $sessionKey,
-        string $pageKey,
-        string $defaultPageToken,
-        CurrentUrl $current,
-    ): array {
-        $sidCandidate = null;
-
-        if ($urlRewrite) {
-            $uriRaw = $_SERVER['REQUEST_URI'] ?? '/';
-            $requestUri = is_string($uriRaw) ? $uriRaw : '/';
-            $stack      = UrlStack::fromRequest($requestUri, $basePath);
-
-            $a = $stack->pop();
-
-            $localeFromUrl = ($a !== null && in_array($a, $availableLocales, true));
-            $locale        = ($localeFromUrl && $a !== null) ? $a : $defaultLocale;
-
-            // Only consume a SECOND segment when the first one was the locale.
-            // With no locale prefix, $a IS the page token and every remaining
-            // segment (login, page number, sort, …) must stay on the stack so
-            // setTail() below can see it. The old code popped $b unconditionally
-            // and then reassigned $b = $a, silently discarding the segment after
-            // the page token on locale-less URLs — e.g. /user/login resolved to
-            // page 'user' with an empty tail (login lost); /main/2 lost its page
-            // number (R3-19).
-            if ($localeFromUrl) {
-                $b = $stack->pop();
-            } else {
-                $b = $a;
-            }
-
-            $current->set($localeKey, $locale);
-            $request->query()->set($localeKey, $locale);
-
-            // API detection (rewrite mode): the segment after the locale is
-            // literally "api". /en/api/user-profile/... becomes an API call
-            // resolving to the user-profile page. We strip the segment from
-            // the stack so the rest of the routing logic sees the URL as if
-            // /api/ wasn't there. The api_enabled check on the page itself
-            // is what actually grants access.
-            if ($b === 'api') {
-                $request->markAsApi();
-                $b = $stack->pop();   // advance to the real page token
-            }
-
-            if (
-                !$sessionUseCookies
-                && $b !== null
-                && preg_match($sessionIdRegex, $b) === 1
-            ) {
-                $sidCandidate = $b;
-                $current->set($sessionKey, $sidCandidate);
-                $request->query()->set($sessionKey, $sidCandidate);
-                $pageToken = $stack->pop() ?? $defaultPageToken;
-            } else {
-                $pageToken = $b ?? $defaultPageToken;
-            }
-
-            $current->set($pageKey, $pageToken);
-            $request->query()->set($pageKey, $pageToken);
-
-            // Store remaining path segments for controllers to consume as
-            // page-specific sub-params (e.g. page number, sort order).
-            $current->setTail($stack->remaining());
-
-            return [$locale, $sidCandidate, $pageToken];
-        }
-
-        $rawLocale = $request->query()->get($localeKey);
-        $locale    = (is_string($rawLocale) && in_array($rawLocale, $availableLocales, true))
-            ? $rawLocale
-            : $defaultLocale;
-
-        $current->set($localeKey, $locale);
-        $request->query()->set($localeKey, $locale);
-
-        if (!$sessionUseCookies) {
-            $rawSid = $request->query()->get($sessionKey);
-            if (is_string($rawSid) && preg_match($sessionIdRegex, $rawSid) === 1) {
-                $sidCandidate = $rawSid;
-                $current->set($sessionKey, $sidCandidate);
-                $request->query()->set($sessionKey, $sidCandidate);
-            }
-        }
-
-        $rawPage   = $request->query()->get($pageKey);
-        $pageToken = (is_string($rawPage) && $rawPage !== '') ? $rawPage : $defaultPageToken;
-
-        $current->set($pageKey, $pageToken);
-        $request->query()->set($pageKey, $pageToken);
-
-        // API detection (query mode): ?api=1 turns the same page into an
-        // API call. Mirror of the rewrite-mode /api/ segment above.
-        $apiFlag = $request->query()->get('api');
-        if ($apiFlag === '1' || $apiFlag === 'true') {
-            $request->markAsApi();
-        }
-
-        return [$locale, $sidCandidate, $pageToken];
-    }
-
     // =========================================================================
     // Page entry guard
     // =========================================================================
@@ -1329,87 +886,4 @@ final class ContentManager
      * After regeneration the old row is kept alive via the replaced_by handover
      * pointer so slow/in-flight requests using the old ID still succeed.
      */
-    private function maybeRegenerateSession(SecureSessionHandler $handler): void
-    {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            return;
-        }
-
-        $forceRegen = ($_SESSION['_regen_force'] ?? false) === true;
-        unset($_SESSION['_regen_force']);
-
-        if (!$forceRegen && !$this->isTimeBasedRegenDue()) {
-            return;
-        }
-
-        $oldSid      = (string) session_id();
-        $oldHashedId = $handler->hashIdPublic($oldSid);
-
-        // Keep the old row so in-flight requests can still find it.
-        session_regenerate_id(false);
-
-        $newSid      = (string) session_id();
-        $newHashedId = $handler->hashIdPublic($newSid);
-
-        $handler->markReplaced($oldHashedId, $newHashedId);
-
-        $_SESSION['_regen_at'] = time();
-
-        // Preserve an active remember-me expiry across regeneration — otherwise the
-        // regenerated cookie reverts to a session-lifetime cookie and remember-me
-        // is silently lost on the request after login (R3-13).
-        $rememberUntil = $_SESSION['_remember_until'] ?? 0;
-        if (is_int($rememberUntil) && $rememberUntil > time()) {
-            $params = session_get_cookie_params();
-            setcookie((string) session_name(), (string) session_id(), [
-                'expires'  => $rememberUntil,
-                'path'     => $params['path'],
-                'domain'   => $params['domain'],
-                'secure'   => $params['secure'],
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
-        }
-    }
-
-    private function isTimeBasedRegenDue(): bool
-    {
-        $loggedIn = ($_SESSION['logged_in'] ?? false) === true;
-        $groupKey = 'GUEST';
-
-        if ($loggedIn) {
-            $userData = $_SESSION['user'] ?? null;
-            if (is_array($userData)) {
-                /** @var array<string,mixed> $userData */
-                $typeRaw  = $userData['type'] ?? UserGroup::GUEST->value;
-                $type     = is_int($typeRaw) ? $typeRaw
-                    : (is_numeric($typeRaw) ? (int)(string)$typeRaw : UserGroup::GUEST->value);
-                $group    = UserGroup::tryFrom($type) ?? UserGroup::GUEST;
-                $groupKey = $group->name;
-            }
-        }
-
-        /** @var mixed $rawConfig */
-        $rawConfig = $this->config->getConfig('Session', 'regenerate_interval', []);
-        if (!is_array($rawConfig)) {
-            return false;
-        }
-        /** @var array<string,mixed> $regenConfig */
-        $regenConfig = $rawConfig;
-
-        $rawInterval = $regenConfig[$groupKey] ?? $regenConfig['default'] ?? 0;
-        $interval    = is_int($rawInterval) ? $rawInterval
-            : (is_numeric($rawInterval) ? (int)(string)$rawInterval : 0);
-
-        if ($interval <= 0) {
-            return false;
-        }
-
-        $lastRaw   = $_SESSION['_regen_at'] ?? 0;
-        $lastRegen = is_int($lastRaw) ? $lastRaw
-            : (is_numeric($lastRaw) ? (int)(string)$lastRaw : 0);
-
-        return (time() - $lastRegen) >= $interval;
-    }
-
 }
