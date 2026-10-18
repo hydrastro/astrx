@@ -77,27 +77,31 @@ function sx_out(string $s): void { fwrite(STDOUT, $s); }
 function sx_err(string $s): void { fwrite(STDERR, $s); }
 function sx_fail(string $msg): never { sx_err("\nERROR: {$msg}\n"); exit(1); }
 
-/** Build a PDO from the persisted PDO.config.php, mirroring ContentManager::initPDO. */
+/**
+ * Open the database exactly as the web request does (Database\ConnectionFactory):
+ * no guessable credential defaults. On failure, exit naming what went wrong,
+ * without echoing the DSN or the account.
+ */
 function sx_build_pdo(Config $config): PDO
 {
-    $driver = $config->getConfigString('PDO', 'db_type', 'mysql');
-    $host   = $config->getConfigString('PDO', 'db_host', 'localhost');
-    $dbname = $config->getConfigString('PDO', 'db_name', 'content_manager');
-    $user   = $config->getConfigString('PDO', 'db_username', 'root');
-    $pass   = $config->getConfigString('PDO', 'db_password', '');
-    $port   = $config->getConfigInt('PDO', 'db_port', 3306);
-
-    $dsn = $driver . ':host=' . $host . ';port=' . $port . ';dbname=' . $dbname . ';charset=utf8mb4';
-    $pdo = new PDO($dsn, $user, $pass);
-
-    $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, $config->getConfigBool('PDO', 'emulate_prepares', false));
-    $pdo->setAttribute(
-        PDO::ATTR_ERRMODE,
-        $config->getConfigBool('PDO', 'errmode_exception', true) ? PDO::ERRMODE_EXCEPTION : PDO::ERRMODE_SILENT,
-    );
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
-    return $pdo;
+    $result = (new \AstrX\Database\ConnectionFactory($config))->connect();
+    if ($result->isOk()) {
+        $pdo = $result->unwrap();
+        \assert($pdo instanceof PDO);
+        return $pdo;
+    }
+    $why = [];
+    foreach ($result->diagnostics() as $d) {
+        if ($d instanceof \AstrX\Database\Diagnostic\DatabaseConfigIncompleteDiagnostic) {
+            $why[] = 'PDO.config.php is missing ' . implode(', ', $d->missingKeys());
+        } elseif ($d instanceof \AstrX\Database\Diagnostic\DatabaseUnavailableDiagnostic) {
+            $why[] = $d->driver() . ' ' . $d->reason()->name
+                . ($d->sqlState() !== '' ? ' (SQLSTATE ' . $d->sqlState() . ')' : '');
+        } else {
+            $why[] = $d->id();
+        }
+    }
+    sx_fail('database connection failed: ' . implode('; ', $why));
 }
 
 /** Current job status ('idle'|'requested'|'running'), or 'idle' if unreadable. */
@@ -152,11 +156,7 @@ $config    = new Config($collector);
 $config->loadModuleConfig('Routing');
 $config->loadModuleConfig('PDO');
 
-try {
-    $pdo = sx_build_pdo($config);
-} catch (PDOException $e) {
-    sx_fail('database connection failed: ' . $e->getMessage());
-}
+$pdo = sx_build_pdo($config);
 
 // Gate the cron path: do nothing unless a rebuild was explicitly requested.
 if ($ifRequested && sx_job_status($pdo) !== 'requested') {
