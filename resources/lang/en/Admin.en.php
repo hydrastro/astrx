@@ -454,17 +454,6 @@ return [
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
 
-    // ---- Warrant canary editor ----------------------------------------------
-    'admin.canary.heading'       => 'Warrant canary',
-    'admin.canary.intro'         => 'Paste your signed attestation (sign it offline — no key is stored on the server). "Save & attest" stamps the time the public page stale check measures against.',
-    'admin.canary.statement'     => 'Signed statement',
-    'admin.canary.interval'      => 'Stale after (days)',
-    'admin.canary.enabled'       => 'Publish the canary',
-    'admin.canary.last_attested' => 'Last attested',
-    'admin.canary.save'          => 'Save & attest',
-    'admin.canary.saved'         => 'Canary saved and attested.',
-    'admin.canary.cleared'       => 'Canary cleared.',
-
     // Onion mirrors
     'admin.mirrors.heading'     => 'Onion mirrors / anti-phishing',
     'admin.mirrors.intro'       => 'Declare your canonical .onion (emitted as an Onion-Location header) and the mirror list shown on the public /mirrors page. Paste an offline-signed statement of the addresses so visitors can verify them out of band.',
