@@ -26,6 +26,10 @@ final class BotTrapModule implements Module
             'teardown'     => 'bottrap.down.sql',
             // Templates, translations and default config (see docs/MODULES.md).
             'resources'    => 'resources',
+            // Core extension points this module answers (see docs/MODULES.md).
+            'extensions'   => [
+                \AstrX\Retention\RetentionSource::class => [\AstrX\BotTrap\BotTrapRetention::class],
+            ],
         ];
     }
 }

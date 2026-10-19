@@ -40,6 +40,10 @@ final class TiplineModule implements Module
             'teardown'     => 'tipline.down.sql',
             // Templates, translations and default config (see docs/MODULES.md).
             'resources'    => 'resources',
+            // Core extension points this module answers (see docs/MODULES.md).
+            'extensions'   => [
+                \AstrX\Retention\RetentionSource::class => [\AstrX\Tipline\TiplineRetention::class],
+            ],
         ];
     }
 }

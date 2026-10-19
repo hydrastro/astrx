@@ -3,8 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\Retention;
 
-use AstrX\Chat\ChatConfig;
-use AstrX\Imageboard\ImageboardConfig;
+use AstrX\Module\ModuleRegistry;
 use PDO;
 
 /**
@@ -21,45 +20,65 @@ use PDO;
  *              PMs, set from ChatConfig). Here we only run that existing GC eagerly
  *              on demand; the window itself stays owned by ChatConfig.
  *
- * SECURITY: every table/column name comes from the hardcoded {@see TARGETS}
- * registry — NEVER from request input — so identifier interpolation into SQL is
- * safe. Age cutoffs are computed in PHP and bound as parameters. Windows persist
- * in the `site_config` KV (retention_days_<key>).
+ * The tables and upload directories come from the installed modules: each one
+ * that keeps such data declares a {@see RetentionSource} in its manifest
+ * (`extensions`), so this engine names no module. Disabled modules are asked
+ * too — switching a module off does not delete its data.
+ *
+ * SECURITY: every table/column name comes from a module's own constants
+ * ({@see RetentionTarget} only accepts plain identifiers) — NEVER from request
+ * input — so identifier interpolation into SQL is safe. Age cutoffs are
+ * computed in PHP and bound as parameters. Windows persist in the
+ * `site_config` KV (retention_days_<key>).
  */
 final class RetentionService
 {
-    /**
-     * The retention registry. key → table/column/mode. Order defines display order.
-     *
-     * @var list<array{key:string,table:string,col:string,mode:string}>
-     */
-    private const TARGETS = [
-        ['key' => 'bot_trap_log', 'table' => 'bot_trap_log', 'col' => 'created_at', 'mode' => 'age'],
-        ['key' => 'tipline',      'table' => 'tipline',      'col' => 'created_at', 'mode' => 'age'],
-        ['key' => 'chat_report',  'table' => 'chat_report',  'col' => 'created_at', 'mode' => 'age'],
-        ['key' => 'chat_message', 'table' => 'chat_message', 'col' => 'expires_at', 'mode' => 'expiry'],
-        ['key' => 'chat_pm',      'table' => 'chat_pm',      'col' => 'expires_at', 'mode' => 'expiry'],
-    ];
+    /** @var list<RetentionTarget> */
+    private readonly array $targets;
+
+    /** @var list<UploadStore> */
+    private readonly array $stores;
 
     public function __construct(
-        private readonly PDO              $pdo,
-        private readonly ImageboardConfig $imageboardConfig,
-        private readonly ChatConfig       $chatConfig,
+        private readonly PDO $pdo,
+        ModuleRegistry       $modules,
     ) {
+        $targets = [];
+        $stores  = [];
+        $keys    = [];
+        foreach ($modules->extensions(RetentionSource::class, installedToo: true) as $source) {
+            foreach ($source->retentionTargets() as $target) {
+                if (isset($keys[$target->key])) {
+                    throw new \LogicException("Two retention targets use the key '{$target->key}'.");
+                }
+                $keys[$target->key] = true;
+                $targets[] = $target;
+            }
+            foreach ($source->uploadStores() as $store) {
+                $stores[] = $store;
+            }
+        }
+        $this->targets = $targets;
+        $this->stores  = $stores;
     }
 
     /**
+     * Every target, in module order (for the admin page).
+     *
      * @return list<array{key:string,table:string,col:string,mode:string}>
      */
     public function targets(): array
     {
-        return self::TARGETS;
+        return array_map(
+            static fn(RetentionTarget $t): array => ['key' => $t->key, 'table' => $t->table, 'col' => $t->column, 'mode' => $t->mode],
+            $this->targets,
+        );
     }
 
     /** @return array{key:string,table:string,col:string,mode:string}|null */
     private function resolve(string $key): ?array
     {
-        foreach (self::TARGETS as $t) {
+        foreach ($this->targets() as $t) {
             if ($t['key'] === $key) {
                 return $t;
             }
@@ -74,7 +93,7 @@ final class RetentionService
             return 0;
         }
         try {
-            // Identifier from the hardcoded registry only — safe to interpolate.
+            // Identifier from a module's RetentionTarget only — safe to interpolate.
             $stmt = $this->pdo->query('SELECT COUNT(*) FROM `' . $t['table'] . '`');
             if ($stmt === false) {
                 return 0;
@@ -181,11 +200,11 @@ final class RetentionService
     public function runAll(): array
     {
         $out = [];
-        foreach (self::TARGETS as $t) {
-            $out[$t['key']] = $this->shred($t['key']);
+        foreach ($this->targets as $t) {
+            $out[$t->key] = $this->shred($t->key);
         }
         // Also GC the blobs whose DB row is gone (deleted/expired/pruned content):
-        // the FK cascades drop board_image / chat_attachment rows but not the files.
+        // the FK cascades drop the rows that name upload files, not the files.
         $out['orphan_files'] = $this->reapOrphanFiles();
         return $out;
     }
@@ -198,9 +217,9 @@ final class RetentionService
      * source, including ones an immediate-unlink path missed or a crash left behind.
      *
      * SAFE BY CONSTRUCTION:
-     *   - the referenced-name set is built from BOTH tables and the whole reap is
-     *     ABORTED if any query errors — a DB hiccup can never cause a mass delete,
-     *     and it stays correct even if the board and chat upload dirs coincide;
+     *   - the referenced-name set is built from EVERY store's queries and the
+     *     whole reap is ABORTED if any query errors — a DB hiccup can never cause
+     *     a mass delete, and it stays correct even if two modules share a dir;
      *   - only files matching the exact random upload-name pattern (32 hex + ext)
      *     are candidates, so a stray/config file in the dir is never touched;
      *   - files newer than a 1-hour margin are skipped, so an upload whose row is
@@ -214,10 +233,10 @@ final class RetentionService
         if ($referenced === null) {
             return 0; // a query failed — never delete on partial knowledge
         }
-        $dirs = array_values(array_unique(array_filter([
-            $this->imageboardConfig->uploadDir(),
-            $this->chatConfig->uploadDir(),
-        ], static fn(string $d): bool => $d !== '')));
+        $dirs = array_values(array_unique(array_filter(
+            array_map(static fn(UploadStore $s): string => $s->dir, $this->stores),
+            static fn(string $d): bool => $d !== '',
+        )));
 
         $removed = 0;
         foreach ($dirs as $dir) {
@@ -236,10 +255,12 @@ final class RetentionService
     private function referencedUploadNames(): ?array
     {
         $set = [];
-        $queries = [
-            'SELECT `full_name` AS n FROM `board_image` UNION SELECT `thumb_name` FROM `board_image`',
-            'SELECT `stored_name` AS n FROM `chat_attachment`',
-        ];
+        $queries = [];
+        foreach ($this->stores as $store) {
+            foreach ($store->referencedNameQueries as $sql) {
+                $queries[] = $sql;
+            }
+        }
         foreach ($queries as $sql) {
             try {
                 $stmt = $this->pdo->query($sql);

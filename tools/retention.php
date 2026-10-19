@@ -6,7 +6,8 @@ declare(strict_types=1);
  *
  * Applies every configured retention window (the same thing the admin "Run
  * retention now" button does): age-based targets are purged past their window,
- * expiry-based chat tables run their GC. Intended for cron.
+ * expiry-based tables run their GC, and uploads no row references any more are
+ * reaped. The targets come from the installed modules. Intended for cron.
  *
  *   run            Apply retention now (default).
  *   --help, -h     Show this help.
@@ -15,9 +16,9 @@ declare(strict_types=1);
  *   0 * * * * php /path/to/tools/retention.php run
  */
 
-use AstrX\Chat\ChatConfig;
+use AstrX\ApplicationContainer;
 use AstrX\Config\Config;
-use AstrX\Imageboard\ImageboardConfig;
+use AstrX\Injector\Injector;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Retention\RetentionService;
 
@@ -28,29 +29,8 @@ if (PHP_SAPI !== 'cli') {
 
 $root = dirname(__DIR__);
 
-if (!defined('INDEX_DIR'))     { define('INDEX_DIR', $root . DIRECTORY_SEPARATOR); }
-if (!defined('RESOURCES_DIR')) { define('RESOURCES_DIR', INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR); }
-if (!defined('CONFIG_DIR'))    { define('CONFIG_DIR', RESOURCES_DIR . 'config' . DIRECTORY_SEPARATOR); }
-if (!defined('SRC_DIR'))       { define('SRC_DIR', INDEX_DIR . 'src' . DIRECTORY_SEPARATOR); }
-if (!defined('CLASS_DIR'))     { define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR); }
-
-spl_autoload_register(static function (string $class): void {
-    $prefix = 'AstrX\\';
-    $len = strlen($prefix);
-    if (strncmp($class, $prefix, $len) !== 0) {
-        return;
-    }
-    $classDir = (string) constant('CLASS_DIR');
-    $file = $classDir . str_replace('\\', '/', substr($class, $len)) . '.php';
-    if (is_file($file)) {
-        require_once $file;
-    }
-});
-
-$supportConstants = (string) constant('CLASS_DIR') . 'Support/constants.php';
-if (is_file($supportConstants)) {
-    require_once $supportConstants;
-}
+require_once $root . '/src/paths.php';
+require_once $root . '/src/autoload.php';
 
 function rt_out(string $s): void { fwrite(STDOUT, $s); }
 function rt_err(string $s): void { fwrite(STDERR, $s); }
@@ -84,6 +64,21 @@ function rt_build_pdo(Config $config): PDO
     rt_fail('database connection failed: ' . implode('; ', $why));
 }
 
+/**
+ * @template T of object
+ * @param class-string<T> $class
+ * @return T
+ */
+function rt_service(Injector $injector, string $class): object
+{
+    $result   = $injector->getClass($class);
+    $instance = $result->isOk() ? $result->unwrap() : null;
+    if (!$instance instanceof $class) {
+        rt_fail("could not build {$class}.");
+    }
+    return $instance;
+}
+
 /** @var list<string> $argv */
 $argv = $argv ?? [];
 
@@ -96,28 +91,17 @@ if (!extension_loaded('pdo_mysql')) {
     rt_fail('The pdo_mysql extension is required but not loaded.');
 }
 
+// The site's own configuration, translations and installed modules: which
+// data is kept for how long — and where uploads live — is whatever the modules
+// that keep it say (Retention\RetentionSource), configured as the site is.
 $collector = new DiagnosticsCollector();
-$config    = new Config($collector);
+$injector  = ApplicationContainer::build($collector);
+$config    = rt_service($injector, Config::class);
 $config->loadModuleConfig('PDO');
 
-$pdo = rt_build_pdo($config);
+$injector->setClass(rt_build_pdo($config));
+$service = rt_service($injector, RetentionService::class);
 
-// Configure the imageboard/chat configs (their upload dirs drive the orphan-file
-// reaper) exactly as the module loader does in the web app: load the domain, then
-// apply its InjectConfig setters. If a config file is absent the defaults stand.
-// loadModuleConfig names the FILE (Imageboard.config.php), but applyModuleConfig
-// names the SECTION inside it — which is the class short name, not the file base
-// (Imageboard.config.php holds ['ImageboardConfig' => [...]]). Using the file name
-// here would silently no-op and leave the configs at their defaults, so the cron
-// reaper would scan the wrong dir on any deployment with a custom upload_dir.
-$config->loadModuleConfig('Imageboard');
-$config->loadModuleConfig('Chat');
-$imageboardConfig = new ImageboardConfig();
-$config->applyModuleConfig($imageboardConfig, 'ImageboardConfig');
-$chatConfig = new ChatConfig();
-$config->applyModuleConfig($chatConfig, 'ChatConfig');
-
-$service = new RetentionService($pdo, $imageboardConfig, $chatConfig);
 $counts  = $service->runAll();
 $total   = array_sum($counts);
 foreach ($counts as $key => $n) {

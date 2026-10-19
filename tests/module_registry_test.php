@@ -10,6 +10,9 @@ declare(strict_types=1);
  *      installed + NO flag = off; not installed = off even with a flag.
  *   3. A module whose code is present but which is not listed contributes
  *      nothing: no key, no controllers, no permissions.
+ *   3c. Extension points: core asks the registry which modules answer an
+ *      interface and gets only the enabled ones (all installed ones when it
+ *      asks about stored data).
  *   4. Bad lists fail loudly: a class that is not a Module, a duplicate key.
  *   5. The application's own list matches the modules on disk and every one
  *      of them has a flag.
@@ -100,6 +103,25 @@ try {
     check("a disabled module's page is not", !$r->pageOwnerEnabled('imageboard'));
     check("an uninstalled module's page is not (its rows outlive it)", !$r->pageOwnerEnabled('webmail'));
     check('an owner nobody claims is not (fail closed)', !$r->pageOwnerEnabled('nope'));
+
+    echo "\n3c. Extension points\n";
+    $r = registry($both, ['chat' => true, 'imageboard' => false]);
+    $sources = $r->extensions(AstrX\Retention\RetentionSource::class);
+    check('an enabled module answers an extension point',
+        count($sources) === 1 && $sources[0] instanceof AstrX\Chat\ChatRetention);
+    $sources = $r->extensions(AstrX\Retention\RetentionSource::class, installedToo: true);
+    check('a disabled one too, when the question is about its stored data',
+        array_map(static fn(object $o): string => $o::class, $sources)
+            === [AstrX\Chat\ChatRetention::class, AstrX\Imageboard\ImageboardRetention::class]);
+    check('a point no module answers yields nothing',
+        $r->extensions(Stringable::class) === []);
+    $retention = new AstrX\Retention\RetentionService(new PDO('sqlite::memory:'), $r);
+    check("retention's targets are the modules' (chat's, with the board's disabled)",
+        array_column($retention->targets(), 'key') === ['chat_report', 'chat_message', 'chat_pm']);
+    check('a retention target is a plain identifier, never SQL',
+        threw(static fn() => new AstrX\Retention\RetentionTarget('k', 'x`; DROP', 'c', AstrX\Retention\RetentionTarget::AGE)));
+    check('and its mode is age or expiry',
+        threw(static fn() => new AstrX\Retention\RetentionTarget('k', 't', 'c', 'never')));
 
     echo "\n4. Bad lists fail loudly\n";
     check('a class that is not a Module', threw(static fn() => registry([stdClass::class], [])->moduleKeys()));

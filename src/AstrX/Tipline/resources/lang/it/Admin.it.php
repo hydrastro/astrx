@@ -22,4 +22,7 @@ return [
     'admin.tipline.deleted'     => 'Segnalazione eliminata.',
     'admin.tipline.purge'       => 'Distruggi tutte le segnalazioni',
     'admin.tipline.purged'      => 'Tutte le segnalazioni distrutte.',
+
+    // Voce della conservazione dati
+    'admin.retention.label.tipline' => 'Segnalazioni sigillate',
 ];

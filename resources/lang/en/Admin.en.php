@@ -470,11 +470,6 @@ return [
     'admin.retention.reap_hint'   => 'Delete upload files left on disk after their post/message was removed. Runs automatically with retention; use this to shred them on demand.',
     'admin.retention.done'        => 'Retention applied — rows removed:',
     'admin.retention.expiry_note' => 'Auto-expires per chat config.',
-    'admin.retention.label.bot_trap_log' => 'Bot-trap captures',
-    'admin.retention.label.tipline'      => 'Sealed tips',
-    'admin.retention.label.chat_report'  => 'Chat reports',
-    'admin.retention.label.chat_message' => 'Chat messages',
-    'admin.retention.label.chat_pm'      => 'Private messages',
 
     // Panic / lockdown
     'admin.panic.heading'      => 'Panic / lockdown',
