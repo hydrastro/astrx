@@ -387,7 +387,8 @@ function runMigration(PDO $pdo, string $file): string
 }
 
 /**
- * The SQL that makes up the database: core's and every installed module's.
+ * The SQL that makes up the database: the site's, the CMS's and every installed
+ * module's.
  * Docker layouts vary — some mount the whole repo as /app, others only
  * public/, src/ and resources/ — so core's SQL is looked for in src/setup/
  * (always mounted) and a repo-root setup/ mirror. See AstrX\Database\SchemaFiles.
@@ -459,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$tokenValid) {
                 $sql    = schemaFiles();
                 $pieces = $sql->schema();
                 if ($pieces === []) {
-                    $errors[] = 'No schema found (src/setup/schema/*.sql).';
+                    $errors[] = 'No schema found (schema/*.sql in src/setup/ or a package\'s resources/sql/).';
                 }
                 foreach ($pieces as $piece) {
                     $err = runSQL($conn, $piece);

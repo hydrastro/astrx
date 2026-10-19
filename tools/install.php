@@ -12,9 +12,9 @@ require_once dirname(__DIR__) . '/src/autoload.php';
  * exposes an install surface to the network:
  *
  *   1. Write resources/config/PDO.config.php (after testing the connection).
- *   2. (optional) Apply the SQL schema + migrations: core's (src/setup/, or a
- *      setup/ mirror) and every installed module's (resources/sql/), see
- *      AstrX\Database\SchemaFiles.
+ *   2. (optional) Apply the SQL schema + migrations: the site's (src/setup/, or
+ *      a setup/ mirror), the CMS's and every installed module's
+ *      (resources/sql/), see AstrX\Database\SchemaFiles.
  *   3. Create the first administrator (Argon2id, same as the wizard).
  *   4. Generate + write a UNIQUE server_secret into Session.config.php.
  *   5. Set the environment in config.php.
@@ -642,8 +642,8 @@ function readPDOConfig(string $configDir): array
 }
 
 /**
- * The SQL that makes up this application's database: core's (src/setup/, or a
- * repo-root setup/ mirror) and that of every module ApplicationModules installs.
+ * The SQL that makes up this application's database: the site's (src/setup/, or
+ * a repo-root setup/ mirror), the CMS's and every installed module's.
  */
 function schemaFiles(string $root): AstrX\Database\SchemaFiles
 {
@@ -821,7 +821,7 @@ if (!hasFlag($args, 'skip-schema')) {
     $sql    = schemaFiles($root);
     $pieces = $sql->schema();
     if ($pieces === []) {
-        fail('No schema found (src/setup/schema/*.sql). Use --skip-schema if the database is already provisioned.');
+        fail('No schema found (schema/*.sql in src/setup/ or a package\'s resources/sql/). Use --skip-schema if the database is already provisioned.');
     }
     foreach ($pieces as $piece) {
         out('Schema ' . basename($piece) . '... ');

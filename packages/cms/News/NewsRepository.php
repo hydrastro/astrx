@@ -17,7 +17,7 @@ use AstrX\Result\DiagnosticLevel;
  * Every method returns a Result so callers can drain failures into the
  * DiagnosticsCollector without try/catch at the call site.
  *
- * Schema expected (src/setup/schema/0000_core_base.sql):
+ * Schema expected (resources/sql/schema/0000_core_base.sql, in this package):
  *   news(id INT, title VARCHAR, content TEXT, created_at INT, hidden TINYINT)
  */
 final class NewsRepository
