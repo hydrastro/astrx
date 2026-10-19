@@ -1,0 +1,23 @@
+{
+    "name": "astrx/module-onionsearch",
+    "description": "Search page backed by the astrx-suite onion crawler",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\OnionSearch\\": ""
+        }
+    }
+}

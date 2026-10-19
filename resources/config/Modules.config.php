@@ -15,11 +15,12 @@ declare(strict_types=1);
  * Flipping a module off removes its whole surface: its nav entries drop, its
  * pages 404 (themed error page), and its footer/section hooks disappear. Data is
  * untouched — `tools/module.php enable` restores it; `tools/module.php purge`
- * drops its schema. The module list is discovered from each module's module.php
- * manifest, so this file only holds the on/off flags (unlisted modules default ON).
+ * drops its schema. The installed modules are listed in
+ * ApplicationModules::INSTALLED; this file only holds their on/off flags (a
+ * module without one is OFF).
  */
 return [
-    // EXHAUSTIVE: one entry per src/AstrX/<Module>/module.php manifest.
+    // EXHAUSTIVE: one entry per installed module (ApplicationModules::INSTALLED).
     // tools/check_modules.php fails the build when a manifest has no entry here.
     // It used to warn, and seven of the eighteen modules had drifted off the
     // list — so "turn a module off" meant editing a file that did not mention

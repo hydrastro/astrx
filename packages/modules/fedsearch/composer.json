@@ -1,0 +1,25 @@
+{
+    "name": "astrx/module-fedsearch",
+    "description": "Federated search across site content and the astrx-suite engines",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-filter": "*",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version",
+        "astrx/module-search": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\FederatedSearch\\": ""
+        }
+    }
+}

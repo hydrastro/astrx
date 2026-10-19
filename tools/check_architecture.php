@@ -5,11 +5,12 @@ declare(strict_types=1);
  * AstrX architecture gate — `php tools/check_architecture.php [--graph|--dot]`
  *
  * A zero-dependency, database-free CI gate that keeps the namespace dependency
- * graph layered and acyclic, so the planned package split stays possible.
+ * graph layered and acyclic, so the packages stay separable.
  *
- * Every top-level namespace under src/AstrX (and every top-level class such as
- * AstrX\ContentManager) is assigned to exactly ONE layer in LAYERS below. The
- * tool tokenizes every PHP file, resolves the AstrX names each one references
+ * Every top-level AstrX namespace in src/ and packages/ (and every top-level
+ * class such as AstrX\ContentManager) is assigned to exactly ONE layer in
+ * LAYERS below. The tool tokenizes
+ * every PHP file, resolves the AstrX names each one references
  * (imports, fully-qualified names, namespace-relative qualified names,
  * attributes, ::class constants) and fails when:
  *
@@ -40,10 +41,10 @@ if (PHP_SAPI !== 'cli') {
 
 /**
  * Layers, lowest first. A namespace may depend on its own layer or any lower
- * one, never a higher one; cycles are rejected everywhere. These mirror the
- * planned Composer packages: foundation + component = the framework,
- * library = optional building blocks, feature = optional application modules,
- * application = this website's composition (to become the site repository).
+ * one, never a higher one; cycles are rejected everywhere. They are the
+ * Composer packages: foundation + component = astrx/framework, library =
+ * astrx/library, feature = astrx/cms plus every module package, application =
+ * this website (src/AstrX).
  *
  * @var array<string, list<string>>
  */
@@ -64,23 +65,26 @@ const LAYERS = [
     'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationContainer', 'ApplicationPolicies', 'ApplicationPermissions', 'ApplicationModules'],
 ];
 
+require_once __DIR__ . '/lib/sources.php';
+
+/** @var array<string, list<string>> $layers */
+$layers = LAYERS;
+
 // --list=layer[,layer]: print members and stop (no scan needed).
 foreach ($argv as $arg) {
     if (str_starts_with($arg, '--list=')) {
         foreach (explode(',', substr($arg, 7)) as $layer) {
-            if (!isset(LAYERS[$layer])) {
+            if (!isset($layers[$layer])) {
                 fwrite(STDERR, "unknown layer '{$layer}'\n");
                 exit(1);
             }
-            foreach (LAYERS[$layer] as $ns) {
+            foreach ($layers[$layer] as $ns) {
                 fwrite(STDOUT, $ns . "\n");
             }
         }
         exit(0);
     }
 }
-
-require_once __DIR__ . '/lib/sources.php';
 
 $root     = dirname(__DIR__);
 $mode     = in_array('--dot', $argv, true) ? 'dot' : (in_array('--graph', $argv, true) ? 'graph' : 'check');
@@ -90,7 +94,7 @@ $rank = [];
 /** @var array<string,string> $layerOf namespace => layer name */
 $layerOf = [];
 $i = 0;
-foreach (LAYERS as $layer => $members) {
+foreach ($layers as $layer => $members) {
     foreach ($members as $ns) {
         $rank[$ns]    = $i;
         $layerOf[$ns] = $layer;
@@ -280,7 +284,7 @@ if ($mode === 'graph') {
 }
 if ($mode === 'dot') {
     fwrite(STDOUT, "digraph astrx {\n  rankdir=BT;\n  node [shape=box, fontname=monospace];\n");
-    foreach (LAYERS as $layer => $members) {
+    foreach ($layers as $layer => $members) {
         fwrite(STDOUT, "  subgraph cluster_{$layer} {\n    label=\"{$layer}\";\n");
         foreach ($members as $ns) {
             fwrite(STDOUT, "    \"{$ns}\";\n");
@@ -386,7 +390,7 @@ foreach ($cycles as $component) {
 
 // ── Report ───────────────────────────────────────────────────────────────────
 fwrite(STDOUT, "AstrX architecture\n==================\n\n");
-foreach (LAYERS as $layer => $members) {
+foreach ($layers as $layer => $members) {
     fwrite(STDOUT, sprintf("  %-12s %s\n", $layer, implode(', ', $members)));
 }
 fwrite(STDOUT, "\n");

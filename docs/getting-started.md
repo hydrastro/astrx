@@ -106,7 +106,13 @@ php tools/check_lang_parity.php
 php tools/check_diagnostics.php
 php tools/check_modules.php
 php tools/check_config.php
+php tools/check_architecture.php
+php tools/packages.php      # after moving or adding code: php tools/packages.php --write
 ```
+
+The site loads its classes itself (`src/classloader.php`), so Composer is not
+needed to run it. `composer install` links the packages in `packages/` into
+`vendor/` for code that consumes them through Composer.
 
 Each PHP test file is independently executable. The CI workflow runs `tests/*_test.php` and `tests/suite-bridge/*_test.php` and includes a separate MariaDB install/module matrix. `schema_convergence_test.php` needs a database; a skip is not a successful schema comparison.
 

@@ -1,0 +1,24 @@
+{
+    "name": "astrx/module-canary",
+    "description": "Warrant canary page with its admin editor",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-pdo": "*",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Canary\\": ""
+        }
+    }
+}

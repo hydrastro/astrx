@@ -28,9 +28,17 @@ $result = AstrX\Result\Result::ok(21)
 ```
 
 This loader starts no application, session or database connection. Run
-`php examples/components.php` for a small example. Composer metadata is supplied
-for this application checkout; a separately versioned core package still needs
-the dependency extraction described in [repository direction](docs/repository-structure.md).
+`php examples/components.php` for a small example.
+
+The code is organised as Composer packages in `packages/`: `astrx/framework`
+(results, configuration, injection, HTTP, routing, templates, translation,
+sessions, the module contract), `astrx/library` (database, authorization,
+captcha, images, mail), `astrx/cms` (accounts, admin, pages, navigation,
+comments, news) and one `astrx/module-<key>` per optional module. Each requires
+only the packages it uses; `astrx/framework` runs an application on its own
+(`examples/minimal`). They are not published or tagged yet — see
+[architecture](docs/architecture.md#packages) and
+[repository direction](docs/repository-structure.md).
 
 ## How it works
 

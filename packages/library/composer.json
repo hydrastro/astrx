@@ -1,0 +1,31 @@
+{
+    "name": "astrx/library",
+    "description": "AstrX building blocks: database connection, authorization gate, API keys, captcha, images, identicons and mail",
+    "type": "library",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-filter": "*",
+        "ext-gd": "*",
+        "ext-iconv": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "astrx/framework": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Database\\": "Database/",
+            "AstrX\\Image\\": "Image/",
+            "AstrX\\Auth\\": "Auth/",
+            "AstrX\\Api\\": "Api/",
+            "AstrX\\Captcha\\": "Captcha/",
+            "AstrX\\Identicon\\": "Identicon/",
+            "AstrX\\Mail\\": "Mail/"
+        }
+    }
+}

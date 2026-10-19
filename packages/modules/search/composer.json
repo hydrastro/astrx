@@ -1,0 +1,25 @@
+{
+    "name": "astrx/module-search",
+    "description": "Site-wide full-text search with its index crawler",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Search\\": ""
+        }
+    }
+}

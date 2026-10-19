@@ -3,6 +3,10 @@
 # ─────────────────────────────────────────────────────────────
 /phpstan.phar
 /vendor/
+# The lock pins only this repository's own path packages (packages/*), at the
+# checked-out branch: nothing to pin yet. Commit it once a third-party
+# package is required.
+/composer.lock
 /build/
 /xdebug-profiles/
 /diff

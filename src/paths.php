@@ -23,9 +23,3 @@ if (!defined('TEMPLATE_DIR')) {
 if (!defined('TEMPLATE_CACHE_DIR')) {
     define('TEMPLATE_CACHE_DIR', TEMPLATE_DIR . 'cache' . DIRECTORY_SEPARATOR);
 }
-if (!defined('SRC_DIR')) {
-    define('SRC_DIR', INDEX_DIR . 'src' . DIRECTORY_SEPARATOR);
-}
-if (!defined('CLASS_DIR')) {
-    define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR);
-}

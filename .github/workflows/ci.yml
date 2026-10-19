@@ -47,14 +47,23 @@ jobs:
       - name: Architecture (layers + no namespace cycles)
         run: php tools/check_architecture.php
 
-      # No third-party packages: this only validates composer.json and builds
-      # the PSR-4 autoloader that tests/composer_autoload_test.php exercises
-      # (every class resolves; loading it is inert). The license warning is
-      # expected until a license is chosen.
+      # The code ships as Composer packages in packages/ (framework, library,
+      # cms, one per module): each one names the packages it uses, and
+      # src/sources.php (the class loader's map) is generated from them.
+      - name: Packages (dependencies declared, class map current)
+        run: php tools/packages.php
+
+      # No third-party packages: this validates every composer.json and installs
+      # the path packages, whose autoloader tests/composer_autoload_test.php
+      # exercises (every class resolves; loading it is inert). The license
+      # warning is expected until a license is chosen.
       - name: Composer metadata + autoloader
         run: |
           composer validate --no-check-publish
-          composer dump-autoload --no-interaction
+          for pkg in packages/*/composer.json packages/modules/*/composer.json; do
+            composer validate --no-check-publish --working-dir="$(dirname "$pkg")"
+          done
+          composer update --no-interaction --no-progress
 
       # Section↔file routing, #[InjectConfig] keys, dead keys and write targets —
       # catches an admin page that persists to a config file nothing loads.

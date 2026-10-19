@@ -359,7 +359,7 @@ jobs:
       - name: The suite depends on nothing outside itself
         run: |
           set -euo pipefail
-          if grep -rn -E '\.\./\.\./src/AstrX|resources/config|/app/src' \
+          if grep -rn -E '\.\./\.\./(src/AstrX|packages)|resources/config|/app/(src|packages)' \
                astrx-suite/crates astrx-suite/deploy 2>/dev/null; then
             echo "::error::a crate reached outside astrx-suite/ — see docs/repository-structure.md rule 1"
             exit 1
