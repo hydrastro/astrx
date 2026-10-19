@@ -92,7 +92,8 @@ return [
     'admin.config.chat.access_approval'               => 'Richiedi approvazione del moderatore',
     'admin.config.chat.access_members'                => 'Solo membri (respingi gli ospiti)',
 
-    // Voci della conservazione dati
+    // Sezione nell'editor dei permessi; voci della conservazione dati
+    'admin.config.access.prefix_chat'    => 'Chat',
     'admin.retention.label.chat_report'  => 'Segnalazioni chat',
     'admin.retention.label.chat_message' => 'Messaggi chat',
     'admin.retention.label.chat_pm'      => 'Messaggi privati',

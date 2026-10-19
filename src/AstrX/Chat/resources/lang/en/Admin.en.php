@@ -92,7 +92,8 @@ return [
     'admin.config.chat.access_approval'               => 'Require moderator approval',
     'admin.config.chat.access_members'                => 'Members only (turn guests away)',
 
-    // Retention targets (Retention\RetentionSource)
+    // Grants editor section; retention targets (Retention\RetentionSource)
+    'admin.config.access.prefix_chat'    => 'Chat',
     'admin.retention.label.chat_report'  => 'Chat reports',
     'admin.retention.label.chat_message' => 'Chat messages',
     'admin.retention.label.chat_pm'      => 'Private messages',

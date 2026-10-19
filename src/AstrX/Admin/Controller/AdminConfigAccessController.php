@@ -42,35 +42,29 @@ final class AdminConfigAccessController extends AbstractController
 {
     private const FORM = 'admin_config_access';
 
-    private const PREFIX_LABELS = [
-        'news'    => 'admin.config.access.prefix_news',
-        'comment' => 'admin.config.access.prefix_comment',
-        'user'    => 'admin.config.access.prefix_user',
-        'ban'     => 'admin.config.access.prefix_ban',
-        'board'   => 'admin.config.access.prefix_board',
-        'chat'    => 'admin.config.access.prefix_chat',
-        'webmail' => 'admin.config.access.prefix_webmail',
-        'api'     => 'admin.config.access.prefix_api',
-        'admin'   => 'admin.config.access.prefix_admin',
-    ];
+    /** Core's permission prefixes, in the order their sections come first. */
+    private const CORE_PREFIXES = ['news', 'comment', 'user', 'ban', 'api', 'admin'];
 
     /**
-     * Section order and headings for the grants matrix: the labelled prefixes
-     * above first, then any other prefix a feature declares (heading = the
-     * prefix itself). EVERY registered permission gets a row — saveGrants()
-     * relies on that, since an unshown permission would read as "unchecked".
+     * Section order and headings for the grants matrix: core's prefixes first,
+     * then every other prefix a feature or module declares, in registration
+     * order. A section's heading is the translation of
+     * admin.config.access.prefix_<prefix> (a module ships its own in its Admin
+     * catalog), or the prefix itself. EVERY registered permission gets a row —
+     * saveGrants() relies on that, since an unshown permission would read as
+     * "unchecked".
      *
      * @return array<string, string> prefix => heading
      */
     private function grantSections(): array
     {
-        $sections = [];
-        foreach (self::PREFIX_LABELS as $prefix => $labelKey) {
-            $sections[$prefix] = $this->t->t($labelKey, fallback: $prefix);
-        }
+        $prefixes = self::CORE_PREFIXES;
         foreach ($this->permissions->all() as $perm) {
-            $prefix = explode('.', $perm->id(), 2)[0];
-            $sections[$prefix] ??= $prefix;
+            $prefixes[] = explode('.', $perm->id(), 2)[0];
+        }
+        $sections = [];
+        foreach (array_unique($prefixes) as $prefix) {
+            $sections[$prefix] = $this->t->t('admin.config.access.prefix_' . $prefix, fallback: $prefix);
         }
         return $sections;
     }
@@ -413,8 +407,8 @@ final class AdminConfigAccessController extends AbstractController
         $this->ctx->set('btn_save',             $this->t->t('admin.btn.save'));
         $this->ctx->set('btn_add_group',        $this->t->t('admin.btn.add'));
         $this->ctx->set('btn_delete_group',     $this->t->t('admin.btn.delete'));
-        foreach (self::PREFIX_LABELS as $prefix => $key) {
-            $this->ctx->set('prefix_' . $prefix, $this->t->t($key, fallback: $prefix));
+        foreach ($this->grantSections() as $prefix => $heading) {
+            $this->ctx->set('prefix_' . $prefix, $heading);
         }
         $this->ctx->set('section_diag_visibility', $this->t->t('admin.config.access.diag_visibility'));
         $this->ctx->set('section_diag_levels',     $this->t->t('admin.config.access.diag_levels'));

@@ -74,4 +74,7 @@ return [
     'admin.boards.created'         => 'Board created.',
     'admin.boards.updated'         => 'Board updated.',
     'admin.boards.deleted'         => 'Board deleted.',
+
+    // Grants editor section
+    'admin.config.access.prefix_board' => 'Imageboard',
 ];
