@@ -20,9 +20,11 @@ require_once $root . '/src/autoload.php';
 $collector = new AstrX\Result\DiagnosticsCollector();
 $roots = AstrX\ApplicationContainer::resourceRoots();
 $engine = new AstrX\Template\TemplateEngine($collector, $roots);
-/** @var mixed $loadedConfig */
-$loadedConfig = require CONFIG_DIR . 'TemplateEngine.config.php';
-$cfg = is_array($loadedConfig) && is_array($loadedConfig['TemplateEngine'] ?? null) ? $loadedConfig['TemplateEngine'] : [];
+// The TemplateEngine section as the site resolves it: the framework's default,
+// overridden key by key by the site's resources/config/TemplateEngine.config.php.
+$config = new AstrX\Config\Config($collector, null, $roots);
+$config->loadModuleConfig('TemplateEngine');
+$cfg = $config->getConfigSection('TemplateEngine');
 $engine->setTemplateDir(is_string($cfg['template_dir'] ?? null) ? $cfg['template_dir'] : TEMPLATE_DIR);
 $engine->setTemplateCacheDir(is_string($cfg['template_cache_dir'] ?? null) ? $cfg['template_cache_dir'] : TEMPLATE_CACHE_DIR);
 $engine->setTemplateExtension(is_string($cfg['template_extension'] ?? null) ? $cfg['template_extension'] : '.html');
