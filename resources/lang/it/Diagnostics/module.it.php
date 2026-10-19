@@ -25,10 +25,6 @@ return [
                 . 'due classi si richiedono a vicenda nei costruttori.';
         },
 
-    'astrx.content/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'Si è verificato un errore del database durante il caricamento della pagina. Riprova più tardi.',
-
     'astrx.content/controller_missing' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Questa pagina è configurata per usare un controller che non esiste.',

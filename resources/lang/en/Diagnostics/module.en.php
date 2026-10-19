@@ -25,10 +25,6 @@ return [
                 . 'two classes require each other in their constructors.';
         },
 
-    'astrx.content/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'A database error occurred while loading this page. Please try again later.',
-
     'astrx.content/controller_missing' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'This page is configured to use a controller that does not exist.',

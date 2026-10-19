@@ -41,8 +41,6 @@ return [
     'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
     'WORDING_ADMIN_BOARDS.label'          => 'Board',
-    'WORDING_CONTENT.label'               => 'Pagine',
-    'WORDING_ADMIN_CONTENT.label'         => 'Contenuti',
     'WORDING_ADMIN_INVITES.label'         => 'Inviti',
     'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
