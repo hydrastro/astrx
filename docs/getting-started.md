@@ -97,6 +97,13 @@ php tools/module.php status
 
 Start with the features you need. Read [modules](MODULES.md) before disabling or purging them. A disabled module's files and data remain in the checkout/deployment.
 
+## Development environment with Nix
+
+The repository is a Nix flake. `nix develop` opens a shell with PHP 8.4 (with
+every extension the packages require), Composer, MariaDB and Git;
+`nix flake check` runs the integrity gates below without a database. The
+first run writes `flake.lock`, which pins nixpkgs — commit it.
+
 ## Development checks
 
 Run the integrity checks from the repository root:
