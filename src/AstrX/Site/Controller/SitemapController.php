@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace AstrX\Site\Controller;
 
 use AstrX\Config\Config;
-use AstrX\Content\ContentService;
 use AstrX\Module\ModuleRegistry;
+use AstrX\Page\SitemapSource;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
@@ -16,9 +16,10 @@ use AstrX\Kernel\AbstractController;
  *
  * URL: /<locale>/sitemap.xml   (page row WORDING_SITEMAP, template=0, controller=1)
  *
- * Lists the locale home plus every live PUBLIC content page (never
- * private/unlisted/draft/scheduled/expired — {@see ContentService} applies that
- * policy). Written directly as XML like the Atom feed, 1-hour public cache.
+ * Lists the locale home plus the public pages enabled modules list through
+ * {@see SitemapSource} (the Content module's live PUBLIC pages, never
+ * private/unlisted/draft/scheduled/expired). Written directly as XML like the
+ * Atom feed, 1-hour public cache.
  *
  * SECURITY: this is a public, cacheable document, so every URL is built
  * absolutely from site_url + locale + slug — NOT through UrlGenerator, which in
@@ -31,7 +32,6 @@ final class SitemapController extends AbstractController
         DiagnosticsCollector            $collector,
         private readonly Config         $config,
         private readonly CurrentUrl     $currentUrl,
-        private readonly ContentService $content,
         private readonly ModuleRegistry $modules,
     ) {
         parent::__construct($collector);
@@ -49,17 +49,15 @@ final class SitemapController extends AbstractController
         // Locale home.
         $urls[] = ['loc' => $base . '/' . rawurlencode($locale), 'lastmod' => ''];
 
-        // Public content pages — only when the content module is enabled (its
-        // pages 404 otherwise). URLs are built sid-free (see class docblock).
-        if ($this->modules->enabled('content')) {
-            $pagesSlug = $this->content->contentSlug();
-            foreach ($this->content->sitemapPages() as $p) {
-                $urls[] = [
-                    'loc'     => $base . '/' . rawurlencode($locale)
-                               . '/' . rawurlencode($pagesSlug)
-                               . '/' . rawurlencode($p['slug']),
-                    'lastmod' => $this->lastmod($p['updated_at']),
-                ];
+        // Pages the ENABLED modules list (a disabled module's pages 404).
+        // URLs are built sid-free (see class docblock).
+        foreach ($this->modules->extensions(SitemapSource::class) as $source) {
+            foreach ($source->sitemapEntries() as $entry) {
+                $loc = $base . '/' . rawurlencode($locale);
+                foreach ($entry['path'] as $segment) {
+                    $loc .= '/' . rawurlencode($segment);
+                }
+                $urls[] = ['loc' => $loc, 'lastmod' => $this->lastmod($entry['updated'])];
             }
         }
 
