@@ -23,24 +23,8 @@ final class ModulePageGuard implements PageGuard
 
     public function shouldSwapToError(Page $page): bool
     {
-        $raw = strtolower(trim($page->module));
-        if ($raw === '') {
-            return false; // core / always-on page
-        }
-        // Resolve page.module to the canonical manifest key (case/whitespace-
-        // insensitive) so a drifted value ('Chat' vs 'chat', stray spaces) can't
-        // slip past the gate. A module-owned page whose module is NOT a recognised
-        // manifest key is hidden (fail closed) rather than shown open (R4-21).
-        $canonical = null;
-        foreach ($this->registry->moduleKeys() as $k) {
-            if (strtolower(trim($k)) === $raw) {
-                $canonical = $k;
-                break;
-            }
-        }
-        if ($canonical === null) {
-            return true; // unknown module owner → fail closed
-        }
-        return !$this->registry->enabled($canonical);
+        // Case/whitespace-insensitive owner; an owner no installed module
+        // claims is hidden (fail closed) rather than shown open (R4-21).
+        return !$this->registry->pageOwnerEnabled($page->module);
     }
 }

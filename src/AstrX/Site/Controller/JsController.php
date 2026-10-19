@@ -67,33 +67,41 @@ final class JsController extends AbstractController
         parent::__construct($collector);
     }
 
+    /** @var array<int,true>|null see disabledPageIds() */
+    private ?array $disabledPageIdsMemo = null;
+
     /**
-     * Page ids owned by a currently-disabled module — excluded from the manifest
-     * so the no-JS shell doesn't advertise slugs / API endpoints (incl. the bot-trap
-     * honeypot) that 404 when their module is off. Mirrors NavbarHandler.
+     * Page ids owned by a module that is not live (disabled or not installed) —
+     * excluded from the manifest so the shell doesn't advertise slugs / API
+     * endpoints (incl. the bot-trap honeypot) that 404. Same rule as the page
+     * gate and NavbarHandler: ModuleRegistry::pageOwnerEnabled().
      *
      * @return array<int,true>
      */
     private function disabledPageIds(): array
     {
-        $disabled = $this->modules->disabledModules();
-        if ($disabled === []) {
-            return [];
+        // Several navbars are built per request; the page table is read once.
+        if ($this->disabledPageIdsMemo !== null) {
+            return $this->disabledPageIdsMemo;
         }
-        $placeholders = implode(',', array_fill(0, count($disabled), '?'));
         $ids = [];
         try {
-            $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `module` IN ({$placeholders})");
-            $stmt->execute(array_values($disabled));
-            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
-                if (is_int($id)) {
+            $rows = $this->pdo->query("SELECT `id`, `module` FROM `page` WHERE `module` <> ''");
+            foreach (($rows === false ? [] : $rows->fetchAll(PDO::FETCH_ASSOC)) as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $id     = $row['id'] ?? null;
+                $module = $row['module'] ?? '';
+                if (is_int($id) && is_string($module) && !$this->modules->pageOwnerEnabled($module)) {
                     $ids[$id] = true;
                 }
             }
         } catch (\PDOException) {
-            return [];
+            // page.module predates the ownership migration — no filtering yet.
+            return $this->disabledPageIdsMemo = [];
         }
-        return $ids;
+        return $this->disabledPageIdsMemo = $ids;
     }
 
     /** @return Result<mixed> */
