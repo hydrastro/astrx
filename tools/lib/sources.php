@@ -86,3 +86,63 @@ function classFiles(string $root): array
     ksort($out);
     return $out;
 }
+
+/**
+ * The repository's own Composer packages: every directory with a
+ * composer.json that a path repository of the root composer.json matches.
+ *
+ * @return array<string, array{dir: string, json: array<string, mixed>}> name => package (dir relative to the root)
+ */
+function packages(string $root): array
+{
+    $rootJson = json_decode((string) file_get_contents($root . '/composer.json'), true);
+    $out = [];
+    foreach ((array) (is_array($rootJson) ? ($rootJson['repositories'] ?? []) : []) as $repo) {
+        if (!is_array($repo) || ($repo['type'] ?? '') !== 'path' || !is_string($repo['url'] ?? null)) {
+            continue;
+        }
+        foreach (glob($root . '/' . $repo['url'], GLOB_ONLYDIR) ?: [] as $dir) {
+            $json = is_file($dir . '/composer.json')
+                ? json_decode((string) file_get_contents($dir . '/composer.json'), true)
+                : null;
+            if (!is_array($json)) {
+                continue;
+            }
+            $data = [];
+            foreach ($json as $key => $value) {
+                $data[(string) $key] = $value;
+            }
+            $name = $data['name'] ?? null;
+            if (is_string($name) && !isset($out[$name])) {
+                $out[$name] = ['dir' => substr($dir, strlen($root) + 1), 'json' => $data];
+            }
+        }
+    }
+    ksort($out);
+    return $out;
+}
+
+/**
+ * The top-level namespaces the module packages (type astrx-module) provide,
+ * e.g. 'Chat' for astrx/module-chat.
+ *
+ * @return list<string>
+ */
+function moduleNamespaces(string $root): array
+{
+    $out = [];
+    foreach (packages($root) as $pkg) {
+        if (($pkg['json']['type'] ?? null) !== 'astrx-module') {
+            continue;
+        }
+        $autoload = $pkg['json']['autoload'] ?? null;
+        $psr4 = is_array($autoload) && is_array($autoload['psr-4'] ?? null) ? $autoload['psr-4'] : [];
+        foreach (array_keys($psr4) as $prefix) {
+            if (preg_match('/^AstrX\\\\(\w+)\\\\$/', (string) $prefix, $m) === 1) {
+                $out[] = $m[1];
+            }
+        }
+    }
+    sort($out);
+    return $out;
+}

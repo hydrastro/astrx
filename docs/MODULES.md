@@ -416,10 +416,10 @@ prints the remaining steps:
 2. Add its tables and page rows in a migration in its `resources/sql/`, tagging
    the pages: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
 3. Fill in the teardown `DROP TABLE`s and the nav/guard stubs.
-4. Add `Forum` to the `feature` layer in `tools/check_architecture.php`.
-5. `php tools/packages.php && php tools/check_modules.php && php tools/check_architecture.php`.
+4. `php tools/packages.php && php tools/check_modules.php && php tools/check_architecture.php`.
 
-`tools/packages.php` tells you when its `composer.json` requires a
+Its namespace joins the architecture's `feature` layer because it is a module
+package; `tools/packages.php` tells you when its `composer.json` requires a
 package it does not use, or uses one it does not require.
 
 The scaffold includes `Controller/ForumController.php`, already mapped to the

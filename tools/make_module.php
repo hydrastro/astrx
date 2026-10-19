@@ -17,7 +17,8 @@ declare(strict_types=1);
  *       lang/{en,it}/pages.{en,it}.php       its page slug + title (merged into `pages`)
  *       sql/<key>.down.sql                   teardown stub for `module.php purge`
  * then prints the remaining manual steps (install it in ApplicationModules and
- * the root composer.json, config flag, page tagging, architecture layer).
+ * the root composer.json, config flag, page tagging). Its namespace joins the
+ * feature layer of tools/check_architecture.php by being a module package.
  *
  * <key> is lowercase [a-z0-9_], the on/off key used in Modules.config.php and the
  * page.module tag; the namespace is its StudlyCase form. Never overwrites
@@ -288,9 +289,7 @@ Next steps:
          UPDATE `page` SET `module` = '{$key}' WHERE `file_name` LIKE '{$key}%';
      Its template and page title are already in resources/.
   3. Fill in the {$key}.down.sql DROP TABLEs (and the nav/guard stubs if generated).
-  4. Add the module's namespace to LAYERS in tools/check_architecture.php
-     (usually 'feature').
-  5. Verify:  php tools/packages.php && php tools/check_modules.php \\
+  4. Verify:  php tools/packages.php && php tools/check_modules.php \\
                && php tools/check_architecture.php
      (packages.php also tells you if composer.json requires the wrong packages)
 
