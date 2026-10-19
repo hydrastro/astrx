@@ -7,10 +7,11 @@ declare(strict_types=1);
  * Generates a new optional-module skeleton so adding one is a single command:
  *   - src/AstrX/<Studly>/<Studly>Module.php  the module class (its manifest())
  *   - src/AstrX/<Studly>/Controller/<Studly>Controller.php  its page controller
- *   - src/AstrX/<Studly>/<Studly>NavContributor.php   (only with --nav)
  *   - src/AstrX/<Studly>/<Studly>PageGuard.php         (only with --guard)
  *   - src/AstrX/<Studly>/resources/          its own resources (see docs/MODULES.md):
  *       template/<key>.html                 the page's template
+ *       template/partials/<key>_nav.html     a section navbar in the layout's
+ *                                            nav slot (only with --nav)
  *       lang/{en,it}/pages.{en,it}.php       its page slug + title (merged into `pages`)
  *       sql/<key>.down.sql                   teardown stub for `module.php purge`
  * then prints the remaining manual steps (install it in ApplicationModules,
@@ -38,7 +39,7 @@ foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--nav') { $withNav = true; }
     elseif ($arg === '--guard') { $withGuard = true; }
     elseif ($arg === '--help' || $arg === '-h') {
-        mk_out("Usage: php tools/make_module.php <key> [--nav] [--guard]\n  <key>   lowercase [a-z0-9_]; --nav adds a NavContributor, --guard a PageGuard.\n");
+        mk_out("Usage: php tools/make_module.php <key> [--nav] [--guard]\n  <key>   lowercase [a-z0-9_]; --nav adds a section navbar (a layout partial), --guard a PageGuard.\n");
         exit(0);
     }
     elseif ($key === '' && !str_starts_with($arg, '-')) { $key = $arg; }
@@ -62,7 +63,10 @@ if (!is_dir($moduleDir) && !@mkdir($moduleDir, 0o755, true) && !is_dir($moduleDi
     mk_fail("could not create {$moduleDir}");
 }
 
-$navRef   = $withNav   ? "\\AstrX\\{$studly}\\{$studly}NavContributor::class" : 'null';
+$layout   = $withNav
+    ? "\n            // Partials added to the layout's slots on every page (see docs/MODULES.md).\n"
+      . "            'layout'       => ['nav' => ['partials/{$key}_nav']],"
+    : '';
 $guardRef = $withGuard ? "[\\AstrX\\{$studly}\\{$studly}PageGuard::class]"     : '[]';
 
 /** @var list<string> $written Relative paths of the files created. */
@@ -99,7 +103,7 @@ final class {$studly}Module implements Module
             'key'          => '{$key}',
             'name'         => '{$studly}',
             'version'      => '0.1.0',
-            'nav'          => {$navRef},
+            'nav'          => null,
             'nav_defaults' => [],
             'guards'       => {$guardRef},
             // Resource class => policy class, registered with the Gate while enabled.
@@ -113,6 +117,8 @@ final class {$studly}Module implements Module
             'teardown'     => '{$key}.down.sql',
             // Templates, translations and default config, next to this class.
             'resources'    => 'resources',
+            // Core extension point (interface) => classes of this module answering it.
+            'extensions'   => [],{$layout}
         ];
     }
 }
@@ -120,29 +126,18 @@ final class {$studly}Module implements Module
 PHP);
 
 if ($withNav) {
-    $emit("{$moduleDir}/{$studly}NavContributor.php", <<<PHP
-<?php
-declare(strict_types=1);
+    $emit("{$moduleDir}/resources/template/partials/{$key}_nav.html", <<<HTML
+{{! {$studly}'s section navbar, in the layout's nav slot on EVERY page: it shows }}
+{{! only where a {$studly} controller set {$key}_nav_show. See docs/MODULES.md. }}
+{{#{$key}_nav_show}}
+<div class="{$key}_top_nav">
+    <ul class="{$key}_nav">
+        <li><a href="{{{$key}_nav_url}}">{$studly}</a></li>
+    </ul>
+</div>
+{{/{$key}_nav_show}}
 
-namespace AstrX\\{$studly};
-
-use AstrX\\Module\\NavContributor;
-
-/**
- * Registers {$studly}'s template slots (partial paths / header-footer vars). The
- * matching disabled-defaults go in the manifest's `nav_defaults`. See docs/MODULES.md.
- */
-final class {$studly}NavContributor implements NavContributor
-{
-    /** @return array<string,mixed> */
-    public function vars(): array
-    {
-        // e.g. return ['{$key}_nav' => 'partials/{$key}_nav'];
-        return [];
-    }
-}
-
-PHP);
+HTML);
 }
 
 if ($withGuard) {

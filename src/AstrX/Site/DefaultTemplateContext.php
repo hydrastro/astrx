@@ -299,8 +299,7 @@ final class DefaultTemplateContext implements TemplateVars
             // Core contextual-navbar slot for the Language admin page. Default to
             // empty so {{> lang_nav}} in default.html resolves to a defined value
             // and renders nothing on every other page; AdminLanguageController
-            // overrides both with the partial path + a true flag. Mirrors how the
-            // module nav slots (board_nav / chat_nav) are always defined.
+            // overrides both with the partial path + a true flag.
             'lang_nav'      => '',
             'lang_nav_show' => false,
         ];
@@ -345,13 +344,14 @@ final class DefaultTemplateContext implements TemplateVars
         }
 
         // ── Module contributions ──────────────────────────────────────────────
-        // Enabled modules contribute their nav partial slots and header/footer
-        // vars: the imageboard/chat nav slots ({{> board_nav}}/{{> chat_nav}})
-        // and the bot-trap honeypot footer link (trap_enabled/trap_url/…). Core
-        // names no module here — the registry merges whatever the ENABLED modules
-        // provide; a disabled module falls back to inert defaults so its
-        // {{> slot}} / {{# flag}} render nothing. See ModuleRegistry + the module
-        // switchboard in resources/config/Modules.config.php.
+        // Enabled modules add partials to the layout's slots (manifest
+        // `layout`): default.html renders {{#nav_partials}}{{> .}}{{/nav_partials}}
+        // under the header and footer_partials in the footer. A module's own
+        // vars for those partials come from its nav contributor (manifest
+        // `nav`); a disabled module's `nav_defaults` keep them inert. Core names
+        // no module here. See ModuleRegistry.
+        $this->vars['nav_partials']    = $this->registry->layoutPartials('nav');
+        $this->vars['footer_partials'] = $this->registry->layoutPartials('footer');
         foreach ($this->registry->navVars() as $navKey => $navVal) {
             $this->vars[$navKey] = $navVal;
         }

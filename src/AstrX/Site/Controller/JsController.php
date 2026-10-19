@@ -1509,9 +1509,10 @@ JS;
      *
      *   3. partials/ — shared layout fragments, not pages, so there is no page
      *      row to authorise them against, and the slots that pull them in
-     *      ({{> chat_nav}}, {{> captcha}}) resolve their name from a RUNTIME
-     *      context value, so they cannot be derived statically. All five are
-     *      nav/comment/captcha chrome; none is an admin surface.
+     *      ({{#nav_partials}}{{> .}}{{/nav_partials}}, {{> captcha}}) resolve
+     *      their name from a RUNTIME context value, so they cannot be derived
+     *      statically. They are nav/footer/comment/captcha chrome; none is an
+     *      admin surface.
      *
      * noindex pages are excluded on top of that. Concretely: bot_trap.html is
      * the honeypot maze's markup. With it in the bundle a crawler fetches

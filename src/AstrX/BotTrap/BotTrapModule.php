@@ -30,6 +30,8 @@ final class BotTrapModule implements Module
             'extensions'   => [
                 \AstrX\Retention\RetentionSource::class => [\AstrX\BotTrap\BotTrapRetention::class],
             ],
+            // The hidden honeypot link, on every page's footer.
+            'layout'       => ['footer' => ['partials/trap_link']],
         ];
     }
 }

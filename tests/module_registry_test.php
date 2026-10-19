@@ -10,9 +10,9 @@ declare(strict_types=1);
  *      installed + NO flag = off; not installed = off even with a flag.
  *   3. A module whose code is present but which is not listed contributes
  *      nothing: no key, no controllers, no permissions.
- *   3c. Extension points: core asks the registry which modules answer an
- *      interface and gets only the enabled ones (all installed ones when it
- *      asks about stored data).
+ *   3c. Extension points and layout slots: core asks the registry which
+ *      modules answer an interface, or add partials to a slot, and gets only
+ *      the enabled ones (all installed ones when it asks about stored data).
  *   4. Bad lists fail loudly: a class that is not a Module, a duplicate key.
  *   5. The application's own list matches the modules on disk and every one
  *      of them has a flag.
@@ -104,7 +104,7 @@ try {
     check("an uninstalled module's page is not (its rows outlive it)", !$r->pageOwnerEnabled('webmail'));
     check('an owner nobody claims is not (fail closed)', !$r->pageOwnerEnabled('nope'));
 
-    echo "\n3c. Extension points\n";
+    echo "\n3c. Extension points and layout slots\n";
     $r = registry($both, ['chat' => true, 'imageboard' => false]);
     $sources = $r->extensions(AstrX\Retention\RetentionSource::class);
     check('an enabled module answers an extension point',
@@ -122,6 +122,12 @@ try {
         threw(static fn() => new AstrX\Retention\RetentionTarget('k', 'x`; DROP', 'c', AstrX\Retention\RetentionTarget::AGE)));
     check('and its mode is age or expiry',
         threw(static fn() => new AstrX\Retention\RetentionTarget('k', 't', 'c', 'never')));
+    check("the chat toolbar is in the nav slot; the disabled board's is not",
+        $r->layoutPartials('nav') === ['partials/chat_nav']);
+    check('an unknown slot is empty', $r->layoutPartials('sidebar') === []);
+    $r = registry($both, ['chat' => true, 'imageboard' => true]);
+    check('slots list partials in module order',
+        $r->layoutPartials('nav') === ['partials/chat_nav', 'partials/board_nav']);
 
     echo "\n4. Bad lists fail loudly\n";
     check('a class that is not a Module', threw(static fn() => registry([stdClass::class], [])->moduleKeys()));

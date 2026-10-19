@@ -4,16 +4,14 @@ declare(strict_types=1);
 namespace AstrX\Module;
 
 /**
- * A module's contribution to the site-wide template context: the navigation
- * partial slots it registers and any header/footer vars it sets (e.g. the
- * bot-trap honeypot link). Implemented by a small class inside each module and
- * wired in {@see ModuleRegistry}; {@see \AstrX\Site\DefaultTemplateContext}
- * merges the vars from every ENABLED module and never names a module itself.
+ * A module's contribution to the site-wide template context: vars its layout
+ * partials need on every page (e.g. the bot-trap honeypot link's URL). Wired
+ * by the manifest's `nav` key; {@see \AstrX\Site\DefaultTemplateContext}
+ * merges the vars from every ENABLED module (a disabled one's `nav_defaults`
+ * instead) and never names a module itself.
  *
- * Returned keys are ordinary template context vars. A partial slot is a var
- * whose value is a partial path string, e.g. `['board_nav' => 'partials/board_nav']`
- * — default.html renders `{{> board_nav}}` by resolving that var, so a slot that
- * is absent (module disabled) simply renders nothing.
+ * Which partials a module adds to the layout is declared separately, by the
+ * manifest's `layout` key ({@see ModuleRegistry::layoutPartials()}).
  */
 interface NavContributor
 {

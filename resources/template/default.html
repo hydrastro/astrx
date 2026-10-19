@@ -54,10 +54,8 @@
         </ul>
     </div>
     {{/is_admin}}
-    {{! Chat toolbar — joins the nav stack only on chat pages (self-hides via chat_nav_show). }}
-    {{> chat_nav}}
-    {{! Board navbars — join the nav stack only on imageboard pages (self-hides via board_nav_show). }}
-    {{> board_nav}}
+    {{! Module navbars (the 'nav' layout slot): each enabled module's partial, which shows itself only on that module's pages. }}
+    {{#nav_partials}}{{> .}}{{/nav_partials}}
     {{! Language admin sub-navbars — join the nav stack only on the Language page (self-hides via lang_nav_show). }}
     {{> lang_nav}}
     {{#has_messages}}
@@ -75,9 +73,8 @@
         <p class="left"><a href="">{{ip}}</a></p>
         <p class="right">Copyright &copy; {{year}} - <a
                 href="{{cur}}">{{website_name}}</a></p>
-        {{! Bot-trap honeypot: hidden from humans (display:none + aria-hidden), }}
-        {{! nofollow so honest crawlers skip it; only greedy bots follow it. }}
-        {{#trap_enabled}}<a href="{{trap_url}}" rel="nofollow" aria-hidden="true" tabindex="-1" style="display:none">{{trap_link_text}}</a>{{/trap_enabled}}
+        {{! The 'footer' layout slot: each enabled module's footer partial. }}
+        {{#footer_partials}}{{> .}}{{/footer_partials}}
         <div class="clear"></div>
     </div>
 </div>

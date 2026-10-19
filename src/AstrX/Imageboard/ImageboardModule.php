@@ -22,8 +22,8 @@ final class ImageboardModule implements Module
             'key'          => 'imageboard',
             'name'         => 'Imageboard',
             'version'      => '1.0.0',
-            'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class,
-            'nav_defaults' => ['board_nav' => false],
+            'nav'          => null,
+            'nav_defaults' => [],
             'guards'       => [],
             // Permission enums this module declares (listed in the grants editor).
             'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class],
@@ -45,6 +45,8 @@ final class ImageboardModule implements Module
             'extensions'   => [
                 \AstrX\Retention\RetentionSource::class => [\AstrX\Imageboard\ImageboardRetention::class],
             ],
+            // The board navbars join the nav stack (they show only on board pages).
+            'layout'       => ['nav' => ['partials/board_nav']],
         ];
     }
 }
