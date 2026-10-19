@@ -35,6 +35,8 @@ final class SuiteAdminModule implements Module
                 'admin_suite' => \AstrX\SuiteAdmin\Controller\AdminSuiteController::class,
             ],
             'teardown'     => 'suiteadmin.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
