@@ -34,6 +34,8 @@ final class WebSearchModule implements Module
                 'web_search' => \AstrX\WebSearch\Controller\WebSearchController::class,
             ],
             'teardown'     => 'websearch.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
