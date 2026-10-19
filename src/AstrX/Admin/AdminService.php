@@ -8,8 +8,9 @@ use AstrX\Auth\Gate;
 /**
  * Admin navigation registry.
  *
- * NAV_PAGES maps url_id slug → label translation key.
- * Order determines display order in the admin nav.
+ * NAV_PAGES maps url_id slug → label translation key, for core's own admin
+ * pages; modules add theirs through AdminDashboardSection (manifest
+ * `extensions`). The dashboard sorts the links by label.
  */
 final class AdminService
 {
@@ -29,7 +30,6 @@ final class AdminService
         'admin_config_access'  => 'admin.nav.config_access',  // grants + banlist routes
         'admin_config_captcha' => 'admin.nav.config_captcha',
         'admin_config_mail'    => 'admin.nav.config_mail',
-        'admin_config_webmail' => 'admin.nav.config_webmail',
         'admin_themes'         => 'admin.nav.themes',
 
         // ── Audit ──────────────────────────────────────────────────────

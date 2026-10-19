@@ -161,10 +161,6 @@ return [
     'WORDING_PROFILE.title'        => 'Profilo',
     'WORDING_PROFILE.description'  => 'Visualizza un profilo utente.',
 
-    // ---- Webmail -------------------------------------------------------
-    'webmail.heading'             => 'Webmail',
-    'webmail.heading.desc'        => 'Leggi e invia email dalla tua casella di posta.',
-
 
     // ---- Selettore tema (fix95) ---------------------------------------------
     'user.settings.theme'                  => 'Tema',

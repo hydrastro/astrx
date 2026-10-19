@@ -585,10 +585,6 @@ return [
     'admin.users.deletion_mode.keep_visible'   => 'Mantieni visibile (chiudi l\'account, i contenuti restano)',
     'admin.users.deletion_mode.keep_suspended' => 'Mantieni sospeso (nascondi al pubblico, gli admin possono vedere)',
 
-    // ---- Config — Webmail / IMAP --------------------------------------------
-    'admin.nav.config_webmail'              => 'Webmail / IMAP',
-    'admin.nav.config_webmail.desc'         => 'Impostazioni del server IMAP e della webmail.',
-
     // ---- Audit log ----------------------------------------------------------
     'admin.nav.audit_log'               => 'Registro di audit',
     'admin.nav.audit_log.desc'          => 'Visualizza la cronologia di tutte le azioni amministrative.',

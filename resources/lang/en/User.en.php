@@ -165,10 +165,6 @@ return [
     'WORDING_PROFILE.title'        => 'Profile',
     'WORDING_PROFILE.description'  => 'View a user profile.',
 
-    // ---- Webmail -------------------------------------------------------
-    'webmail.heading'             => 'Webmail',
-    'webmail.heading.desc'        => 'Read and send emails from your mailbox.',
-
 
     // ---- Theme picker (fix95) -----------------------------------------------
     'user.settings.theme'                  => 'Theme',

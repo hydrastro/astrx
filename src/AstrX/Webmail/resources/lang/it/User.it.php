@@ -82,4 +82,8 @@ return [
     'webmail.download'            => 'Scarica',
     'webmail.attachments'         => 'Allegati',
     'webmail.compose_fields_required' => 'A, Oggetto e corpo del messaggio sono obbligatori.',
+
+    // Riquadro della pagina utente
+    'webmail.heading'      => 'Webmail',
+    'webmail.heading.desc' => 'Leggi e invia email dalla tua casella di posta.',
 ];
