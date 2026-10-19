@@ -46,13 +46,9 @@ return [
     'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-mail',
 
     // Webmail
-    'WORDING_WEBMAIL'                    => 'webmail',
-    'WORDING_WEBMAIL.title'              => 'Webmail',
-    'WORDING_WEBMAIL.description'        => 'Read and send emails from your mailbox.',
     'WORDING_ADMIN_AUDIT_LOG'            => 'admin-audit-log',
     'WORDING_ADMIN_AUDIT_LOG.title'      => 'Admin — Audit Log',
     'WORDING_ADMIN_AUDIT_LOG.description'=> 'History of all admin actions.',
-    'WORDING_ADMIN_CONFIG_WEBMAIL' => 'admin-config-webmail',
     'WORDING_ADMIN_THEMES.title'         => 'Admin — Themes',
     'WORDING_ADMIN_THEMES.description'   => 'Choose the global site theme.',
 

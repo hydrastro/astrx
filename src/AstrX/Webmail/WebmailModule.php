@@ -34,6 +34,8 @@ final class WebmailModule implements Module
                 'webmail' => \AstrX\Webmail\Controller\WebmailController::class,
             ],
             'teardown'     => 'webmail.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }

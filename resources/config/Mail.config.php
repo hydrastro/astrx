@@ -37,16 +37,6 @@ return [
         // PREAUTH to skip credentials. Only enable for a trusted local IMAP.
         'imap_allow_preauth' => (getenv('IMAP_ALLOW_PREAUTH') ?: 'false') === 'true',
     ],
-    'WebmailService' => [
-        'mail_domain'                 => getenv('MAIL_DOMAIN')        ?: 'localhost',
-        'imap_login_use_full_address' => true,
-        'mailbox_is_username'         => false,
-        'mailserver_is_local'         => (getenv('MAIL_LOCAL') ?: 'false') === 'true',
-        'messages_per_page'           => 25,
-        'trash_folder'                => 'Trash',
-        'sent_folder'                 => 'Sent',
-        'drafts_folder'               => 'Drafts',
-    ],
     // AstrX\Mail\MailboxManager. This section was missing from the shipped file
     // even though the class declares #[InjectConfig] setters for all three keys
     // and the admin Mail page writes them here: Config::applyConfigToInstance()
