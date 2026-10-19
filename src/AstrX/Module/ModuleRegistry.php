@@ -16,9 +16,11 @@ use AstrX\Support\ResourceRoots;
  * module's manifest() declares its key, display name, an optional nav
  * contributor + disabled-defaults, page guards, resource policies (resource
  * class => policy class), page controllers (page file_name => controller
- * class), permission enums, a teardown file, and the directory holding its
+ * class), permission enums, a teardown file, the directory holding its
  * templates, translations, default config and SQL (`resources`, relative to
- * the module class's own directory).
+ * the module class's own directory), the core extension points it implements
+ * (`extensions`: interface => classes) and the partials it adds to the layout's
+ * slots (`layout`: slot => partial names).
  *
  * This class is generic infrastructure: it hands out the CLASS NAMES / instances
  * a manifest declares and never imports the interfaces they implement (page
@@ -35,10 +37,16 @@ use AstrX\Support\ResourceRoots;
  * A DISABLED module is never instantiated beyond its manifest — its
  * `nav_defaults` are merged instead.
  *
- * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string,resources:?string}
+ * @phpstan-type Manifest array{key:string,name:string,version:string,nav:?string,nav_defaults:array<string,mixed>,guards:list<string>,policies:array<string,string>,controllers:array<string,string>,permissions:list<string>,teardown:?string,resources:?string,extensions:array<string,list<string>>,layout:array<string,list<string>>}
  */
 final class ModuleRegistry
 {
+    /**
+     * The layout's slots a module may add partials to (manifest `layout`):
+     * default.html renders each slot's list as {{#<slot>_partials}}…
+     */
+    public const LAYOUT_SLOTS = ['nav', 'footer'];
+
     /** @var list<Manifest>|null Normalised manifests, built once per request. */
     private ?array $manifests = null;
 
@@ -202,6 +210,62 @@ final class ModuleRegistry
             }
             foreach ($m['policies'] as $resource => $policy) {
                 $out[$resource] = $policy;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Instances of the classes modules declare for a core extension point,
+     * built through the injector, in module-key order.
+     *
+     * An extension point is an interface owned by the core feature that asks
+     * the question — Retention\RetentionSource ("which data do you keep?"),
+     * Page\SitemapSource, User\LoginListener, … A module answers it by listing
+     * classes under that interface in its manifest's `extensions`. Core asks
+     * this method and never names a module.
+     *
+     * Only ENABLED modules answer, unless $installedToo: a question about data
+     * that exists whether or not the module is switched on (retention) must ask
+     * disabled modules too.
+     *
+     * @template T of object
+     * @param class-string<T> $interface
+     * @return list<T>
+     */
+    public function extensions(string $interface, bool $installedToo = false): array
+    {
+        $out = [];
+        foreach ($this->manifests() as $m) {
+            if (!$installedToo && !$this->enabled($m['key'])) {
+                continue;
+            }
+            foreach ($m['extensions'][$interface] ?? [] as $class) {
+                $instance = $this->build($class);
+                if ($instance instanceof $interface) {
+                    $out[] = $instance;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * The partials ENABLED modules add to a layout slot, in module-key order:
+     * 'nav' (the navigation stack under the header) and 'footer'. The layout
+     * renders each one (`{{#nav_partials}}{{> .}}{{/nav_partials}}`); a partial
+     * decides for itself whether it shows on the current page.
+     *
+     * @return list<string>
+     */
+    public function layoutPartials(string $slot): array
+    {
+        $out = [];
+        foreach ($this->manifests() as $m) {
+            if ($this->enabled($m['key'])) {
+                foreach ($m['layout'][$slot] ?? [] as $partial) {
+                    $out[] = $partial;
+                }
             }
         }
         return $out;
@@ -437,6 +501,34 @@ final class ModuleRegistry
             }
         }
 
+        $extensions = [];
+        if (isset($raw['extensions']) && is_array($raw['extensions'])) {
+            foreach ($raw['extensions'] as $interface => $classes) {
+                if (!is_string($interface) || $interface === '' || !is_array($classes)) {
+                    continue;
+                }
+                foreach ($classes as $c) {
+                    if (is_string($c) && $c !== '') {
+                        $extensions[$interface][] = $c;
+                    }
+                }
+            }
+        }
+
+        $layout = [];
+        if (isset($raw['layout']) && is_array($raw['layout'])) {
+            foreach ($raw['layout'] as $slot => $partials) {
+                if (!is_string($slot) || $slot === '' || !is_array($partials)) {
+                    continue;
+                }
+                foreach ($partials as $partial) {
+                    if (is_string($partial) && $partial !== '') {
+                        $layout[$slot][] = $partial;
+                    }
+                }
+            }
+        }
+
         /** @var array<string,mixed> $navDefaults */
         return [
             'key'          => $raw['key'],
@@ -450,6 +542,8 @@ final class ModuleRegistry
             'permissions'  => $permissions,
             'teardown'     => $teardown,
             'resources'    => $resources,
+            'extensions'   => $extensions,
+            'layout'       => $layout,
         ];
     }
 
