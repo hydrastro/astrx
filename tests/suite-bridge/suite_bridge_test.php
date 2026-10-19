@@ -516,21 +516,25 @@ namespace {
         // ===================================================================
         echo "[fedsearch+torrentsearch] template: torrent row renders links + swarm/category (F1)\n";
         $torUrl  = $mockBase . '/torrent/' . $IH1 . '.torrent';
-        $fwRoot  = dirname(__DIR__);
+        // The repository root (this file is tests/suite-bridge/). The two
+        // templates belong to the FederatedSearch and TorrentSearch modules,
+        // so the engine gets the modules' template roots, as in the app.
+        $fwRoot  = dirname(__DIR__, 2);
         $engFile = $fwRoot . '/src/AstrX/Template/TemplateEngine.php';
         $renderedFed = null;
         $renderedTor = null;
-        if (is_file($engFile)
-            && is_file($fwRoot . '/resources/template/federated_search.html')
-            && is_file($fwRoot . '/resources/template/torrent_search.html')
-        ) {
+        if (is_file($engFile)) {
             try {
                 require_once $fwRoot . '/src/AstrX/Result/DiagnosticLevel.php';
                 spl_autoload_register(static function (string $c) use ($fwRoot): void {
                     $p = $fwRoot . '/src/' . str_replace('\\', '/', $c) . '.php';
                     if (is_file($p)) { require $p; }
                 });
-                $engine = new \AstrX\Template\TemplateEngine();
+                require_once $fwRoot . '/src/AstrX/Support/constants.php';
+                $engine = new \AstrX\Template\TemplateEngine(
+                    null,
+                    \AstrX\Module\ModuleRegistry::resourceRootsFor(\AstrX\ApplicationModules::INSTALLED),
+                );
                 $engine->setTemplateDir($fwRoot . '/resources/template/');
                 $engine->setTemplateExtension('.html');
                 $engine->setCacheTemplates(false);
