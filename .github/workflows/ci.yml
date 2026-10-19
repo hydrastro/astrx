@@ -70,6 +70,11 @@ jobs:
       - name: Config integrity (sections, setters, write targets)
         run: php tools/check_config.php
 
+      # The production install runs the warmer; compile every template here
+      # too, so a template or warmer that breaks fails before the image job.
+      - name: Template cache warmer
+        run: php tools/warm-template-cache.php --clear --quiet
+
       # The zero-framework suite. Nothing referenced tests/ before, so none of it
       # had ever run in CI. Each file is standalone: no bootstrap, no database.
       # The loop keeps going after a failure so one run reports every broken file.
