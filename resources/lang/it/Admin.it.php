@@ -190,16 +190,6 @@ return [
     'admin.notes.label' => 'Note (visibili solo agli amministratori)',
     'admin.notes.saved' => 'Note salvate.',
 
-    // Mirror onion
-    'admin.mirrors.heading'     => 'Mirror onion / anti-phishing',
-    'admin.mirrors.intro'       => 'Dichiara il tuo .onion canonico (emesso come header Onion-Location) e la lista dei mirror mostrata sulla pagina pubblica /mirrors. Incolla una dichiarazione firmata offline degli indirizzi affinché i visitatori possano verificarli fuori banda.',
-    'admin.mirrors.primary'     => 'URL .onion canonico (per Onion-Location)',
-    'admin.mirrors.list'        => 'Lista mirror (un URL per riga)',
-    'admin.mirrors.signed'      => 'Dichiarazione firmata degli indirizzi canonici',
-    'admin.mirrors.save'        => 'Salva',
-    'admin.mirrors.saved'       => 'Impostazioni mirror salvate.',
-    'admin.mirrors.bad_primary' => 'L URL canonico deve essere un indirizzo .onion http(s).',
-
     // Editor manifest di rilascio firmato
     'admin.downloads.heading'    => 'Manifest di rilascio firmato',
     'admin.downloads.intro'      => 'Pubblica una lista firmata dei tuoi file rilasciati. La pagina pubblica /downloads verifica la firma lato server con la chiave qui sotto e mostra ai visitatori se è valida.',

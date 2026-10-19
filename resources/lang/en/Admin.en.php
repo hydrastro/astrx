@@ -454,16 +454,6 @@ return [
     'admin.notes.label' => 'Notes (visible to admins only)',
     'admin.notes.saved' => 'Notes saved.',
 
-    // Onion mirrors
-    'admin.mirrors.heading'     => 'Onion mirrors / anti-phishing',
-    'admin.mirrors.intro'       => 'Declare your canonical .onion (emitted as an Onion-Location header) and the mirror list shown on the public /mirrors page. Paste an offline-signed statement of the addresses so visitors can verify them out of band.',
-    'admin.mirrors.primary'     => 'Canonical .onion URL (for Onion-Location)',
-    'admin.mirrors.list'        => 'Mirror list (one URL per line)',
-    'admin.mirrors.signed'      => 'Signed statement of the canonical addresses',
-    'admin.mirrors.save'        => 'Save',
-    'admin.mirrors.saved'       => 'Mirror settings saved.',
-    'admin.mirrors.bad_primary' => 'The canonical URL must be an http(s) .onion address.',
-
     // Signed downloads / release manifest editor
     'admin.downloads.heading'    => 'Signed release manifest',
     'admin.downloads.intro'      => 'Publish a signed list of your released files. The public /downloads page verifies the signature server-side against the key below and shows visitors whether it is valid.',

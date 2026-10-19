@@ -56,7 +56,6 @@ return [
 
     // Public navbar — transparency / trust pages (each an optional module)
     'WORDING_DOWNLOADS.label'             => 'Downloads',
-    'WORDING_MIRRORS.label'               => 'Mirrors',
     'WORDING_TIPLINE.label'               => 'Tip Line',
 
     // User navbar — account security
@@ -64,7 +63,6 @@ return [
 
     // Admin navbar — transparency editors + safety/retention tools
     'WORDING_ADMIN_DOWNLOADS.label'       => 'Downloads',
-    'WORDING_ADMIN_MIRRORS.label'         => 'Mirrors',
     'WORDING_ADMIN_TIPLINE.label'         => 'Tip Line',
     'WORDING_ADMIN_RETENTION.label'       => 'Retention',
     'WORDING_ADMIN_PANIC.label'           => 'Panic',
