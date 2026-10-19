@@ -52,10 +52,10 @@ src/AstrX/WebSearch/WebSearchModule.php  # module class (key 'websearch')
 src/AstrX/WebSearch/WebSearchConfig.php        # #[InjectConfig] config holder
 src/AstrX/WebSearch/WebSearchClient.php        # the bridge: fetch + parse + sanitise
 src/AstrX/WebSearch/Controller/WebSearchController.php    # resolves from file_name 'web_search'
-resources/template/web_search.html             # no-JS GET form + results loop
-resources/config/WebSearch.config.php          # section 'WebSearchConfig'
-resources/lang/en/WebSearch.en.php             # UI strings (domain 'WebSearch')
-resources/lang/it/WebSearch.it.php             # key-for-key IT
+src/AstrX/WebSearch/resources/template/web_search.html             # no-JS GET form + results loop
+src/AstrX/WebSearch/resources/config/WebSearch.config.php          # section 'WebSearchConfig'
+src/AstrX/WebSearch/resources/lang/en/WebSearch.en.php             # UI strings (domain 'WebSearch')
+src/AstrX/WebSearch/resources/lang/it/WebSearch.it.php             # key-for-key IT
 src/setup/modules/websearch.down.sql           # teardown for `module.php purge websearch`
 ```
 
@@ -65,10 +65,10 @@ src/AstrX/OnionSearch/OnionSearchModule.php # module class (key 'onionsearch')
 src/AstrX/OnionSearch/OnionSearchConfig.php     # #[InjectConfig] config holder
 src/AstrX/OnionSearch/OnionSearchClient.php     # the bridge: fetch + parse + sanitise
 src/AstrX/OnionSearch/Controller/OnionSearchController.php   # resolves from file_name 'onion_search'
-resources/template/onion_search.html           # no-JS GET form + results loop
-resources/config/OnionSearch.config.php        # section 'OnionSearchConfig'
-resources/lang/en/OnionSearch.en.php           # UI strings (domain 'OnionSearch')
-resources/lang/it/OnionSearch.it.php           # key-for-key IT
+src/AstrX/OnionSearch/resources/template/onion_search.html           # no-JS GET form + results loop
+src/AstrX/OnionSearch/resources/config/OnionSearch.config.php        # section 'OnionSearchConfig'
+src/AstrX/OnionSearch/resources/lang/en/OnionSearch.en.php           # UI strings (domain 'OnionSearch')
+src/AstrX/OnionSearch/resources/lang/it/OnionSearch.it.php           # key-for-key IT
 src/setup/modules/onionsearch.down.sql         # teardown for `module.php purge onionsearch`
 ```
 
@@ -84,7 +84,7 @@ tests/mock_search_server.php                   # mock engine used by bridge_test
   (`str_replace('_','',ucwords('web_search','_')) . 'Controller'`). Same for
   `onion_search` → `OnionSearchController`.
 - **Template**: the shell renders `{{>include}}`, which is built from the page's
-  `file_name`, so `web_search` → `resources/template/web_search.html`.
+  `file_name`, so `web_search` → `src/AstrX/WebSearch/resources/template/web_search.html`.
 - **Config holder binding**: there is no `WebSearchConfig.config.php`, so
   `ModuleLoader` falls back to the parent-namespace file `WebSearch.config.php`
   and applies its `'WebSearchConfig'` section to the holder (the exact pattern
@@ -96,7 +96,7 @@ tests/mock_search_server.php                   # mock engine used by bridge_test
 
 ## Configuration
 
-`resources/config/WebSearch.config.php` (and the analogous `OnionSearch.config.php`):
+`src/AstrX/WebSearch/resources/config/WebSearch.config.php` (and the analogous `OnionSearch.config.php`):
 
 ```php
 return [
@@ -220,11 +220,14 @@ SELECT @os_nav_id, @os_page_id
 
 ### Required core lang additions (slug + nav label)
 
-The page URL slug and the nav-link label live in the **core** `pages` and
-`Navbar` lang domains (the module lang files only hold the search-UI strings).
-Add these keys, keeping en/it parity (checked by `tools/check_lang_parity.php`).
+The page URL slug and the nav-link label belong to the `pages` and `Navbar`
+lang domains. A module ships them itself, in partial catalogs of those domains
+under its own `resources/lang/` (loaded underneath the site's catalogs of the
+same name; see docs/MODULES.md, *Resources*). Add these keys, keeping en/it
+parity (checked by `tools/check_lang_parity.php`).
 
-`resources/lang/en/pages.en.php`:
+`src/AstrX/WebSearch/resources/lang/en/pages.en.php` (the onion keys go in
+`src/AstrX/OnionSearch/resources/lang/en/pages.en.php`):
 ```php
 'WORDING_WEBSEARCH'               => 'websearch',
 'WORDING_WEBSEARCH.title'         => 'Web search',
@@ -233,7 +236,7 @@ Add these keys, keeping en/it parity (checked by `tools/check_lang_parity.php`).
 'WORDING_ONIONSEARCH.title'       => 'Onion search',
 'WORDING_ONIONSEARCH.description' => 'Search the indexed .onion crawl.',
 ```
-`resources/lang/it/pages.it.php`:
+`src/AstrX/WebSearch/resources/lang/it/pages.it.php` (and OnionSearch's):
 ```php
 'WORDING_WEBSEARCH'               => 'websearch',
 'WORDING_WEBSEARCH.title'         => 'Ricerca web',
@@ -242,20 +245,20 @@ Add these keys, keeping en/it parity (checked by `tools/check_lang_parity.php`).
 'WORDING_ONIONSEARCH.title'       => 'Ricerca onion',
 'WORDING_ONIONSEARCH.description' => 'Cerca tra le pagine .onion indicizzate.',
 ```
-`resources/lang/en/Navbar.en.php`:
+`src/AstrX/WebSearch/resources/lang/en/Navbar.en.php` (and OnionSearch's):
 ```php
 'WORDING_WEBSEARCH.label'   => 'Web search',
 'WORDING_ONIONSEARCH.label' => 'Onion search',
 ```
-`resources/lang/it/Navbar.it.php`:
+`src/AstrX/WebSearch/resources/lang/it/Navbar.it.php` (and OnionSearch's):
 ```php
 'WORDING_WEBSEARCH.label'   => 'Ricerca web',
 'WORDING_ONIONSEARCH.label' => 'Ricerca onion',
 ```
 
-### Optional: explicit module toggles
-Modules default **on** when unlisted, so nothing is required. To make them
-explicit / toggleable, add to `resources/config/Modules.config.php`:
+### Module flags (required)
+An installed module with no flag is **off**, so each needs one in
+`resources/config/Modules.config.php` (`tools/check_modules.php` fails without it):
 ```php
 'websearch'   => true,
 'onionsearch' => true,
@@ -355,10 +358,10 @@ src/AstrX/TorrentSearch/TorrentSearchModule.php # module class (key 'torrentsear
 src/AstrX/TorrentSearch/TorrentSearchConfig.php   # #[InjectConfig] holder (base_url 8804)
 src/AstrX/TorrentSearch/TorrentSearchClient.php   # fetch + parse + sanitise + safe links
 src/AstrX/TorrentSearch/Controller/TorrentSearchController.php   # resolves from file_name 'torrent_search'
-resources/template/torrent_search.html           # no-JS search + detail views
-resources/config/TorrentSearch.config.php         # section 'TorrentSearchConfig'
-resources/lang/en/TorrentSearch.en.php            # UI strings (domain 'TorrentSearch')
-resources/lang/it/TorrentSearch.it.php            # key-for-key IT
+src/AstrX/TorrentSearch/resources/template/torrent_search.html           # no-JS search + detail views
+src/AstrX/TorrentSearch/resources/config/TorrentSearch.config.php         # section 'TorrentSearchConfig'
+src/AstrX/TorrentSearch/resources/lang/en/TorrentSearch.en.php            # UI strings (domain 'TorrentSearch')
+src/AstrX/TorrentSearch/resources/lang/it/TorrentSearch.it.php            # key-for-key IT
 src/setup/modules/torrentsearch.down.sql          # teardown
 ```
 
@@ -426,14 +429,14 @@ src/AstrX/SuiteAdmin/SuiteAdminModule.php  # module class (key 'suiteadmin')
 src/AstrX/SuiteAdmin/SuiteAdminConfig.php         # #[InjectConfig] holder (four base URLs)
 src/AstrX/SuiteAdmin/SuiteAdminClient.php         # probe + Prometheus/JSON parse + POST /add
 src/AstrX/SuiteAdmin/Controller/AdminSuiteController.php      # resolves from file_name 'admin_suite'
-resources/template/admin/admin_suite.html         # status table + CSRF/PRG seed form
-resources/config/SuiteAdmin.config.php            # section 'SuiteAdminConfig'
-resources/lang/en/SuiteAdmin.en.php               # UI strings (domain 'SuiteAdmin')
-resources/lang/it/SuiteAdmin.it.php               # key-for-key IT
+src/AstrX/SuiteAdmin/resources/template/admin/admin_suite.html         # status table + CSRF/PRG seed form
+src/AstrX/SuiteAdmin/resources/config/SuiteAdmin.config.php            # section 'SuiteAdminConfig'
+src/AstrX/SuiteAdmin/resources/lang/en/SuiteAdmin.en.php               # UI strings (domain 'SuiteAdmin')
+src/AstrX/SuiteAdmin/resources/lang/it/SuiteAdmin.it.php               # key-for-key IT
 src/setup/modules/suiteadmin.down.sql             # teardown
 ```
 
-Config — the four base URLs via `#[InjectConfig]` (`resources/config/SuiteAdmin.config.php`):
+Config — the four base URLs via `#[InjectConfig]` (`src/AstrX/SuiteAdmin/resources/config/SuiteAdmin.config.php`):
 
 ```php
 return [
@@ -500,10 +503,10 @@ an href.
 src/AstrX/GitBrowse/GitBrowseModule.php    # module class (key 'gitbrowse')
 src/AstrX/GitBrowse/GitBrowseConfig.php           # #[InjectConfig] holder (service_url 8801)
 src/AstrX/GitBrowse/Controller/GitBrowseController.php       # resolves from file_name 'git_browse'
-resources/template/git_browse.html                # link-through card
-resources/config/GitBrowse.config.php             # section 'GitBrowseConfig'
-resources/lang/en/GitBrowse.en.php                # UI strings (domain 'GitBrowse')
-resources/lang/it/GitBrowse.it.php                # key-for-key IT
+src/AstrX/GitBrowse/resources/template/git_browse.html                # link-through card
+src/AstrX/GitBrowse/resources/config/GitBrowse.config.php             # section 'GitBrowseConfig'
+src/AstrX/GitBrowse/resources/lang/en/GitBrowse.en.php                # UI strings (domain 'GitBrowse')
+src/AstrX/GitBrowse/resources/lang/it/GitBrowse.it.php                # key-for-key IT
 src/setup/modules/gitbrowse.down.sql              # teardown
 ```
 
@@ -544,9 +547,10 @@ INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @gb_nav_id, @gb_page_id WHERE @gb_page_id IS NOT NULL AND @gb_nav_id IS NOT NULL;
 ```
 
-### Required core lang additions (slugs + nav labels), en/it parity
+### Required lang additions (slugs + nav labels), en/it parity
 
-`resources/lang/en/pages.en.php` / `pages.it.php`:
+In each module's own partial catalogs — e.g.
+`src/AstrX/TorrentSearch/resources/lang/en/pages.en.php` / `…/it/pages.it.php`:
 ```php
 // en
 'WORDING_TORRENTSEARCH'             => 'torrentsearch',
@@ -569,7 +573,7 @@ SELECT @gb_nav_id, @gb_page_id WHERE @gb_page_id IS NOT NULL AND @gb_nav_id IS N
 'WORDING_GITBROWSE.title'          => 'Sfoglia il codice',
 'WORDING_GITBROWSE.description'    => "Apri il browser del codice sorgente gitweb.",
 ```
-`resources/lang/en/Navbar.en.php` / `Navbar.it.php`:
+`src/AstrX/TorrentSearch/resources/lang/en/Navbar.en.php` / `…/it/Navbar.it.php`:
 ```php
 // en
 'WORDING_TORRENTSEARCH.label' => 'Torrent search',
@@ -581,7 +585,8 @@ SELECT @gb_nav_id, @gb_page_id WHERE @gb_page_id IS NOT NULL AND @gb_nav_id IS N
 'WORDING_GITBROWSE.label'     => 'Codice',
 ```
 
-### Optional: explicit module toggles
+### Module flags (required)
+An installed module with no flag is off (`tools/check_modules.php` fails without one):
 ```php
 // resources/config/Modules.config.php  →  'Modules' => [ … ]
 'torrentsearch' => true,
@@ -644,10 +649,10 @@ src/AstrX/FederatedSearch/FederatedSearchModule.php # module class (key 'fedsear
 src/AstrX/FederatedSearch/FederatedSearchConfig.php # #[InjectConfig] holder (3 base URLs 8802/8803/8804)
 src/AstrX/FederatedSearch/FederatedSearchClient.php # bounded/size-capped fan-out fetch + parse + sanitise
 src/AstrX/FederatedSearch/Controller/FederatedSearchController.php   # resolves from file_name 'federated_search'
-resources/template/federated_search.html           # no-JS tab bar + per-source render blocks
-resources/config/FederatedSearch.config.php         # section 'FederatedSearchConfig'
-resources/lang/en/FederatedSearch.en.php            # UI strings (domain 'FederatedSearch')
-resources/lang/it/FederatedSearch.it.php            # key-for-key IT
+src/AstrX/FederatedSearch/resources/template/federated_search.html           # no-JS tab bar + per-source render blocks
+src/AstrX/FederatedSearch/resources/config/FederatedSearch.config.php         # section 'FederatedSearchConfig'
+src/AstrX/FederatedSearch/resources/lang/en/FederatedSearch.en.php            # UI strings (domain 'FederatedSearch')
+src/AstrX/FederatedSearch/resources/lang/it/FederatedSearch.it.php            # key-for-key IT
 src/setup/modules/fedsearch.down.sql                # teardown
 ```
 
@@ -712,10 +717,10 @@ src/AstrX/Blocklist/BlocklistModule.php     # module class (key 'blocklist')
 src/AstrX/Blocklist/BlocklistConfig.php            # #[InjectConfig] holder (2 base URLs + 2 admin TOKENS)
 src/AstrX/Blocklist/BlocklistClient.php            # bounded/size-capped POST + token auth shapes
 src/AstrX/Blocklist/Controller/AdminBlocklistController.php   # resolves from file_name 'admin_blocklist'
-resources/template/admin/admin_blocklist.html      # two CSRF/PRG forms (onion + torrent)
-resources/config/Blocklist.config.php              # section 'BlocklistConfig'
-resources/lang/en/Blocklist.en.php                 # UI strings (domain 'Blocklist')
-resources/lang/it/Blocklist.it.php                 # key-for-key IT
+src/AstrX/Blocklist/resources/template/admin/admin_blocklist.html # two CSRF/PRG forms (onion + torrent)
+src/AstrX/Blocklist/resources/config/Blocklist.config.php # section 'BlocklistConfig'
+src/AstrX/Blocklist/resources/lang/en/Blocklist.en.php # UI strings (domain 'Blocklist')
+src/AstrX/Blocklist/resources/lang/it/Blocklist.it.php # key-for-key IT
 src/setup/modules/blocklist.down.sql               # teardown
 ```
 
@@ -778,9 +783,10 @@ INSERT IGNORE INTO `navbar_internal` (id, page_id)
 SELECT @bl_nav_id, @bl_page_id WHERE @bl_page_id IS NOT NULL AND @bl_nav_id IS NOT NULL;
 ```
 
-### Required core lang additions (slugs + nav labels), en/it parity
+### Required lang additions (slugs + nav labels), en/it parity
 
-`resources/lang/en/pages.en.php` / `pages.it.php`:
+In each module's own partial catalogs — e.g.
+`src/AstrX/TorrentSearch/resources/lang/en/pages.en.php` / `…/it/pages.it.php`:
 ```php
 // en
 'WORDING_FEDSEARCH'                   => 'search-all',
@@ -807,7 +813,8 @@ SELECT @bl_nav_id, @bl_page_id WHERE @bl_page_id IS NOT NULL AND @bl_nav_id IS N
 'WORDING_ADMIN_BLOCKLIST.label' => 'Blocklist',
 ```
 
-### Optional: explicit module toggles
+### Module flags (required)
+An installed module with no flag is off (`tools/check_modules.php` fails without one):
 ```php
 // resources/config/Modules.config.php  →  'Modules' => [ … ]
 'fedsearch' => true,

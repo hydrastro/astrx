@@ -52,7 +52,7 @@ reinstall the schema (`tools/install.php`) to bring a purged module back.
 
 ## How a module is wired
 
-A module is four things, none of which live in core:
+A module is these things, none of which live in core:
 
 1. **A module class** — `src/AstrX/<Module>/<Module>Module.php`, implementing
    `AstrX\Module\Module` — whose `manifest()` declares the module, listed in
@@ -63,7 +63,10 @@ A module is four things, none of which live in core:
 3. **(Optional) a nav contributor, page guards, resource policies and page
    controllers** — classes the manifest points at, all inside the module's own
    namespace (`AstrX\<Module>\…`).
-4. **(Optional) a teardown file** — `src/setup/modules/<key>.down.sql` — that
+4. **(Optional) its resources** — templates, translations and default config
+   in `src/AstrX/<Module>/resources/`, layered under the site's own
+   `resources/` (see [Resources](#resources)).
+5. **(Optional) a teardown file** — `src/setup/modules/<key>.down.sql` — that
    `purge` runs.
 
 ### The manifest
@@ -96,6 +99,7 @@ final class ImageboardModule implements Module
                 // …
             ],
             'teardown'     => 'imageboard.down.sql',         // file in src/setup/modules/, or null
+            'resources'    => 'resources',                   // dir next to this class, or omit
         ];
     }
 }
@@ -106,6 +110,49 @@ modules too (the controller map and the grants editor need their declarations).
 `ModuleRegistry` receives the installed list from `Prelude` and builds each
 manifest once per request. A listed class that does not implement `Module`, an
 empty key, or two modules sharing a key fail loudly instead of being skipped.
+
+### Resources
+
+A module keeps its templates, translations and default configuration in its
+own directory, declared by `'resources'` (relative to the module class):
+
+```
+src/AstrX/Imageboard/resources/
+├── template/                 board.html, admin/admin_boards.html, partials/board_nav.html …
+├── lang/
+│   ├── en/                   Imageboard.en.php, pages.en.php, Navbar.en.php, Admin.en.php,
+│   │                         Diagnostics/imageboard.en.php
+│   └── it/                   the same files, same keys
+└── config/                   Imageboard.config.php
+```
+
+It has the same layout as the site's `resources/`, and the two are layered:
+
+| Kind | Lookup | Writes |
+|------|--------|--------|
+| Templates | the site's `resources/template/<name>.html` if it exists, else the first module that ships `<name>` | never |
+| Catalogs (`lang/`) | each module's file, then the site's: the site overrides a module **key by key** | the language editor writes the site's file, and for a domain a module ships only the keys the site changed |
+| Diagnostics catalogs | the same, file by file under `Diagnostics/` | never |
+| Config | the module's `<Domain>.config.php` is the default, the site's file overrides it **key by key** | admin config pages write the site's file |
+
+So a site customises a module without touching it: put a template with the
+same name in `resources/template/`, or just the keys you want to change in
+`resources/lang/<locale>/<Domain>.<locale>.php` or
+`resources/config/<Domain>.config.php`. A module's directory is read-only —
+once modules are Composer packages it lives under `vendor/`.
+
+A module may contribute keys to a domain it shares with core: its page slugs
+and titles go in a partial `pages.<locale>.php`, its nav labels in
+`Navbar.<locale>.php`, its admin strings in `Admin.<locale>.php`. Those files
+hold only the module's own keys and are loaded underneath the site's catalog of
+the same name. A key that core code also uses stays in the site's catalog.
+
+Every installed module contributes its resources whether it is enabled or not
+(a disabled module's strings still label its grants in the grants editor; its
+templates cost nothing while its pages 404). `ModuleRegistry::resourceRootsFor()`
+lists the directories without booting the application, which is how the tools
+(`check_lang_parity`, `check_diagnostics`, `check_config`, the template cache
+warmer and the compiled build) find them.
 
 ### Nav contributor (optional)
 
@@ -245,8 +292,10 @@ php tools/make_module.php forum --nav --guard
 ```
 
 scaffolds `src/AstrX/Forum/ForumModule.php` (+ a `ForumNavContributor` and
-`ForumPageGuard` if you passed `--nav`/`--guard`) and
-`src/setup/modules/forum.down.sql`, then prints the remaining steps:
+`ForumPageGuard` if you passed `--nav`/`--guard`), its controller, a
+`resources/` directory with the page's template and its slug and title in both
+locales, and `src/setup/modules/forum.down.sql`, then prints the remaining
+steps:
 
 1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`
    and `'forum' => true` to `resources/config/Modules.config.php` (no flag = off).
@@ -256,9 +305,10 @@ scaffolds `src/AstrX/Forum/ForumModule.php` (+ a `ForumNavContributor` and
 5. `php tools/check_modules.php && php tools/check_architecture.php`.
 
 The scaffold includes `Controller/ForumController.php`, already mapped to the
-`forum` page in the manifest's `controllers`. Services, templates, config and
-language files follow AstrX's normal conventions (`Forum.config.php` and
-`resources/lang/{en,it}/Forum.*.php` auto-load by naming convention).
+`forum` page in the manifest's `controllers`. Further templates, catalogs and
+config go in the module's `resources/` ([Resources](#resources)); a class's
+config section and its translation domain are still found by naming convention
+(`Forum.config.php`, `lang/{en,it}/Forum.*.php`).
 
 ## Verifying
 
@@ -274,7 +324,7 @@ php tools/check_architecture.php                # layered, acyclic namespaces
 `check_modules.php` verifies each manifest loads, has a `key`/`version`, its nav
 contributor implements `NavContributor`, its guards implement `PageGuard`, its
 policies implement `PolicyInterface`, its controllers implement
-`Kernel\Controller` and live in the module's namespace, and its teardown file
-exists. CI additionally installs against MariaDB and boots the app
+`Kernel\Controller` and live in the module's namespace, its teardown file
+exists, and its `resources` directory (if declared) is next to it. CI additionally installs against MariaDB and boots the app
 with each module off (and with all modules off) to prove they are independently
 optional.
