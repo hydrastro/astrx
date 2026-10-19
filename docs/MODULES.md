@@ -134,11 +134,13 @@ packages/modules/imageboard/resources/
                               imageboard.down.sql   (see Database)
 ```
 
-It has the same layout as the site's `resources/`, and the two are layered:
+It has the same layout as the site's `resources/`, and the two are layered
+(the core packages — framework, library, CMS — ship resources the same way,
+beneath the modules'):
 
 | Kind | Lookup | Writes |
 |------|--------|--------|
-| Templates | the site's `resources/template/<name>.html` if it exists, else the first module that ships `<name>` | never |
+| Templates | the site's `resources/template/<name>.html` if it exists, else the first package or module that ships `<name>` | never |
 | Catalogs (`lang/`) | each module's file, then the site's: the site overrides a module **key by key** | the language editor writes the site's file, and for a domain a module ships only the keys the site changed |
 | Diagnostics catalogs | the same, file by file under `Diagnostics/` | never |
 | Config | the module's `<Domain>.config.php` is the default, the site's file overrides it **key by key** | admin config pages write the site's file |
