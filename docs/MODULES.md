@@ -63,10 +63,10 @@ A module is these things, none of which live in core:
 3. **(Optional) a nav contributor, page guards, resource policies and page
    controllers** — classes the manifest points at, all inside the module's own
    namespace (`AstrX\<Module>\…`).
-4. **(Optional) its resources** — templates, translations and default config
-   in `src/AstrX/<Module>/resources/`, layered under the site's own
-   `resources/` (see [Resources](#resources)).
-5. **(Optional) a teardown file** — `src/setup/modules/<key>.down.sql` — that
+4. **(Optional) its resources** — templates, translations, default config and
+   SQL in `src/AstrX/<Module>/resources/`, layered under the site's own
+   `resources/` (see [Resources](#resources) and [Database](#database)).
+5. **(Optional) a teardown file** — `resources/sql/<key>.down.sql` — that
    `purge` runs.
 
 ### The manifest
@@ -98,7 +98,7 @@ final class ImageboardModule implements Module
                 'board_mod' => \AstrX\Imageboard\Controller\BoardModController::class,
                 // …
             ],
-            'teardown'     => 'imageboard.down.sql',         // file in src/setup/modules/, or null
+            'teardown'     => 'imageboard.down.sql',         // file in resources/sql/, or null
             'resources'    => 'resources',                   // dir next to this class, or omit
         ];
     }
@@ -123,7 +123,9 @@ src/AstrX/Imageboard/resources/
 │   ├── en/                   Imageboard.en.php, pages.en.php, Navbar.en.php, Admin.en.php,
 │   │                         Diagnostics/imageboard.en.php
 │   └── it/                   the same files, same keys
-└── config/                   Imageboard.config.php
+├── config/                   Imageboard.config.php
+└── sql/                      schema/0270_imageboard_tables.sql …, migrate_zzzzz_imageboard_pages.sql,
+                              imageboard.down.sql   (see Database)
 ```
 
 It has the same layout as the site's `resources/`, and the two are layered:
@@ -255,34 +257,65 @@ It is registered with the `Gate` only while the module is enabled. Policies
 type-hint `Auth\Identity`, not the account session; use
 `User\UserGroup::ofIdentity()` when comparing roles.
 
-### Page ownership (tagging)
+### Database
 
-Add the `page.module` tag for your module's pages in a migration
-(`src/setup/migrate_*.sql`, applied by `tools/install.php`):
+A module ships its SQL in `resources/sql/`; the installers
+(`tools/install.php`, `public/setup.php`) apply core's and every installed
+module's together (`AstrX\Database\SchemaFiles` decides the order):
+
+| File | Applied | Notes |
+|------|---------|-------|
+| `schema/NNNN_<key>_<what>.sql` | on **every** install run, after core's and the other modules' pieces in file-name order | the base schema: write it to be re-applied (`CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE`). The number places it among core's pieces (`0000_core_base.sql` first); a new module rarely needs one |
+| `migrate_<name>.sql` | **once**, recorded by name + checksum in `migration` | merged with core's and sorted by file name. A shipped migration must never be edited or renamed — the next upgrade would abort on the checksum. Fix forward with a new one |
+| `<key>.down.sql` (manifest `teardown`) | by `tools/module.php purge <key>` | drop the module's tables and pages |
+
+A file name may exist only once across core and the modules
+(`tools/check_modules.php` checks it). A new module normally ships its tables
+and pages as migrations; nothing about it goes in core's `src/setup/`.
+
+**Page ownership.** Tag every page the module creates with `page.module`, in
+its own SQL (`page.module = ''` means core, always on):
 
 ```sql
-UPDATE `page` SET `module` = 'imageboard'
- WHERE `module` = '' AND `file_name` LIKE 'board%';
+UPDATE `page` SET `module` = 'forum' WHERE `module` = '' AND `file_name` LIKE 'forum%';
 ```
 
-`page.module = ''` means core/always-on. The `page.module` column and the
-`resolved_page` view are added by `migrate_module_page_ownership.sql`.
+Untagged, a page counts as core and is served even while the module is off.
+
+**Nav entries.** Insert them the way the existing modules do — look the page
+up by `url_id`, reuse an existing entry, and only allocate a new id
+(`navbar_entry_ids`) when there is none — into the public navbar's
+alphabetical pin (`sort_mode = 0`) and the admin navbar's main menu pin. The
+modules' `migrate_zzzzz_<key>_pages.sql` show the pattern, including moving an
+entry that an older migration put in the first (Home/Dashboard) pin.
+
+**Installing later, purging, restoring.** A module can be added to an existing
+site: its schema pieces and migrations run on the next
+`php tools/install.php --schema-only`. `tools/module.php purge <key>` runs the
+teardown and forgets the module's migrations (and core's that created its
+tables or tagged its pages), so the same command restores it exactly — the
+pages, their tags, their nav placement and the module's tables.
 
 ### Teardown (optional)
 
-`src/setup/modules/<key>.down.sql` — what `module.php purge <key>` runs. Deleting
-the pages cascades to their metadata and navbar rows (via existing `ON DELETE
-CASCADE` FKs); drop the module's own tables and sweep orphaned navbar entries:
+`resources/sql/<key>.down.sql` — what `module.php purge <key>` runs. Deleting
+the pages cascades to their metadata and to `navbar_internal` (via `ON DELETE
+CASCADE` FKs); drop the module's own tables, then remove the nav entries left
+pointing nowhere through their id-allocator rows (which cascade to the entries):
 
 ```sql
 DELETE FROM `page` WHERE `module` = 'imageboard';   -- cascades to meta/robots/closure/navbar_internal
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `board_post`; DROP TABLE IF EXISTS `board_thread`; DROP TABLE IF EXISTS `board`;
 SET FOREIGN_KEY_CHECKS = 1;
-DELETE ne FROM `navbar_entry` ne
+DELETE nid FROM `navbar_entry_ids` nid
+  JOIN `navbar_entry` ne ON ne.id = nid.id
   LEFT JOIN `navbar_internal` ni ON ni.id = ne.id
   LEFT JOIN `navbar_external` nx ON nx.id = ne.id
  WHERE ni.id IS NULL AND nx.id IS NULL;
+DELETE nid FROM `navbar_entry_ids` nid
+  LEFT JOIN `navbar_entry` ne ON ne.id = nid.id
+ WHERE ne.id IS NULL;
 ```
 
 ## Adding a module
@@ -294,12 +327,13 @@ php tools/make_module.php forum --nav --guard
 scaffolds `src/AstrX/Forum/ForumModule.php` (+ a `ForumNavContributor` and
 `ForumPageGuard` if you passed `--nav`/`--guard`), its controller, a
 `resources/` directory with the page's template and its slug and title in both
-locales, and `src/setup/modules/forum.down.sql`, then prints the remaining
-steps:
+locales, and its teardown `resources/sql/forum.down.sql`, then prints the
+remaining steps:
 
 1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`
    and `'forum' => true` to `resources/config/Modules.config.php` (no flag = off).
-2. Tag its pages in a migration: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
+2. Add its tables and page rows in a migration in its `resources/sql/`, tagging
+   the pages: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
 3. Fill in the teardown `DROP TABLE`s and the nav/guard stubs.
 4. Add `Forum` to the `feature` layer in `tools/check_architecture.php`.
 5. `php tools/check_modules.php && php tools/check_architecture.php`.
