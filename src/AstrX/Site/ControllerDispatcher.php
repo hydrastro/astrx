@@ -58,7 +58,7 @@ final class ControllerDispatcher
             } else {
                 // The page declares controller=1 but no such controller class
                 // exists — a seed/code mismatch (e.g. a config section seeded in
-                // tables.sql whose controller was never implemented). Serve a clean
+                // the schema whose controller was never implemented). Serve a clean
                 // themed 404 rather than a raw 500, and return so we don't fall
                 // through to a template render that also has no file. The diagnostic
                 // keeps the misconfiguration visible in the logs.

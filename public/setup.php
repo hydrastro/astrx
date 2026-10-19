@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
-require_once dirname(__DIR__) . '/src/AstrX/Auth/PasswordPolicy.php';
+// The inert class autoloader (starts nothing): PasswordPolicy, and the
+// installed-module list that says which modules' SQL to apply.
+require_once dirname(__DIR__) . '/src/autoload.php';
 
 /**
  * AstrX First-Run Setup Wizard — single-file, no JS, site-CSS styled.
@@ -385,36 +387,20 @@ function runMigration(PDO $pdo, string $file): string
 }
 
 /**
- * Find a setup SQL file in any of the conventional locations.
- * Docker layouts vary — some mount the whole repo as /app, others mount
- * only public/, src/, and resources/. We try every plausible location so
- * the wizard works regardless of how the container is configured.
- *
- * Returns the first existing path, or null if nothing matched.
+ * The SQL that makes up the database: core's and every installed module's.
+ * Docker layouts vary — some mount the whole repo as /app, others only
+ * public/, src/ and resources/ — so core's SQL is looked for in src/setup/
+ * (always mounted) and a repo-root setup/ mirror. See AstrX\Database\SchemaFiles.
  */
-function findSetupFile(string $name): ?string
+function schemaFiles(): AstrX\Database\SchemaFiles
 {
-    $candidates = [
-        __DIR__ . '/../src/setup/' . $name,   // canonical: ships inside src/ (always mounted)
-        __DIR__ . '/../setup/' . $name,       // alternative: repo-root setup/ (only works when whole repo is mounted)
-    ];
-    foreach ($candidates as $c) {
-        if (file_exists($c)) { return $c; }
-    }
-    return null;
+    return new AstrX\Database\SchemaFiles(
+        [__DIR__ . '/../src/setup', __DIR__ . '/../setup'],
+        AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+            ->of(AstrX\Support\ResourceRoots::SQL),
+    );
 }
 
-function listSetupMigrations(): array
-{
-    $found = [];
-    foreach ([__DIR__ . '/../src/setup/', __DIR__ . '/../setup/'] as $dir) {
-        if (!is_dir($dir)) continue;
-        foreach (glob($dir . 'migrate_*.sql') ?: [] as $m) {
-            $found[basename($m)] = $m;   // de-dup by filename, prefer first found
-        }
-    }
-    return array_values($found);
-}
 function removeSeedAdmin(PDO $pdo): string
 {
     // Older setup SQL seeded a public default Administrator account. The wizard
@@ -470,16 +456,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$tokenValid) {
             }
 
             if ($errors === [] && pb('run_migrations')) {
-                $tablesPath = findSetupFile('tables.sql');
-                if ($tablesPath === null) {
-                    $errors[] = 'Schema file tables.sql not found in either src/setup/ or setup/.';
-                } else {
-                    $err = runSQL($conn, $tablesPath);
+                $sql    = schemaFiles();
+                $pieces = $sql->schema();
+                if ($pieces === []) {
+                    $errors[] = 'No schema found (src/setup/schema/*.sql).';
+                }
+                foreach ($pieces as $piece) {
+                    $err = runSQL($conn, $piece);
                     if ($err !== '') {
-                        $errors[] = 'SQL error: ' . $err;
+                        $errors[] = 'SQL error in ' . basename($piece) . ': ' . $err;
+                        break;
                     }
                 }
-                // Auto-apply every migrate_*.sql found in either location.
+                // Auto-apply every migration (core's and the installed modules').
                 // Each successful migration is recorded by filename + checksum
                 // so setup can be safely re-entered without blindly replaying
                 // the same SQL against an already-upgraded database.
@@ -490,7 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$tokenValid) {
                     }
                 }
                 if ($errors === []) {
-                    foreach (listSetupMigrations() as $mf) {
+                    foreach ($sql->migrations() as $mf) {
                         $err = runMigration($conn, $mf);
                         if ($err !== '') {
                             $errors[] = 'SQL error in ' . basename($mf) . ': ' . $err;
@@ -624,7 +613,7 @@ $siteCSS    = (string)(@file_get_contents(__DIR__.'/../resources/template/style.
       <tr><td>Port</td>          <td><input type="text"     class="input" name="db_port" value="<?= e(post('db_port','3306')) ?>"></td></tr>
       <tr><td>Username</td>      <td><input type="text"     class="input" name="db_user" value="<?= e(post('db_user','root')) ?>"></td></tr>
       <tr><td>Password</td>      <td><input type="password" class="input" name="db_pass"></td></tr>
-      <tr><td colspan="2"><label><input type="checkbox" name="run_migrations" value="1" checked> Run SQL setup (tables.sql + migrate.sql)</label><br><small>Uncheck if you have already initialised the database manually.</small></td></tr>
+      <tr><td colspan="2"><label><input type="checkbox" name="run_migrations" value="1" checked> Run SQL setup (schema + migrations)</label><br><small>Uncheck if you have already initialised the database manually.</small></td></tr>
     </tbody>
   </table>
   <input type="submit" class="input" value="Connect &amp; continue &rarr;">

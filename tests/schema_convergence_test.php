@@ -7,16 +7,19 @@ declare(strict_types=1);
  *
  * WHY
  * ---
- * `src/setup/tables.sql` is a base schema with a run of former migrations
- * folded onto the end of it, and `src/setup/migrate_*.sql` holds 23 more that
- * the installer applies afterwards. So there are two ways to arrive at "the
- * current schema":
+ * The base schema is a set of ordered pieces — src/setup/schema/NNNN_*.sql and
+ * each installed module's resources/sql/schema/NNNN_*.sql, the former
+ * tables.sql with its folded-in migrations — and migrate_*.sql files (core's
+ * and the modules') are applied afterwards (see AstrX\Database\SchemaFiles).
+ * So there are two ways to arrive at "the current schema":
  *
- *   A. a fresh `tools/install.php` run — tables.sql, then every migration;
+ *   A. a fresh `tools/install.php` run — every schema piece, then every
+ *      migration;
  *   B. a database that already existed, which the same installer upgrades —
- *      tables.sql RE-applied over live tables (every `CREATE TABLE` there fails
- *      with 42S01 and runSQL() swallows it as benign, so an existing table is
- *      never touched), then the migrations it has not recorded yet.
+ *      the schema pieces RE-applied over live tables (every `CREATE TABLE`
+ *      there fails with 42S01 and runSQL() swallows it as benign, so an
+ *      existing table is never touched), then the migrations it has not
+ *      recorded yet.
  *
  * Nothing checked that A and B agree. A column added by a migration but never
  * added to the base DDL — or added to the base DDL and never migrated — a
@@ -51,7 +54,7 @@ declare(strict_types=1);
  * ledger and the benign-error rules are the shipped ones, not a copy.
  *
  * BE CLEAR ABOUT THE BLIND SPOT this leaves. Because B starts from TODAY's
- * tables.sql, the default run cannot see a change made to the base DDL of an
+ * base schema, the default run cannot see a change made to the base DDL of an
  * ALREADY-EXISTING table with no migration behind it — a new UNIQUE KEY on
  * `keyword`, a new column on `session`, a rewritten `resolved_navbar` body. On
  * a real upgrade those never arrive: runSQL() swallows `CREATE TABLE` and
@@ -61,8 +64,9 @@ declare(strict_types=1);
  *
  *     ASTRX_SCHEMA_BASELINE_REV=<git-rev> php tests/schema_convergence_test.php
  *
- * which builds the "before" database from that revision's src/setup/tables.sql
- * (via `git show`) and upgrades it with today's installer. It is opt-in because
+ * which builds the "before" database from that revision's base schema (its
+ * src/setup/tables.sql, or for later revisions its schema pieces, via
+ * `git show`) and upgrades it with today's installer. It is opt-in because
  * it needs git history that `actions/checkout` does not fetch by default, and
  * because which revision represents "an install in the field" is a judgement
  * call, not something a test can assume.
@@ -75,7 +79,7 @@ declare(strict_types=1);
  *   3. neither path is vacuous: floors on table/column/migration counts, so a
  *      comparison of two empty databases cannot pass.
  * It also prints the base-only vs fully-migrated delta: exactly what the
- * migrations add on top of tables.sql, i.e. what a future "fold them in" commit
+ * migrations add on top of the base schema, i.e. what a future "fold them in" commit
  * has to reproduce.
  *
  * NOT covered: row data (seed pages, navbar entries) — only information_schema
@@ -291,7 +295,7 @@ try {
     foreach ($SCRATCH_DBS as $d) {
         $conn->exec('DROP DATABASE IF EXISTS `' . $d . '`');
         // No CHARACTER SET clause on purpose: a hand-created database starts on
-        // the server default, and tables.sql's opening `ALTER DATABASE CHARACTER
+        // the server default, and the core base schema's opening `ALTER DATABASE CHARACTER
         // SET = utf8mb4 COLLATE = utf8mb4_unicode_ci` is then the thing that has
         // to move it. Every side starts identically, so the server's own default
         // (utf8mb4_general_ci on MariaDB 10.11, utf8mb4_uca1400_ai_ci on 11) is
@@ -309,7 +313,7 @@ try {
 /**
  * Run `tools/install.php --schema-only` from $installerRoot against $db.
  *
- * --schema-only applies tables.sql + every migration it discovers and stops:
+ * --schema-only applies the schema pieces + every migration it discovers and stops:
  * it writes no config file, creates no administrator and generates no secret,
  * so it is safe to point at a scratch database.
  *
@@ -335,18 +339,20 @@ function installer(string $installerRoot, string $host, int $port, string $db, s
 }
 
 /**
- * A throwaway installer root holding the SAME tools/install.php and a tables.sql
- * but no migrate_*.sql at all, so the shipped installer applies the base DDL and
- * nothing else. This is how the "before" database is built without hand-rolling
- * a second SQL runner: install.php resolves everything from dirname(__DIR__), so
- * a directory with the two files it needs is a complete installer root.
+ * A throwaway installer root: the SAME tools/install.php and a copy of src/
+ * (the installer reads the installed-module list and every module's SQL from
+ * it) with every migrate_*.sql removed, so the shipped installer applies the
+ * base schema and nothing else. This is how the "before" database is built
+ * without hand-rolling a second SQL runner: install.php resolves everything
+ * from dirname(__DIR__), so such a directory is a complete installer root.
  *
- * $tablesSql overrides the schema body (used by the baseline-revision mode).
+ * $legacySchema replaces the base schema with one piece holding that SQL
+ * (used by the baseline-revision mode).
  */
-function baseOnlyRoot(string $realRoot, ?string $tablesSql = null): string
+function baseOnlyRoot(string $realRoot, ?string $legacySchema = null): string
 {
     $tmp = rtrim(sys_get_temp_dir(), '/') . '/astrx-schemacmp-base-' . bin2hex(random_bytes(6));
-    foreach (['/tools', '/src/setup', '/resources/config'] as $d) {
+    foreach (['/tools', '/resources/config'] as $d) {
         if (!@mkdir($tmp . $d, 0o700, true) && !is_dir($tmp . $d)) {
             throw new RuntimeException("Could not create {$tmp}{$d}");
         }
@@ -354,54 +360,96 @@ function baseOnlyRoot(string $realRoot, ?string $tablesSql = null): string
     if (!@copy($realRoot . '/tools/install.php', $tmp . '/tools/install.php')) {
         throw new RuntimeException('Could not copy tools/install.php into the scratch installer root');
     }
-    // install.php also require_once's PHP files relative to the root (e.g.
-    // src/AstrX/Auth/PasswordPolicy.php). Copy exactly those — read from the
-    // installer itself so this list cannot drift — and nothing from
-    // src/setup beyond tables.sql, so the root still holds no migrations.
-    $installer = (string) file_get_contents($realRoot . '/tools/install.php');
-    preg_match_all("~require(?:_once)?\\s+dirname\\(__DIR__\\)\\s*\\.\\s*'(/[^']+\\.php)'~", $installer, $m);
-    foreach ($m[1] as $rel) {
-        if (!@mkdir(dirname($tmp . $rel), 0o700, true) && !is_dir(dirname($tmp . $rel))) {
-            throw new RuntimeException('Could not create ' . dirname($tmp . $rel));
-        }
-        if (!@copy($realRoot . $rel, $tmp . $rel)) {
-            throw new RuntimeException("Could not copy {$rel} (required by tools/install.php) into the scratch installer root");
+    copyTree($realRoot . '/src', $tmp . '/src');
+
+    foreach (sqlFilesUnder($tmp . '/src') as $file) {
+        $isMigration = str_starts_with(basename($file), 'migrate_');
+        $isPiece     = (bool) preg_match('~/schema/\d{4}_[^/]+\.sql$~', $file);
+        if ($isMigration || ($legacySchema !== null && $isPiece)) {
+            @unlink($file);
         }
     }
-    $ok = $tablesSql === null
-        ? @copy($realRoot . '/src/setup/tables.sql', $tmp . '/src/setup/tables.sql')
-        : (bool) @file_put_contents($tmp . '/src/setup/tables.sql', $tablesSql);
-    if (!$ok) {
-        throw new RuntimeException('Could not place tables.sql in the scratch installer root');
+    if ($legacySchema !== null
+        && !@file_put_contents($tmp . '/src/setup/schema/0000_legacy.sql', $legacySchema)) {
+        throw new RuntimeException('Could not place the legacy schema in the scratch installer root');
     }
     return $tmp;
 }
 
+function copyTree(string $from, string $to): void
+{
+    if (!@mkdir($to, 0o700, true) && !is_dir($to)) {
+        throw new RuntimeException("Could not create {$to}");
+    }
+    foreach (scandir($from) ?: [] as $e) {
+        if ($e === '.' || $e === '..') { continue; }
+        $src = $from . '/' . $e;
+        if (is_dir($src)) {
+            copyTree($src, $to . '/' . $e);
+        } elseif (!@copy($src, $to . '/' . $e)) {
+            throw new RuntimeException("Could not copy {$src}");
+        }
+    }
+}
+
+/** @return list<string> every *.sql file under $dir */
+function sqlFilesUnder(string $dir): array
+{
+    $out = [];
+    $it  = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $f) {
+        if ($f instanceof SplFileInfo && $f->isFile() && str_ends_with($f->getFilename(), '.sql')) {
+            $out[] = $f->getPathname();
+        }
+    }
+    return $out;
+}
+
 /**
- * `git show <rev>:src/setup/tables.sql`, or null when git or the revision is
- * unavailable (a shallow CI checkout has no history to show).
+ * The base schema an install from $rev received, or null when git or the
+ * revision is unavailable (a shallow CI checkout has no history to show).
  *
- * ONE edit is made to the historical file: a leading `USE <database>;` is
+ * Up to the split, that is the revision's src/setup/tables.sql. After it, the
+ * revision's schema pieces — src/setup/schema/ and every module's
+ * resources/sql/schema/ — concatenated in file-name order, which is the order
+ * the installer applies them in.
+ *
+ * ONE edit is made to a historical tables.sql: a leading `USE <database>;` is
  * removed. Revisions before 2026-08 opened with a hardcoded `USE
  * content_manager`, which cannot run against a scratch database of any other
- * name — the current tables.sql dropped that line for exactly this reason, and
+ * name — the current schema dropped that line for exactly this reason, and
  * the installer connects with a DSN already scoped to the target database, so
  * removing it reproduces what an install with db_name=content_manager got.
  * Nothing else in the historical schema is touched.
  */
-function tablesSqlAtRevision(string $root, string $rev): ?string
+function baseSchemaAtRevision(string $root, string $rev): ?string
 {
-    $lines = [];
-    $code  = 0;
-    exec(
-        'git -C ' . escapeshellarg($root) . ' show ' . escapeshellarg($rev . ':src/setup/tables.sql') . ' 2>/dev/null',
-        $lines,
-        $code,
-    );
-    if ($code !== 0 || $lines === []) {
-        return null;
+    $show = static function (string $path) use ($root, $rev): ?string {
+        $lines = [];
+        $code  = 0;
+        exec('git -C ' . escapeshellarg($root) . ' show ' . escapeshellarg($rev . ':' . $path) . ' 2>/dev/null', $lines, $code);
+        return ($code === 0 && $lines !== []) ? implode("\n", $lines) . "\n" : null;
+    };
+
+    $sql = $show('src/setup/tables.sql');
+    if ($sql === null) {
+        $paths = [];
+        $code  = 0;
+        exec('git -C ' . escapeshellarg($root) . ' ls-tree -r --name-only ' . escapeshellarg($rev) . ' -- src 2>/dev/null', $paths, $code);
+        if ($code !== 0) {
+            return null;
+        }
+        $pieces = array_values(array_filter($paths, static fn(string $p): bool =>
+            preg_match('~(^src/setup/schema/|/resources/sql/schema/)\d{4}_[^/]+\.sql$~', $p) === 1));
+        usort($pieces, static fn(string $a, string $b): int => strcmp(basename($a), basename($b)));
+        if ($pieces === []) {
+            return null;
+        }
+        $sql = '';
+        foreach ($pieces as $piece) {
+            $sql .= ($show($piece) ?? '') . "\n";
+        }
     }
-    $sql = implode("\n", $lines) . "\n";
 
     return (string) preg_replace('/^\s*USE\s+`?[A-Za-z0-9_]+`?\s*;\s*$/mi', '', $sql);
 }
@@ -489,7 +537,7 @@ function snapshot(PDO $pdo, string $dbName): array
 {
     $s = [];
 
-    // The database's own defaults. tables.sql's first statement moves them; if
+    // The database's own defaults. The base schema's first statement moves them; if
     // that ever stops working, every table below inherits the wrong charset.
     collect($s, 'SCHEMA', rows(
         $pdo,
@@ -747,7 +795,7 @@ function countObjects(array $snap, string $kind): int
 /** @var list<string> $tempRoots */
 $tempRoots = [];
 try {
-    // ── A. Fresh install: tables.sql + every migration, in one installer run ──
+    // ── A. Fresh install: the schema + every migration, in one installer run ──
     echo "\n== A: fresh install ({$DB_HOST}:{$DB_PORT}/" . DB_FRESH . ") ==\n";
     $freshRun = installer($ROOT, $DB_HOST, $DB_PORT, DB_FRESH, $DB_USER, $DB_PASS);
     check('fresh installer run exits 0', $freshRun['code'] === 0);
@@ -774,15 +822,20 @@ try {
 
     // Every migration on disk must be in the ledger: a migration that silently
     // did not run would make both paths equally wrong, and equally green.
-    $onDisk = count(glob($ROOT . '/src/setup/migrate_*.sql') ?: []);
+    require_once $ROOT . '/src/autoload.php';
+    $onDisk = count((new AstrX\Database\SchemaFiles(
+        [$ROOT . '/src/setup'],
+        AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+            ->of(AstrX\Support\ResourceRoots::SQL),
+    ))->migrations());
     $ledger = rows($pdoFresh, 'SELECT file_name FROM `migration` ORDER BY file_name');
     check(
-        "every migrate_*.sql is recorded in the ledger ({$onDisk} on disk, " . count($ledger) . ' recorded)',
+        "every migration (core's and the modules') is recorded in the ledger ({$onDisk} on disk, " . count($ledger) . ' recorded)',
         $onDisk > 0 && count($ledger) === $onDisk,
     );
 
-    // ── B1. Base only: today's tables.sql, with no migrations in the tree ─────
-    echo "\n== B1: base schema only (tables.sql, no migrations) ==\n";
+    // ── B1. Base only: today's schema pieces, with no migrations in the tree ──
+    echo "\n== B1: base schema only (the schema pieces, no migrations) ==\n";
     $baseRoot    = baseOnlyRoot($ROOT);
     $tempRoots[] = $baseRoot;
     $baseRun     = installer($baseRoot, $DB_HOST, $DB_PORT, DB_UPGRADE, $DB_USER, $DB_PASS);
@@ -837,7 +890,7 @@ try {
     $snapRerun = snapshot($pdoFresh, DB_FRESH);
     $diffRerun = schemaDiff($snapFresh, $snapRerun, 'first-run', 're-run');
     check(
-        'applying tables.sql + every migration a second time changes nothing ('
+        'applying the schema + every migration a second time changes nothing ('
             . count($diffRerun) . ' differences)',
         $diffRerun === [],
     );
@@ -845,10 +898,10 @@ try {
 
     // ── What the migrations actually add on top of the base DDL ─────────────
     // Not an assertion: with the current layout the migrations are NOT folded
-    // into tables.sql, so this delta is expected to be large. It is printed
+    // into the base schema, so this delta is expected to be large. It is printed
     // because it is the exact list a "fold the migrations in" commit must
     // reproduce, and because an entry here that looks like a MODIFY of
-    // something tables.sql already defines means the base DDL and a migration
+    // something the base schema already defines means the base DDL and a migration
     // disagree about the same object.
     echo "\n== base DDL vs fully migrated (informational) ==\n";
     $delta       = schemaDiff($snapBase, $snapUpgrade, 'base-only', 'migrated');
@@ -875,9 +928,9 @@ try {
     // ASTRX_SCHEMA_BASELINE_REV names a git revision, because CI checks out one
     // commit and because "which revision is out there" is a human judgement.
     if ($BASELINE_REV !== '') {
-        echo "\n== baseline: tables.sql at {$BASELINE_REV}, then upgraded to HEAD ==\n";
-        $oldTables = tablesSqlAtRevision($ROOT, $BASELINE_REV);
-        check("git show {$BASELINE_REV}:src/setup/tables.sql succeeded", $oldTables !== null);
+        echo "\n== baseline: the base schema at {$BASELINE_REV}, then upgraded to HEAD ==\n";
+        $oldTables = baseSchemaAtRevision($ROOT, $BASELINE_REV);
+        check("the base schema at {$BASELINE_REV} could be read from git", $oldTables !== null);
 
         if ($oldTables !== null) {
             $oldRoot     = baseOnlyRoot($ROOT, $oldTables);

@@ -13,7 +13,7 @@ use AstrX\Result\DiagnosticLevel;
 /**
  * Pure data-access layer for the `captcha` table.
  *
- * Schema (tables.sql):
+ * Schema (src/setup/schema/0000_core_base.sql):
  *   captcha(id CHAR(32) PK, text VARCHAR(32), expires_at TIMESTAMP)
  */
 final class CaptchaRepository

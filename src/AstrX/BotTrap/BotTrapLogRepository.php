@@ -26,7 +26,7 @@ use PDOException;
  */
 final class BotTrapLogRepository
 {
-    /** Widths mirror the `bot_trap_log` columns in src/setup/tables.sql. */
+    /** Widths mirror the `bot_trap_log` columns in the module's resources/sql/schema/0340_bottrap_page_log.sql. */
     private const int MAX_TEXT  = 255;
     private const int IDENT_LEN = 64;
 
