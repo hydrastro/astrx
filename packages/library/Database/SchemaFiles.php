@@ -6,7 +6,8 @@ namespace AstrX\Database;
 /**
  * Which SQL files make up the database, and in what order.
  *
- * Core keeps its SQL in src/setup/, each installed module in its own
+ * The application keeps its own SQL in src/setup/; each package with SQL — the
+ * CMS, which owns the core tables, and every installed module — in its own
  * resources/sql/. Three kinds of file, found the same way in both places:
  *
  *   schema/NNNN_<owner>_<what>.sql

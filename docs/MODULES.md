@@ -311,8 +311,10 @@ type-hint `Auth\Identity`, not the account session; use
 ### Database
 
 A module ships its SQL in `resources/sql/`; the installers
-(`tools/install.php`, `public/setup.php`) apply core's and every installed
-module's together (`AstrX\Database\SchemaFiles` decides the order):
+(`tools/install.php`, `public/setup.php`) apply it together with the CMS's
+(`packages/cms/resources/sql/`, the core tables), the site's (`src/setup/`)
+and every other installed module's (`AstrX\Database\SchemaFiles` decides the
+order):
 
 | File | Applied | Notes |
 |------|---------|-------|
@@ -322,7 +324,8 @@ module's together (`AstrX\Database\SchemaFiles` decides the order):
 
 A file name may exist only once across core and the modules
 (`tools/check_modules.php` checks it). A new module normally ships its tables
-and pages as migrations; nothing about it goes in core's `src/setup/`.
+and pages as migrations; nothing about it goes in the CMS's SQL or the site's
+`src/setup/`.
 
 **Page ownership.** Tag every page the module creates with `page.module`, in
 its own SQL (`page.module = ''` means core, always on):

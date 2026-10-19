@@ -72,6 +72,7 @@ resources/lang/
 resources/template/
 setup/
 src/setup/
+packages/{framework,library,cms}/resources/
 packages/modules/<key>/resources/   (each module's templates, catalogs, default config, SQL)
 ```
 

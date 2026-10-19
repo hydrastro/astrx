@@ -25,7 +25,7 @@ links the packages into `vendor/` if you want to consume them through Composer.
 | `packages/modules/<key>/` | one optional module each (chat, imageboard, search, webmail, …) | `astrx/module-<key>` |
 | `src/AstrX/` | this website: the request pipeline, its own pages, the installed-module list | the root package |
 | `resources/` | the site's layout, themes and its own catalogs; overrides of any package's templates, catalogs and config | — |
-| `src/setup/` | the database schema and migrations | — |
+| `src/setup/` | the site's own schema pieces and migrations (its JS runtime pages, sitemap, exit page); the core tables are the CMS's (`packages/cms/resources/sql/`) | — |
 | `astrx-suite/` | the Rust engines (separate Cargo workspace) | — |
 
 A package keeps its templates, catalogs and default config in its own
