@@ -159,8 +159,8 @@ if ($withNav) {
 {{! {$studly}'s section navbar, in the layout's nav slot on EVERY page: it shows }}
 {{! only where a {$studly} controller set {$key}_nav_show. See docs/MODULES.md. }}
 {{#{$key}_nav_show}}
-<div class="{$key}_top_nav">
-    <ul class="{$key}_nav">
+<div class="{$key}_top_nav section_top_nav">
+    <ul class="{$key}_nav section_nav">
         <li><a href="{{{$key}_nav_url}}">{$studly}</a></li>
     </ul>
 </div>
