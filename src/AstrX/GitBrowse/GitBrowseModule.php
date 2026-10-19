@@ -33,6 +33,8 @@ final class GitBrowseModule implements Module
                 'git_browse' => \AstrX\GitBrowse\Controller\GitBrowseController::class,
             ],
             'teardown'     => 'gitbrowse.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
