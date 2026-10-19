@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AstrX\User\Controller;
 
+use AstrX\User\LoginNotifier;
 use AstrX\Captcha\CaptchaService;
 use AstrX\Csrf\CsrfHandler;
 use AstrX\Http\Request;
@@ -39,6 +40,7 @@ final class LoginController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly LoginNotifier         $logins,
     ) {
         parent::__construct($collector);
     }
@@ -134,7 +136,7 @@ final class LoginController extends AbstractController
         }
         if ($factor->unwrap()) {
             unset($userData['password']); // never stash the hash in the session
-            $this->session->storeImapPassword($password); // encrypted; survives to post-2FA
+            $this->logins->passwordAccepted($password, secondFactorPending: true);
             $_SESSION['astrx_pending_2fa']      = $uid;
             $_SESSION['astrx_pending_2fa_data'] = $userData;
             $_SESSION['astrx_pending_2fa_ts']   = time();
@@ -144,9 +146,9 @@ final class LoginController extends AbstractController
         }
 
         $this->session->login($userData);
-        // Store cleartext password in the AES-encrypted session so webmail
-        // can connect to IMAP without re-prompting the user.
-        $this->session->storeImapPassword($password);
+        // Modules that need the password (webmail, for a local IMAP server)
+        // keep what they need — in the AES-encrypted session.
+        $this->logins->passwordAccepted($password, secondFactorPending: false);
 
         Response::redirect($this->urlGen->toPage($this->t->t('WORDING_USER_HOME')))
             ->send()->drainTo($this->collector);
