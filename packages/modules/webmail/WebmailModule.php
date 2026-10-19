@@ -39,6 +39,7 @@ final class WebmailModule implements Module
             // Core extension points this module answers (see docs/MODULES.md).
             'extensions'   => [
                 \AstrX\User\LoginListener::class         => [\AstrX\Webmail\WebmailLoginListener::class],
+                \AstrX\User\MailboxNaming::class         => [\AstrX\Webmail\WebmailMailboxNaming::class],
                 \AstrX\User\UserHomeSection::class       => [\AstrX\Webmail\WebmailLinks::class],
                 \AstrX\Admin\AdminDashboardSection::class => [\AstrX\Webmail\WebmailLinks::class],
             ],

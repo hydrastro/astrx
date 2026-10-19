@@ -178,7 +178,8 @@ the module's own services as constructor arguments.
 |-----------------|----------|--------|
 | `Retention\RetentionSource` | the retention engine, the admin Retention page, `tools/retention.php` | the tables it prunes (`RetentionTarget`: key, table, column, age or expiry) and the upload directories whose unreferenced files it reaps (`UploadStore`) |
 | `Page\SitemapSource` | `sitemap.xml` | the public pages it serves |
-| `User\LoginListener` | the login forms | told the password once it is accepted (the webmail keeps it for the IMAP login) |
+| `User\LoginListener` | the login forms | told the password once it is accepted (the webmail keeps it for the IMAP login, with `UserSession::storeSecret()`) |
+| `User\MailboxNaming` | the registration form | whether a new account's mailbox is its username, so the form does not ask for one |
 | `User\UserHomeSection` | the user home page | tiles: page url_id => label key |
 | `Admin\AdminDashboardSection` | the admin dashboard | tiles: page url_id => label key |
 
@@ -190,10 +191,15 @@ the module's own services as constructor arguments.
 
 Only enabled modules answer (`ModuleRegistry::extensions()`), except where the
 question is about data that exists whether or not the module is switched on:
-retention asks every installed module (`installedToo: true`), so switching a
-module off never stops its data expiring. Labels such as a retention target's
+retention and mailbox naming ask every installed module (`installedToo: true`),
+so switching a module off never stops its data expiring. Labels such as a retention target's
 `admin.retention.label.<key>` or a dashboard tile's text go in the module's own
 `Admin`/`User` catalog.
+
+A secret a module needs again later in the same login, such as a password,
+goes in `UserSession::storeSecret()`: it is obfuscated in the encrypted session
+and dropped when the login ends (logout, or a failed second factor), without the
+account code knowing who stored it.
 
 A new extension point is an interface in the core feature that asks, plus one
 `$registry->extensions(TheInterface::class)` call there. Keep it small: one
