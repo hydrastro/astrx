@@ -31,6 +31,8 @@ final class ContentModule implements Module
                 'content' => \AstrX\Content\Controller\ContentController::class,
             ],
             'teardown'     => 'content.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
