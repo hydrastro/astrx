@@ -155,12 +155,14 @@ A module may contribute keys to a domain it shares with core: its page slugs
 and titles go in a partial `pages.<locale>.php`, its nav labels in
 `Navbar.<locale>.php`, its admin strings in `Admin.<locale>.php`. Those files
 hold only the module's own keys and are loaded underneath the site's catalog of
-the same name. A key that core code also uses stays in the site's catalog.
+the same name (and over the CMS package's). A key that core code also uses
+stays in the core package's or the site's catalog.
 
 Every installed module contributes its resources whether it is enabled or not
 (a disabled module's strings still label its grants in the grants editor; its
-templates cost nothing while its pages 404). `ModuleRegistry::resourceRootsFor()`
-lists the directories without booting the application, which is how the tools
+templates cost nothing while its pages 404). `ApplicationContainer::resourceRoots()`
+lists the directories — the core packages', then the installed modules' —
+without booting the application, which is how the installers and the tools
 (`check_lang_parity`, `check_diagnostics`, `check_config`, the template cache
 warmer and the compiled build) find them.
 
