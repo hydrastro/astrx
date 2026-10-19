@@ -38,6 +38,8 @@ final class TiplineModule implements Module
                 'tipline' => \AstrX\Tipline\Controller\TiplineController::class,
             ],
             'teardown'     => 'tipline.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }

@@ -48,14 +48,10 @@ return [
     'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
 
-    // Navbar pubblica — pagine di trasparenza (ciascuna un modulo opzionale)
-    'WORDING_TIPLINE.label'               => 'Segnalazioni',
-
     // Navbar utente — sicurezza account
     'WORDING_TWOFACTOR.label'             => 'Due Fattori',
 
     // Navbar admin — editor trasparenza + strumenti di sicurezza/conservazione
-    'WORDING_ADMIN_TIPLINE.label'         => 'Segnalazioni',
     'WORDING_ADMIN_RETENTION.label'       => 'Conservazione',
     'WORDING_ADMIN_PANIC.label'           => 'Panico',
 ];
