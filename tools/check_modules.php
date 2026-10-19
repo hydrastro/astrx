@@ -6,6 +6,7 @@ use AstrX\Auth\Permission;
 use AstrX\Auth\PolicyInterface;
 use AstrX\Kernel\Controller;
 use AstrX\Module\Module;
+use AstrX\Module\ModuleRegistry;
 use AstrX\Module\NavContributor;
 use AstrX\Page\PageGuard;
 
@@ -28,6 +29,10 @@ use AstrX\Page\PageGuard;
  *   - its `teardown` (if named) exists in its resources/sql/;
  *   - its `resources` (if named) is a directory inside the module's own
  *     directory (templates, catalogs, default config, SQL);
+ *   - every `extensions` entry maps an interface (a core extension point) to
+ *     classes that implement it and live in the module's own namespace;
+ *   - every `layout` entry names a slot the layout has and partials that exist
+ *     in the module's resources/template/;
  *   - its key has a boolean flag in resources/config/Modules.config.php (an
  *     installed module without one is OFF, so a missing flag is an error).
  * A Module class present on disk but not installed is reported as a warning.
@@ -243,6 +248,66 @@ foreach (cm_installed() as $class) {
             $errors[] = "{$key}: 'resources' must be a relative directory inside the module";
         } elseif (!is_dir($dir . DIRECTORY_SEPARATOR . $res)) {
             $errors[] = "{$key}: resources directory '{$res}' not found next to " . basename((string) (new ReflectionClass($class))->getFileName());
+        }
+    }
+
+    // extensions: core extension point (an interface) => classes of this module
+    if (isset($raw['extensions'])) {
+        if (!is_array($raw['extensions'])) {
+            $errors[] = "{$key}: 'extensions' must be an array of interface => list of classes";
+        } else {
+            /** @var mixed $impls */
+            foreach ($raw['extensions'] as $interface => $impls) {
+                if (!is_string($interface) || !interface_exists($interface)) {
+                    $errors[] = "{$key}: extension point " . (is_string($interface) ? "'{$interface}'" : gettype($interface)) . ' is not an interface';
+                    continue;
+                }
+                if (!is_array($impls) || !array_is_list($impls)) {
+                    $errors[] = "{$key}: extensions of '{$interface}' must be a list of classes";
+                    continue;
+                }
+                /** @var mixed $impl */
+                foreach ($impls as $impl) {
+                    if (!is_string($impl) || !class_exists($impl)) {
+                        $errors[] = "{$key}: extension " . (is_string($impl) ? "'{$impl}'" : gettype($impl)) . ' not found';
+                    } elseif (!is_subclass_of($impl, $interface)) {
+                        $errors[] = "{$key}: extension '{$impl}' does not implement {$interface}";
+                    } elseif (!str_starts_with($impl, $moduleNs)) {
+                        $errors[] = "{$key}: extension '{$impl}' is outside the module namespace {$moduleNs}";
+                    }
+                }
+            }
+        }
+    }
+
+    // layout: slot => partials, each a template in the module's own resources
+    if (isset($raw['layout'])) {
+        if (!is_array($raw['layout'])) {
+            $errors[] = "{$key}: 'layout' must be an array of slot => list of partials";
+        } else {
+            $res = isset($raw['resources']) && is_string($raw['resources']) ? $raw['resources'] : '';
+            $tplDir = dirname((string) (new ReflectionClass($class))->getFileName()) . DIRECTORY_SEPARATOR
+                . $res . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR;
+            /** @var mixed $partials */
+            foreach ($raw['layout'] as $slot => $partials) {
+                if (!in_array($slot, ModuleRegistry::LAYOUT_SLOTS, true)) {
+                    $errors[] = "{$key}: unknown layout slot " . (is_string($slot) ? "'{$slot}'" : gettype($slot))
+                        . ' (the layout has: ' . implode(', ', ModuleRegistry::LAYOUT_SLOTS) . ')';
+                    continue;
+                }
+                if (!is_array($partials) || !array_is_list($partials)) {
+                    $errors[] = "{$key}: layout slot '{$slot}' must be a list of partials";
+                    continue;
+                }
+                /** @var mixed $partial */
+                foreach ($partials as $partial) {
+                    if (!is_string($partial) || $partial === '' || str_contains($partial, '..')) {
+                        $errors[] = "{$key}: layout slot '{$slot}' has an invalid partial name";
+                    } elseif ($res === '' || !is_file($tplDir . $partial . '.html')) {
+                        $errors[] = "{$key}: layout partial '{$partial}' not found in the module's resources/template/";
+                    }
+                }
+            }
         }
     }
 

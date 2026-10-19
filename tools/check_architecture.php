@@ -61,7 +61,7 @@ const LAYERS = [
         'GitBrowse', 'WebSearch', 'OnionSearch', 'TorrentSearch',
         'FederatedSearch', 'SuiteAdmin',
     ],
-    'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationPolicies', 'ApplicationPermissions', 'ApplicationModules'],
+    'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationContainer', 'ApplicationPolicies', 'ApplicationPermissions', 'ApplicationModules'],
 ];
 
 // --list=layer[,layer]: print members and stop (no scan needed).
