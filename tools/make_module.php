@@ -6,7 +6,7 @@ declare(strict_types=1);
  *
  * Generates a new optional-module skeleton so adding one is a single command:
  * a Composer package in packages/modules/<key>/ (namespace AstrX\<Studly>):
- *   - composer.json                          the package (astrx/module-<key>)
+ *   - composer.json, README.md               the package (astrx/module-<key>)
  *   - <Studly>Module.php                     the module class (its manifest())
  *   - Controller/<Studly>Controller.php      its page controller
  *   - <Studly>PageGuard.php                  (only with --guard)
@@ -97,6 +97,18 @@ $composer = [
     'autoload'    => ['psr-4' => ["AstrX\\{$studly}\\" => '']],
 ];
 $emit("{$moduleDir}/composer.json", json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$emit("{$moduleDir}/README.md", <<<MD
+# {$package}
+
+The **{$studly}** module of AstrX.
+
+- Module key: `{$key}` (switch it on in the site's `resources/config/Modules.config.php`)
+- Requires: `astrx/cms`, `astrx/framework`
+
+It ships its own templates, catalogs (en, it), default configuration and SQL in
+`resources/`; the site overrides any of them from its own `resources/`.
+
+MD);
 
 $emit($manifest, <<<PHP
 <?php
