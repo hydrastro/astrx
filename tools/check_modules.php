@@ -48,18 +48,8 @@ if (PHP_SAPI !== 'cli') {
 
 $root = dirname(__DIR__);
 
-if (!defined('SRC_DIR'))   { define('SRC_DIR', $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR); }
-if (!defined('CLASS_DIR')) { define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR); }
-
-spl_autoload_register(static function (string $class): void {
-    if (strncmp($class, 'AstrX\\', 6) !== 0) {
-        return;
-    }
-    $file = CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-    if (is_file($file)) {
-        require_once $file;
-    }
-});
+require_once $root . '/src/classloader.php';
+require_once $root . '/tools/lib/sources.php';
 
 /**
  * The installed list as plain strings: the constant is declared
@@ -104,9 +94,9 @@ if (is_file($configFile)) {
 // Present but not installed: a Module class on disk that the application
 // does not list is inert — worth a warning, since it is usually a forgotten
 // ApplicationModules entry.
-foreach (glob(CLASS_DIR . '*' . DIRECTORY_SEPARATOR . '*Module.php') ?: [] as $file) {
-    $class = 'AstrX\\' . basename(dirname($file)) . '\\' . basename($file, '.php');
-    if (class_exists($class) && is_subclass_of($class, Module::class)
+foreach (array_keys(AstrX\Tools\classFiles($root)) as $class) {
+    if (preg_match('/^AstrX\\\\(\w+)\\\\\1Module$/', $class) === 1
+        && class_exists($class) && is_subclass_of($class, Module::class)
         && !in_array($class, cm_installed(), true)) {
         $warnings[] = "{$class} is present but not listed in ApplicationModules::INSTALLED (inert)";
     }
@@ -340,7 +330,7 @@ foreach (cm_installed() as $class) {
 // ledger records them by it.
 try {
     $sqlFiles = new AstrX\Database\SchemaFiles(
-        [dirname(SRC_DIR) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup'],
+        [$root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup'],
         AstrX\Module\ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED)->of(AstrX\Support\ResourceRoots::SQL),
     );
     $sqlFiles->schema();

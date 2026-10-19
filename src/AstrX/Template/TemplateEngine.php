@@ -501,10 +501,13 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
 
     private function compilerFingerprint(): string
     {
-        // __FILE__ is not a filesystem path when the compiled bundle evals us.
+        // __FILE__ is not a filesystem path when the compiled bundle evals us:
+        // ask the bundle for the hash of the source it was built from.
+        $sourcePath  = ['AstrX\\Compiled\\Bundle', 'sourcePath'];
         $fingerprint = ['AstrX\\Compiled\\Bundle', 'sourceFingerprint'];
-        if (is_callable($fingerprint)) {
-            $value = $fingerprint('src/AstrX/Template/TemplateEngine.php');
+        if (is_callable($sourcePath) && is_callable($fingerprint)) {
+            $path  = $sourcePath(self::class);
+            $value = is_string($path) ? $fingerprint($path) : null;
             if (is_string($value)) { return $value; }
         }
         $hash = hash_file('sha256', __FILE__);

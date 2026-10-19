@@ -137,9 +137,9 @@ try {
 
     echo "\n5. The application's list\n";
     $onDisk = [];
-    foreach (glob($root . '/src/AstrX/*/*Module.php') ?: [] as $file) {
-        $class = 'AstrX\\' . basename(dirname($file)) . '\\' . basename($file, '.php');
-        if (is_subclass_of($class, AstrX\Module\Module::class)) {
+    require_once $root . '/tools/lib/sources.php';
+    foreach (array_keys(AstrX\Tools\classFiles($root)) as $class) {
+        if (preg_match('/^AstrX\\\\(\w+)\\\\\1Module$/', $class) === 1 && is_subclass_of($class, AstrX\Module\Module::class)) {
             $onDisk[] = $class;
         }
     }

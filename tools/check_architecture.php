@@ -80,8 +80,9 @@ foreach ($argv as $arg) {
     }
 }
 
+require_once __DIR__ . '/lib/sources.php';
+
 $root     = dirname(__DIR__);
-$classDir = $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'AstrX';
 $mode     = in_array('--dot', $argv, true) ? 'dot' : (in_array('--graph', $argv, true) ? 'graph' : 'check');
 
 /** @var array<string,int> $rank namespace => layer index */
@@ -245,32 +246,16 @@ $edges = [];
 /** @var array<string,true> $nodes */
 $nodes = [];
 
-$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($classDir, FilesystemIterator::SKIP_DOTS));
-/** @var SplFileInfo $file */
-foreach ($it as $file) {
-    if ($file->getExtension() !== 'php') {
-        continue;
-    }
-    $path = $file->getPathname();
-    // A module's resources/ (catalogs, default config) is data, not code.
-    if (str_contains($path, DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR)) {
-        continue;
-    }
+foreach (AstrX\Tools\phpFiles($root) as $path => $impliedName) {
     $rel  = substr($path, strlen($root) + 1);
     $code = file_get_contents($path);
     if ($code === false) {
         continue;
     }
     $scan  = scanFile($code);
-    $owner = $scan['owner'];
-    if ($owner === null) {
-        // `namespace AstrX;` (top-level class, node = class name) or no namespace
-        // at all (Support/constants.php) — attribute by directory.
-        $sub   = substr($path, strlen($classDir) + 1);
-        $owner = str_contains($sub, DIRECTORY_SEPARATOR)
-            ? explode(DIRECTORY_SEPARATOR, $sub)[0]
-            : basename($sub, '.php');
-    }
+    // `namespace AstrX;` (a top-level class: the node is the class name) —
+    // attribute by the name the file's path implies.
+    $owner = $scan['owner'] ?? (explode('\\', $impliedName)[1] ?? $impliedName);
     $nodes[$owner] = true;
     foreach ($scan['refs'] as $ref) {
         $to = nodeOf($ref['name']);

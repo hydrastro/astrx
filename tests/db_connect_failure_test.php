@@ -59,7 +59,6 @@ namespace {
     use AstrX\User\UserSession;
 
     $ROOT      = dirname(__DIR__);
-    $CLASS_DIR = $ROOT . '/src/AstrX/';
 
     require_once __DIR__ . '/lib/scratch.php';
     $TMP = AstrX\TestSupport\scratchDir('astrx-db-failure-');
@@ -72,12 +71,8 @@ namespace {
     define('TEMPLATE_DIR', $ROOT . '/resources/template/');
     mkdir(CONFIG_DIR, 0700, true);
 
-    require_once $CLASS_DIR . 'Support/constants.php';
-    spl_autoload_register(static function (string $class) use ($CLASS_DIR): void {
-        if (strncmp($class, 'AstrX\\', 6) !== 0) { return; }
-        $file = $CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-        if (is_file($file)) { require_once $file; }
-    });
+    require_once dirname(__DIR__) . '/src/support.php';
+    require_once dirname(__DIR__) . '/src/classloader.php';
 
     // Buffer everything this test prints. Section F drives the real
     // renderError(), which starts with http_response_code() — under the CLI SAPI

@@ -50,27 +50,10 @@ if (PHP_SAPI !== 'cli') {
 
 $root = dirname(__DIR__);
 
-if (!defined('INDEX_DIR'))         { define('INDEX_DIR', $root . DIRECTORY_SEPARATOR); }
-if (!defined('RESOURCES_DIR'))     { define('RESOURCES_DIR', INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR); }
-if (!defined('LANG_DIR'))          { define('LANG_DIR', RESOURCES_DIR . 'lang' . DIRECTORY_SEPARATOR); }
-if (!defined('CONFIG_DIR'))        { define('CONFIG_DIR', RESOURCES_DIR . 'config' . DIRECTORY_SEPARATOR); }
-if (!defined('TEMPLATE_DIR'))      { define('TEMPLATE_DIR', RESOURCES_DIR . 'template' . DIRECTORY_SEPARATOR); }
-if (!defined('TEMPLATE_CACHE_DIR')){ define('TEMPLATE_CACHE_DIR', TEMPLATE_DIR . 'cache' . DIRECTORY_SEPARATOR); }
-if (!defined('SRC_DIR'))           { define('SRC_DIR', INDEX_DIR . 'src' . DIRECTORY_SEPARATOR); }
-if (!defined('CLASS_DIR'))         { define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR); }
-
-spl_autoload_register(static function (string $class): void {
-    if (strncmp($class, 'AstrX\\', 6) !== 0) {
-        return;
-    }
-    $file = CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-    if (is_file($file)) {
-        require_once $file;
-    }
-});
-
-// Plain functions are not autoloadable and the config files call configDir().
-require_once CLASS_DIR . 'Support' . DIRECTORY_SEPARATOR . 'constants.php';
+require_once $root . '/src/paths.php';
+// Classes and the Support functions (the config files call configDir()).
+require_once $root . '/src/autoload.php';
+require_once $root . '/tools/lib/sources.php';
 
 /** @var array<string,string> $errors stable key => message */
 $errors = [];
@@ -139,34 +122,6 @@ if ($sections === []) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Every AstrX class file, mapped to its FQCN.
- *
- * @return list<string>
- */
-function cfg_class_names(string $classDir): array
-{
-    $out = [];
-    $it  = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($classDir, FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($it as $file) {
-        if (!$file instanceof SplFileInfo || !$file->isFile()) { continue; }
-        $path = $file->getPathname();
-        if (!str_ends_with($path, '.php')) { continue; }
-        // A module's resources/ holds catalogs and config, not classes.
-        if (str_contains($path, DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR)) { continue; }
-        $rel = substr($path, strlen($classDir));
-        $rel = str_replace('\\', '/', $rel);
-        // The constants.php function file holds no class.
-        $base = basename($rel);
-        if ($base === 'constants.php') { continue; }
-        $out[] = 'AstrX\\' . str_replace('/', '\\', substr($rel, 0, -4));
-    }
-    sort($out);
-    return $out;
-}
-
-/**
  * Every *.php file under the given roots.
  *
  * @param  list<string> $roots
@@ -197,7 +152,7 @@ $reached = [];
 /** @var array<string,array<string,true>> $setterKeys section => key => true */
 $setterKeys = [];
 
-foreach (cfg_class_names(CLASS_DIR) as $fqcn) {
+foreach (array_keys(AstrX\Tools\classFiles($root)) as $fqcn) {
     if (!class_exists($fqcn) && !interface_exists($fqcn) && !trait_exists($fqcn) && !enum_exists($fqcn)) {
         // Not loadable in isolation (e.g. it needs a constant the bootstrap
         // defines). Reachability is still established from the name.
@@ -272,7 +227,7 @@ $writeSites = [];
 /** @var array<string,array<string,true>> $writesSection file => section => true */
 $writesSection = [];
 
-$scanRoots = [SRC_DIR, INDEX_DIR . 'public', INDEX_DIR . 'tools'];
+$scanRoots = [...AstrX\Tools\sourceDirs($root), INDEX_DIR . 'public', INDEX_DIR . 'tools'];
 foreach (cfg_php_files($scanRoots) as $path) {
     if (str_ends_with($path, DIRECTORY_SEPARATOR . 'check_config.php')) { continue; }
     $src = (string) file_get_contents($path);

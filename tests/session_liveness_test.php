@@ -83,12 +83,7 @@ namespace {
     use AstrX\Session\SecureSessionHandler;
     use AstrX\Session\ServerSecret;
 
-    $CLASS_DIR = dirname(__DIR__) . '/src/AstrX/';
-    spl_autoload_register(static function (string $class) use ($CLASS_DIR): void {
-        if (strncmp($class, 'AstrX\\', 6) !== 0) { return; }
-        $file = $CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-        if (is_file($file)) { require_once $file; }
-    });
+    require_once dirname(__DIR__) . '/src/classloader.php';
 
     require_once __DIR__ . '/lib/scratch.php';
     $scratch = AstrX\TestSupport\scratchDir('astrx_session_test_');
@@ -96,7 +91,7 @@ namespace {
     putenv('ASTRX_TEST_TEMP_DIR=' . $scratch);
 
     // The overrides above are function_exists()-guarded, so they are a no-op if
-    // anything ever loads src/AstrX/Support/constants.php first. Prove they took
+    // anything ever loads src/support.php first. Prove they took
     // before writing a single secret: otherwise this test quietly reads and
     // writes the host's shared /tmp, and its results stop meaning anything.
     if (AstrX\Support\configDir() !== $scratch . '/' || AstrX\Support\tempDir() !== $scratch) {

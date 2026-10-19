@@ -27,7 +27,7 @@ if (!is_file($bundle)) {
 $bundleMtime = (int) (@filemtime($bundle) ?: 0);
 $newest      = 0;
 $newestFile  = '';
-foreach (['src', 'resources'] as $sub) {
+foreach (['src', 'packages', 'resources'] as $sub) {
     $base = $root . $sub;
     if (!is_dir($base)) {
         continue;
