@@ -73,7 +73,7 @@ $configFileNames = [];
 // module's file and the site's file of the same name are ONE file as far as the
 // loader is concerned (the site's keys override the module's), so a section
 // declared in both is not a duplicate: its keys are the union.
-$roots = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);
+$roots = AstrX\ApplicationContainer::resourceRoots();
 $configFiles = [];
 foreach ([CONFIG_DIR, ...$roots->of(AstrX\Support\ResourceRoots::CONFIG)] as $dir) {
     foreach (ConfigDomainResolver::configFiles($dir) as $base => $path) {

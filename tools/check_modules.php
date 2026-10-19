@@ -331,7 +331,7 @@ foreach (cm_installed() as $class) {
 try {
     $sqlFiles = new AstrX\Database\SchemaFiles(
         [$root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup'],
-        AstrX\Module\ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED)->of(AstrX\Support\ResourceRoots::SQL),
+        AstrX\ApplicationContainer::resourceRoots()->of(AstrX\Support\ResourceRoots::SQL),
     );
     $sqlFiles->schema();
     $sqlFiles->migrations();

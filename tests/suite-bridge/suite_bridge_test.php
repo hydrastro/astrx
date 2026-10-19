@@ -520,7 +520,7 @@ namespace {
                 require_once $fwRoot . '/src/support.php';
                 $engine = new \AstrX\Template\TemplateEngine(
                     null,
-                    \AstrX\Module\ModuleRegistry::resourceRootsFor(\AstrX\ApplicationModules::INSTALLED),
+                    \AstrX\ApplicationContainer::resourceRoots(),
                 );
                 $engine->setTemplateDir($fwRoot . '/resources/template/');
                 $engine->setTemplateExtension('.html');

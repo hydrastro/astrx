@@ -123,7 +123,7 @@ if ($locales === []) {
 
 // The site's catalogs and every installed module's (DiagnosticRenderer loads both).
 require $root . '/src/autoload.php';
-$moduleLangDirs = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+$moduleLangDirs = AstrX\ApplicationContainer::resourceRoots()
     ->of(AstrX\Support\ResourceRoots::LANG);
 
 /** @var array<string,array<string,true>> $catalog locale => id => true */

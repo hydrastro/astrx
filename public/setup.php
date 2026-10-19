@@ -396,7 +396,7 @@ function schemaFiles(): AstrX\Database\SchemaFiles
 {
     return new AstrX\Database\SchemaFiles(
         [__DIR__ . '/../src/setup', __DIR__ . '/../setup'],
-        AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+        AstrX\ApplicationContainer::resourceRoots()
             ->of(AstrX\Support\ResourceRoots::SQL),
     );
 }

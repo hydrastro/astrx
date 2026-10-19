@@ -175,7 +175,7 @@ use AstrX\Admin\AdminPermission;
     // Every template root: the site's, then each module's (admin_content
     // belongs to the Content module).
     $templateRoots = [$ROOT . '/resources/template/',
-        ...AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+        ...AstrX\ApplicationContainer::resourceRoots()
             ->of(AstrX\Support\ResourceRoots::TEMPLATE)];
     $inAnyRoot = static function (string $rel) use ($templateRoots): bool {
         foreach ($templateRoots as $dir) {
