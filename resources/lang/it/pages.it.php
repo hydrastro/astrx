@@ -35,9 +35,6 @@ return [
     'WORDING_ADMIN_PAGES'    => 'admin-pagine',
     'WORDING_ADMIN_THEMES'   => 'admin-temi',
     'WORDING_ADMIN_NOTES'    => 'admin-note',
-    'WORDING_ADMIN_SEARCH'   => 'admin-ricerca',
-    'WORDING_ADMIN_SEARCH.title'       => 'Admin — Indice di ricerca',
-    'WORDING_ADMIN_SEARCH.description' => 'Ricostruisci l\'indice di ricerca del sito.',
 
     // Admin — configurazione
     'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-sistema',
@@ -89,9 +86,6 @@ return [
     'WORDING_BOARD_MOD.description'       => 'Pannello di moderazione della bacheca.',
     'WORDING_BOARD_FEED.title'            => 'Feed',
     'WORDING_BOARD_FEED.description'      => 'Feed Atom di una bacheca.',
-    'WORDING_SEARCH'                      => 'search',
-    'WORDING_SEARCH.title'                => 'Cerca',
-    'WORDING_SEARCH.description'          => 'Cerca tra notizie, pagine, commenti e board.',
     'WORDING_ADMIN_INVITES'               => 'admin-invites',
     'WORDING_ADMIN_INVITES.title'         => 'Inviti',
     'WORDING_ADMIN_INVITES.description'   => 'Genera e revoca i codici di invito.',

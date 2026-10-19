@@ -10,7 +10,6 @@ declare(strict_types=1);
 return [
     // Public navbar
     'WORDING_HOME.label'             => 'Home',
-    'WORDING_SEARCH.label'           => 'Search',
     'WORDING_BOARD.label'            => 'Boards',
     'WORDING_USER.label'             => 'User Area',
 
@@ -30,7 +29,6 @@ return [
     'WORDING_ADMIN_NAVBAR.label'     => 'Navbar',
     'WORDING_ADMIN_PAGES.label'      => 'Pages',
     'WORDING_ADMIN_NOTES.label'      => 'Notes',
-    'WORDING_ADMIN_SEARCH.label'     => 'Search index',
 
     // Admin navbar — configuration
     'WORDING_ADMIN_CONFIG_SYSTEM.label'   => 'System',

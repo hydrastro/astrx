@@ -30,21 +30,8 @@ return [
         'This page is configured to use a controller that does not exist.',
 
 
-    'astrx.search/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'A database error occurred while searching. Please try again later.',
 
-    'astrx.search/index_rebuild_failed' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'The search index could not be rebuilt. The previous index is still in place.',
 
-    'astrx.search/index_request_failed' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'The search index request could not be queued.',
-
-    'astrx.search/index_reset_failed' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'The search index could not be reset.',
 
     'astrx.invite/db_error' =>
         fn(DiagnosticInterface $d, Translator $t): string =>

@@ -30,6 +30,8 @@ final class SearchModule implements Module
                 'site_search' => \AstrX\Search\Controller\SiteSearchController::class,
             ],
             'teardown'     => 'search.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
