@@ -7,11 +7,11 @@ return [
     // TemplateEngine
     // -----------------------------
     'TemplateEngine' => [
-        // NOTE: these are resources/ paths
-        'template_dir'       => TEMPLATE_DIR, // define this constant
+        // The site's template directory and compiled-template cache: the
+        // TEMPLATE_DIR / TEMPLATE_CACHE_DIR the front controller defines.
+        'template_dir'       => \AstrX\Support\templateDir(),
         'template_extension' => '.html',
-        'template_cache_dir' => TEMPLATE_CACHE_DIR,             // define this
-        // constant
+        'template_cache_dir' => \AstrX\Support\cacheDir(),
         'cache_templates'    => true,
 
         // compile mode

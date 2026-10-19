@@ -27,7 +27,8 @@ use AstrX\Mail\Mailer;
  *      on failure. The caller decides what to do with failures (block
  *      the action, retry, surface a diagnostic, etc.).
  *
- * Templates live in resources/template/email/:
+ * Templates live in the CMS package's resources/template/email/ (a site may
+ * override them in its own resources/template/email/):
  *   - <kind>.html — HTML variant (Mustache)
  *   - <kind>.txt  — plain-text variant (Mustache, but most just use {{var}})
  *
