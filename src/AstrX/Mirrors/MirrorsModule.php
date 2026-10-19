@@ -37,6 +37,8 @@ final class MirrorsModule implements Module
                 'mirrors' => \AstrX\Mirrors\Controller\MirrorsController::class,
             ],
             'teardown'     => 'mirrors.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
