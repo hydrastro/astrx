@@ -40,12 +40,7 @@ use AstrX\Admin\AdminPermission;
     use AstrX\Site\DefaultTemplateContext;
 
     $ROOT      = dirname(__DIR__);
-    $CLASS_DIR = $ROOT . '/src/AstrX/';
-    spl_autoload_register(static function (string $class) use ($CLASS_DIR): void {
-        if (strncmp($class, 'AstrX\\', 6) !== 0) { return; }
-        $file = $CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-        if (is_file($file)) { require_once $file; }
-    });
+    require_once dirname(__DIR__) . '/src/classloader.php';
 
     $PASS = 0;
     $FAIL = 0;

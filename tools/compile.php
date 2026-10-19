@@ -13,9 +13,14 @@ declare(strict_types=1);
  *   php tools/compile.php --out=build/astrx.compiled.php --front=public/compiled.php
  */
 
+require_once __DIR__ . '/lib/sources.php';
+
 final class AstrXCompiler
 {
     private string $root;
+
+    /** Project-relative path of the Support function file. */
+    private string $supportFile = '';
     private string $outFile;
     private string $frontController;
     private string $compileFrontController;
@@ -130,15 +135,16 @@ final class AstrXCompiler
 
     private function collectSource(): void
     {
-        $src = $this->root . '/src';
-        if (!is_dir($src)) {
-            throw new RuntimeException("Missing source directory: {$src}");
+        $files = [];
+        foreach (AstrX\Tools\sourceDirs($this->root) as $dir) {
+            if (!is_dir($dir)) {
+                throw new RuntimeException("Missing source directory: {$dir}");
+            }
+            foreach ($this->phpFiles($dir) as $file) {
+                $files[$file->getPathname()] = $file;
+            }
         }
-
-        $files = $this->phpFiles($src);
-        usort($files, static function (SplFileInfo $a, SplFileInfo $b): int {
-            return strcmp($a->getPathname(), $b->getPathname());
-        });
+        ksort($files, SORT_STRING);
 
         foreach ($files as $file) {
             $path = $file->getPathname();
@@ -149,6 +155,9 @@ final class AstrXCompiler
             }
 
             $this->sourcePayload[$rel] = $this->stripPhpPreamble($raw);
+            if (str_ends_with($rel, '/Support/constants.php')) {
+                $this->supportFile = $rel;
+            }
 
             foreach ($this->symbolsIn($raw) as $symbol) {
                 if (isset($this->classMap[$symbol])) {
@@ -159,10 +168,10 @@ final class AstrXCompiler
             }
         }
 
-        if (!isset($this->sourcePayload['src/AstrX/Prelude.php'])) {
+        if (!isset($this->classMap['AstrX\\Prelude'])) {
             throw new RuntimeException('Prelude.php was not included in the bundle.');
         }
-        if (!isset($this->sourcePayload['src/AstrX/Support/constants.php'])) {
+        if ($this->supportFile === '') {
             throw new RuntimeException('Support/constants.php was not included in the bundle.');
         }
     }
@@ -178,8 +187,10 @@ final class AstrXCompiler
         // Each module's own resources. Unlike the site's config (per-install and
         // mutable, so never embedded), a module's config/ holds shipped
         // defaults and travels with it.
-        foreach (glob($this->root . '/src/AstrX/*/resources', GLOB_ONLYDIR) ?: [] as $dir) {
-            $resourceRoots[] = $this->slash($this->relative($dir));
+        foreach (AstrX\Tools\sourceDirs($this->root) as $sourceDir) {
+            foreach ([...(glob($sourceDir . '/resources', GLOB_ONLYDIR) ?: []), ...(glob($sourceDir . '/*/resources', GLOB_ONLYDIR) ?: [])] as $dir) {
+                $resourceRoots[] = $this->slash($this->relative($dir));
+            }
         }
 
         foreach ($resourceRoots as $rootRel) {
@@ -272,6 +283,9 @@ final class Bundle
     public const VERSION = '{$version}';
     public const MODE = 'compiled-bundle';
 
+    /** The Support helper functions, loaded on register(). */
+    private const SUPPORT_FILE = '{$this->supportFile}';
+
     /** @var array<string,string> */
     private const CLASS_MAP = {$classMapExport};
 
@@ -297,7 +311,7 @@ final class Bundle
         self::\$registered = true;
 
         spl_autoload_register([self::class, 'autoload'], prepend: true);
-        self::loadFile('src/AstrX/Support/constants.php');
+        self::loadFile(self::SUPPORT_FILE);
     }
 
     public static function boot(): void
@@ -595,13 +609,13 @@ PHP;
     }
 
     /**
-     * A file under a module's resources/ directory (src/AstrX/<Module>/resources/…):
-     * a template, catalog, default config or SQL file, never source. Catalogs
-     * and config are .php files, so without this they would be bundled as code.
+     * A file under a module's resources/ directory (<module>/resources/…): a
+     * template, catalog, default config or SQL file, never source. Catalogs and
+     * config are .php files, so without this they would be bundled as code.
      */
     private function isModuleResource(string $rel): bool
     {
-        return preg_match('#^src/AstrX/[^/]+/resources/#', $rel) === 1;
+        return str_contains('/' . $rel, '/resources/');
     }
 
     /** @return list<string> */

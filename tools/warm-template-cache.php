@@ -14,47 +14,8 @@ $root = dirname(__DIR__);
 $quiet = in_array('--quiet', $argv, true);
 $clear = in_array('--clear', $argv, true);
 
-if (!defined('INDEX_DIR')) {
-    define('INDEX_DIR', $root . DIRECTORY_SEPARATOR);
-}
-if (!defined('RESOURCES_DIR')) {
-    define('RESOURCES_DIR', INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR);
-}
-if (!defined('LANG_DIR')) {
-    define('LANG_DIR', RESOURCES_DIR . 'lang' . DIRECTORY_SEPARATOR);
-}
-if (!defined('CONFIG_DIR')) {
-    define('CONFIG_DIR', RESOURCES_DIR . 'config' . DIRECTORY_SEPARATOR);
-}
-if (!defined('TEMPLATE_DIR')) {
-    define('TEMPLATE_DIR', RESOURCES_DIR . 'template' . DIRECTORY_SEPARATOR);
-}
-if (!defined('TEMPLATE_CACHE_DIR')) {
-    define('TEMPLATE_CACHE_DIR', TEMPLATE_DIR . 'cache' . DIRECTORY_SEPARATOR);
-}
-if (!defined('SRC_DIR')) {
-    define('SRC_DIR', INDEX_DIR . 'src' . DIRECTORY_SEPARATOR);
-}
-if (!defined('CLASS_DIR')) {
-    define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR);
-}
-
-spl_autoload_register(static function (string $class): void {
-    $prefix = 'AstrX\\';
-    $len = strlen($prefix);
-    if (strncmp($class, $prefix, $len) !== 0) {
-        return;
-    }
-    $file = CLASS_DIR . str_replace('\\', '/', substr($class, $len)) . '.php';
-    if (is_file($file)) {
-        require_once $file;
-    }
-});
-
-$supportConstants = CLASS_DIR . 'Support/constants.php';
-if (is_file($supportConstants)) {
-    require_once $supportConstants;
-}
+require_once $root . '/src/paths.php';
+require_once $root . '/src/autoload.php';
 
 $collector = new AstrX\Result\DiagnosticsCollector();
 $roots = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);

@@ -7,7 +7,7 @@ declare(strict_types=1);
  *
  * The map must serve exactly the pages the derivation served:
  *
- *   1. every concrete Kernel\Controller under src/AstrX is reachable through
+ *   1. every concrete Kernel\Controller in the source tree is reachable through
  *      exactly one map entry (CORE or one module manifest), so no controller
  *      became unreachable when it moved into its feature's namespace;
  *   2. every entry's key is the file_name the old derivation would have needed
@@ -63,15 +63,9 @@ $map = new ControllerMap($entries);
 // ── Every concrete controller class in the tree ─────────────────────────────
 /** @var list<class-string> $controllers */
 $controllers = [];
-$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/src/AstrX', FilesystemIterator::SKIP_DOTS));
-foreach ($it as $file) {
-    /** @var SplFileInfo $file */
-    if (!str_ends_with($file->getFilename(), 'Controller.php')) {
-        continue;
-    }
-    $rel   = substr($file->getPathname(), strlen($root . '/src/'), -4);
-    $class = str_replace('/', '\\', $rel);
-    if (class_exists($class) && is_subclass_of($class, Controller::class)
+require_once $root . '/tools/lib/sources.php';
+foreach (AstrX\Tools\classFiles($root) as $class => $path) {
+    if (str_ends_with($class, 'Controller') && class_exists($class) && is_subclass_of($class, Controller::class)
         && !(new ReflectionClass($class))->isAbstract()) {
         $controllers[] = $class;
     }

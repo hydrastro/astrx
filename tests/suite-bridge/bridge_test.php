@@ -35,11 +35,9 @@ namespace {
     use AstrX\OnionSearch\OnionSearchConfig;
     use AstrX\OnionSearch\OnionSearchClient;
 
-    $BASE = dirname(__DIR__, 2) . '/src/AstrX';
-    require $BASE . '/WebSearch/WebSearchConfig.php';
-    require $BASE . '/WebSearch/WebSearchClient.php';
-    require $BASE . '/OnionSearch/OnionSearchConfig.php';
-    require $BASE . '/OnionSearch/OnionSearchClient.php';
+    // The holders under test, loaded on demand (the stub above stands in for
+    // the real attribute, so nothing else of the framework is needed).
+    require_once dirname(__DIR__, 2) . '/src/classloader.php';
 
     $PASS = 0;
     $FAIL = 0;

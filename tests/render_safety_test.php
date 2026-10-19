@@ -41,7 +41,6 @@ namespace {
     use function AstrX\Support\atomicWrite;
 
     $ROOT      = dirname(__DIR__);
-    $CLASS_DIR = $ROOT . '/src/AstrX/';
 
     require_once __DIR__ . '/lib/scratch.php';
     $TMP = AstrX\TestSupport\scratchDir('astrx-render-safety-');
@@ -53,12 +52,8 @@ namespace {
     define('CONFIG_DIR', $TMP . '/config/');
     mkdir(CONFIG_DIR, 0755, true);
 
-    require_once $CLASS_DIR . 'Support/constants.php';
-    spl_autoload_register(static function (string $class) use ($CLASS_DIR): void {
-        if (strncmp($class, 'AstrX\\', 6) !== 0) { return; }
-        $file = $CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-        if (is_file($file)) { require_once $file; }
-    });
+    require_once dirname(__DIR__) . '/src/support.php';
+    require_once dirname(__DIR__) . '/src/classloader.php';
 
     $PASS = 0;
     $FAIL = 0;
@@ -181,13 +176,7 @@ namespace {
         declare(strict_types=1);
         define('LANG_DIR', '{$ROOT}/resources/lang/');
         define('TEMPLATE_DIR', '{$ROOT}/resources/template/');
-        \$CLASS_DIR = '{$ROOT}/src/AstrX/';
-        require_once \$CLASS_DIR . 'Support/constants.php';
-        spl_autoload_register(static function (string \$class) use (\$CLASS_DIR): void {
-            if (strncmp(\$class, 'AstrX\\\\', 6) !== 0) { return; }
-            \$file = \$CLASS_DIR . str_replace('\\\\', '/', substr(\$class, 6)) . '.php';
-            if (is_file(\$file)) { require_once \$file; }
-        });
+        require_once '{$ROOT}/src/autoload.php';
         \$_SERVER['REQUEST_URI'] = '{$requestUri}';
         \$eh = new AstrX\ErrorHandler\ErrorHandler(new AstrX\Result\DiagnosticsCollector());
         \$eh->setEnvironment(AstrX\ErrorHandler\EnvironmentType::PRODUCTION);

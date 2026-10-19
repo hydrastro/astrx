@@ -285,7 +285,7 @@ check('the restore path the tool prints exists',
 
 // ── 4. module.php flag flipping ──────────────────────────────────────────────
 
-require_once $ROOT . '/src/AstrX/Support/constants.php';
+require_once $ROOT . '/src/support.php';
 loadFunctions($ROOT . '/tools/module.php', 'function m_read_modules(', 'function m_build_pdo(');
 
 echo "\n== module.php: flipping a flag actually flips it ==\n";

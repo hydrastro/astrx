@@ -35,12 +35,7 @@ namespace {
     use AstrX\Comment\CommentPrgHandler;
     use AstrX\Session\PrgHandler;
 
-    $CLASS_DIR = dirname(__DIR__) . '/src/AstrX/';
-    spl_autoload_register(static function (string $class) use ($CLASS_DIR): void {
-        if (strncmp($class, 'AstrX\\', 6) !== 0) { return; }
-        $file = $CLASS_DIR . str_replace('\\', '/', substr($class, 6)) . '.php';
-        if (is_file($file)) { require_once $file; }
-    });
+    require_once dirname(__DIR__) . '/src/classloader.php';
 
     require_once __DIR__ . '/lib/scratch.php';
     $scratch = AstrX\TestSupport\scratchDir('astrx_bottrap_test_');
@@ -54,7 +49,7 @@ namespace {
     // does sleep 2 s where the test asserts it does not.
     //
     // This drives the SHIPPED accessor — define the constant it reads, then load
-    // src/AstrX/Support/constants.php — rather than declaring a tempDir() of its
+    // src/support.php — rather than declaring a tempDir() of its
     // own in the AstrX\Support namespace. A shadow like that is guarded by
     // function_exists(), so the day anything loads constants.php first it
     // silently becomes a no-op and the slots go back to the shared /tmp path
@@ -62,7 +57,7 @@ namespace {
     // where the server secret is written, is exercised by a test instead of
     // being a branch nothing in the tree ever takes.
     define('ASTRX_TEMP_DIR', $scratch);
-    require_once $CLASS_DIR . 'Support/constants.php';
+    require_once dirname(__DIR__) . '/src/support.php';
 
     if (AstrX\Support\tempDir() !== $scratch) {
         fwrite(STDERR, "ASTRX_TEMP_DIR did not take: tempDir() = "

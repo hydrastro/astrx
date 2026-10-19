@@ -53,16 +53,9 @@ namespace {
     use AstrX\Blocklist\BlocklistConfig;
     use AstrX\Blocklist\BlocklistClient;
 
-    $BASE = dirname(__DIR__, 2) . '/src/AstrX';
-    require $BASE . '/TorrentSearch/TorrentSearchConfig.php';
-    require $BASE . '/TorrentSearch/TorrentSearchClient.php';
-    require $BASE . '/SuiteAdmin/SuiteAdminConfig.php';
-    require $BASE . '/SuiteAdmin/SuiteAdminClient.php';
-    require $BASE . '/GitBrowse/GitBrowseConfig.php';
-    require $BASE . '/FederatedSearch/FederatedSearchConfig.php';
-    require $BASE . '/FederatedSearch/FederatedSearchClient.php';
-    require $BASE . '/Blocklist/BlocklistConfig.php';
-    require $BASE . '/Blocklist/BlocklistClient.php';
+    // The holders under test, loaded on demand (the stub above stands in for
+    // the real attribute, so nothing else of the framework is needed).
+    require_once dirname(__DIR__, 2) . '/src/classloader.php';
 
     $PASS = 0;
     $FAIL = 0;
@@ -520,17 +513,11 @@ namespace {
         // templates belong to the FederatedSearch and TorrentSearch modules,
         // so the engine gets the modules' template roots, as in the app.
         $fwRoot  = dirname(__DIR__, 2);
-        $engFile = $fwRoot . '/src/AstrX/Template/TemplateEngine.php';
         $renderedFed = null;
         $renderedTor = null;
-        if (is_file($engFile)) {
+        if (class_exists(\AstrX\Template\TemplateEngine::class)) {
             try {
-                require_once $fwRoot . '/src/AstrX/Result/DiagnosticLevel.php';
-                spl_autoload_register(static function (string $c) use ($fwRoot): void {
-                    $p = $fwRoot . '/src/' . str_replace('\\', '/', $c) . '.php';
-                    if (is_file($p)) { require $p; }
-                });
-                require_once $fwRoot . '/src/AstrX/Support/constants.php';
+                require_once $fwRoot . '/src/support.php';
                 $engine = new \AstrX\Template\TemplateEngine(
                     null,
                     \AstrX\Module\ModuleRegistry::resourceRootsFor(\AstrX\ApplicationModules::INSTALLED),

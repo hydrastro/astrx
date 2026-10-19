@@ -11,7 +11,7 @@ declare(strict_types=1);
  * test closes that gap:
  *
  *   1. copy ONLY the foundation + component namespaces (as listed by
- *      `check_architecture.php --list`) and src/autoload.php into an empty
+ *      `check_architecture.php --list`) and the class loader into an empty
  *      directory, next to a copy of examples/minimal;
  *   2. confirm that tree cannot load a feature or application class;
  *   3. serve the example from it with PHP's built-in server and exercise every
@@ -103,7 +103,9 @@ $framework = array_values(array_filter(array_map(
 )));
 $tmp = rtrim(sys_get_temp_dir(), '/') . '/astrx-isolation-' . bin2hex(random_bytes(6));
 mkdir($tmp . '/src/AstrX', 0o700, true);
-copy($root . '/src/autoload.php', $tmp . '/src/autoload.php');
+foreach (['autoload', 'classloader', 'sources', 'support'] as $loader) {
+    copy($root . '/src/' . $loader . '.php', $tmp . '/src/' . $loader . '.php');
+}
 foreach ($framework as $ns) {
     copyTree($root . '/src/AstrX/' . $ns, $tmp . '/src/AstrX/' . $ns);
 }
