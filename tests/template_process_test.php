@@ -27,7 +27,9 @@ $e = new AstrX\Template\TemplateEngine(new AstrX\Result\DiagnosticsCollector());
 $e->setTemplateDir($argv[2] . '/');
 $e->setTemplateCacheDir($argv[3] . '/');
 $e->setParseMode((int)$argv[4]);
-$r = $e->renderTemplate('test', ['name'=>'world'], $argv[5] === '1');
+$r = $e->renderTemplate('test', ['name'=>'world', 'key'=>'page', 'rows'=>[
+    ['key'=>'a', 'flag'=>true], ['key'=>'b', 'flag'=>false], ['key'=>'c', 'flag'=>1],
+]], $argv[5] === '1');
 if (!$r->isOk()) { exit(2); }
 echo $r->unwrap();
 CHILD);
@@ -55,6 +57,9 @@ try {
         file_put_contents($tmp.'/two/test.html','<?php echo __DIR__; ?>');
         check('first source directory', $render(0,true)===$tmp.'/one');
         check('second source directory', $render(0,true,'two')===$tmp.'/two');
+        // A flag section inside a list item keeps the item as its context.
+        file_put_contents($file,'{{#rows}}{{#flag}}{{key}}{{/flag}}{{^flag}}-{{/flag}}{{/rows}} {{key}}');
+        check('a flag section sees the list item', $render(1)==='a-c page');
     }
     echo "$passed checks passed\n";
 } finally {

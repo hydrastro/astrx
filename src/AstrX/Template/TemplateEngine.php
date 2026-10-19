@@ -706,12 +706,20 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
                     '$resolved=$this->TemplateEngine->resolveValue('
                     . $sectionName
                     . ',$args,$parent,$i);if(!$resolved){',
+                // A list (or array) is iterated with itself as the context. Any
+                // other truthy value — a flag — renders the body ONCE in the
+                // enclosing context, so {{#is_age}}{{key}}{{/is_age}} inside a
+                // list item still sees the item's key (the JS runtime's
+                // semantics too). Before, a flag replaced the context with
+                // `true` and every item var inside it fell through to the
+                // page's globals.
                 default =>
                     '$resolved=$this->TemplateEngine->resolveValue('
                     . $sectionName
                     . ',$args,$parent,$i);'
-                    . 'if(is_countable($resolved)){$count=count($resolved);}elseif($resolved){$count=1;}else{$count=0;}'
-                    . '$parent=$resolved;for($i=0;$i<$count;$i++){',
+                    . 'if(is_countable($resolved)){$parent=$resolved;$from=0;$count=count($resolved);}'
+                    . 'elseif($resolved){$from=$i;$count=$i+1;}else{$from=0;$count=0;}'
+                    . 'for($i=$from;$i<$count;$i++){',
             };
         } else {
             $code .= '$i=0;';
