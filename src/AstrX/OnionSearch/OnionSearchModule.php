@@ -35,6 +35,8 @@ final class OnionSearchModule implements Module
                 'onion_search' => \AstrX\OnionSearch\Controller\OnionSearchController::class,
             ],
             'teardown'     => 'onionsearch.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
