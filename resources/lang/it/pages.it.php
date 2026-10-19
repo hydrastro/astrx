@@ -46,13 +46,9 @@ return [
     'WORDING_ADMIN_CONFIG_MAIL'     => 'admin-config-posta',
 
     // Webmail
-    'WORDING_WEBMAIL'                     => 'webmail',
-    'WORDING_WEBMAIL.title'               => 'Webmail',
-    'WORDING_WEBMAIL.description'         => 'Leggi e invia email dalla tua casella di posta.',
     'WORDING_ADMIN_AUDIT_LOG'             => 'admin-registro-attivita',
     'WORDING_ADMIN_AUDIT_LOG.title'       => 'Admin — Registro attività',
     'WORDING_ADMIN_AUDIT_LOG.description' => 'Cronologia di tutte le azioni amministrative.',
-    'WORDING_ADMIN_CONFIG_WEBMAIL'        => 'admin-config-webmail',
     'WORDING_ADMIN_THEMES.title'          => 'Admin — Temi',
     'WORDING_ADMIN_THEMES.description'    => 'Scegli il tema globale del sito.',
 
