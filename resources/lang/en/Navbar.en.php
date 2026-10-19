@@ -55,14 +55,12 @@ return [
     'WORDING_ADMIN_TRAP.label'            => 'Bot trap',
 
     // Public navbar — transparency / trust pages (each an optional module)
-    'WORDING_DOWNLOADS.label'             => 'Downloads',
     'WORDING_TIPLINE.label'               => 'Tip Line',
 
     // User navbar — account security
     'WORDING_TWOFACTOR.label'             => 'Two-Factor Auth',
 
     // Admin navbar — transparency editors + safety/retention tools
-    'WORDING_ADMIN_DOWNLOADS.label'       => 'Downloads',
     'WORDING_ADMIN_TIPLINE.label'         => 'Tip Line',
     'WORDING_ADMIN_RETENTION.label'       => 'Retention',
     'WORDING_ADMIN_PANIC.label'           => 'Panic',
