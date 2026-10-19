@@ -33,6 +33,8 @@ final class MediaModule implements Module
                 'media_file' => \AstrX\Media\Controller\MediaFileController::class,
             ],
             'teardown'     => 'media.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }

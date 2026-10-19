@@ -29,13 +29,6 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Questa pagina è configurata per usare un controller che non esiste.',
 
-    'astrx.media/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'Si è verificato un errore del database durante il caricamento della libreria multimediale. Riprova più tardi.',
-
-    'astrx.media/upload_failed' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'Non è stato possibile salvare il file caricato. Riprova.',
 
     'astrx.search/db_error' =>
         fn(DiagnosticInterface $d, Translator $t): string =>

@@ -29,13 +29,6 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'This page is configured to use a controller that does not exist.',
 
-    'astrx.media/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'A database error occurred while loading the media library. Please try again later.',
-
-    'astrx.media/upload_failed' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'The upload could not be stored. Please try again.',
 
     'astrx.search/db_error' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
