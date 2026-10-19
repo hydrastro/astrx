@@ -63,10 +63,6 @@ foreach ([
     'CONFIG_DIR' => INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR,
     'TEMPLATE_DIR' => INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR,
     'TEMPLATE_CACHE_DIR' => INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR,
-    'SRC_DIR' => INDEX_DIR . 'src' . DIRECTORY_SEPARATOR,
-    'CLASS_DIR' => INDEX_DIR . 'src' . DIRECTORY_SEPARATOR . 'AstrX' . DIRECTORY_SEPARATOR,
-    'CONTROLLER_DIR' => INDEX_DIR . 'src' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR,
-    'TEMPLATE_HANDLER_DIR' => INDEX_DIR . 'src' . DIRECTORY_SEPARATOR . 'template_handler' . DIRECTORY_SEPARATOR,
 ] as $name => $value) {
     if (!defined($name)) {
         define($name, $value);

@@ -1,0 +1,26 @@
+{
+    "name": "astrx/module-content",
+    "description": "Markdown pages with wiki links, backlinks, a page graph and a broken-link checker",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-ctype": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Content\\": ""
+        }
+    }
+}

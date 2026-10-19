@@ -4,10 +4,11 @@ declare(strict_types=1);
 /**
  * Composer packaging contract.
  *
- *   1. PSR-4: every class-like declaration under src/AstrX lives at the path its
- *      fully-qualified name implies (AstrX\Foo\Bar → src/AstrX/Foo/Bar.php),
- *      one per file. The `"AstrX\\": "src/AstrX/"` mapping in composer.json —
- *      and every future per-package mapping — depends on it.
+ *   1. PSR-4: every class-like declaration in the application (src/AstrX) and
+ *      its packages (packages/…) lives at the path its fully-qualified name
+ *      implies under that package's composer.json map (AstrX\Chat\ChatModule →
+ *      packages/modules/chat/ChatModule.php), one per file. src/sources.php,
+ *      generated from those maps by tools/packages.php, says where to look.
  *   2. When vendor/autoload.php exists (`composer dump-autoload`), Composer's
  *      autoloader resolves every one of those classes.
  *   3. Including vendor/autoload.php is inert: no output, no session, no
@@ -37,14 +38,10 @@ echo "1. PSR-4 layout\n";
 /** @var list<string> $classes */
 $classes = [];
 $bad     = [];
-$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/src/AstrX', FilesystemIterator::SKIP_DOTS));
-foreach ($it as $file) {
-    /** @var SplFileInfo $file */
-    if ($file->getExtension() !== 'php') {
-        continue;
-    }
-    $rel    = substr($file->getPathname(), strlen($root . '/src/'));
-    $tokens = token_get_all((string) file_get_contents($file->getPathname()));
+require_once $root . '/tools/lib/sources.php';
+foreach (AstrX\Tools\phpFiles($root) as $path => $expected) {
+    $rel    = substr($path, strlen($root) + 1);
+    $tokens = token_get_all((string) file_get_contents($path));
     $ns     = '';
     $decl   = [];
     $count  = count($tokens);
@@ -82,7 +79,6 @@ foreach ($it as $file) {
     if ($decl === []) {
         continue; // Support/constants.php (functions only)
     }
-    $expected = str_replace('/', '\\', substr($rel, 0, -4));
     if (count($decl) !== 1 || $decl[0] !== $expected) {
         $bad[] = "{$rel} declares " . implode(', ', $decl);
     } else {

@@ -2,33 +2,58 @@
     "name": "hydrastro/astrx",
     "description": "AstrX: a modular, JavaScript-free PHP web framework and the website built on it",
     "type": "project",
-    "keywords": ["framework", "no-javascript", "server-rendered", "tor", "cms"],
+    "keywords": [
+        "framework",
+        "no-javascript",
+        "server-rendered",
+        "tor",
+        "cms"
+    ],
     "homepage": "https://github.com/hydrastro/astrx",
     "require": {
         "php": ">=8.4",
         "ext-ctype": "*",
-        "ext-dom": "*",
-        "ext-filter": "*",
-        "ext-gd": "*",
-        "ext-iconv": "*",
-        "ext-mbstring": "*",
-        "ext-openssl": "*",
         "ext-pdo": "*",
-        "ext-pdo_mysql": "*",
-        "ext-session": "*"
+        "ext-session": "*",
+        "astrx/cms": "*@dev",
+        "astrx/framework": "*@dev",
+        "astrx/library": "*@dev",
+        "astrx/module-blocklist": "*@dev",
+        "astrx/module-bottrap": "*@dev",
+        "astrx/module-canary": "*@dev",
+        "astrx/module-chat": "*@dev",
+        "astrx/module-content": "*@dev",
+        "astrx/module-downloads": "*@dev",
+        "astrx/module-fedsearch": "*@dev",
+        "astrx/module-gitbrowse": "*@dev",
+        "astrx/module-imageboard": "*@dev",
+        "astrx/module-media": "*@dev",
+        "astrx/module-mirrors": "*@dev",
+        "astrx/module-onionsearch": "*@dev",
+        "astrx/module-search": "*@dev",
+        "astrx/module-suiteadmin": "*@dev",
+        "astrx/module-tipline": "*@dev",
+        "astrx/module-torrentsearch": "*@dev",
+        "astrx/module-webmail": "*@dev",
+        "astrx/module-websearch": "*@dev"
     },
     "suggest": {
-        "ext-sodium": "Signed downloads and the encrypted tipline (both refuse to run without it)",
-        "ext-posix": "Lets the server-secret check compare file ownership with the running user",
-        "ext-zend-opcache": "Invalidates cached config and language files immediately after an admin save"
+        "ext-sodium": "Signed downloads and the encrypted tipline (both refuse to run without it)"
     },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/*"
+        },
+        {
+            "type": "path",
+            "url": "packages/modules/*"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "AstrX\\": "src/AstrX/"
-        },
-        "files": [
-            "src/AstrX/Support/constants.php"
-        ]
+        }
     },
     "config": {
         "sort-packages": true,
@@ -36,6 +61,7 @@
     },
     "scripts": {
         "check": [
+            "@php tools/packages.php",
             "@php tools/check_architecture.php",
             "@php tools/check_modules.php",
             "@php tools/check_config.php",

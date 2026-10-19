@@ -1,6 +1,6 @@
 # Repository direction
 
-The current tree still contains the PHP application and Rust workspace together. Inert autoloading and a component example are implemented; the package extraction below remains a proposal.
+The current tree still contains the PHP application and Rust workspace together. The PHP code is split into Composer packages inside this repository (step 4 below); publishing them separately remains a proposal.
 
 ## Goal
 
@@ -23,8 +23,8 @@ These are dependency boundaries before they are repository boundaries. Start by 
 1. **Done:** `src/autoload.php` loads classes without starting a session, database or response; `examples/components.php` exercises Results and injection independently.
 1. **Done:** the namespace graph is layered and acyclic (foundation → component → library → feature → application; see [architecture](architecture.md#layers)), and `tools/check_architecture.php` keeps it that way in CI. Features own their controllers, policies and manifests, and pages resolve through an explicit controller map. The layers are the intended package boundaries.
 2. Let an application provide configuration, paths, routes and optional adapters. Remove mandatory dependencies on CMS page rows and installation-global constants from the reusable surface.
-3. **Started:** `examples/minimal` is a second application built from the framework layers alone (HTML, form with POST/redirect/GET, JSON, 404). `tests/framework_isolation_test.php` serves it from a directory containing only those layers. Next: have the CMS consume the same core API.
-4. Add Composer metadata. Choose explicit PHP licensing, finish package boundaries and make tagged releases before advertising a reusable core distribution. No third-party Composer runtime packages are required.
+3. **Started:** `examples/minimal` is a second application built from the framework layers alone (HTML, form with POST/redirect/GET, JSON, 404). `tests/framework_isolation_test.php` serves it from a directory containing only the framework package. Next: have the CMS consume the same core API.
+4. **Done in this repository:** the code is Composer packages in `packages/` — `astrx/framework`, `astrx/library`, `astrx/cms` and one `astrx/module-<key>` per module — each requiring exactly the packages it uses (`tools/packages.php` checks it in CI), reached from the root `composer.json` through path repositories. Optional modules reach core only through declared extension points ([modules](MODULES.md#extension-points-optional)), and the site runs with no module package present. Still to do before advertising a reusable distribution: choose explicit PHP licensing and make tagged releases. No third-party Composer runtime packages are required.
 5. Specify compatibility for the PHP/Rust HTTP APIs and test the PHP clients against actual pinned Rust binaries, alongside existing mock tests.
 6. If independent maintenance is useful, move the application and Rust workspace into their own repositories using reviewed history extraction in disposable clones.
 

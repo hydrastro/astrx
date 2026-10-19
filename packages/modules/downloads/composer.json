@@ -1,0 +1,28 @@
+{
+    "name": "astrx/module-downloads",
+    "description": "Signed release downloads page with its admin editor",
+    "type": "astrx-module",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "astrx-module"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "suggest": {
+        "ext-sodium": "Signs and verifies the release manifest (the page refuses to run without it)"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Downloads\\": ""
+        }
+    }
+}

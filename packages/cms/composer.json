@@ -1,0 +1,36 @@
+{
+    "name": "astrx/cms",
+    "description": "AstrX CMS core: accounts, admin panel, pages, navigation, themes, comments, news, invites and data retention",
+    "type": "library",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "cms"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-ctype": "*",
+        "ext-filter": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pdo": "*",
+        "ext-session": "*",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\User\\": "User/",
+            "AstrX\\Admin\\": "Admin/",
+            "AstrX\\Page\\": "Page/",
+            "AstrX\\Navbar\\": "Navbar/",
+            "AstrX\\Theme\\": "Theme/",
+            "AstrX\\Comment\\": "Comment/",
+            "AstrX\\News\\": "News/",
+            "AstrX\\Invite\\": "Invite/",
+            "AstrX\\Retention\\": "Retention/"
+        }
+    }
+}

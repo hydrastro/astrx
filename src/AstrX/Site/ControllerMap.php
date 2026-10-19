@@ -15,7 +15,7 @@ use AstrX\Module\ModuleRegistry;
  * HTTP layer, and it let a database value choose the class name. Now:
  *
  *   - optional modules declare their controllers in their manifest's
- *     `controllers` key (src/AstrX/<Module>/<Module>Module.php);
+ *     `controllers` key (packages/modules/<key>/<Module>Module.php);
  *   - always-on features and this site's own pages are listed in CORE.
  *
  * Lookup is equivalent to the old derivation for every class that exists:

@@ -10,8 +10,9 @@ declare(strict_types=1);
  * assumed to exist, or the autoloader quietly finding application code. This
  * test closes that gap:
  *
- *   1. copy ONLY the foundation + component namespaces (as listed by
- *      `check_architecture.php --list`) and the class loader into an empty
+ *   1. copy ONLY the framework package (packages/framework: the foundation +
+ *      component namespaces `check_architecture.php --list` names) and the
+ *      class loader, mapped from that package's composer.json, into an empty
  *      directory, next to a copy of examples/minimal;
  *   2. confirm that tree cannot load a feature or application class;
  *   3. serve the example from it with PHP's built-in server and exercise every
@@ -102,22 +103,41 @@ $framework = array_values(array_filter(array_map(
     explode("\n", (string) shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/tools/check_architecture.php') . ' --list=foundation,component')),
 )));
 $tmp = rtrim(sys_get_temp_dir(), '/') . '/astrx-isolation-' . bin2hex(random_bytes(6));
-mkdir($tmp . '/src/AstrX', 0o700, true);
-foreach (['autoload', 'classloader', 'sources', 'support'] as $loader) {
-    copy($root . '/src/' . $loader . '.php', $tmp . '/src/' . $loader . '.php');
+mkdir($tmp . '/src', 0o700, true);
+// The framework package exactly as published (packages/framework), and the
+// application's class loader pointed at it alone: the package's own
+// composer.json says which namespaces it provides and which files it loads.
+copyTree($root . '/packages/framework', $tmp . '/packages/framework');
+/** @var array{autoload: array{psr-4: array<string,string>, files?: list<string>}} $fwJson */
+$fwJson = json_decode((string) file_get_contents($root . '/packages/framework/composer.json'), true);
+$map = '';
+foreach ($fwJson['autoload']['psr-4'] as $prefix => $dir) {
+    $map .= '    ' . var_export($prefix, true) . " => [__DIR__ . '/../packages/framework/" . rtrim($dir, '/') . "'],\n";
 }
-foreach ($framework as $ns) {
-    copyTree($root . '/src/AstrX/' . $ns, $tmp . '/src/AstrX/' . $ns);
+file_put_contents($tmp . '/src/sources.php', "<?php\nreturn [\n{$map}];\n");
+$support = '';
+foreach ($fwJson['autoload']['files'] ?? [] as $file) {
+    $support .= "require_once __DIR__ . '/../packages/framework/{$file}';\n";
+}
+file_put_contents($tmp . '/src/support.php', "<?php\n{$support}");
+foreach (['autoload', 'classloader'] as $loader) {
+    copy($root . '/src/' . $loader . '.php', $tmp . '/src/' . $loader . '.php');
 }
 copyTree($root . '/examples/minimal', $tmp . '/app');
 
 echo "1. Isolated tree\n";
 check('framework layers listed by the architecture gate (expected 10+)', count($framework) >= 10, implode(', ', $framework));
-$present = array_values(array_diff(scandir($tmp . '/src/AstrX') ?: [], ['.', '..']));
+$present = array_values(array_filter(
+    array_diff(scandir($tmp . '/packages/framework') ?: [], ['.', '..']),
+    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e),
+));
 sort($present);
 $expected = $framework;
 sort($expected);
-check('the tree holds exactly the framework namespaces', $present === $expected, implode(', ', $present));
+check('the framework package holds exactly the framework namespaces', $present === $expected, implode(', ', $present));
+$declared = array_map(static fn(string $p): string => substr($p, 6, -1), array_keys($fwJson['autoload']['psr-4']));
+sort($declared);
+check('and its composer.json declares exactly those', $declared === $expected, implode(', ', $declared));
 
 // ── 2. Application code is unreachable from it ──────────────────────────────
 echo "\n2. Nothing above the framework is reachable\n";

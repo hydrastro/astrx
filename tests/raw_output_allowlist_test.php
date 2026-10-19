@@ -28,7 +28,7 @@ declare(strict_types=1);
 $ROOT         = dirname(__DIR__);
 $TEMPLATE_DIR = $ROOT . '/resources/template';
 
-// Modules ship templates and catalogs of their own (src/AstrX/<Module>/resources/);
+// Modules ship templates and catalogs of their own (packages/modules/<key>/resources/);
 // the autoloader is only needed to ask the module list where they are.
 require $ROOT . '/src/autoload.php';
 $MODULE_ROOTS = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);

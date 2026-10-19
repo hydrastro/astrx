@@ -527,12 +527,13 @@ final class CaptchaRenderer
             }
         }
 
-        // 3. Derived from this file's location: <repo-root>/resources/fonts/<base>.
-        //    __DIR__ = src/AstrX/Captcha → three levels up is the repo root.
-        $candidates[] = dirname(__DIR__, 3)
-            . DIRECTORY_SEPARATOR . 'resources'
-            . DIRECTORY_SEPARATOR . 'fonts'
-            . DIRECTORY_SEPARATOR . $base;
+        // 3. The installation's resources/fonts/<base>, when only INDEX_DIR is set.
+        $index = \AstrX\Support\indexDir();
+        if ($index !== '') {
+            $candidates[] = rtrim($index, '/\\') . DIRECTORY_SEPARATOR . 'resources'
+                . DIRECTORY_SEPARATOR . 'fonts'
+                . DIRECTORY_SEPARATOR . $base;
+        }
 
         foreach ($candidates as $path) {
             if (is_file($path)) {

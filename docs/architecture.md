@@ -4,7 +4,7 @@ This page describes the current repository. The proposed core/application separa
 
 ## Request lifecycle
 
-`public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths (`src/paths.php`), loads `src/autoload.php` and constructs `Prelude`. The paths and the autoloader can also be included on their own without booting the application.
+`public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths (`src/paths.php`), loads `src/autoload.php` and constructs `Prelude`. The paths and the autoloader can also be included on their own without booting the application: `src/classloader.php` loads classes from the map in `src/sources.php`, and `src/support.php` loads the `AstrX\Support` functions.
 
 `ApplicationContainer::build()` wires the shared services: configuration (the site's files over the installed modules' defaults), diagnostics, translation, module loading, dependency injection and the installed-module registry. `Prelude` builds it for a web request; a CLI tool (`tools/retention.php`, `tools/search_index.php`) builds the same container, so it sees the configuration, translations and module extensions the site does. `Prelude` then binds the account session as the request's `Auth\Identity` and `Theme\ThemePreference`, registers authorization policies (`ApplicationPolicies` plus each enabled module's manifest) and creates `ContentManager`. That manager initializes the current request, resolves its page, picks the controller from `Site\ControllerMap`, collects diagnostics and renders the response.
 
@@ -12,15 +12,22 @@ Pages and localized route identifiers are part of the bundled application's data
 
 ## Layers
 
-Every top-level namespace under `src/AstrX` belongs to one layer. A namespace may depend on its own layer or a lower one, and the namespace graph has no cycles. `tools/check_architecture.php` enforces both in CI, with the offending `file:line`. The layers are the planned package boundaries:
+Every top-level AstrX namespace belongs to one layer. A namespace may depend on its own layer or a lower one, and the namespace graph has no cycles. `tools/check_architecture.php` enforces both in CI, with the offending `file:line`. The layers are the package boundaries:
 
-| Layer | Namespaces | Becomes |
+| Layer | Namespaces | Package |
 |---|---|---|
-| foundation | `Result`, `Support` | framework |
-| component | `Config`, `Injector`, `Http`, `Routing`, `ErrorHandler`, `I18n`, `Template`, `Session`, `Csrf`, `Module`, `Pagination`, `Kernel` | framework |
-| library | `Database`, `Image`, `Auth`, `Api`, `Captcha`, `Identicon`, `Mail` | optional building blocks |
-| feature | `User`, `Admin`, `Page` (CMS), `Content`, `Navbar`, `Theme`, `Comment`, `News`, `Chat`, `Imageboard`, `Webmail`, … | optional modules |
-| application | `Site`, `ContentManager`, `Prelude`, `ApplicationContainer`, `ApplicationPolicies`, `ApplicationPermissions`, `ApplicationModules` | this website |
+| foundation | `Result`, `Support` | `astrx/framework` (`packages/framework`) |
+| component | `Config`, `Injector`, `Http`, `Routing`, `ErrorHandler`, `I18n`, `Template`, `Session`, `Csrf`, `Module`, `Pagination`, `Kernel` | `astrx/framework` |
+| library | `Database`, `Image`, `Auth`, `Api`, `Captcha`, `Identicon`, `Mail` | `astrx/library` (`packages/library`) |
+| feature | `User`, `Admin`, `Page`, `Navbar`, `Theme`, `Comment`, `News`, `Invite`, `Retention` | `astrx/cms` (`packages/cms`) |
+| feature | `Chat`, `Imageboard`, `Content`, `Search`, `Webmail`, … (every optional module) | one `astrx/module-<key>` each (`packages/modules/<key>`) |
+| application | `Site`, `ContentManager`, `Prelude`, `ApplicationContainer`, `ApplicationPolicies`, `ApplicationPermissions`, `ApplicationModules` | this website (`src/AstrX`, the root `composer.json`) |
+
+## Packages
+
+Each package has its own `composer.json` naming the packages it requires, and `tools/packages.php` checks in CI that this is exactly the set of packages its code uses — so each one can be installed without the others above it: `astrx/framework` alone runs `examples/minimal` (`tests/framework_isolation_test.php` serves it from a directory holding nothing else), and the site runs with no module package present at all. Modules depend on `astrx/framework`, `astrx/cms` and usually `astrx/library`; no package depends on the application.
+
+The root `composer.json` reaches the packages through path repositories (`packages/*`, `packages/modules/*`), so `composer install` links them into `vendor/` for anyone who consumes them through Composer. The site does not need Composer at runtime: `src/classloader.php` reads `src/sources.php`, which `php tools/packages.php --write` generates from the packages' PSR-4 maps (CI fails when it is stale). The packages have no tags and no license yet; both come before any of them is published separately.
 
 Lower layers reach upward only through narrow contracts that the application binds:
 
@@ -29,7 +36,7 @@ Lower layers reach upward only through narrow contracts that the application bin
 - `Template\TemplateVars`: the write side of a page's variables (`set`, `setShared`, `ContextScope`). Feature controllers use it and never touch `Site\DefaultTemplateContext`.
 - `Result\DiagnosticFilter`: which diagnostics a viewer may see. `I18n\DiagnosticRenderer` uses it, and `Admin\DiagnosticVisibilityChecker` implements it.
 
-Each feature owns its controllers (`src/AstrX/<Feature>/Controller/`), its policies and its manifest. `Site` holds this website's own pages and its page context.
+Each feature owns its controllers (`<Feature>/Controller/` in its package), its policies and its manifest. `Site` holds this website's own pages and its page context.
 
 Core never names an optional module: only `ApplicationModules`, the list of installed modules, does. Where core needs something from modules it owns an interface — an extension point such as `Retention\RetentionSource`, `Page\SitemapSource` or `User\LoginListener` — and asks `Module\ModuleRegistry::extensions()` which modules answer it; a module's partials join the page layout through its manifest's `layout` slots. See [Modules](MODULES.md).
 

@@ -54,9 +54,11 @@ reinstall the schema (`tools/install.php`) to bring a purged module back.
 
 A module is these things, none of which live in core:
 
-1. **A module class** — `src/AstrX/<Module>/<Module>Module.php`, implementing
-   `AstrX\Module\Module` — whose `manifest()` declares the module, listed in
-   `ApplicationModules::INSTALLED`.
+1. **A Composer package** — `packages/modules/<key>/` (`astrx/module-<key>`,
+   type `astrx-module`), whose root is the namespace `AstrX\<Module>` — holding
+   **a module class**, `<Module>Module.php`, implementing `AstrX\Module\Module`,
+   whose `manifest()` declares the module, listed in
+   `ApplicationModules::INSTALLED` (see [Packages](#packages)).
 2. **Page ownership** — every page carries a `page.module` tag; the core
    `ModulePageGuard` 404s a page whose module is off, and `NavbarHandler` drops
    nav entries pointing at it. Pages are tagged by a migration.
@@ -64,7 +66,7 @@ A module is these things, none of which live in core:
    controllers** — classes the manifest points at, all inside the module's own
    namespace (`AstrX\<Module>\…`).
 4. **(Optional) its resources** — templates, translations, default config and
-   SQL in `src/AstrX/<Module>/resources/`, layered under the site's own
+   SQL in the package's `resources/`, layered under the site's own
    `resources/` (see [Resources](#resources) and [Database](#database)).
 5. **(Optional) a teardown file** — `resources/sql/<key>.down.sql` — that
    `purge` runs.
@@ -121,7 +123,7 @@ A module keeps its templates, translations and default configuration in its
 own directory, declared by `'resources'` (relative to the module class):
 
 ```
-src/AstrX/Imageboard/resources/
+packages/modules/imageboard/resources/
 ├── template/                 board.html, admin/admin_boards.html, partials/board_nav.html …
 ├── lang/
 │   ├── en/                   Imageboard.en.php, pages.en.php, Navbar.en.php, Admin.en.php,
@@ -145,7 +147,7 @@ So a site customises a module without touching it: put a template with the
 same name in `resources/template/`, or just the keys you want to change in
 `resources/lang/<locale>/<Domain>.<locale>.php` or
 `resources/config/<Domain>.config.php`. A module's directory is read-only —
-once modules are Composer packages it lives under `vendor/`.
+installed with Composer it lives under `vendor/`.
 
 A module may contribute keys to a domain it shares with core: its page slugs
 and titles go in a partial `pages.<locale>.php`, its nav labels in
@@ -252,7 +254,7 @@ final class BotTrapPageGuard implements PageGuard
 
 ### Controllers
 
-A module's controllers live in `src/AstrX/<Module>/Controller/` and are listed
+A module's controllers live in its package's `Controller/` and are listed
 in the manifest's `controllers` key: page `file_name` => class.
 `Site\ControllerMap` resolves a page through that map (plus its `CORE` list
 for always-on features and the site's own pages). Lookup ignores case and
@@ -365,25 +367,60 @@ DELETE nid FROM `navbar_entry_ids` nid
  WHERE ne.id IS NULL;
 ```
 
+## Packages
+
+A module is a Composer package of type `astrx-module` in `packages/modules/<key>/`,
+with its namespace at the package root (the module class, `Controller/`,
+`resources/` side by side):
+
+```json
+{
+    "name": "astrx/module-chat",
+    "type": "astrx-module",
+    "require": {
+        "php": ">=8.4",
+        "astrx/cms": "self.version",
+        "astrx/framework": "self.version",
+        "astrx/library": "self.version"
+    },
+    "autoload": { "psr-4": { "AstrX\\Chat\\": "" } }
+}
+```
+
+It requires the packages whose namespaces its code uses — almost always
+`astrx/framework` and `astrx/cms`, often `astrx/library`; the federated search
+also requires `astrx/module-search` — and `tools/packages.php` checks that list
+against the code. The root `composer.json` reaches every package through path
+repositories (`packages/*`, `packages/modules/*`), so `composer install` links
+them into `vendor/`. The site itself does not need Composer: `src/classloader.php`
+loads classes from `src/sources.php`, which `tools/packages.php --write`
+generates from the packages' `composer.json` maps.
+
 ## Adding a module
 
 ```
 php tools/make_module.php forum --nav --guard
 ```
 
-scaffolds `src/AstrX/Forum/ForumModule.php`, its controller, a `resources/`
-directory with the page's template and its slug and title in both locales, and
-its teardown `resources/sql/forum.down.sql` — plus a section navbar partial in
-the layout's `nav` slot with `--nav`, and a `ForumPageGuard` with `--guard` —
-then prints the remaining steps:
+scaffolds the package `packages/modules/forum/` (`astrx/module-forum`): its
+`composer.json`, `ForumModule.php`, its controller, a `resources/` directory
+with the page's template and its slug and title in both locales, and its
+teardown `resources/sql/forum.down.sql` — plus a section navbar partial in the
+layout's `nav` slot with `--nav`, and a `ForumPageGuard` with `--guard` — then
+prints the remaining steps:
 
-1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`
-   and `'forum' => true` to `resources/config/Modules.config.php` (no flag = off).
+1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`,
+   `'forum' => true` to `resources/config/Modules.config.php` (no flag = off)
+   and `"astrx/module-forum": "*@dev"` to the root `composer.json`; then
+   `php tools/packages.php --write` updates the class loader's map.
 2. Add its tables and page rows in a migration in its `resources/sql/`, tagging
    the pages: `UPDATE page SET module='forum' WHERE file_name LIKE 'forum%';`
 3. Fill in the teardown `DROP TABLE`s and the nav/guard stubs.
 4. Add `Forum` to the `feature` layer in `tools/check_architecture.php`.
-5. `php tools/check_modules.php && php tools/check_architecture.php`.
+5. `php tools/packages.php && php tools/check_modules.php && php tools/check_architecture.php`.
+
+`tools/packages.php` tells you when its `composer.json` requires a
+package it does not use, or uses one it does not require.
 
 The scaffold includes `Controller/ForumController.php`, already mapped to the
 `forum` page in the manifest's `controllers`. Further templates, catalogs and
@@ -393,13 +430,14 @@ config section and its translation domain are still found by naming convention
 
 ## Verifying
 
-Four gates, run in CI (`.github/workflows/ci.yml`) and locally:
+Five gates, run in CI (`.github/workflows/ci.yml`) and locally:
 
 ```
 php phpstan.phar analyse -l 10 --no-progress   # types (level 10)
 php tools/check_lang_parity.php                # en/it language parity
 php tools/check_modules.php                     # every manifest wired correctly
 php tools/check_architecture.php                # layered, acyclic namespaces
+php tools/packages.php                          # packages require what they use
 ```
 
 `check_modules.php` verifies each manifest loads, has a `key`/`version`, its nav

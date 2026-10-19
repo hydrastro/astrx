@@ -1,0 +1,45 @@
+{
+    "name": "astrx/framework",
+    "description": "AstrX framework: results and diagnostics, configuration, injection, HTTP, routing, templates, translation, sessions and the module contract",
+    "type": "library",
+    "keywords": [
+        "astrx",
+        "no-javascript",
+        "server-rendered",
+        "framework"
+    ],
+    "homepage": "https://github.com/hydrastro/astrx",
+    "require": {
+        "php": ">=8.4",
+        "ext-filter": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pdo": "*",
+        "ext-session": "*"
+    },
+    "suggest": {
+        "ext-posix": "Lets the server-secret check compare file ownership with the running user",
+        "ext-zend-opcache": "Invalidates cached config and language files immediately after an admin save"
+    },
+    "autoload": {
+        "psr-4": {
+            "AstrX\\Result\\": "Result/",
+            "AstrX\\Support\\": "Support/",
+            "AstrX\\Config\\": "Config/",
+            "AstrX\\Injector\\": "Injector/",
+            "AstrX\\Http\\": "Http/",
+            "AstrX\\Routing\\": "Routing/",
+            "AstrX\\ErrorHandler\\": "ErrorHandler/",
+            "AstrX\\I18n\\": "I18n/",
+            "AstrX\\Template\\": "Template/",
+            "AstrX\\Session\\": "Session/",
+            "AstrX\\Csrf\\": "Csrf/",
+            "AstrX\\Module\\": "Module/",
+            "AstrX\\Pagination\\": "Pagination/",
+            "AstrX\\Kernel\\": "Kernel/"
+        },
+        "files": [
+            "Support/constants.php"
+        ]
+    }
+}

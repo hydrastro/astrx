@@ -16,7 +16,7 @@ public/compile/index.php
 
 `build/astrx.compiled.php` contains:
 
-- every `src/**/*.php` source file as an embedded payload;
+- every class file of the application (`src/AstrX`) and its packages (`packages/`, as mapped by `src/sources.php`) as an embedded payload;
 - a generated autoloader mapping `AstrX\...` symbols to embedded source;
 - the non-config, non-cache text resources needed to reconstruct templates/lang/setup files;
 - helpers for inspecting and extracting the embedded resource payload.
@@ -72,6 +72,7 @@ resources/lang/
 resources/template/
 setup/
 src/setup/
+packages/modules/<key>/resources/   (each module's templates, catalogs, default config, SQL)
 ```
 
 It intentionally does **not** embed:
@@ -138,7 +139,7 @@ If the bottleneck is class loading/stat calls, compiled mode should help. If the
 Compiled mode is opt-in. Development mode stays unchanged:
 
 ```text
-public/index.php → src/bootstrap.php → filesystem autoloader
+public/index.php → src/bootstrap.php → filesystem autoloader (src/sources.php)
 ```
 
 Compiled mode is:

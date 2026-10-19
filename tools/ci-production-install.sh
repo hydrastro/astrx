@@ -26,7 +26,7 @@ foreach (["pdo_mysql", "gd", "exif", "gettext", "mbstring", "openssl"] as $ext) 
     if (!extension_loaded($ext)) { throw new RuntimeException("Missing extension: " . $ext); }
 }
 if (extension_loaded("xdebug")) { throw new RuntimeException("Xdebug in production"); }
-if (is_writable("src/AstrX/Prelude.php")) { throw new RuntimeException("Writable source"); }
+foreach (["src/AstrX/Prelude.php", "packages/framework/Kernel/Controller.php"] as $source) { if (is_writable($source)) { throw new RuntimeException("Writable source: " . $source); } }
 foreach (["config", "template/cache", "avatar", "lang", "board_uploads", "chat_uploads", "media_uploads"] as $part) {
     $file = "resources/" . $part . "/.ci-write";
     if (file_put_contents($file, "ok") !== 2) { throw new RuntimeException("Unwritable: " . $part); }
