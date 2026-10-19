@@ -37,6 +37,8 @@ final class FederatedSearchModule implements Module
                 'federated_search' => \AstrX\FederatedSearch\Controller\FederatedSearchController::class,
             ],
             'teardown'     => 'fedsearch.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
