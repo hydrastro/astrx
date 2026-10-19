@@ -10,7 +10,6 @@ declare(strict_types=1);
 return [
     // Public navbar
     'WORDING_HOME.label'             => 'Home',
-    'WORDING_BOARD.label'            => 'Boards',
     'WORDING_USER.label'             => 'User Area',
 
     // User navbar
@@ -43,8 +42,6 @@ return [
     'WORDING_WEBMAIL.label'               => 'Webmail',
     'WORDING_CHAT.label'                  => 'Chat',
     'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
-    'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
-    'WORDING_ADMIN_BOARDS.label'          => 'Boards',
     'WORDING_ADMIN_INVITES.label'         => 'Invitations',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Languages',
 
