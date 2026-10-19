@@ -74,4 +74,7 @@ return [
     'admin.boards.created'         => 'Board creata.',
     'admin.boards.updated'         => 'Board aggiornata.',
     'admin.boards.deleted'         => 'Board eliminata.',
+
+    // Sezione nell'editor dei permessi
+    'admin.config.access.prefix_board' => 'Imageboard',
 ];

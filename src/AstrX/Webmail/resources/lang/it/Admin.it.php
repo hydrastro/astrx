@@ -29,4 +29,7 @@ return [
     // Riquadro del pannello di amministrazione
     'admin.nav.config_webmail'      => 'Webmail / IMAP',
     'admin.nav.config_webmail.desc' => 'Impostazioni del server IMAP e della webmail.',
+
+    // Sezione nell'editor dei permessi
+    'admin.config.access.prefix_webmail' => 'Webmail',
 ];

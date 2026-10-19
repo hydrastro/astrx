@@ -29,4 +29,7 @@ return [
     // Dashboard tile (Admin\AdminDashboardSection)
     'admin.nav.config_webmail'      => 'Webmail / IMAP',
     'admin.nav.config_webmail.desc' => 'IMAP server and webmail settings.',
+
+    // Grants editor section
+    'admin.config.access.prefix_webmail' => 'Webmail',
 ];
