@@ -4,7 +4,6 @@ declare(strict_types=1);
 return [
     // Navbar pubblica
     'WORDING_HOME.label'             => 'Home',
-    'WORDING_SEARCH.label'           => 'Cerca',
     'WORDING_BOARD.label'            => 'Board',
     'WORDING_USER.label'             => 'Area Utente',
 
@@ -24,7 +23,6 @@ return [
     'WORDING_ADMIN_NAVBAR.label'     => 'Navigazione',
     'WORDING_ADMIN_PAGES.label'      => 'Pagine',
     'WORDING_ADMIN_NOTES.label'      => 'Note',
-    'WORDING_ADMIN_SEARCH.label'     => 'Indice di ricerca',
 
     // Navbar admin — configurazione
     'WORDING_ADMIN_CONFIG_SYSTEM.label'   => 'Sistema',

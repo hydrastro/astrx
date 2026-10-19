@@ -35,9 +35,6 @@ return [
     'WORDING_ADMIN_PAGES'    => 'admin-pages',
     'WORDING_ADMIN_NOTES'    => 'admin-notes',
     'WORDING_ADMIN_THEMES'   => 'admin-themes',
-    'WORDING_ADMIN_SEARCH'   => 'admin-search',
-    'WORDING_ADMIN_SEARCH.title'       => 'Admin — Search index',
-    'WORDING_ADMIN_SEARCH.description' => 'Rebuild the site-wide search index.',
 
     // Admin — configuration
     'WORDING_ADMIN_CONFIG_SYSTEM'   => 'admin-config-system',
@@ -89,9 +86,6 @@ return [
     'WORDING_BOARD_MOD.description'       => 'Board moderation surface.',
     'WORDING_BOARD_FEED.title'            => 'Feed',
     'WORDING_BOARD_FEED.description'      => 'Atom feed of a board.',
-    'WORDING_SEARCH'                      => 'search',
-    'WORDING_SEARCH.title'                => 'Search',
-    'WORDING_SEARCH.description'          => 'Search across news, pages, comments and boards.',
     'WORDING_ADMIN_INVITES'               => 'admin-invites',
     'WORDING_ADMIN_INVITES.title'         => 'Invitations',
     'WORDING_ADMIN_INVITES.description'   => 'Mint and revoke invite codes.',
