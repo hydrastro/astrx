@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace AstrX\User\Controller;
 
+use AstrX\Module\ModuleRegistry;
+use AstrX\User\UserHomeSection;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
@@ -25,6 +27,7 @@ final class UserHomeController extends AbstractController
         private readonly UserSession           $session,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly ModuleRegistry        $modules,
     ) {
         parent::__construct($collector);
     }
@@ -41,15 +44,18 @@ final class UserHomeController extends AbstractController
         $this->ctx->set('user_welcome_body',    $this->t->t('user.home.body'),      ContextScope::SHARED);
         $this->ctx->set('username',             $this->session->username(),         ContextScope::SHARED);
 
-        // Build section links dynamically — sorted alphabetically.
-        // Add entries here (slug => label key) to have them appear on the home page.
-        // Each slug must have a WORDING_{SLUG} translation key for URL resolution.
+        // Build section links dynamically — sorted alphabetically. Core's own
+        // (slug => label key), then those enabled modules add through
+        // UserHomeSection (manifest `extensions`). Each slug must have a
+        // WORDING_{SLUG} translation key for URL resolution.
         $navPages = [
             'profile'  => 'user.home.profile_heading',
             'settings' => 'user.home.settings_heading',
-            'webmail'  => 'webmail.heading',
             'logout'   => 'user.home.logout',
         ];
+        foreach ($this->modules->extensions(UserHomeSection::class) as $provider) {
+            $navPages += $provider->userHomeSections();
+        }
         $sections = [];
         foreach ($navPages as $slug => $labelKey) {
             $urlArgs = $slug === 'profile' ? ['uid' => $this->session->userId()] : [];

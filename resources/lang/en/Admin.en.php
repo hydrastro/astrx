@@ -490,8 +490,6 @@ return [
     'admin.audit.chain_broken'   => 'AUDIT CHAIN BROKEN — tampering detected at entry',
 
     // ---- Config — Webmail IMAP settings --------------------------------
-    'admin.nav.config_webmail'              => 'Webmail / IMAP',
-    'admin.nav.config_webmail.desc'         => 'IMAP server and webmail settings.',
     'admin.config.field.mailbox_is_username_warning' => 'Enable this if the IMAP mailbox name is exactly the username (no domain suffix).',
 
 

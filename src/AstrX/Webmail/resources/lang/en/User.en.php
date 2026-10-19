@@ -82,4 +82,8 @@ return [
     'webmail.download'            => 'Download',
     'webmail.attachments'         => 'Attachments',
     'webmail.compose_fields_required' => 'To, Subject and body are required.',
+
+    // User home tile (User\UserHomeSection)
+    'webmail.heading'      => 'Webmail',
+    'webmail.heading.desc' => 'Read and send emails from your mailbox.',
 ];

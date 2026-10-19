@@ -13,7 +13,9 @@ use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use AstrX\Kernel\AbstractController;
+use AstrX\Admin\AdminDashboardSection;
 use AstrX\Admin\AdminPermission;
+use AstrX\Module\ModuleRegistry;
 
 /**
  * Admin section root — /en/admin
@@ -28,6 +30,7 @@ final class AdminController extends AbstractController
         private readonly Gate                  $gate,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
+        private readonly ModuleRegistry        $modules,
     ) {
         parent::__construct($collector);
     }
@@ -46,7 +49,12 @@ final class AdminController extends AbstractController
 
         // Build section links for the home page
         $sections = [];
-        foreach (AdminService::NAV_PAGES as $slug => $labelKey) {
+        // Core's admin pages, then the ones enabled modules add.
+        $pages = AdminService::NAV_PAGES;
+        foreach ($this->modules->extensions(AdminDashboardSection::class) as $provider) {
+            $pages += $provider->adminSections();
+        }
+        foreach ($pages as $slug => $labelKey) {
             if ($slug === 'admin') {
                 continue;
             }

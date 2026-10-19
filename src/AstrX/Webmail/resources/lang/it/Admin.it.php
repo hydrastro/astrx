@@ -25,4 +25,8 @@ return [
     'admin.config.field.imap_socks5_port'   => 'Porta SOCKS5',
     'admin.config.field.messages_per_page'  => 'Messaggi per pagina',
     'admin.config.field.trash_folder'       => 'Cartella cestino',
+
+    // Riquadro del pannello di amministrazione
+    'admin.nav.config_webmail'      => 'Webmail / IMAP',
+    'admin.nav.config_webmail.desc' => 'Impostazioni del server IMAP e della webmail.',
 ];

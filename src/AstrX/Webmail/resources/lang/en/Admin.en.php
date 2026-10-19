@@ -25,4 +25,8 @@ return [
 
     'admin.config.field.sent_folder'        => 'Sent folder name',
     'admin.config.field.drafts_folder'      => 'Drafts folder name',
+
+    // Dashboard tile (Admin\AdminDashboardSection)
+    'admin.nav.config_webmail'      => 'Webmail / IMAP',
+    'admin.nav.config_webmail.desc' => 'IMAP server and webmail settings.',
 ];
