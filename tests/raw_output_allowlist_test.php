@@ -28,6 +28,36 @@ declare(strict_types=1);
 $ROOT         = dirname(__DIR__);
 $TEMPLATE_DIR = $ROOT . '/resources/template';
 
+// Modules ship templates and catalogs of their own (src/AstrX/<Module>/resources/);
+// the autoloader is only needed to ask the module list where they are.
+require $ROOT . '/src/autoload.php';
+$MODULE_ROOTS = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);
+
+/** The file a template name resolves to (the site's first, then the modules'), or ''. */
+function templateFile(string $name): string
+{
+    global $TEMPLATE_DIR, $MODULE_ROOTS;
+    foreach ([$TEMPLATE_DIR . '/', ...$MODULE_ROOTS->of(AstrX\Support\ResourceRoots::TEMPLATE)] as $dir) {
+        if (is_file($dir . $name . '.html')) {
+            return $dir . $name . '.html';
+        }
+    }
+    return '';
+}
+
+/** The catalog file of $domain in $locale (the site's first, then the modules'), or ''. */
+function catalogFile(string $domain, string $locale): string
+{
+    global $ROOT, $MODULE_ROOTS;
+    foreach ([$ROOT . '/resources/lang/', ...$MODULE_ROOTS->of(AstrX\Support\ResourceRoots::LANG)] as $dir) {
+        $f = $dir . $locale . '/' . $domain . '.' . $locale . '.php';
+        if (is_file($f)) {
+            return $f;
+        }
+    }
+    return '';
+}
+
 /**
  * binding name => why it may bypass escaping.
  *
@@ -114,6 +144,9 @@ function allowed(string $name): bool
 echo "\nRaw-output allowlist\n";
 
 $files = templateFiles($TEMPLATE_DIR);
+foreach ($MODULE_ROOTS->of(AstrX\Support\ResourceRoots::TEMPLATE) as $dir) {
+    $files = [...$files, ...templateFiles($dir)];
+}
 check('found template sources to scan', count($files) > 20);
 
 /** @var array<string,list<string>> $found  binding name => files */
@@ -123,7 +156,7 @@ foreach ($files as $file) {
     if (preg_match_all('/\{\{&\s*([^}\s]+)\s*\}\}/', $body, $m) < 1) { continue; }
     foreach ($m[1] as $name) {
         // '*' is the engine's dereference operator, not part of the name.
-        $found[ltrim($name, '*')][] = substr($file, strlen($TEMPLATE_DIR) + 1);
+        $found[ltrim($name, '*')][] = substr($file, strlen($ROOT) + 1);
     }
 }
 ksort($found);
@@ -166,13 +199,13 @@ check(
 // ── The two the reviewer traced, pinned so they cannot come back ─────────────
 echo "\nThe two fixed sinks\n";
 
-$profile = (string) file_get_contents($TEMPLATE_DIR . '/user/profile.html');
+$profile = (string) file_get_contents(templateFile('user/profile'));
 check(
     'user/profile.html renders the avatar src ESCAPED, like partials/comments.html does',
     str_contains($profile, '{{profile_avatar_src}}') && !str_contains($profile, '{{&profile_avatar_src}}'),
 );
 
-$board = (string) file_get_contents($TEMPLATE_DIR . '/board.html');
+$board = (string) file_get_contents(templateFile('board'));
 check(
     'board.html renders the formatting hint ESCAPED (it is an admin-editable translation string)',
     str_contains($board, '{{lbl_formatting_hint}}') && !str_contains($board, '{{&lbl_formatting_hint}}'),
@@ -180,9 +213,9 @@ check(
 
 // The hint is now escaped, so an &gt; in the lang file would surface to the
 // reader as the literal text "&gt;greentext".
-foreach (['en' => 'Imageboard.en.php', 'it' => 'Imageboard.it.php'] as $locale => $langFile) {
+foreach (['en', 'it'] as $locale) {
     /** @var array<string,mixed> $lang */
-    $lang = require dirname(__DIR__) . '/resources/lang/' . $locale . '/' . $langFile;
+    $lang = require catalogFile('Imageboard', $locale);
     $hint = $lang['board.formatting_hint'] ?? '';
     check(
         "{$locale}: board.formatting_hint holds a literal '>' , not an &gt; entity",
