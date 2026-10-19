@@ -12,6 +12,7 @@ use AstrX\Theme\ThemePreference;
 use AstrX\User\UserSession;
 use AstrX\ErrorHandler\ErrorHandler;
 use AstrX\ContentManager;
+use AstrX\Support\Paths;
 
 /**
  * The composition root: builds the application, then run() handles the
@@ -33,11 +34,16 @@ final class Prelude
 
         $collector = new DiagnosticsCollector();
 
-        $errorHandler = new ErrorHandler($collector);
+        // Where this installation keeps its files: the paths the front
+        // controller declared (src/paths.php). The only place they are read;
+        // everything else is handed this object.
+        $paths = Paths::fromConstants();
+
+        $errorHandler = new ErrorHandler($collector, $paths);
 
         // Configuration, translations, the module loader and the installed
         // modules — the same container a CLI tool builds.
-        $injector = ApplicationContainer::build($collector, $errorHandler);
+        $injector = ApplicationContainer::build($collector, $errorHandler, $paths);
         $injector->setClass($this);
 
         // Bootstrap PBAC Gate — register all policies once at startup.

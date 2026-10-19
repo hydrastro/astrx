@@ -18,10 +18,9 @@ use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\I18n\Translator;
 
-use function AstrX\Support\configDir;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
+use function AstrX\Support\langDir;
 
 /**
  * Admin — Languages: a no-JavaScript translation console.
@@ -268,17 +267,7 @@ final class AdminLanguageController extends AbstractController
      */
     private function loadMainConfig(): array
     {
-        $path = configDir() . 'config.php';
-        if (!is_file($path)) {
-            return [];
-        }
-        /** @var mixed $loaded */
-        $loaded = require $path;
-        if (!is_array($loaded)) {
-            return [];
-        }
-        /** @var array<string, array<string, mixed>> $loaded */
-        return $loaded;
+        return $this->writer->readSiteFile('config');
     }
 
     // ── Context ───────────────────────────────────────────────────────────────

@@ -11,8 +11,8 @@ use AstrX\Config\Diagnostic\ConfigSetterInvalidDiagnostic;
 use AstrX\Config\Diagnostic\ConfigKeyUnusedDiagnostic;
 use AstrX\Config\Diagnostic\ConfigNotABoolDiagnostic;
 use AstrX\Support\ResourceRoots;
+use AstrX\Support\Paths;
 use ReflectionObject;
-use function AstrX\Support\configDir;
 
 final class Config
 {
@@ -29,23 +29,32 @@ final class Config
     /** @var array<string, true> — domains whose keys have been checked for unused */
     private array $checkedDomains = [];
 
-    /** Module config directories, lowest precedence first; the site's CONFIG_DIR sits above them. */
+    /** Module config directories, lowest precedence first; the site's config dir sits above them. */
     private readonly ResourceRoots $roots;
 
+    /** The application's files; its config dir holds the site's overrides. */
+    private readonly Paths $paths;
+
     /**
+     * @param string|null $configFile the main config file; null means
+     *        config.php in the application's config dir.
      * @param ResourceRoots|null $roots the installed modules' resource
      *        directories: their config/ files are the defaults the site's own
-     *        CONFIG_DIR files override key by key.
+     *        config files override key by key.
+     * @param Paths|null $paths the application's files; null means it has
+     *        none, so only the packages' defaults (and $configFile) are read.
      */
     public function __construct(
         private readonly DiagnosticSinkInterface $sink,
         ?string $configFile = null,
         ?ResourceRoots $roots = null,
+        ?Paths $paths = null,
     ) {
         $this->roots = $roots ?? new ResourceRoots();
-        $file = $configFile ?? (configDir() . 'config.php');
+        $this->paths = $paths ?? new Paths();
+        $file = $configFile ?? ($this->paths->config !== '' ? $this->paths->config . 'config.php' : '');
 
-        $loaded = is_file($file) ? require $file : [];
+        $loaded = $file !== '' && is_file($file) ? require $file : [];
         if (is_array($loaded)) {
             /** @var array<string, array<string, mixed>> $loaded */
             $this->configuration = $loaded;
@@ -103,7 +112,7 @@ final class Config
 
     /**
      * Load the config file {Domain}.config.php: each installed module's copy
-     * (its defaults) first, then the site's CONFIG_DIR copy, merged per section
+     * (its defaults) first, then the site's copy, merged per section
      * KEY BY KEY — so the site file only needs the keys it changes, and a key a
      * module adds later still reaches a site whose file predates it.
      *
@@ -152,7 +161,10 @@ final class Config
     public function configFilesFor(string $domain): array
     {
         $out = [];
-        foreach ([...$this->roots->of(ResourceRoots::CONFIG), configDir()] as $dir) {
+        foreach ([...$this->roots->of(ResourceRoots::CONFIG), $this->paths->config] as $dir) {
+            if ($dir === '') {
+                continue;
+            }
             $path = $dir . $domain . '.config.php';
             if (file_exists($path)) {
                 $out[] = $path;

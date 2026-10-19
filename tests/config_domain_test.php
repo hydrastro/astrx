@@ -63,8 +63,8 @@ namespace {
         @rmdir($TMP);
     });
 
-    // CONFIG_DIR is what ConfigWriter and Config resolve their paths through.
-    if (!defined('CONFIG_DIR')) { define('CONFIG_DIR', $TMP); }
+    // $TMP is the site's config directory: the resolver and the writer are
+    // given it directly, Config through Paths.
 
     // Grouped file: the section name and the file name differ, exactly like
     // Mail.config.php declaring 'Mailer' / 'ImapClient' / 'WebmailService'.
@@ -120,7 +120,7 @@ namespace {
     file_put_contents($TMP . 'config.php', "<?php\nreturn [];\n");
 
     $collector  = new DiagnosticsCollector();
-    $config     = new Config($collector, $TMP . 'config.php');
+    $config     = new Config($collector, $TMP . 'config.php', null, new \AstrX\Support\Paths(config: $TMP));
     $translator = new Translator($collector);
     $loader     = new ModuleLoader($config, $translator, $collector, sys_get_temp_dir() . '/astrx-nolang/');
 
@@ -153,7 +153,7 @@ namespace {
         PHP);
 
     $flagCollector = new DiagnosticsCollector();
-    $flagConfig    = new Config($flagCollector, $TMP . 'config.php');
+    $flagConfig    = new Config($flagCollector, $TMP . 'config.php', null, new \AstrX\Support\Paths(config: $TMP));
     $flagConfig->loadModuleConfig('Flags');
 
     eq('a real false is false',      false, $flagConfig->getConfigBool('Flags', 'real_false', true));
@@ -174,7 +174,7 @@ namespace {
     echo "\n== Config reports a read that fell back to its default ==\n";
 
     $defCollector = new DiagnosticsCollector();
-    $defConfig    = new Config($defCollector, $TMP . 'config.php');
+    $defConfig    = new Config($defCollector, $TMP . 'config.php', null, new \AstrX\Support\Paths(config: $TMP));
     $defConfig->getConfigString('NoSuchSection', 'no_such_key', 'fallback');
 
     $defaulted = false;

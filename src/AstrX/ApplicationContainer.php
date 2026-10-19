@@ -12,8 +12,8 @@ use AstrX\Injector\Injector;
 use AstrX\Module\ModuleLoader;
 use AstrX\Module\ModuleRegistry;
 use AstrX\Result\DiagnosticsCollector;
+use AstrX\Support\Paths;
 use AstrX\Support\ResourceRoots;
-use function AstrX\Support\indexDir;
 
 /**
  * The application's services, wired: configuration (the site's files over the
@@ -36,16 +36,23 @@ final class ApplicationContainer
      * @param ErrorHandler|null $errorHandler the web request's handler: it is
      *        put into the configured environment, given its config section and
      *        shared. A CLI tool passes none.
+     * @param Paths|null $paths where this installation keeps its files; null
+     *        means the ones its front controller declared (src/paths.php).
      */
-    public static function build(DiagnosticsCollector $collector, ?ErrorHandler $errorHandler = null): Injector
-    {
+    public static function build(
+        DiagnosticsCollector $collector,
+        ?ErrorHandler $errorHandler = null,
+        ?Paths $paths = null,
+    ): Injector {
+        $paths ??= Paths::fromConstants();
+
         // Where the packages and the installed modules keep their templates,
         // translations and default config. Needed before Config itself, whose
         // sections default from those files; the site's resources/ overrides
         // all of them.
-        $roots = self::resourceRoots();
+        $roots = self::resourceRoots($paths);
 
-        $config = new Config($collector, null, $roots);
+        $config = new Config($collector, null, $roots, $paths);
 
         // Environment setup — must happen before anything else so that PHP error
         // reporting and assert behaviour are configured for the right environment.
@@ -57,10 +64,10 @@ final class ApplicationContainer
             )
         ));
 
-        $translator = new Translator($collector, $roots);
+        $translator = new Translator($collector, $roots, $paths);
 
-        $configDomains = new ConfigDomainResolver('', $roots);
-        $moduleLoader  = new ModuleLoader($config, $translator, $collector, '', $configDomains);
+        $configDomains = new ConfigDomainResolver($paths->config, $roots);
+        $moduleLoader  = new ModuleLoader($config, $translator, $collector, $paths->lang, $configDomains);
 
         $injector = new Injector();
 
@@ -103,6 +110,7 @@ final class ApplicationContainer
 
         // Register shared instances
         $injector->setClass($collector);
+        $injector->setClass($paths);
         $injector->setClass($roots);
         $injector->setClass($configDomains);
         if ($errorHandler !== null) {
@@ -116,7 +124,7 @@ final class ApplicationContainer
         // The installed modules, explicitly: the registry is built here, never
         // autowired, so no part of the application can get one that silently
         // knows about a different (or empty) set of modules.
-        $injector->setClass(new ModuleRegistry($config, $injector, ApplicationModules::INSTALLED));
+        $injector->setClass(new ModuleRegistry($config, $injector, ApplicationModules::INSTALLED, $paths->root));
 
         return $injector;
     }
@@ -128,13 +136,14 @@ final class ApplicationContainer
      * and is not in the list (see ResourceRoots). The tools use this too, so
      * they see the same templates, catalogs and config as the site.
      */
-    public static function resourceRoots(): ResourceRoots
+    public static function resourceRoots(?Paths $paths = null): ResourceRoots
     {
+        $paths ??= Paths::fromConstants();
         // Beside this class's directory, or — in the compiled bundle, whose
         // code has no file of its own — under the installation directory.
         $file = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'resources.php';
         if (!is_file($file)) {
-            $file = rtrim(indexDir(), '/\\') . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'resources.php';
+            $file = $paths->root . 'src' . DIRECTORY_SEPARATOR . 'resources.php';
         }
         $core = [];
         if (is_file($file)) {
@@ -148,7 +157,7 @@ final class ApplicationContainer
         }
         return new ResourceRoots([
             ...$core,
-            ...ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED)->dirs(),
+            ...ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED, $paths->root)->dirs(),
         ]);
     }
 }

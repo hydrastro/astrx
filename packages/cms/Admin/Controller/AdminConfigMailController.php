@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use function AstrX\Support\configDir;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -360,15 +359,7 @@ final class AdminConfigMailController extends AbstractController
     private function loadFullMailConfig()
     : array
     {
-        $path = (configDir() . 'Mail.config.php');
-        if (!is_file($path)) {
-            return [];
-        }
-        $loaded = @include $path;
-
-        if (!is_array($loaded)) { return []; }
-        /** @var array<string,array<string,mixed>> $loaded */
-        return $loaded;
+        return $this->writer->readSiteFile('Mail');
     }
 
     private function setI18n()

@@ -63,16 +63,26 @@ namespace {
     require_once __DIR__ . '/lib/scratch.php';
     $TMP = AstrX\TestSupport\scratchDir('astrx-db-failure-');
 
-    // Config comes from the scratch dir (never resources/config, which holds a
-    // real install's credentials); lang and templates are the repo's own, read
-    // only, so the catalogs and theme under test are the shipped ones.
-    define('CONFIG_DIR',   $TMP . '/config/');
-    define('LANG_DIR',     $ROOT . '/resources/lang/');
-    define('TEMPLATE_DIR', $ROOT . '/resources/template/');
-    mkdir(CONFIG_DIR, 0700, true);
-
     require_once dirname(__DIR__) . '/src/support.php';
     require_once dirname(__DIR__) . '/src/classloader.php';
+
+    // Config comes from the scratch dir (never resources/config, which holds a
+    // real install's credentials); lang and templates are the repo's own, read
+    // only, so the catalogs and theme under test are the shipped ones. No path
+    // constant is defined: everything under test is handed these.
+    $PATHS = new AstrX\Support\Paths(
+        root:      $ROOT,
+        config:    $TMP . '/config/',
+        lang:      $ROOT . '/resources/lang/',
+        templates: $ROOT . '/resources/template/',
+    );
+    function testPaths(): AstrX\Support\Paths
+    {
+        global $PATHS;
+        assert($PATHS instanceof AstrX\Support\Paths);
+        return $PATHS;
+    }
+    mkdir($PATHS->config, 0700, true);
 
     // Buffer everything this test prints. Section F drives the real
     // renderError(), which starts with http_response_code() — under the CLI SAPI
@@ -118,10 +128,10 @@ namespace {
     /** A DiagnosticRenderer holding the repo's real catalog for one locale. */
     function rendererFor(string $locale): DiagnosticRenderer
     {
-        $t = new Translator(new DiagnosticsCollector(), AstrX\ApplicationContainer::resourceRoots());
+        $t = new Translator(new DiagnosticsCollector(), AstrX\ApplicationContainer::resourceRoots(testPaths()), testPaths());
         $t->setLocale($locale);
         $r = new DiagnosticRenderer($t);
-        $r->loadDomain(AstrX\Support\langDir(), 'Diagnostics');
+        $r->load('Diagnostics');
         return $r;
     }
 
@@ -167,14 +177,14 @@ namespace {
     function managerWith(Config $config): ContentManager
     {
         $collector  = new DiagnosticsCollector();
-        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots());
+        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots(testPaths()), testPaths());
         $translator->setLocale('en');
 
         return new ContentManager(
             new Injector(),
             $config,
             $collector,
-            new ModuleLoader($config, $translator, $collector),
+            new ModuleLoader($config, $translator, $collector, testPaths()->lang),
             $translator,
             new Gate(new UserSession()),
         );
@@ -184,14 +194,14 @@ namespace {
     function writePdoConfig(array $pdo): void
     {
         file_put_contents(
-            CONFIG_DIR . 'PDO.config.php',
+            testPaths()->config . 'PDO.config.php',
             "<?php\nreturn " . var_export(['PDO' => $pdo], true) . ";\n",
         );
     }
 
     function removePdoConfig(): void
     {
-        @unlink(CONFIG_DIR . 'PDO.config.php');
+        @unlink(testPaths()->config . 'PDO.config.php');
     }
 
     /** Open a connection exactly as the request pipeline does. @return Result<PDO> */
@@ -209,7 +219,7 @@ namespace {
     // A base config.php for every case; per-case values are merged over it.
     function writeBaseConfig(int $environment): void
     {
-        file_put_contents(CONFIG_DIR . 'config.php', "<?php\nreturn " . var_export([
+        file_put_contents(testPaths()->config . 'config.php', "<?php\nreturn " . var_export([
             'Prelude'        => ['environment' => $environment, 'default_language' => 'en'],
             // Deliberately markup-bearing: the failsafe page has no template
             // engine, so it must escape what it interpolates itself.
@@ -339,7 +349,7 @@ namespace {
         'default_fetch_assoc' => true,
     ]);
 
-    $config = new Config(new DiagnosticsCollector());
+    $config = new Config(new DiagnosticsCollector(), null, null, testPaths());
     $config->loadModuleConfig('PDO');
     $refused = initPdo($config);
 
@@ -359,7 +369,7 @@ namespace {
     echo "\n== initPDO() with an incomplete PDO.config.php ==\n";
 
     removePdoConfig();
-    $config = new Config(new DiagnosticsCollector());
+    $config = new Config(new DiagnosticsCollector(), null, null, testPaths());
     $config->loadModuleConfig('PDO');
     $noConfig = initPdo($config);
 
@@ -394,7 +404,7 @@ namespace {
         'errmode_exception'   => true,
         'default_fetch_assoc' => true,
     ]);
-    $config = new Config(new DiagnosticsCollector());
+    $config = new Config(new DiagnosticsCollector(), null, null, testPaths());
     $config->loadModuleConfig('PDO');
     $noPass = initPdo($config);
     $noPassDiag = diagList($noPass)[0] ?? null;
@@ -417,7 +427,7 @@ namespace {
         'errmode_exception'   => true,
         'default_fetch_assoc' => true,
     ]);
-    $config = new Config(new DiagnosticsCollector());
+    $config = new Config(new DiagnosticsCollector(), null, null, testPaths());
     $config->loadModuleConfig('PDO');
     $emptyPass = initPdo($config);
     check('an empty password is a value, not an absence — the connection is attempted',
@@ -436,7 +446,7 @@ namespace {
         'errmode_exception'   => true,
         'default_fetch_assoc' => true,
     ]);
-    $config = new Config(new DiagnosticsCollector());
+    $config = new Config(new DiagnosticsCollector(), null, null, testPaths());
     $config->loadModuleConfig('PDO');
     $noDriver = initPdo($config);
     $noDriverDiag = diagList($noDriver)[0] ?? null;
@@ -490,20 +500,21 @@ namespace {
         removePdoConfig();
 
         $collector  = new DiagnosticsCollector();
-        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots());
+        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots(testPaths()), testPaths());
         $translator->setLocale('en');
-        $config = new Config($collector);
+        $config = new Config($collector, null, null, testPaths());
 
         // The request's translator is shared, as the application container
         // shares it: the failsafe's DiagnosticRenderer is built through the
         // injector and must see the packages' catalogs.
         $injector = new Injector();
         $injector->setClass($translator);
+        $injector->setClass(testPaths());
         $cm = new ContentManager(
             $injector,
             $config,
             $collector,
-            new ModuleLoader($config, $translator, $collector),
+            new ModuleLoader($config, $translator, $collector, testPaths()->lang),
             $translator,
             new Gate(new UserSession()),
         );

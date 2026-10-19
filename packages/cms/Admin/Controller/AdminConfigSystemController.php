@@ -6,7 +6,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use function AstrX\Support\configDir;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -25,6 +24,7 @@ use AstrX\Template\TemplateVars;
 use AstrX\Template\TemplateEngine;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
+use AstrX\Support\Paths;
 
 /**
  * Admin — System configuration editor.
@@ -64,6 +64,7 @@ final class AdminConfigSystemController extends AbstractController
         private readonly UrlGenerator $urlGen,
         private readonly Translator $t,
         private readonly AuditLogger $audit,
+        private readonly Paths $paths,
     ) {
         parent::__construct($collector);
     }
@@ -630,11 +631,10 @@ final class AdminConfigSystemController extends AbstractController
         // TemplateEngine
         $this->ctx->set(
             'cfg_template_dir',
-            $this->config->getConfigString(
-                'TemplateEngine',
-                'template_dir',
-                ''
-            )
+            // '' (the shipped default) means the application's own directory:
+            // show it, since saving the form requires one.
+            $this->config->getConfigString('TemplateEngine', 'template_dir', '')
+                ?: $this->paths->templates
         );
         $this->ctx->set(
             'cfg_template_extension',
@@ -646,11 +646,8 @@ final class AdminConfigSystemController extends AbstractController
         );
         $this->ctx->set(
             'cfg_template_cache_dir',
-            $this->config->getConfigString(
-                'TemplateEngine',
-                'template_cache_dir',
-                ''
-            )
+            $this->config->getConfigString('TemplateEngine', 'template_cache_dir', '')
+                ?: $this->paths->templateCache
         );
         $this->ctx->set(
             'cfg_cache_templates',
@@ -817,13 +814,7 @@ final class AdminConfigSystemController extends AbstractController
     private function loadFile(string $baseName): array
     {
         // 'config' is the main config.php, not a module config file.
-        $suffix = $baseName === 'config' ? '.php' : '.config.php';
-        $path   = (configDir() . $baseName . $suffix);
-        if (!is_file($path)) { return []; }
-        $loaded = @include $path;
-        if (!is_array($loaded)) { return []; }
-        /** @var array<string,array<string,mixed>> $loaded */
-        return $loaded;
+        return $this->writer->readSiteFile($baseName);
     }
 
 

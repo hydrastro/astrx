@@ -17,7 +17,7 @@ use AstrX\Search\SearchIndexer;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\indexDir;
+use AstrX\Support\Paths;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -38,14 +38,14 @@ use AstrX\Admin\AdminPermission;
  * the crawler up outside the web UI.
  *
  * SECURITY: the background command is built ONLY from PHP_BINARY and the
- * server-side INDEX_DIR constant — never from any request/user input — so there
+ * installation directory (Paths::$root) — never from any request/user input — so there
  * is no shell-injection surface. Gated on ADMIN_ACCESS.
  */
 final class AdminSearchController extends AbstractController
 {
     private const string FORM = 'admin_search';
 
-    /** Relative path (under INDEX_DIR) of the crawler CLI entry point. */
+    /** Relative path (under the installation directory) of the crawler CLI entry point. */
     private const string CLI_SCRIPT = 'tools/search_index.php';
 
     /**
@@ -67,6 +67,7 @@ final class AdminSearchController extends AbstractController
         private readonly Page                   $page,
         private readonly AuditLogger            $audit,
         private readonly SearchIndexer          $indexer,
+        private readonly Paths                  $paths,
     ) {
         parent::__construct($collector);
     }
@@ -220,7 +221,7 @@ final class AdminSearchController extends AbstractController
         // its arguments — see spawnBackgroundRebuild()). Uses the CLI php binary,
         // NOT PHP_BINARY (which under php-fpm is the FPM daemon and can't run a
         // CLI script).
-        $script = indexDir() . self::CLI_SCRIPT;
+        $script = $this->paths->root . self::CLI_SCRIPT;
         $php    = $this->phpCliBinary();
         $this->ctx->set('cli_command',  $php . ' ' . $script);
         $this->ctx->set('cron_command', '*/15 * * * * ' . $php . ' ' . $script . ' --if-requested');
@@ -293,12 +294,12 @@ final class AdminSearchController extends AbstractController
      * Spawn the crawler as a detached background process.
      *
      * SECURITY: the command is assembled solely from the resolved CLI php binary
-     * and the server-side INDEX_DIR constant, both escaped with escapeshellarg().
+     * and the installation directory (Paths::$root), both escaped with escapeshellarg().
      * No request/user input is ever interpolated into the command line.
      */
     private function spawnBackgroundRebuild(): void
     {
-        $script  = indexDir() . self::CLI_SCRIPT;
+        $script  = $this->paths->root . self::CLI_SCRIPT;
         $command = escapeshellarg($this->phpCliBinary()) . ' ' . escapeshellarg($script) . ' > /dev/null 2>&1 &';
         exec($command);
     }

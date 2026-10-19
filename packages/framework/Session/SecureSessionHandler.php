@@ -68,21 +68,8 @@ final class SecureSessionHandler implements
 
     public function __construct(
         private readonly PDO $pdo,
-        /**
-         * The install's secret.
-         *
-         * Defaulted — unlike UserService's and AvatarService's, which are
-         * required — because public/info.php wires this handler by hand
-         * (`new SecureSessionHandler($pdo)`) and applies Session.config.php
-         * itself. Injector::createClass() skips optional parameters, so under
-         * the framework this is a private instance rather than the shared one;
-         * that is safe here and only here, because setServerSecret() (an
-         * #[InjectConfig] setter the module loader always runs) forwards the
-         * configured value into it. With no configured value both instances
-         * read or create the same per-install file, so every consumer still
-         * agrees on the key.
-         */
-        private readonly ServerSecret $secret = new ServerSecret(),
+        /** The install's secret (shared: the injector builds this handler). */
+        private readonly ServerSecret $secret,
     ) {}
 
     #[InjectConfig('sid_bytes')]

@@ -29,11 +29,11 @@ $stmt = $pdo->prepare('INSERT INTO user (id, totp_enabled) VALUES (UNHEX(:id), 0
 $stmt->execute([':id' => $uid]);
 $repo = new UserRepository($pdo);
 $make = static function (string $key) use ($repo): UserService {
-    $secret = new ServerSecret();
+    $secret = new ServerSecret(new AstrX\Support\Paths());
     $secret->setConfigured($key);
     return new UserService(
         $repo,
-        new AvatarService($repo, new ImageSanitizer(), $secret),
+        new AvatarService($repo, new ImageSanitizer(), $secret, new AstrX\Support\Paths()),
         new UserSession(),
         $secret,
     );

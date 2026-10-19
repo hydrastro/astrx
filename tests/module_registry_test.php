@@ -29,7 +29,6 @@ use AstrX\Result\DiagnosticsCollector;
 $root = dirname(__DIR__);
 $dir  = rtrim(sys_get_temp_dir(), '/') . '/astrx-modreg-' . bin2hex(random_bytes(5)) . '/';
 mkdir($dir, 0o700);
-define('CONFIG_DIR', $dir);
 require $root . '/src/autoload.php';
 
 $PASS = 0;
@@ -54,9 +53,10 @@ function check(string $label, bool $ok, string $detail = ''): void
  */
 function registry(array $modules, array $flags): ModuleRegistry
 {
-    file_put_contents(CONFIG_DIR . 'config.php', '<?php return [];');
-    file_put_contents(CONFIG_DIR . 'Modules.config.php', '<?php return ' . var_export(['Modules' => $flags], true) . ';');
-    $config = new Config(new DiagnosticsCollector(), CONFIG_DIR . 'config.php');
+    global $dir;
+    file_put_contents($dir . 'config.php', '<?php return [];');
+    file_put_contents($dir . 'Modules.config.php', '<?php return ' . var_export(['Modules' => $flags], true) . ';');
+    $config = new Config(new DiagnosticsCollector(), null, null, new AstrX\Support\Paths(config: $dir));
     return new ModuleRegistry($config, new Injector(), $modules);
 }
 

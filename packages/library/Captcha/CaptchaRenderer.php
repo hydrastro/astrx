@@ -27,6 +27,9 @@ use AstrX\Config\InjectConfig;
  */
 final class CaptchaRenderer
 {
+    /** The site's files: the bundled font is under its resources/fonts/. */
+    public function __construct(private readonly \AstrX\Support\Paths $paths) {}
+
     // -------------------------------------------------------------------------
     // Configuration (all injectable via #[InjectConfig])
     // -------------------------------------------------------------------------
@@ -492,8 +495,7 @@ final class CaptchaRenderer
      * Resolve the TrueType font path portably, trying (in order):
      *
      *   1. the configured value as-is (absolute or CWD-relative), if it exists;
-     *   2. the bundled font under the resolved RESOURCES_DIR, by basename;
-     *   3. a path derived from this file's location (<repo-root>/resources/fonts).
+     *   2. the bundled font under the site's resources/fonts/, by basename.
      *
      * The configured value may be a deploy-specific absolute path (e.g. a
      * Docker "/app/resources/fonts/FSEX300.ttf") that does not exist on a bare
@@ -518,21 +520,11 @@ final class CaptchaRenderer
             $candidates[] = $this->fontFile;
         }
 
-        // 2. The bundled font under the resolved resources dir.
-        if (defined('RESOURCES_DIR')) {
-            $res = \constant('RESOURCES_DIR');
-            if (is_string($res) && $res !== '') {
-                $candidates[] = rtrim($res, '/\\') . DIRECTORY_SEPARATOR
-                    . 'fonts' . DIRECTORY_SEPARATOR . $base;
-            }
-        }
-
-        // 3. The installation's resources/fonts/<base>, when only INDEX_DIR is set.
-        $index = \AstrX\Support\indexDir();
-        if ($index !== '') {
-            $candidates[] = rtrim($index, '/\\') . DIRECTORY_SEPARATOR . 'resources'
-                . DIRECTORY_SEPARATOR . 'fonts'
-                . DIRECTORY_SEPARATOR . $base;
+        // 2. The bundled font under the site's resources dir.
+        $resources = $this->paths->resources !== '' ? $this->paths->resources
+            : ($this->paths->root !== '' ? $this->paths->root . 'resources' . DIRECTORY_SEPARATOR : '');
+        if ($resources !== '') {
+            $candidates[] = $resources . 'fonts' . DIRECTORY_SEPARATOR . $base;
         }
 
         foreach ($candidates as $path) {

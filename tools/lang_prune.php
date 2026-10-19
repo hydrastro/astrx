@@ -31,12 +31,13 @@ require_once $root . '/src/autoload.php';
 
 use AstrX\ApplicationContainer;
 use AstrX\I18n\LangCatalog;
+use AstrX\Support\Paths;
 use AstrX\Support\ResourceRoots;
-use function AstrX\Support\langDir;
 
 $write   = in_array('--write', $argv, true);
-$roots   = ApplicationContainer::resourceRoots();
-$catalog = new LangCatalog($roots);
+$paths   = Paths::fromConstants();
+$roots   = ApplicationContainer::resourceRoots($paths);
+$catalog = new LangCatalog($roots, $paths);
 
 /** @return array<string, string> the string entries of a catalog file */
 function lp_strings(string $file): array
@@ -55,7 +56,7 @@ function lp_strings(string $file): array
     return $out;
 }
 
-$siteDir = rtrim(langDir(), '/\\') . DIRECTORY_SEPARATOR;
+$siteDir = $paths->lang;
 $total   = 0;
 $failed  = false;
 foreach ($catalog->domains() as $domain) {

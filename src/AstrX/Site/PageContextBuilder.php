@@ -12,7 +12,6 @@ use AstrX\Page\Page;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 
 /**
  * Prepares everything a page's controller and template read: the page's
@@ -38,13 +37,11 @@ final class PageContextBuilder
         // e.g. login → ancestor 'user' → loads User.en.php automatically.
         // Must happen before DefaultTemplateContext::buildBase() so that title/description
         // and keyword translations are already in the catalog.
-        $langDir = langDir();
-
         $extraDomains = $this->config->getConfig('ContentManager', 'extra_lang_domains', []);
         if (is_array($extraDomains)) {
             foreach ($extraDomains as $domain) {
                 if (is_string($domain) && preg_match('/\A[A-Za-z][A-Za-z0-9_]*\z/', $domain) === 1) {
-                    $this->translator->loadDomain($langDir, $domain);
+                    $this->translator->load($domain);
                 }
             }
         }
@@ -59,9 +56,9 @@ final class PageContextBuilder
             }
         }
         foreach (array_unique($ancestorFileNames) as $ancestorDomain) {
-            $this->translator->loadDomain($langDir, $ancestorDomain);
+            $this->translator->load($ancestorDomain);
         }
-        $this->translator->loadDomain($langDir, ucfirst($page->fileName));
+        $this->translator->load(ucfirst($page->fileName));
 
         $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
             ->drainTo($this->collector);

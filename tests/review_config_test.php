@@ -2,13 +2,13 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/src/autoload.php';
 $dir = sys_get_temp_dir() . '/astrx-config-review-' . bin2hex(random_bytes(5)) . '/';
-mkdir($dir,0700); define('CONFIG_DIR', $dir);
+mkdir($dir,0700);
 function check(string $label, bool $ok): void { if (!$ok) { throw new RuntimeException($label); } echo "ok: $label\n"; }
 file_put_contents($dir . 'config.php', '<?php return [];');
 file_put_contents($dir . 'Csrf.config.php', "<?php return ['CsrfHandler' => ['csrf_ttl'=>17, 'csrf_token_bytes'=>20]];");
 file_put_contents($dir . 'Translator.config.php', '<?php return ' . var_export(['Translator'=>['lang_dir'=>$dir . 'override','fallback_to_key'=>false]],true) . ';');
 $collector = new AstrX\Result\DiagnosticsCollector();
-$config = new AstrX\Config\Config($collector, $dir . 'config.php');
+$config = new AstrX\Config\Config($collector, null, null, new AstrX\Support\Paths(config: $dir));
 $t = new AstrX\I18n\Translator($collector);
 $loader = new AstrX\Module\ModuleLoader($config,$t,$collector,$dir);
 $loader->setConfigDir($dir);

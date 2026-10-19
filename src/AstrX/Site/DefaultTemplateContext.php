@@ -22,7 +22,6 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Module\ModuleRegistry;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\templateDir;
 use AstrX\Admin\AdminPermission;
 
 /**

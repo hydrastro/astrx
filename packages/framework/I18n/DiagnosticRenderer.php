@@ -92,8 +92,17 @@ final class DiagnosticRenderer
         $this->loadDomainFrom($langDir, $domain);
     }
 
+    /** loadDomain() with the site's language directory (the translator's). */
+    public function load(string $domain): void
+    {
+        $this->loadDomain($this->translator->siteLangDir(), $domain);
+    }
+
     private function loadDomainFrom(string $langDir, string $domain): void
     {
+        if (rtrim($langDir, '/\\') === '') {
+            return; // no catalogs of the site's own; '' + '/en/…' is the filesystem root
+        }
         $locale = $this->translator->getLocale();
         $dir    = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR;
         $base   = $dir . $domain;

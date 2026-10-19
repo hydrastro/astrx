@@ -18,6 +18,9 @@ use AstrX\Config\InjectConfig;
  */
 final class ImageboardConfig
 {
+    /** The site's resources/ is where uploads go when upload_dir is unusable. */
+    public function __construct(private readonly \AstrX\Support\Paths $paths) {}
+
     private string $uploadDir         = '/app/resources/board_uploads';
     private int    $uploadMaxKb       = 4096;
     private int    $uploadMaxPixels   = 16_000_000; // header pixel-budget: reject decompression bombs pre-decode
@@ -82,7 +85,7 @@ final class ImageboardConfig
     #[InjectConfig('video_types')]         public function setVideoTypesRaw(string $v): void   { $this->videoTypesRaw = trim($v); }
     #[InjectConfig('video_max_kb')]        public function setVideoMaxKb(int $v): void         { $this->videoMaxKb = max(1, $v); }
 
-    public function uploadDir(): string      { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'board_uploads'); }
+    public function uploadDir(): string      { return $this->paths->storageDir($this->uploadDir, 'board_uploads'); }
     /** Raw stored value (unresolved) — for config round-trips that must preserve
      *  it verbatim without rewriting to a resolved absolute path (R11 storage-dir gate). */
     public function uploadDirRaw(): string   { return $this->uploadDir; }

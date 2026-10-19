@@ -166,6 +166,12 @@ without booting the application, which is how the installers and the tools
 (`check_lang_parity`, `check_diagnostics`, `check_config`, the template cache
 warmer and the compiled build) find them.
 
+Load a catalog with `$this->t->load('Domain')`: the translator reads every
+package's copy and then the site's. Code that needs one of the site's own
+directories — an upload directory's fallback (`$paths->storageDir($configured,
+'uploads')`), the temp directory, the installation root — takes
+`AstrX\Support\Paths` as a constructor argument; nothing reads a global path.
+
 ### Extension points (optional)
 
 Core never names a module. Where a core feature needs something from modules,

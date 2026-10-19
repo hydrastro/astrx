@@ -7,7 +7,6 @@ use AstrX\Config\Diagnostic\ConfigWriteDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\Result;
 use AstrX\Result\DiagnosticLevel;
-use function AstrX\Support\configDir;
 
 /**
  * Writes a config domain array back to its PHP config file atomically.
@@ -83,7 +82,7 @@ final class ConfigWriter
      */
     public function writeMainConfig(array $config): Result
     {
-        return $this->writeFile((configDir()) . 'config.php', $config, merge: false);
+        return $this->writeFile($this->pathFor('config'), $config, merge: false);
     }
 
     /**
@@ -96,6 +95,13 @@ final class ConfigWriter
      */
     private function writeFile(string $path, array $config, bool $merge = true): Result
     {
+        if ($path === '') {
+            // The application has no config directory: there is nowhere to
+            // save, and writing relative to the working directory is worse.
+            return Result::err(false, Diagnostics::of(new ConfigWriteDiagnostic(
+                'astrx.config/write_failed', DiagnosticLevel::ERROR, '', 'no_config_dir',
+            )));
+        }
         if ($merge) {
             // Merge the incoming section(s)/key(s) OVER the existing file rather than
             // replacing it wholesale. Many admin save-handlers rebuild only the keys
@@ -148,12 +154,41 @@ final class ConfigWriter
         return Result::ok(true);
     }
 
-    /** Absolute path of a config file base name; 'config' is the main file. */
+    /**
+     * The site's own copy of a config file ('config' is the main config.php),
+     * as written — without the packages' defaults under it. [] when the site
+     * has none (or no config directory).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function readSiteFile(string $fileBaseName): array
+    {
+        $path = $this->pathFor($fileBaseName);
+        if ($path === '' || !is_file($path)) {
+            return [];
+        }
+        /** @var mixed $loaded */
+        $loaded = @include $path;
+        if (!is_array($loaded)) {
+            return [];
+        }
+        /** @var array<string, array<string, mixed>> $loaded */
+        return $loaded;
+    }
+
+    /**
+     * Absolute path of a config file base name in the site's config directory
+     * (the resolver's); 'config' is the main file. '' when there is none.
+     */
     private function pathFor(string $fileBaseName): string
     {
+        $dir = $this->resolver()->configDir();
+        if ($dir === '') {
+            return '';
+        }
         return $fileBaseName === 'config'
-            ? (configDir()) . 'config.php'
-            : (configDir()) . $fileBaseName . '.config.php';
+            ? $dir . 'config.php'
+            : $dir . $fileBaseName . '.config.php';
     }
 
     private function resolver(): ConfigDomainResolver

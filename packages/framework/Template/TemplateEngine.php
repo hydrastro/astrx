@@ -17,8 +17,7 @@ use AstrX\Template\Diagnostic\UndefinedTokenArgumentDiagnostic;
 use Throwable;
 use AstrX\Support\ResourceRoots;
 use function AstrX\Support\atomicWrite;
-use function AstrX\Support\cacheDir;
-use function AstrX\Support\templateDir;
+use AstrX\Support\Paths;
 
 /**
  * Mustache-inspired template engine with optional PHP post-processing.
@@ -114,15 +113,23 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
      *        directories. A template name resolves to the site's template_dir
      *        first, then to the first module that ships it, so a site overrides
      *        any module template by putting a file at the same name.
+     * @param Paths|null $paths the application's files: template_dir and
+     *        template_cache_dir default to its template and cache directories
+     *        (config overrides them). Null: no site templates, so only the
+     *        packages' are found, and nothing is cached until a cache
+     *        directory is configured.
      */
-    public function __construct(?DiagnosticSinkInterface $sink = null, ?ResourceRoots $roots = null)
-    {
+    public function __construct(
+        ?DiagnosticSinkInterface $sink = null,
+        ?ResourceRoots $roots = null,
+        ?Paths $paths = null,
+    ) {
         $this->sink  = $sink??new DiagnosticsCollector();
         $this->roots = $roots ?? new ResourceRoots();
 
-        $this->templateDir = defined('TEMPLATE_DIR') ? templateDir() :
-            __DIR__ . '/../template/';
-        $this->templateCacheDir = defined('TEMPLATE_CACHE_DIR') ? cacheDir() : __DIR__ . '/../cache/';
+        $paths ??= new Paths();
+        $this->templateDir      = $paths->templates;
+        $this->templateCacheDir = $paths->templateCache;
     }
 
     // DiagnosticSinkAwareInterface
@@ -144,14 +151,26 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
     #[InjectConfig('parse_mode')]
     public function setParseMode(int $parseMode): void { $this->parseMode = $parseMode; }
 
+    /** '' (the shipped default) keeps the application's template directory. */
     #[InjectConfig('template_dir')]
-    public function setTemplateDir(string $dir): void { $this->templateDir = $dir; }
+    public function setTemplateDir(string $dir): void
+    {
+        if ($dir !== '') {
+            $this->templateDir = $dir;
+        }
+    }
 
     #[InjectConfig('template_extension')]
     public function setTemplateExtension(string $ext): void { $this->templateExtension = $ext; }
 
+    /** '' (the shipped default) keeps the application's template cache directory. */
     #[InjectConfig('template_cache_dir')]
-    public function setTemplateCacheDir(string $dir): void { $this->templateCacheDir = $dir; }
+    public function setTemplateCacheDir(string $dir): void
+    {
+        if ($dir !== '') {
+            $this->templateCacheDir = $dir;
+        }
+    }
 
     #[InjectConfig('cache_templates')]
     public function setCacheTemplates(bool $cache): void { $this->cacheTemplates = $cache; }
@@ -314,7 +333,10 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
         $className = $this->getTemplateClassName($template, $content, $parseMode, $phpProcessing, $realFile);
         if (class_exists($className, false)) { return $this->getTemplateClass($className); }
         $cacheFile = $this->templateCacheDir . $className . '.php';
-        if ($this->cacheTemplates && is_file($cacheFile)) {
+        // No cache directory: compile every time rather than write next to
+        // whatever the working directory happens to be.
+        $cache = $this->cacheTemplates && $this->templateCacheDir !== '';
+        if ($cache && is_file($cacheFile)) {
             if ($this->loadCachedTemplate($cacheFile, $className)) { return $this->getTemplateClass($className); }
         }
 
@@ -355,7 +377,7 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
             return null;
         }
 
-        if ($this->cacheTemplates) { atomicWrite($cacheFile, $code); }
+        if ($cache) { atomicWrite($cacheFile, $code); }
 
         return $this->getTemplateClass($className);
     }
@@ -368,7 +390,10 @@ final class TemplateEngine implements DiagnosticSinkAwareInterface
      */
     public function templateRoots(): array
     {
-        return [$this->templateDir, ...$this->roots->of(ResourceRoots::TEMPLATE)];
+        // An application without a template directory of its own ('') is not
+        // searched: '' + name would resolve against the working directory.
+        $site = $this->templateDir !== '' ? [$this->templateDir] : [];
+        return [...$site, ...$this->roots->of(ResourceRoots::TEMPLATE)];
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Session;
 
 use AstrX\Config\InjectConfig;
+use AstrX\Support\Paths;
 
 /**
  * The install's server secret — one job: produce a stable secret for this
@@ -32,6 +33,9 @@ use AstrX\Config\InjectConfig;
  */
 final class ServerSecret
 {
+    /** The application's files: its config dir and temp dir hold the candidates. */
+    public function __construct(private readonly Paths $paths) {}
+
     /**
      * The server_secret value that was, for a time, committed to the public
      * repository in Session.config.php. It is therefore no longer secret. If an
@@ -130,17 +134,17 @@ final class ServerSecret
     /** @return list<string> most-durable first */
     private function candidates(): array
     {
-        $configDir = \AstrX\Support\configDir();
+        $configDir = $this->paths->config;
 
         return array_values(array_filter([
             $configDir !== '' ? $configDir . self::CONFIG_DIR_FILENAME : null,
-            // \AstrX\Support\tempDir(), not sys_get_temp_dir(): it resolves to
-            // the same directory in production, and gives tests (and an operator
-            // who wants this off the world-writable /tmp) one place to repoint
-            // the shared, predictable candidate. isSharedTempPath() reads the
-            // same accessor, so the ownership + permission checks keep applying
-            // to whatever it resolves to.
-            \AstrX\Support\tempDir() . DIRECTORY_SEPARATOR . self::TEMP_DIR_FILENAME,
+            // Paths::tempDir(), not sys_get_temp_dir(): it resolves to the same
+            // directory in production, and gives tests (and an operator who
+            // wants this off the world-writable /tmp) one place to repoint the
+            // shared, predictable candidate. isSharedTempPath() reads the same
+            // method, so the ownership + permission checks keep applying to
+            // whatever it resolves to.
+            $this->paths->tempDir() . DIRECTORY_SEPARATOR . self::TEMP_DIR_FILENAME,
         ]));
     }
 
@@ -221,7 +225,7 @@ final class ServerSecret
 
     private function isSharedTempPath(string $file): bool
     {
-        $tmpDir = \AstrX\Support\tempDir();
+        $tmpDir = $this->paths->tempDir();
         return $tmpDir !== '' && str_starts_with($file, $tmpDir);
     }
 

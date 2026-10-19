@@ -19,6 +19,9 @@ use AstrX\Config\InjectConfig;
  */
 final class ChatConfig
 {
+    /** The site's resources/ is where uploads go when upload_dir is unusable. */
+    public function __construct(private readonly \AstrX\Support\Paths $paths) {}
+
     /** Guest-access modes (le-chat "guestaccess") — the single entry policy. */
     public const ACCESS_OPEN         = 'open';               // guests enter freely
     public const ACCESS_WAITING      = 'waiting_room';       // guests wait the timed room
@@ -247,7 +250,7 @@ final class ChatConfig
     public function uploadMaxKb(): int          { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int       { return $this->uploadMaxKb * 1024; }
     public function uploadMaxDimension(): int   { return $this->uploadMaxDimension; }
-    public function uploadDir(): string         { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'chat_uploads'); }
+    public function uploadDir(): string         { return $this->paths->storageDir($this->uploadDir, 'chat_uploads'); }
     /** Raw stored value (unresolved) — for config round-trips that must preserve
      *  it verbatim without rewriting to a resolved absolute path (R11 storage-dir gate). */
     public function uploadDirRaw(): string      { return $this->uploadDir; }

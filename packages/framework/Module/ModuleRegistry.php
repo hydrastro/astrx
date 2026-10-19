@@ -54,11 +54,14 @@ final class ModuleRegistry
      * @param list<string> $modules Installed module classes (each implements
      *        Module). Empty — e.g. a container that was never told — means no
      *        modules, not "whatever is on disk".
+     * @param string $root the installation directory (Paths::$root): where the
+     *        compiled single-file build finds a module's resources/.
      */
     public function __construct(
         private readonly Config   $config,
         private readonly Injector $injector,
         private readonly array    $modules = [],
+        private readonly string   $root = '',
     ) {
         $this->config->loadModuleConfig('Modules');
     }
@@ -315,7 +318,7 @@ final class ModuleRegistry
      */
     private function manifests(): array
     {
-        return $this->manifests ??= self::buildManifests($this->modules);
+        return $this->manifests ??= self::buildManifests($this->modules, $this->root);
     }
 
     /**
@@ -326,7 +329,7 @@ final class ModuleRegistry
      * @param list<string> $modules
      * @return list<Manifest>
      */
-    private static function buildManifests(array $modules): array
+    private static function buildManifests(array $modules, string $root): array
     {
         $out  = [];
         $keys = [];
@@ -334,7 +337,7 @@ final class ModuleRegistry
             if (!class_exists($class) || !is_subclass_of($class, Module::class)) {
                 throw new \LogicException("Installed module {$class} is not a class implementing " . Module::class . '.');
             }
-            $manifest = self::normalise((new $class())->manifest(), $class);
+            $manifest = self::normalise((new $class())->manifest(), $class, $root);
             if ($manifest === null) {
                 throw new \LogicException("Module {$class} has an unusable manifest (it needs a non-empty 'key').");
             }
@@ -365,10 +368,11 @@ final class ModuleRegistry
      * need them without booting the application.
      *
      * @param list<string> $modules installed module classes
+     * @param string $root the installation directory, for the compiled build
      */
-    public static function resourceRootsFor(array $modules): ResourceRoots
+    public static function resourceRootsFor(array $modules, string $root = ''): ResourceRoots
     {
-        return self::rootsOf(self::buildManifests($modules));
+        return self::rootsOf(self::buildManifests($modules, $root));
     }
 
     /**
@@ -377,12 +381,13 @@ final class ModuleRegistry
      * to know whose directory is whose).
      *
      * @param list<string> $modules installed module classes
+     * @param string $root the installation directory, for the compiled build
      * @return array<string,string>
      */
-    public static function resourceDirsByKey(array $modules): array
+    public static function resourceDirsByKey(array $modules, string $root = ''): array
     {
         $out = [];
-        foreach (self::buildManifests($modules) as $m) {
+        foreach (self::buildManifests($modules, $root) as $m) {
             if ($m['resources'] !== null) {
                 $out[$m['key']] = $m['resources'];
             }
@@ -408,9 +413,9 @@ final class ModuleRegistry
      * Normally the class's own file. The compiled single-file build evaluates
      * every class from a string, so reflection reports no real file there; the
      * bundle then names the source path it was built from, relative to the
-     * project root (INDEX_DIR), where the module's resources are deployed.
+     * installation directory ($root), where the module's resources are deployed.
      */
-    private static function classDir(string $class): ?string
+    private static function classDir(string $class, string $root): ?string
     {
         if (!class_exists($class)) {
             return null;
@@ -424,8 +429,8 @@ final class ModuleRegistry
         $sourcePath = 'AstrX\\Compiled\\Bundle::sourcePath';
         if (is_callable($sourcePath)) {
             $rel = $sourcePath($class);
-            if (is_string($rel) && $rel !== '') {
-                return rtrim(\AstrX\Support\indexDir(), '/\\') . DIRECTORY_SEPARATOR . dirname($rel);
+            if (is_string($rel) && $rel !== '' && $root !== '') {
+                return rtrim($root, '/\\') . DIRECTORY_SEPARATOR . dirname($rel);
             }
         }
         return null;
@@ -436,7 +441,7 @@ final class ModuleRegistry
      *
      * @return Manifest|null
      */
-    private static function normalise(mixed $raw, string $class): ?array
+    private static function normalise(mixed $raw, string $class, string $root): ?array
     {
         if (!is_array($raw) || !isset($raw['key']) || !is_string($raw['key']) || $raw['key'] === '') {
             return null;
@@ -457,7 +462,7 @@ final class ModuleRegistry
             if (str_contains($rel, '..') || str_starts_with($rel, '/') || str_starts_with($rel, '\\')) {
                 throw new \LogicException("Module {$class}: 'resources' must be a path inside the module's directory.");
             }
-            $base = self::classDir($class);
+            $base = self::classDir($class, $root);
             $dir  = $base !== null ? $base . DIRECTORY_SEPARATOR . $rel : null;
             if ($dir === null || !is_dir($dir)) {
                 throw new \LogicException("Module {$class} declares resources '{$rel}', which is not a directory next to it.");

@@ -23,6 +23,7 @@ use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Template\TemplateEngine;
+use AstrX\Support\Paths;
 
 require getenv('ASTRX_AUTOLOAD') ?: dirname(__DIR__, 2) . '/src/autoload.php';
 
@@ -35,13 +36,19 @@ if (!$requestResult->isOk()) {
 }
 $request = $requestResult->unwrap();
 
-$t = new Translator($diagnostics);
-$t->setLocale('en');
-$t->loadDomain(__DIR__ . '/lang', 'App');
+// Where this application keeps its files. The framework reads no global for
+// them: every class that needs one is handed this.
+$paths = new Paths(
+    lang:          __DIR__ . '/lang',
+    templates:     __DIR__ . '/templates',
+    templateCache: sys_get_temp_dir() . '/astrx-minimal-' . md5(__DIR__),
+);
 
-$views = new TemplateEngine($diagnostics);
-$views->setTemplateDir(__DIR__ . '/templates/');
-$views->setTemplateCacheDir(sys_get_temp_dir() . '/astrx-minimal-' . md5(__DIR__) . '/');
+$t = new Translator($diagnostics, null, $paths);
+$t->setLocale('en');
+$t->load('App');
+
+$views = new TemplateEngine($diagnostics, null, $paths);
 
 /**
  * Render a template into an HTML response (escaped output, security headers).

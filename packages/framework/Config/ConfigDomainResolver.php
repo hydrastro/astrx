@@ -5,7 +5,6 @@ namespace AstrX\Config;
 
 use AstrX\Support\ResourceRoots;
 use ReflectionClass;
-use function AstrX\Support\configDir;
 
 /**
  * The single authority on "which config section does this class use, and which
@@ -35,17 +34,14 @@ final class ConfigDomainResolver
     private ?array $layout = null;
 
     /**
-     * @param string $configDir Config directory override; empty uses CONFIG_DIR.
-     *                          Injected in tests so the scan does not depend on
-     *                          global constants.
+     * @param string $configDir the site's config directory (Paths::$config);
+     *                          '' when the application has none, so only the
+     *                          modules' defaults are scanned.
      * @param ResourceRoots|null $roots the installed modules' resource
      *                          directories, whose config/ holds defaults.
      */
     public function __construct(private string $configDir = '', ?ResourceRoots $roots = null)
     {
-        if ($this->configDir === '') {
-            $this->configDir = configDir();
-        }
         $this->roots = $roots ?? new ResourceRoots();
     }
 
@@ -59,7 +55,8 @@ final class ConfigDomainResolver
      */
     private function dirs(): array
     {
-        return [$this->configDir(), ...$this->roots->of(ResourceRoots::CONFIG)];
+        $site = $this->configDir();
+        return [...($site !== '' ? [$site] : []), ...$this->roots->of(ResourceRoots::CONFIG)];
     }
 
     /** The same resolver over a different site config directory (same module defaults). */
@@ -79,10 +76,11 @@ final class ConfigDomainResolver
         return false;
     }
 
-    /** The config directory this resolver scans, with a trailing separator. */
+    /** The site's config directory, with a trailing separator; '' when there is none. */
     public function configDir(): string
     {
-        return rtrim($this->configDir, '/\\') . DIRECTORY_SEPARATOR;
+        $dir = rtrim($this->configDir, '/\\');
+        return $dir === '' ? '' : $dir . DIRECTORY_SEPARATOR;
     }
 
     /**

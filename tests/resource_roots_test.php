@@ -37,9 +37,9 @@ $site = $tmp . '/site';
 mkdir($site . '/config', 0o700, true);
 mkdir($site . '/lang/en', 0o700, true);
 mkdir($site . '/template', 0o700, true);
-define('CONFIG_DIR', $site . '/config/');
-define('LANG_DIR', $site . '/lang/');
 require $root . '/src/autoload.php';
+// The site under test, handed to what needs it (no path constant is defined).
+$paths = new AstrX\Support\Paths(config: $site . '/config/', lang: $site . '/lang/', templates: $site . '/template/');
 
 $PASS = 0;
 $FAIL = 0;
@@ -106,8 +106,7 @@ try {
     put($mres . '/template/admin/admin_alpha.html', 'module admin');
     put($mres . '/template/shared.html', 'module shared');
     put($site . '/template/shared.html', 'site shared');
-    $engine = new TemplateEngine(new DiagnosticsCollector(), $roots);
-    $engine->setTemplateDir($site . '/template/');
+    $engine = new TemplateEngine(new DiagnosticsCollector(), $roots, $paths);
     $engine->setCacheTemplates(false);
     $render = static function (string $name) use ($engine): string {
         $r = $engine->renderTemplate($name);
@@ -126,8 +125,8 @@ try {
     echo "\n3. Catalogs\n";
     put($mres . '/lang/en/Alpha.en.php', "<?php return ['a.title' => 'Module title', 'a.only' => 'Module only'];");
     put($site . '/lang/en/Alpha.en.php', "<?php return ['a.title' => 'Site title'];");
-    $t = new Translator(new DiagnosticsCollector(), $roots);
-    $t->loadDomain(LANG_DIR, 'Alpha');
+    $t = new Translator(new DiagnosticsCollector(), $roots, $paths);
+    $t->load('Alpha');
     check("the site's key overrides the module's", $t->t('a.title') === 'Site title');
     check("the module's other keys are still there", $t->t('a.only') === 'Module only');
     put($mres . '/lang/en/Diagnostics/alpha.en.php',
@@ -135,14 +134,14 @@ try {
     put($site . '/lang/en/Diagnostics/alpha.en.php',
         "<?php return ['astrx.alpha/y' => static fn(\$d, \$t): string => 'site y'];");
     $r = new DiagnosticRenderer($t);
-    $r->loadDomain(LANG_DIR, 'Diagnostics');
+    $r->load('Diagnostics');
     $d = static fn(string $id): AbstractDiagnostic => new class($id, DiagnosticLevel::ERROR) extends AbstractDiagnostic {};
     check('module Diagnostics/ entries load', $r->render($d('astrx.alpha/x')) === 'module x');
     check("the site's Diagnostics/ entry overrides the module's", $r->render($d('astrx.alpha/y')) === 'site y');
 
     echo "\n4. Config\n";
     put($mres . '/config/Alpha.config.php', "<?php return ['AlphaConfig' => ['size' => 10, 'name' => 'module']];");
-    $config = new Config(new DiagnosticsCollector(), $site . '/config/config.php', $roots);
+    $config = new Config(new DiagnosticsCollector(), null, $roots, $paths);
     $config->loadModuleConfig('Alpha');
     check("with no site file, the module's defaults apply", $config->getConfigInt('AlphaConfig', 'size') === 10);
     put($site . '/config/Alpha.config.php', "<?php return ['AlphaConfig' => ['size' => 20]];");
@@ -158,7 +157,7 @@ try {
 
     echo "\n5. The language editor\n";
     put($mres . '/lang/en/Beta.en.php', "<?php return ['b.one' => 'One', 'b.two' => 'Two'];");
-    $cat = new LangCatalog($roots);
+    $cat = new LangCatalog($roots, $paths);
     check("a module's domain is listed", in_array('Beta', $cat->domains(), true) && in_array('Alpha', $cat->domains(), true));
     $loaded = $cat->load('Alpha');
     check('load() shows the merged catalog',

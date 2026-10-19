@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace AstrX\Theme;
 
 use AstrX\Config\InjectConfig;
-use function AstrX\Support\templateDir;
+use AstrX\Support\Paths;
 
 /**
  * Theme discovery and resolution.
@@ -34,7 +34,9 @@ final class ThemeService
      *        application has one (accounts bind User\UserSession). Without it —
      *        a site with no accounts — the configured global theme applies.
      */
+    /** Themes are directories under the site's templates (Paths::$templates). */
     public function __construct(
+        private readonly Paths $paths,
         private readonly ?ThemePreference $preference = null,
     ) {}
 
@@ -169,7 +171,7 @@ final class ThemeService
 
     private function themesRoot(): string
     {
-        return templateDir() . 'themes' . DIRECTORY_SEPARATOR;
+        return $this->paths->templates . 'themes' . DIRECTORY_SEPARATOR;
     }
 
     private function themeDir(string $name): string

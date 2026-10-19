@@ -55,6 +55,7 @@ final class BotTrapController extends AbstractController
         private readonly BotTrapLogRepository   $log,
         private readonly Translator             $t,
         private readonly UrlGenerator           $urlGen,
+        private readonly \AstrX\Support\Paths  $paths,
     ) {
         parent::__construct($collector);
     }
@@ -136,15 +137,15 @@ final class BotTrapController extends AbstractController
      */
     private function tarpitWithinConcurrencyBound(int $seconds): void
     {
-        // \AstrX\Support\tempDir() resolves to sys_get_temp_dir() unless the
-        // ASTRX_TEMP_DIR constant is defined before bootstrap, so the slot files
-        // can be moved off the world-writable shared path.
-        // tests/prg_bottrap_test.php defines it to a per-run scratch directory,
+        // Paths::tempDir() is sys_get_temp_dir() unless the application sets a
+        // temp directory (ASTRX_TEMP_DIR), so the slot files can be moved off
+        // the world-writable shared path.
+        // tests/prg_bottrap_test.php points it at a per-run scratch directory,
         // because a leftover lock owned by another user is otherwise
         // indistinguishable from "all slots busy": the test cannot claim every
         // slot, and the slot it failed to claim is then free for the controller,
         // which really does sleep where the test asserts it does not.
-        $dir = \AstrX\Support\tempDir();
+        $dir = $this->paths->tempDir();
 
         for ($slot = 0; $slot < BotTrapConfig::MAX_CONCURRENT_TARPITS; $slot++) {
             $path = $dir . DIRECTORY_SEPARATOR . 'astrx_bottrap_tarpit_' . $slot . '.lock';

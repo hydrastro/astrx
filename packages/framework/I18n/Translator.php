@@ -8,6 +8,7 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\I18n\Diagnostic\InvalidLanguageArrayDiagnostic;
 use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
 use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
+use AstrX\Support\Paths;
 use AstrX\Support\ResourceRoots;
 
 final class Translator
@@ -41,17 +42,41 @@ final class Translator
     /** The installed modules' lang/ directories, lowest precedence first. */
     private readonly ResourceRoots $roots;
 
+    /** The site's own catalogs (Paths::$lang): what load() reads last. */
+    private readonly string $siteLangDir;
+
     /**
      * @param ResourceRoots|null $roots the installed modules' resource
      *        directories. A domain is loaded from each module's lang/ first and
-     *        from the directory the caller names last, so the site's own
-     *        catalog overrides a module's key by key.
+     *        from the site's directory last, so the site's own catalog
+     *        overrides a module's key by key.
+     * @param Paths|null $paths the application's files; null means it has no
+     *        catalogs of its own, so load() reads only the packages'.
      */
-    public function __construct(?DiagnosticSinkInterface $sink = null, ?ResourceRoots $roots = null)
+    public function __construct(
+        ?DiagnosticSinkInterface $sink = null,
+        ?ResourceRoots $roots = null,
+        ?Paths $paths = null,
+    ) {
+        $this->locale      = 'en';
+        $this->sink        = $sink;
+        $this->roots       = $roots ?? new ResourceRoots();
+        $this->siteLangDir = ($paths ?? new Paths())->lang;
+    }
+
+    /** The site's language directory, with a trailing separator; '' when it has none. */
+    public function siteLangDir(): string
     {
-        $this->locale = 'en';
-        $this->sink   = $sink;
-        $this->roots  = $roots ?? new ResourceRoots();
+        return $this->siteLangDir;
+    }
+
+    /**
+     * Load a catalog domain for the current locale: the packages' and
+     * modules' copies, then the site's, which overrides them key by key.
+     */
+    public function load(string $domain): void
+    {
+        $this->loadDomain($this->siteLangDir, $domain);
     }
 
     /**
@@ -88,11 +113,13 @@ final class Translator
                 . $domain . '.' . $this->locale . '.php');
         }
 
-        $file = rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
+        // '' is an application without catalogs of its own; '' + '/en/…' would
+        // read from the filesystem root.
+        if (rtrim($langDir, '/\\') !== '') {
+            $this->loadFile(rtrim($langDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR
-                . $domain . '.' . $this->locale . '.php';
-
-        $this->loadFile($file);
+                . $domain . '.' . $this->locale . '.php');
+        }
         if ($this->overrideLangDir !== '') {
             $this->loadFile(rtrim($this->overrideLangDir, '/\\') . DIRECTORY_SEPARATOR
                 . $this->locale . DIRECTORY_SEPARATOR . $domain . '.' . $this->locale . '.php');

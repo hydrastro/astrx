@@ -18,15 +18,17 @@ require_once $root . '/src/paths.php';
 require_once $root . '/src/autoload.php';
 
 $collector = new AstrX\Result\DiagnosticsCollector();
-$roots = AstrX\ApplicationContainer::resourceRoots();
-$engine = new AstrX\Template\TemplateEngine($collector, $roots);
+$paths = AstrX\Support\Paths::fromConstants();
+$roots = AstrX\ApplicationContainer::resourceRoots($paths);
+$engine = new AstrX\Template\TemplateEngine($collector, $roots, $paths);
 // The TemplateEngine section as the site resolves it: the framework's default,
 // overridden key by key by the site's resources/config/TemplateEngine.config.php.
-$config = new AstrX\Config\Config($collector, null, $roots);
+// An empty directory keeps the application's own (the engine's setters skip it).
+$config = new AstrX\Config\Config($collector, null, $roots, $paths);
 $config->loadModuleConfig('TemplateEngine');
 $cfg = $config->getConfigSection('TemplateEngine');
-$engine->setTemplateDir(is_string($cfg['template_dir'] ?? null) ? $cfg['template_dir'] : TEMPLATE_DIR);
-$engine->setTemplateCacheDir(is_string($cfg['template_cache_dir'] ?? null) ? $cfg['template_cache_dir'] : TEMPLATE_CACHE_DIR);
+$engine->setTemplateDir(is_string($cfg['template_dir'] ?? null) ? $cfg['template_dir'] : '');
+$engine->setTemplateCacheDir(is_string($cfg['template_cache_dir'] ?? null) ? $cfg['template_cache_dir'] : '');
 $engine->setTemplateExtension(is_string($cfg['template_extension'] ?? null) ? $cfg['template_extension'] : '.html');
 $engine->setParseMode(is_int($cfg['parse_mode'] ?? null) ? $cfg['parse_mode'] : 1);
 $engine->setCacheTemplates(true);

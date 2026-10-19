@@ -17,8 +17,7 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 use AstrX\Support\ResourceRoots;
 use function AstrX\Support\atomicWrite;
-use function AstrX\Support\cacheDir;
-use function AstrX\Support\templateDir;
+use AstrX\Support\Paths;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -63,6 +62,7 @@ final class JsController extends AbstractController
         private readonly PDO $pdo,
         private readonly \AstrX\Module\ModuleRegistry $modules,
         private readonly ResourceRoots $roots,
+        private readonly Paths $paths,
     ) {
         parent::__construct($collector);
     }
@@ -1431,7 +1431,7 @@ JS;
     /** @return array<string,mixed> */
     private function buildTemplateCache(): array
     {
-        $cacheRoot = rtrim(cacheDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'js';
+        $cacheRoot = $this->paths->templateCache . 'js';
         $cacheFile = $cacheRoot . DIRECTORY_SEPARATOR . 'templates.json';
 
         $sources = self::templateSources($this->templateRoots(), $this->bundledTemplateNames());
@@ -1444,7 +1444,10 @@ JS;
             $sources
         )));
 
-        if (is_file($cacheFile)) {
+        // No template cache directory: build every time rather than write
+        // a relative 'js/templates.json' wherever the working directory is.
+        $cacheable = $this->paths->templateCache !== '';
+        if ($cacheable && is_file($cacheFile)) {
             $cachedRaw = file_get_contents($cacheFile);
             if (is_string($cachedRaw) && $cachedRaw !== '') {
                 $cached = json_decode($cachedRaw, true);
@@ -1479,7 +1482,9 @@ JS;
         // truncated JSON, json_decode() returns null, and the bundle is rebuilt
         // from disk on every request until someone finishes a clean write.
         // atomicWrite() also creates the directory.
-        atomicWrite($cacheFile, $this->json($payload));
+        if ($cacheable) {
+            atomicWrite($cacheFile, $this->json($payload));
+        }
 
         return $payload;
     }
@@ -1655,7 +1660,7 @@ JS;
     private function templateRoots(): array
     {
         return [
-            rtrim(templateDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR,
+            ...($this->paths->templates !== '' ? [$this->paths->templates] : []),
             ...$this->roots->of(ResourceRoots::TEMPLATE),
         ];
     }

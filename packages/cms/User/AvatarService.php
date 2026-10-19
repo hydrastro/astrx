@@ -61,6 +61,8 @@ final class AvatarService
          * that configures one.
          */
         private readonly ServerSecret   $secret,
+        /** Where avatars go when the configured directory is unusable. */
+        private readonly \AstrX\Support\Paths $paths,
     ) {}
 
     /**
@@ -148,12 +150,12 @@ final class AvatarService
 
     /**
      * Resolve the avatar storage directory portably: prefer the configured path
-     * (e.g. Docker "/app/resources/avatar"), else fall back to RESOURCES_DIR/avatar
-     * so a non-Docker deploy doesn't fail every avatar write.
+     * (e.g. Docker "/app/resources/avatar"), else fall back to the site's
+     * resources/avatar so a non-Docker deploy doesn't fail every avatar write.
      */
     private function avatarDir(): string
     {
-        return \AstrX\Support\resourceStorageDir($this->avatarDir, 'avatar');
+        return $this->paths->storageDir($this->avatarDir, 'avatar');
     }
 
     /**

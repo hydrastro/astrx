@@ -5,7 +5,6 @@ namespace AstrX\Admin\Controller;
 
 use AstrX\Admin\AuditLogger;
 use AstrX\Auth\Gate;
-use function AstrX\Support\configDir;
 use AstrX\Config\Config;
 use AstrX\Config\ConfigWriter;
 use AstrX\Csrf\CsrfHandler;
@@ -529,12 +528,7 @@ final class AdminUsersController extends AbstractController
     /** @return array<string, array<string, mixed>> */
     private function loadUserConfig(): array
     {
-        $path = (configDir() . 'User.config.php');
-        if (!is_file($path)) { return []; }
-        $loaded = @include $path;
-        if (!is_array($loaded)) { return []; }
-        /** @var array<string,array<string,mixed>> $loaded */
-        return $loaded;
+        return $this->writer->readSiteFile('User');
     }
 
     /**

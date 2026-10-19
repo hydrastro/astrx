@@ -34,7 +34,6 @@ use AstrX\Site\SecurityHeaders;
 use AstrX\Site\SessionStarter;
 use AstrX\Site\SiteFlags;
 use PDO;
-use function AstrX\Support\langDir;
 
 /**
  * Runs one web request through the site, in order:
@@ -106,13 +105,13 @@ final class ContentManager
 
         $pagesDomain = $this->config->getConfig('ContentManager', 'pages_lang_domain', 'pages');
         assert(is_string($pagesDomain));
-        $this->translator->loadDomain(langDir(), $pagesDomain);
+        $this->translator->load($pagesDomain);
 
         // Navbar display labels — loaded globally so NavbarHandler can resolve
         // WORDING_ entry names regardless of which page is being rendered.
         $navbarDomain = $this->config->getConfig('ContentManager', 'navbar_lang_domain', 'Navbar');
         assert(is_string($navbarDomain));
-        $this->translator->loadDomain(langDir(), $navbarDomain);
+        $this->translator->load($navbarDomain);
 
         // Diagnostic messages — loaded into DiagnosticRenderer's own catalog,
         // NOT into the Translator, to prevent the recursion where rendering a
@@ -122,7 +121,7 @@ final class ContentManager
         if ($rendererResult->isOk()) {
             /** @var DiagnosticRenderer $renderer */
             $renderer = $rendererResult->unwrap();
-            $renderer->loadDomain(langDir(), $diagnosticsDomain);
+            $renderer->load($diagnosticsDomain);
         }
 
         // The database is the framework's single hard dependency: sessions,

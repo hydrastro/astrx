@@ -7,9 +7,9 @@ use AstrX\I18n\Diagnostic\LangWriteDiagnostic;
 use AstrX\Result\Diagnostics;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\Result;
+use AstrX\Support\Paths;
 use AstrX\Support\ResourceRoots;
 
-use function AstrX\Support\langDir;
 
 /**
  * Reads and writes the flat translation catalogs under resources/lang/<locale>/.
@@ -51,9 +51,21 @@ final class LangCatalog
 {
     private readonly ResourceRoots $roots;
 
-    public function __construct(?ResourceRoots $roots = null)
+    /** The site's catalogs: the directory this class edits (Paths::$lang). */
+    private readonly string $langDir;
+
+    /**
+     * @param ResourceRoots|null $roots the packages' and modules' resource
+     *        directories, whose catalogs the site's override key by key.
+     * @param Paths|null $paths the application's files. Without a language
+     *        directory there is nothing to edit: no locale is listed (so
+     *        save() writes nothing), the packages' catalogs are read alone, and
+     *        a call that must write the site's files is a LogicException.
+     */
+    public function __construct(?ResourceRoots $roots = null, ?Paths $paths = null)
     {
-        $this->roots = $roots ?? new ResourceRoots();
+        $this->roots   = $roots ?? new ResourceRoots();
+        $this->langDir = ($paths ?? new Paths())->lang;
     }
 
     private const string PRIMARY = 'en';
@@ -73,7 +85,10 @@ final class LangCatalog
      */
     public function locales(): array
     {
-        $root = rtrim(langDir(), '/\\') . DIRECTORY_SEPARATOR;
+        if ($this->langDir === '') {
+            return [];
+        }
+        $root = $this->langDir;
         $out  = [];
         foreach (glob($root . '*', GLOB_ONLYDIR) ?: [] as $dir) {
             $name = basename($dir);
@@ -109,7 +124,8 @@ final class LangCatalog
     public function domains(): array
     {
         $out = [];
-        foreach ([...$this->moduleLocaleDirs(self::PRIMARY), $this->localeDir(self::PRIMARY)] as $dir) {
+        $site = $this->langDir !== '' ? [$this->localeDir(self::PRIMARY)] : [];
+        foreach ([...$this->moduleLocaleDirs(self::PRIMARY), ...$site] as $dir) {
             foreach (glob($dir . '*.' . self::PRIMARY . '.php') ?: [] as $file) {
                 $base = basename($file, '.' . self::PRIMARY . '.php');
                 if ($base !== '' && preg_match(self::DOMAIN_RE, $base) === 1) {
@@ -479,7 +495,8 @@ final class LangCatalog
      */
     private function readMerged(string $domain, string $locale): array
     {
-        return $this->readRaw($this->file($domain, $locale)) + $this->readModules($domain, $locale);
+        $site = $this->langDir !== '' ? $this->readRaw($this->file($domain, $locale)) : [];
+        return $site + $this->readModules($domain, $locale);
     }
 
     /**
@@ -514,7 +531,11 @@ final class LangCatalog
 
     private function localeDir(string $locale): string
     {
-        return rtrim(langDir(), '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR;
+        if ($this->langDir === '') {
+            // '' + 'en/' would read and write relative to the working directory.
+            throw new \LogicException('LangCatalog has no site language directory (Paths::$lang is empty).');
+        }
+        return $this->langDir . $locale . DIRECTORY_SEPARATOR;
     }
 
     private function file(string $domain, string $locale): string

@@ -52,7 +52,7 @@ if (PHP_SAPI !== 'cli') {
 $root = dirname(__DIR__);
 
 require_once $root . '/src/paths.php';
-// Classes and the Support functions (the config files call configDir()).
+// Classes and the Support functions.
 require_once $root . '/src/autoload.php';
 require_once $root . '/tools/lib/sources.php';
 

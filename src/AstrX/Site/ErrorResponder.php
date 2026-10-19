@@ -16,7 +16,6 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Template\TemplateEngine;
 use AstrX\Template\TemplateVars;
 use AstrX\Theme\ThemeService;
-use function AstrX\Support\langDir;
 
 /**
  * Produces the response for a request that cannot be served normally: the
@@ -53,9 +52,7 @@ public function respond(HttpStatus $status): void
         $this->headers->emit($this->flags);
 
         // Load the Http lang domain so ErrorController has its translations.
-        if (langDir() !== '') {
-            $this->translator->loadDomain(langDir(), 'Http');
-        }
+        $this->translator->load('Http');
 
         // Try the full error page route.
         $errorUrlId = $this->config->getConfig(
@@ -89,8 +86,7 @@ public function respond(HttpStatus $status): void
      */
     private function renderErrorPage(Page $page): void
     {
-        $langDir = langDir();
-        $this->translator->loadDomain($langDir, ucfirst($page->fileName));
+        $this->translator->load(ucfirst($page->fileName));
 
         $ctxResult = $this->injector->createClass(DefaultTemplateContext::class)
             ->drainTo($this->collector);
@@ -246,13 +242,11 @@ public function respond(HttpStatus $status): void
         // with no catalog prints "[FALLBACK:CRITICAL] astrx.database/…" instead
         // of the sentence. loadDomain() re-registers the same keys, so calling
         // it a second time costs one require and changes nothing.
-        if (langDir() !== '') {
-            $renderer->loadDomain(langDir(), $this->config->getConfigString(
-                'ContentManager',
-                'diagnostics_lang_domain',
-                'Diagnostics',
-            ));
-        }
+        $renderer->load($this->config->getConfigString(
+            'ContentManager',
+            'diagnostics_lang_domain',
+            'Diagnostics',
+        ));
 
         // No DiagnosticVisibilityChecker: it reads its rules from the database,
         // which in this path is precisely what is unavailable. The environment

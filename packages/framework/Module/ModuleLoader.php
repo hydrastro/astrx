@@ -14,7 +14,6 @@ use AstrX\Result\DiagnosticSinkAwareInterface;
 use AstrX\Result\DiagnosticSinkInterface;
 use ReflectionClass;
 use ReflectionException;
-use function AstrX\Support\langDir;
 
 final class ModuleLoader
 {
@@ -43,8 +42,8 @@ final class ModuleLoader
      *   DiagnosticSinkAwareInterface. Null leaves such classes on whatever sink
      *   they constructed themselves.
      * @param string $langDir
-     *   Override the language directory. Defaults to the LANG_DIR constant when
-     *   empty. Inject an explicit path in tests to avoid relying on global state.
+     *   The site's language directory (Paths::$lang); '' when the application
+     *   has none, so only the packages' catalogs are loaded.
      */
     public function __construct(
         private readonly Config $config,
@@ -53,9 +52,6 @@ final class ModuleLoader
         private string $langDir = '',
         ?ConfigDomainResolver $domains = null,
     ) {
-        if ($this->langDir === '' && defined('LANG_DIR')) {
-            $this->langDir = langDir();
-        }
         $this->domains = $domains ?? new ConfigDomainResolver();
     }
 
@@ -78,7 +74,7 @@ final class ModuleLoader
      * development checkout has no /app, and honouring a non-existent directory
      * would make Translator::loadDomain() find nothing for every domain — the
      * whole site would render raw translation keys ("WORDING_CONTENT") instead
-     * of text. Falling back to the LANG_DIR constant keeps that install working.
+     * of text. Keeping the application's directory keeps that install working.
      */
     #[InjectConfig('lang_dir')]
     public function setLangDir(string $dir): void
@@ -96,8 +92,8 @@ final class ModuleLoader
      * every class would silently run on hardcoded defaults.
      *
      * Note this cannot relocate the config directory as a whole — the file that
-     * declares this key is itself found through the CONFIG_DIR constant. It
-     * retargets section resolution only.
+     * declares this key is itself found in the application's config directory
+     * (Paths::$config). It retargets section resolution only.
      */
     #[InjectConfig('config_dir')]
     public function setConfigDir(string $dir): void
@@ -266,6 +262,9 @@ final class ModuleLoader
         $site   = rtrim($this->langDir, '/\\') . DIRECTORY_SEPARATOR . $locale
                 . DIRECTORY_SEPARATOR . $domain;
         foreach ([...$this->translator->moduleLangDirs(), $this->langDir] as $dir) {
+            if ($dir === '') {
+                continue;
+            }
             $base = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $locale . DIRECTORY_SEPARATOR . $domain;
             if (is_file($base . '.' . $locale . '.php') || is_file($base . '.php') || is_dir($base)) {
                 return;

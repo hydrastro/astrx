@@ -40,7 +40,7 @@ namespace {
     require_once __DIR__ . '/lib/scratch.php';
     $scratch = AstrX\TestSupport\scratchDir('astrx_bottrap_test_');
 
-    // BotTrapController claims its tarpit slots in \AstrX\Support\tempDir().
+    // BotTrapController claims its tarpit slots in Paths::tempDir().
     // The slots used to be the fixed sys_get_temp_dir() .
     // '/astrx_bottrap_tarpit_N.lock', shared with every other user and every
     // other run on the host: one leftover file this process cannot open or lock
@@ -48,20 +48,17 @@ namespace {
     // the slot it failed to claim is then free for the controller, which really
     // does sleep 2 s where the test asserts it does not.
     //
-    // This drives the SHIPPED accessor — define the constant it reads, then load
-    // src/support.php — rather than declaring a tempDir() of its
-    // own in the AstrX\Support namespace. A shadow like that is guarded by
-    // function_exists(), so the day anything loads constants.php first it
-    // silently becomes a no-op and the slots go back to the shared /tmp path
-    // this test exists to get off. It also means ASTRX_TEMP_DIR, which decides
-    // where the server secret is written, is exercised by a test instead of
-    // being a branch nothing in the tree ever takes.
+    // This drives the SHIPPED route — define the constant a front controller
+    // would, and read it with Paths::fromConstants() the way Prelude does —
+    // so ASTRX_TEMP_DIR, which also decides where the server secret is
+    // written, is exercised by a test instead of being a branch nothing in the
+    // tree ever takes.
     define('ASTRX_TEMP_DIR', $scratch);
-    require_once dirname(__DIR__) . '/src/support.php';
+    $paths = AstrX\Support\Paths::fromConstants();
 
-    if (AstrX\Support\tempDir() !== $scratch) {
+    if ($paths->tempDir() !== $scratch) {
         fwrite(STDERR, "ASTRX_TEMP_DIR did not take: tempDir() = "
-            . var_export(AstrX\Support\tempDir(), true) . ", expected {$scratch}\n");
+            . var_export($paths->tempDir(), true) . ", expected {$scratch}\n");
         exit(1);
     }
 
@@ -164,8 +161,8 @@ namespace {
     // reproduces "all workers already tarpitting".
     $held = [];
     for ($i = 0; $i < BotTrapConfig::MAX_CONCURRENT_TARPITS; $i++) {
-        // Same directory the controller uses — \AstrX\Support\tempDir(), which
-        // this file overrides to $scratch above.
+        // Same directory the controller uses — Paths::tempDir(), which this
+        // file points at $scratch above.
         $path = $scratch . DIRECTORY_SEPARATOR . 'astrx_bottrap_tarpit_' . $i . '.lock';
         $fh   = fopen($path, 'c');
         if ($fh !== false && flock($fh, LOCK_EX | LOCK_NB)) {
@@ -177,6 +174,7 @@ namespace {
 
     $tarpit = new ReflectionMethod(BotTrapController::class, 'tarpitWithinConcurrencyBound');
     $controller = (new ReflectionClass(BotTrapController::class))->newInstanceWithoutConstructor();
+    (new ReflectionProperty(BotTrapController::class, 'paths'))->setValue($controller, $paths);
 
     $start = microtime(true);
     $tarpit->invoke($controller, 2);

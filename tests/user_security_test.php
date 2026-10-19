@@ -26,53 +26,6 @@ namespace AstrX\Config {
     }
 }
 
-namespace AstrX\Support {
-    // All three fail closed. A directory resolver that returns '' when its
-    // scratch dir is missing does not skip the write, it writes to '/' — and
-    // phpstan.neon analyses src, public and tools, so tests/ is where that kind
-    // of thing rots unnoticed.
-    if (!\function_exists('AstrX\Support\configDir')) {
-        function configDir(): string
-        {
-            $d = \rtrim((string) \getenv('ASTRX_TEST_CONFIG_DIR'), '/');
-            if ($d === '') {
-                throw new \LogicException('ASTRX_TEST_CONFIG_DIR is unset');
-            }
-            return $d . '/';
-        }
-    }
-    if (!\function_exists('AstrX\Support\resourceStorageDir')) {
-        function resourceStorageDir(string $configured, string $fallback): string
-        {
-            if ($configured !== '') {
-                return $configured;
-            }
-            $d = \rtrim((string) \getenv('ASTRX_TEST_SCRATCH_DIR'), '/');
-            if ($d === '') {
-                throw new \LogicException('ASTRX_TEST_SCRATCH_DIR is unset');
-            }
-            return $d . '/' . $fallback;
-        }
-    }
-    // configDir()'s pair: ServerSecret's other candidate lives in tempDir().
-    // Every secret in this file is explicitly configured, so nothing here
-    // reaches it today — declared anyway so a future ServerSecret WITHOUT a
-    // configured value lands in this run's scratch dir rather than at a shared,
-    // predictable /tmp path, and declared against its OWN variable: it used to
-    // read ASTRX_TEST_CONFIG_DIR, i.e. a dead override reading the wrong name
-    // and returning '' if that name ever changed.
-    if (!\function_exists('AstrX\Support\tempDir')) {
-        function tempDir(): string
-        {
-            $d = \rtrim((string) \getenv('ASTRX_TEST_TEMP_DIR'), '/');
-            if ($d === '') {
-                throw new \LogicException('ASTRX_TEST_TEMP_DIR is unset');
-            }
-            return $d;
-        }
-    }
-}
-
 namespace {
 
     use AstrX\Image\ImageSanitizer;
@@ -87,19 +40,15 @@ namespace {
     require_once __DIR__ . '/lib/scratch.php';
     $scratch = AstrX\TestSupport\scratchDir('astrx_user_test_');
 
-    // One directory, three names — each override reads the variable that names
-    // it, so a missing one cannot silently relocate the others.
-    putenv('ASTRX_TEST_CONFIG_DIR=' . $scratch);
-    putenv('ASTRX_TEST_TEMP_DIR=' . $scratch);
-    putenv('ASTRX_TEST_SCRATCH_DIR=' . $scratch);
-
-    // function_exists()-guarded overrides are a no-op if constants.php is ever
-    // loaded first; prove they took rather than write a real install's files.
-    if (AstrX\Support\configDir() !== $scratch . '/' || AstrX\Support\tempDir() !== $scratch) {
-        fwrite(STDERR, "the AstrX\\Support overrides in this file did not take: configDir()="
-            . var_export(AstrX\Support\configDir(), true) . ", tempDir()="
-            . var_export(AstrX\Support\tempDir(), true) . "\n");
-        exit(1);
+    // Every file this test could write — the server secret's config-dir and
+    // temp-dir candidates, avatars — lands in this run's scratch directory,
+    // never a real install's or the host's shared /tmp.
+    $paths = new AstrX\Support\Paths(resources: $scratch, config: $scratch, temp: $scratch);
+    function testPaths(): AstrX\Support\Paths
+    {
+        global $paths;
+        assert($paths instanceof AstrX\Support\Paths);
+        return $paths;
     }
 
     $PASS = 0;
@@ -113,7 +62,7 @@ namespace {
 
     function secretFor(string $value): ServerSecret
     {
-        $s = new ServerSecret();
+        $s = new ServerSecret(testPaths());
         $s->setConfigured($value);
         return $s;
     }
@@ -122,7 +71,7 @@ namespace {
     function serviceWith(ServerSecret $secret, PDO $pdo, UserSession $session): UserService
     {
         $repo   = new UserRepository($pdo);
-        $avatar = new AvatarService($repo, new ImageSanitizer(), $secret);
+        $avatar = new AvatarService($repo, new ImageSanitizer(), $secret, testPaths());
         return new UserService($repo, $avatar, $session, $secret);
     }
 
@@ -162,8 +111,8 @@ namespace {
     $secretA = secretFor(str_repeat('a', 64));
     $secretB = secretFor(str_repeat('b', 64));
     $repoA   = new UserRepository(userPdo());
-    $avA     = new AvatarService($repoA, new ImageSanitizer(), $secretA);
-    $avB     = new AvatarService($repoA, new ImageSanitizer(), $secretB);
+    $avA     = new AvatarService($repoA, new ImageSanitizer(), $secretA, testPaths());
+    $avB     = new AvatarService($repoA, new ImageSanitizer(), $secretB, testPaths());
 
     $uid   = str_repeat('9f', 16);           // a 32-hex uid, as read off any page
     $email = 'alice@protonmail.com';

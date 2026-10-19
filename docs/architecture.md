@@ -6,6 +6,8 @@ This page describes the current repository. The proposed core/application separa
 
 `public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths (`src/paths.php`), loads `src/autoload.php` and constructs `Prelude`. The paths and the autoloader can also be included on their own without booting the application: `src/classloader.php` loads classes from the map in `src/sources.php`, and `src/support.php` loads the `AstrX\Support` functions.
 
+The path constants are read in one place: `Prelude` turns them into an `AstrX\Support\Paths` (`Paths::fromConstants()`) and the container shares it. Every class that reads or writes the installation's files — config, templates and their cache, catalogs, upload fallbacks, the server secret, the temp directory — takes that object as a constructor argument; no package reads a global for it. An empty directory in it means the application has none, and the class then uses only its packages' resources (see `tests/paths_test.php`). Another application builds its own `Paths` (`examples/minimal` does) and defines no constant.
+
 `ApplicationContainer::build()` wires the shared services: configuration (the site's files over the installed modules' defaults), diagnostics, translation, module loading, dependency injection and the installed-module registry. `Prelude` builds it for a web request; a CLI tool (`tools/retention.php`, `tools/search_index.php`) builds the same container, so it sees the configuration, translations and module extensions the site does. `Prelude` then binds the account session as the request's `Auth\Identity` and `Theme\ThemePreference`, registers authorization policies (`ApplicationPolicies` plus each enabled module's manifest) and creates `ContentManager`. That manager initializes the current request, resolves its page, picks the controller from `Site\ControllerMap`, collects diagnostics and renders the response.
 
 Pages and localized route identifiers are part of the bundled application's database model. Routing supports rewritten URLs and query-based requests. This is currently an application bootstrap: including it is not an inert way to load a general-purpose library.
@@ -68,7 +70,7 @@ Do not turn an unavailable security decision into a permissive default. A result
 
 Configuration files under `resources/config/` return PHP arrays. The relevant section names and injectable keys are part of the current application contract. Run `tools/check_config.php` when changing them. A field saved by the administrator UI must also have an effective consumer.
 
-The handwritten composition root is useful for making application-wide decisions explicit. A future reusable package should preserve that explicit construction while accepting paths and adapters supplied by its consumer.
+The handwritten composition root is useful for making application-wide decisions explicit. It takes the installation's paths as a `Paths` object (`ApplicationContainer::build($collector, $errorHandler, $paths)`), so a consumer supplies them rather than defining constants.
 
 ## Authorization and sessions
 

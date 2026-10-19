@@ -20,6 +20,9 @@ use AstrX\Config\InjectConfig;
  */
 final class MediaConfig
 {
+    /** The site's resources/ is where uploads go when upload_dir is unusable. */
+    public function __construct(private readonly \AstrX\Support\Paths $paths) {}
+
     private string $uploadDir        = '/app/resources/media_uploads';
     private int    $uploadMaxKb      = 4096;
     private int    $uploadMaxPixels  = 16_000_000; // header pixel-budget: reject decompression bombs pre-decode
@@ -32,7 +35,7 @@ final class MediaConfig
     #[InjectConfig('full_max_dimension')] public function setFullMaxDimension(int $v): void  { $this->fullMaxDimension = max(64, $v); }
     #[InjectConfig('upload_types')]       public function setUploadTypesRaw(string $v): void { $this->uploadTypesRaw = trim($v); }
 
-    public function uploadDir(): string     { return \AstrX\Support\resourceStorageDir($this->uploadDir, 'media_uploads'); }
+    public function uploadDir(): string     { return $this->paths->storageDir($this->uploadDir, 'media_uploads'); }
     public function uploadMaxKb(): int      { return $this->uploadMaxKb; }
     public function uploadMaxBytes(): int   { return $this->uploadMaxKb * 1024; }
     public function uploadMaxPixels(): int  { return $this->uploadMaxPixels; }

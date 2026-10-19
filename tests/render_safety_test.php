@@ -45,8 +45,9 @@ namespace {
     require_once __DIR__ . '/lib/scratch.php';
     $TMP = AstrX\TestSupport\scratchDir('astrx-render-safety-');
 
-    // configDir() reads this at call time — point it at the temp dir so the
-    // ConfigWriter round trip below cannot touch resources/config. ConfigWriter
+    // The site config dir the ConfigWriter below is given — the temp dir, so
+    // the round trip cannot touch resources/config. (A test-local constant;
+    // nothing in the code reads it.) ConfigWriter
     // writes into an existing directory (a real deploy always has one), so
     // create it here rather than having the write fail for the wrong reason.
     define('CONFIG_DIR', $TMP . '/config/');
@@ -174,11 +175,12 @@ namespace {
         $prelude = <<<PHP
         <?php
         declare(strict_types=1);
-        define('LANG_DIR', '{$ROOT}/resources/lang/');
-        define('TEMPLATE_DIR', '{$ROOT}/resources/template/');
         require_once '{$ROOT}/src/autoload.php';
         \$_SERVER['REQUEST_URI'] = '{$requestUri}';
-        \$eh = new AstrX\ErrorHandler\ErrorHandler(new AstrX\Result\DiagnosticsCollector());
+        \$eh = new AstrX\ErrorHandler\ErrorHandler(
+            new AstrX\Result\DiagnosticsCollector(),
+            new AstrX\Support\Paths(lang: '{$ROOT}/resources/lang/', templates: '{$ROOT}/resources/template/'),
+        );
         \$eh->setEnvironment(AstrX\ErrorHandler\EnvironmentType::PRODUCTION);
         PHP;
 
@@ -262,7 +264,7 @@ namespace {
         $stub(AstrX\Site\DefaultTemplateContext::class),
         $stub(AstrX\Http\Request::class),
         $stub(AstrX\Config\Config::class),
-        new ConfigWriter(),
+        new ConfigWriter(new AstrX\Config\ConfigDomainResolver(CONFIG_DIR)),
         $stub(AstrX\Auth\Gate::class),
         $stub(AstrX\Csrf\CsrfHandler::class),
         $stub(AstrX\Session\PrgHandler::class),
@@ -271,6 +273,7 @@ namespace {
         $stub(AstrX\Routing\UrlGenerator::class),
         new AstrX\I18n\Translator(),
         $stub(AstrX\Admin\AuditLogger::class),
+        new AstrX\Support\Paths(),
     ]);
     $saveTemplate = new ReflectionMethod(AdminConfigSystemController::class, 'saveTemplate');
 

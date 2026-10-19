@@ -9,8 +9,7 @@ use AstrX\Result\DiagnosticSinkInterface;
 use AstrX\Result\DiagnosticsCollector;
 use Throwable;
 use ErrorException;
-use function AstrX\Support\langDir;
-use function AstrX\Support\templateDir;
+use AstrX\Support\Paths;
 
 final class ErrorHandler
 {
@@ -52,9 +51,13 @@ final class ErrorHandler
      */
     private EnvironmentType $env = EnvironmentType::PRODUCTION;
 
-    public function __construct(?DiagnosticSinkInterface $sink = null)
+    /** The application's files: its failsafe.html override and Http catalog. */
+    private readonly Paths $paths;
+
+    public function __construct(?DiagnosticSinkInterface $sink = null, ?Paths $paths = null)
     {
-        $this->sink = $sink ?? new DiagnosticsCollector();
+        $this->sink  = $sink ?? new DiagnosticsCollector();
+        $this->paths = $paths ?? new Paths();
 
         set_error_handler([$this, 'errorHandler']);
         set_exception_handler([$this, 'exceptionsHandler']);
@@ -233,7 +236,7 @@ final class ErrorHandler
         // replace this minimal page. $title and $message are in scope for it.
         // None ships by default — the built-in page below needs no template
         // engine, no database and no config, which is the point of a failsafe.
-        $failsafe = templateDir() !== '' ? (templateDir() . 'failsafe.html') : null;
+        $failsafe = $this->paths->templates !== '' ? ($this->paths->templates . 'failsafe.html') : null;
         if ($failsafe !== null && is_file($failsafe)) {
             require $failsafe;
             return;
@@ -279,7 +282,7 @@ final class ErrorHandler
         $fallback = ['Internal Server Error', 'An unexpected error occurred. Please try again later.'];
 
         try {
-            $langDir = langDir();
+            $langDir = $this->paths->lang;
             if ($langDir === '') {
                 return $fallback;
             }
