@@ -177,20 +177,30 @@ use AstrX\Admin\AdminPermission;
     // =========================================================================
     echo "\n2. Admin templates and the closure migration\n";
 
+    // Every template root: the site's, then each module's (admin_content
+    // belongs to the Content module).
+    $templateRoots = [$ROOT . '/resources/template/',
+        ...AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+            ->of(AstrX\Support\ResourceRoots::TEMPLATE)];
+    $inAnyRoot = static function (string $rel) use ($templateRoots): bool {
+        foreach ($templateRoots as $dir) {
+            if (is_file($dir . $rel)) {
+                return true;
+            }
+        }
+        return false;
+    };
     check(
-        'admin_content.html moved under admin/ with the other 30 admin templates',
-        is_file($ROOT . '/resources/template/admin/admin_content.html')
-        && !is_file($ROOT . '/resources/template/admin_content.html'),
+        'admin_content.html moved under admin/ with the other admin templates',
+        $inAnyRoot('admin/admin_content.html') && !$inAnyRoot('admin_content.html'),
     );
     check(
         'admin_language.html moved under admin/',
-        is_file($ROOT . '/resources/template/admin/admin_language.html')
-        && !is_file($ROOT . '/resources/template/admin_language.html'),
+        $inAnyRoot('admin/admin_language.html') && !$inAnyRoot('admin_language.html'),
     );
     check(
         'the stale root-level admin_themes.html duplicate is gone (admin/ has the live one)',
-        !is_file($ROOT . '/resources/template/admin_themes.html')
-        && is_file($ROOT . '/resources/template/admin/admin_themes.html'),
+        !$inAnyRoot('admin_themes.html') && $inAnyRoot('admin/admin_themes.html'),
     );
 
     $migration = $ROOT . '/src/setup/migrate_zzzz_admin_closure_fix.sql';
@@ -244,9 +254,8 @@ use AstrX\Admin\AdminPermission;
 
     // The allowlist, applied to the REAL template tree.
     $sources = new ReflectionMethod(JsController::class, 'templateSources');
-    $root    = $ROOT . '/resources/template/';
     /** @var list<array{name:string,path:string,mtime:int,size:int}> $bundled */
-    $bundled = $sources->invoke(null, $root, [
+    $bundled = $sources->invoke(null, $templateRoots, [
         'main'              => true,
         'default'           => true,
         'js_fragment'       => true,
@@ -270,7 +279,7 @@ use AstrX\Admin\AdminPermission;
     // …and the guard is the allowlist, not the file's location: a name at the
     // template ROOT is excluded exactly as one under admin/ is. That is the
     // distinction the old str_starts_with('admin/') skip could not make.
-    $rootAdmin = $sources->invoke(null, $root, ['admin' => true]);
+    $rootAdmin = $sources->invoke(null, $templateRoots, ['admin' => true]);
     eq(
         'a root-level template IS bundled when a visible page maps to it',
         ['admin'],

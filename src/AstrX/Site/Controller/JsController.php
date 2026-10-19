@@ -15,6 +15,7 @@ use PDO;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
+use AstrX\Support\ResourceRoots;
 use function AstrX\Support\atomicWrite;
 use function AstrX\Support\cacheDir;
 use function AstrX\Support\templateDir;
@@ -61,6 +62,7 @@ final class JsController extends AbstractController
         private readonly ThemeService $themeService,
         private readonly PDO $pdo,
         private readonly \AstrX\Module\ModuleRegistry $modules,
+        private readonly ResourceRoots $roots,
     ) {
         parent::__construct($collector);
     }
@@ -1421,11 +1423,10 @@ JS;
     /** @return array<string,mixed> */
     private function buildTemplateCache(): array
     {
-        $root = rtrim(templateDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $cacheRoot = rtrim(cacheDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'js';
         $cacheFile = $cacheRoot . DIRECTORY_SEPARATOR . 'templates.json';
 
-        $sources = self::templateSources($root, $this->bundledTemplateNames());
+        $sources = self::templateSources($this->templateRoots(), $this->bundledTemplateNames());
         // The fingerprint covers the ALLOWED set only, so it also changes when a
         // module is toggled or a page row is added/removed — not just when a file
         // is edited. A stale cache from before a module was disabled would
@@ -1550,9 +1551,10 @@ JS;
         $names[$this->config->getConfigString('ContentManager', 'default_template', 'default')] = true;
         $names['js_fragment'] = true;
 
-        foreach (glob(rtrim(templateDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'partials'
-                      . DIRECTORY_SEPARATOR . '*.html') ?: [] as $partial) {
-            $names['partials/' . basename($partial, '.html')] = true;
+        foreach ($this->templateRoots() as $root) {
+            foreach (glob($root . 'partials' . DIRECTORY_SEPARATOR . '*.html') ?: [] as $partial) {
+                $names['partials/' . basename($partial, '.html')] = true;
+            }
         }
 
         return $names;
@@ -1636,41 +1638,62 @@ JS;
     }
 
     /**
+     * The directories templates are looked up in, in TemplateEngine's order:
+     * the site's, then each installed module's template/.
+     *
+     * @return list<string>
+     */
+    private function templateRoots(): array
+    {
+        return [
+            rtrim(templateDir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR,
+            ...$this->roots->of(ResourceRoots::TEMPLATE),
+        ];
+    }
+
+    /**
+     * The allowed templates found under $roots. A name found in more than one
+     * root comes from the first — the site's file overrides a module's, as it
+     * does when the server renders the page.
+     *
+     * @param list<string>       $roots   see templateRoots()
      * @param array<string,true> $allowed template name => true (see bundledTemplateNames())
      * @return list<array{name:string,path:string,mtime:int,size:int}>
      */
-    private static function templateSources(string $root, array $allowed): array
+    private static function templateSources(array $roots, array $allowed): array
     {
-        if (!is_dir($root)) {
-            return [];
-        }
-
         $out = [];
-        $it = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
-        );
-        foreach ($it as $file) {
-            if (!$file instanceof SplFileInfo || !$file->isFile()) {
+        foreach ($roots as $root) {
+            if (!is_dir($root)) {
                 continue;
             }
-            $path = $file->getPathname();
-            if (!str_ends_with($path, '.html')) {
-                continue;
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($it as $file) {
+                if (!$file instanceof SplFileInfo || !$file->isFile()) {
+                    continue;
+                }
+                $path = $file->getPathname();
+                if (!str_ends_with($path, '.html')) {
+                    continue;
+                }
+                $rel  = str_replace('\\', '/', substr($path, strlen($root)));
+                $name = substr($rel, 0, -5);
+                // The allowlist subsumes the old cache/, email/ and admin/ prefix
+                // skips: no page row resolves to a name under any of them.
+                if (!isset($allowed[$name]) || isset($out[$name])) {
+                    continue;
+                }
+                $out[$name] = [
+                    'name'  => $name,
+                    'path'  => $path,
+                    'mtime' => (int) $file->getMTime(),
+                    'size'  => (int) $file->getSize(),
+                ];
             }
-            $rel  = str_replace('\\', '/', substr($path, strlen($root)));
-            $name = substr($rel, 0, -5);
-            // The allowlist subsumes the old cache/, email/ and admin/ prefix
-            // skips: no page row resolves to a name under any of them.
-            if (!isset($allowed[$name])) {
-                continue;
-            }
-            $out[] = [
-                'name'  => $name,
-                'path'  => $path,
-                'mtime' => (int) $file->getMTime(),
-                'size'  => (int) $file->getSize(),
-            ];
         }
+        $out = array_values($out);
         usort($out, static fn(array $a, array $b): int => strcmp((string) $a['name'], (string) $b['name']));
         return $out;
     }
