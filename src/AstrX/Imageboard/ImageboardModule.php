@@ -39,6 +39,8 @@ final class ImageboardModule implements Module
                 'board_search' => \AstrX\Imageboard\Controller\BoardSearchController::class,
             ],
             'teardown'     => 'imageboard.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
