@@ -71,3 +71,30 @@ Reload long-lived PHP workers when deploying code. Build and test the exact
 production image. Keep the database image on its existing release series until
 an intentional, backed-up database upgrade. Review [upgrade notes](REVIEW-FIXES.md)
 for API and deployment behavior changes.
+
+## Site resources over package defaults
+
+The packages ship their own templates, catalogs and default configuration
+(`packages/*/resources/`, each module's `resources/`). The site's `resources/`
+only overrides them: a template by name, a catalog or config file key by key.
+The admin pages, the Language editor and the installer write the site's files.
+
+An install that predates a file moving into a package keeps its old full copy
+in the site — in a Docker deployment, in the `catalogs` and `app-config`
+volumes. Nothing breaks: the copy simply overrides the package with the same
+values. But a later release that fixes or rewords a string cannot reach the
+site while the copy repeats it. After upgrading:
+
+```sh
+php tools/lang_prune.php           # how many site catalog keys only repeat a shipped value
+php tools/lang_prune.php --write   # drop them (keys the site changed are kept)
+```
+
+Configuration is left alone: a site config key that equals the default is
+harmless, and it is the operator's statement of what the site runs with. To
+return a section to the shipped defaults, delete the keys (or the file) from
+`resources/config/`.
+
+A Git checkout that edited a config file that has since moved into a package
+(`Captcha`, `Mail`, `User`, `Routing`, … `.config.php`) sees that file deleted
+upstream. Keep the edited file: it still overrides the package's defaults.
