@@ -9,8 +9,9 @@ use AstrX\Config\InjectConfig;
  * AstrX config integrity check — `php tools/check_config.php`
  *
  * A zero-dependency, database-free CI gate over the config layer. Config in
- * AstrX is a two-level array: a FILE (`resources/config/Mail.config.php`) holds
- * one or more SECTIONS (`Mailer`, `ImapClient`, `WebmailService`), and a class
+ * AstrX is a two-level array: a FILE (`Mail.config.php`, a package's default
+ * in its resources/config/, overridden key by key by the site's) holds one or
+ * more SECTIONS (`Mailer`, `ImapClient`, `WebmailService`), and a class
  * reaches its section by convention — class short name, falling back to the
  * parent namespace segment — or by an explicit `#[ConfigDomain]`. 25 of the 38
  * sections have a name that differs from their file, and nothing used to check
