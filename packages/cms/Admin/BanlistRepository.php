@@ -41,7 +41,8 @@ final class BanlistRepository
     public const string ROUTE_PERMANENT    = 'permanent';
     public const string ROUTE_BAD_COMMENT  = 'bad_comment';
     public const string ROUTE_FAILED_LOGIN = 'failed_login';
-    public const string ROUTE_CHAT         = 'chat';
+    // A module may ban under a route of its own (the chat's kicks use 'chat',
+    // ChatKickPenalty::BANLIST_ROUTE); the key is just stored with the entry.
 
     // -------------------------------------------------------------------------
 

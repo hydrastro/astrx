@@ -108,7 +108,7 @@ final class ChatModerationService
         // can't overflow time()+dur into a float and 500 date() (strict_types).
         // durationSecs <= 0 still means a permanent ban (null end).
         $end       = $durationSecs > 0 ? date('Y-m-d H:i:s', time() + min($durationSecs, 315360000)) : null;
-        $route     = BanlistRepository::ROUTE_CHAT;
+        $route     = ChatKickPenalty::BANLIST_ROUTE;
 
         if ($nick !== '') {
             $r = $this->banlist->banNick($nick, $reason, $route, $end);
