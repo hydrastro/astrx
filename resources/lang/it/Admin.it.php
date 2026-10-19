@@ -139,11 +139,6 @@ return [
     'admin.banlist.max_tries'          => 'Max tentativi',
     'admin.banlist.check_win'          => 'Finestra di controllo',
     'admin.banlist.enabled'            => 'Abilitato',
-    'admin.banlist.route_added'        => 'Route aggiunta.',
-    'admin.banlist.route_deleted'      => 'Route eliminata.',
-    'admin.banlist.round_added'        => 'Round aggiunto.',
-    'admin.banlist.round_updated'      => 'Round aggiornato.',
-    'admin.banlist.round_deleted'      => 'Round eliminato.',
 
     // ---- Navbar -------------------------------------------------------------
     'admin.navbar.added'         => 'Voce aggiunta.',
