@@ -6,7 +6,7 @@ namespace AstrX\Chat;
 use AstrX\Admin\BanlistRepository;
 
 /**
- * The shared chat "kick penalty" — a short ROUTE_CHAT entry ban (by nick + IP)
+ * The shared chat "kick penalty" — a short entry ban under the 'chat' route (by nick + IP)
  * that keeps a removed participant out for `kick_penalty_minutes`.
  *
  * A kick is just a ban with a short expiry, so both paths that remove someone —
@@ -21,6 +21,9 @@ use AstrX\Admin\BanlistRepository;
  */
 final class ChatKickPenalty
 {
+    /** The banlist route chat bans are stored under. */
+    public const string BANLIST_ROUTE = 'chat';
+
     public function __construct(
         private readonly BanlistRepository $banlist,
         private readonly ChatConfig        $config,
@@ -33,7 +36,7 @@ final class ChatKickPenalty
             return;
         }
         $end   = date('Y-m-d H:i:s', time() + $mins * 60);
-        $route = BanlistRepository::ROUTE_CHAT;
+        $route = self::BANLIST_ROUTE;
         if ($nick !== '') {
             $this->banlist->banNick($nick, $reason, $route, $end);
         }

@@ -172,7 +172,7 @@ final class ChatService
         if ($hit !== null) {
             if ($this->int($hit, 'action', 0) === ChatFilterService::ACTION_KICK) {
                 // A filter kick removes the poster live AND enforces through the
-                // banlist — a kick is a short-expiry ROUTE_CHAT ban, the SAME
+                // banlist — a kick is a short-expiry ban under the 'chat' route, the SAME
                 // single path a moderator kick uses, so entry re-checks keep them
                 // out for kick_penalty_minutes. The matched pattern is recorded as
                 // the ban reason for the admin banlist view.
