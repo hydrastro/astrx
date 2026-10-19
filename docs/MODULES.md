@@ -210,6 +210,13 @@ in `layout`:
 'layout' => ['footer' => ['partials/trap_link']],  // the bot trap's honeypot link
 ```
 
+A navbar in the `nav` slot uses the layout's section-navbar classes, which
+every theme styles — `<div class="section_top_nav"><ul class="section_nav">…` —
+plus classes of its own for anything specific (`chat_nav`, `board_nav`), so a
+theme styles every module's navbar without naming any module. Page-specific
+styling belongs in the module's own templates; a theme may still add rules for
+a module's pages (the default theme does for the webmail).
+
 `default.html` renders each slot's list (`{{#nav_partials}}{{> .}}{{/nav_partials}}`,
 `footer_partials`), enabled modules only, in module-key order. The slots are
 `nav` and `footer` (`ModuleRegistry::LAYOUT_SLOTS`). A partial decides for
