@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
-require_once dirname(__DIR__) . '/src/AstrX/Auth/PasswordPolicy.php';
+// The inert class autoloader (starts nothing): PasswordPolicy, and the
+// installed-module list that says which modules' SQL to apply.
+require_once dirname(__DIR__) . '/src/autoload.php';
 
 /**
  * AstrX CLI installer — `php tools/install.php`
@@ -10,7 +12,9 @@ require_once dirname(__DIR__) . '/src/AstrX/Auth/PasswordPolicy.php';
  * exposes an install surface to the network:
  *
  *   1. Write resources/config/PDO.config.php (after testing the connection).
- *   2. (optional) Run the SQL schema + migrations from src/setup/ or setup/.
+ *   2. (optional) Apply the SQL schema + migrations: core's (src/setup/, or a
+ *      setup/ mirror) and every installed module's (resources/sql/), see
+ *      AstrX\Database\SchemaFiles.
  *   3. Create the first administrator (Argon2id, same as the wizard).
  *   4. Generate + write a UNIQUE server_secret into Session.config.php.
  *   5. Set the environment in config.php.
@@ -637,25 +641,17 @@ function readPDOConfig(string $configDir): array
     return $out;
 }
 
-function findSetupFile(string $root, string $name): ?string
+/**
+ * The SQL that makes up this application's database: core's (src/setup/, or a
+ * repo-root setup/ mirror) and that of every module ApplicationModules installs.
+ */
+function schemaFiles(string $root): AstrX\Database\SchemaFiles
 {
-    foreach ([$root . '/src/setup/' . $name, $root . '/setup/' . $name] as $c) {
-        if (is_file($c)) { return $c; }
-    }
-    return null;
-}
-
-/** @return list<string> */
-function listSetupMigrations(string $root): array
-{
-    $found = [];
-    foreach ([$root . '/src/setup/', $root . '/setup/'] as $dir) {
-        if (!is_dir($dir)) { continue; }
-        foreach (glob($dir . 'migrate_*.sql') ?: [] as $m) {
-            $found[basename($m)] = $m; // de-dup by filename
-        }
-    }
-    return array_values($found);
+    return new AstrX\Database\SchemaFiles(
+        [$root . '/src/setup', $root . '/setup'],
+        AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+            ->of(AstrX\Support\ResourceRoots::SQL),
+    );
 }
 
 function removeSeedAdmin(PDO $pdo): string
@@ -727,8 +723,8 @@ function printUsage(): void
 
     Behaviour:
       --create-db            CREATE DATABASE (utf8mb4) if it doesn't exist yet
-      --skip-schema          Do not run tables.sql / migrations (assume DB is ready)
-      --schema-only          ONLY (re)apply tables.sql + migrations, then stop.
+      --skip-schema          Do not apply the schema / migrations (assume DB is ready)
+      --schema-only          ONLY (re)apply the schema + migrations, then stop.
                              Writes no config file and creates no admin, and
                              takes its connection details from PDO.config.php.
                              This is what restores a module torn down with
@@ -822,19 +818,22 @@ if (!$schemaOnly) {
 
 // ── 2. Schema + migrations (optional) ───────────────────────────────────────
 if (!hasFlag($args, 'skip-schema')) {
-    $tables = findSetupFile($root, 'tables.sql');
-    if ($tables === null) {
-        fail('Schema file tables.sql not found in src/setup/ or setup/. Use --skip-schema if the database is already provisioned.');
+    $sql    = schemaFiles($root);
+    $pieces = $sql->schema();
+    if ($pieces === []) {
+        fail('No schema found (src/setup/schema/*.sql). Use --skip-schema if the database is already provisioned.');
     }
-    out("Applying schema ({$tables})... ");
-    $err = runSQL($conn, $tables);
-    if ($err !== '') { fail("SQL error: {$err}"); }
-    out("ok\n");
+    foreach ($pieces as $piece) {
+        out('Schema ' . basename($piece) . '... ');
+        $err = runSQL($conn, $piece);
+        if ($err !== '') { fail('SQL error in ' . basename($piece) . ": {$err}"); }
+        out("ok\n");
+    }
 
     $err = ensureMigrationTable($conn);
     if ($err !== '') { fail("Could not initialise migration table: {$err}"); }
 
-    foreach (listSetupMigrations($root) as $mf) {
+    foreach ($sql->migrations() as $mf) {
         out('Migration ' . basename($mf) . '... ');
         $err = runMigration($conn, $mf);
         if ($err !== '') { fail('SQL error in ' . basename($mf) . ": {$err}"); }

@@ -112,8 +112,9 @@ jobs:
         run: php tools/check_modules.php
 
       # There are two ways to arrive at "the current schema": a fresh install,
-      # and an old install that has had every migration applied. `tables.sql` is
-      # an append-only migration log, so those two paths can drift — a column a
+      # and an old install that has had every migration applied. The base schema
+      # (src/setup/schema/ + the modules') re-runs on every install while
+      # migrations run once, so those two paths can drift — a column a
       # migration adds but the base DDL never gained, a default or a collation
       # that differs — and nothing noticed. This diffs `information_schema`
       # between the two and fails on any difference.

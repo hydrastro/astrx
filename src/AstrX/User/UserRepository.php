@@ -24,7 +24,7 @@ final class UserRepository
 {
     /**
      * Fixed hex ID of the ghost account.
-     * All-zeros binary(16), seeded in tables.sql.
+     * All-zeros binary(16), seeded by the core base schema.
      */
     public const GHOST_HEX_ID = '00000000000000000000000000000000';
 
