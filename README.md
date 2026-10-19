@@ -69,9 +69,7 @@ The Rust workspace contains a Git browser, onion and web search services, torren
 
 ## Contributing
 
-Start with a reproducible bug, a small example, or a focused change. For a bug report, include the commit, PHP or Rust version, enabled modules, and the steps needed to reproduce it. Remove credentials and personal data from logs.
-
-The PHP checks and Rust tests are documented in [getting started](docs/getting-started.md). Include a regression test when a change fixes observable behavior.
+Start with a reproducible bug, a small example, or a focused change. [CONTRIBUTING.md](CONTRIBUTING.md) explains the layout, the rules the checks enforce and what a pull request needs; report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Project status
 
