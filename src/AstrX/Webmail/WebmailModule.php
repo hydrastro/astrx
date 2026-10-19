@@ -36,6 +36,10 @@ final class WebmailModule implements Module
             'teardown'     => 'webmail.down.sql',
             // Templates, translations and default config (see docs/MODULES.md).
             'resources'    => 'resources',
+            // Core extension points this module answers (see docs/MODULES.md).
+            'extensions'   => [
+                \AstrX\User\LoginListener::class => [\AstrX\Webmail\WebmailLoginListener::class],
+            ],
         ];
     }
 }

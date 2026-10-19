@@ -15,7 +15,7 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Site\DefaultTemplateContext;
-use AstrX\Webmail\WebmailService;
+use AstrX\User\LoginNotifier;
 use AstrX\User\UserService;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
@@ -46,7 +46,7 @@ final class UserController extends AbstractController
         private readonly PrgHandler            $prg,
         private readonly UrlGenerator          $urlGen,
         private readonly Translator            $t,
-        private readonly WebmailService        $webmail,
+        private readonly LoginNotifier         $logins,
     ) {
         parent::__construct($collector);
     }
@@ -194,9 +194,7 @@ final class UserController extends AbstractController
         }
         if ($factor->unwrap()) {
             unset($userData['password']);
-            if ($this->webmail->mailserverIsLocal() && $password !== '') {
-                $this->session->storeImapPassword($password);
-            }
+            $this->logins->passwordAccepted($password, secondFactorPending: true);
             $_SESSION['astrx_pending_2fa']      = $uid;
             $_SESSION['astrx_pending_2fa_data'] = $userData;
             $_SESSION['astrx_pending_2fa_ts']   = time();
@@ -207,12 +205,9 @@ final class UserController extends AbstractController
 
         $this->session->login($userData);
 
-        // When the mail server is local (shares user DB with this app), the
-        // user's login password is also the IMAP password.  Store it now so
-        // the webmail page does not need to ask for it again.
-        if ($this->webmail->mailserverIsLocal() && $password !== '') {
-            $this->session->storeImapPassword($password);
-        }
+        // Modules that need the password (webmail, for a local IMAP server)
+        // keep what they need — in the AES-encrypted session.
+        $this->logins->passwordAccepted($password, secondFactorPending: false);
     }
 
     private function renderLoginForm(string $usernameValue = ''): void
