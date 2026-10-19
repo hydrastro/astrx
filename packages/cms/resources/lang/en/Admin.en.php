@@ -466,7 +466,7 @@ return [
     'admin.retention.reap'        => 'Shred orphaned files now',
     'admin.retention.reap_hint'   => 'Delete upload files left on disk after their post/message was removed. Runs automatically with retention; use this to shred them on demand.',
     'admin.retention.done'        => 'Retention applied — rows removed:',
-    'admin.retention.expiry_note' => 'Auto-expires per chat config.',
+    'admin.retention.expiry_note' => 'Expires on its own, as its module\'s settings say.',
 
     // Panic / lockdown
     'admin.panic.heading'      => 'Panic / lockdown',
@@ -485,10 +485,6 @@ return [
     // Audit-log hash chain (R12)
     'admin.audit.chain_intact'   => 'Audit chain intact — entries verified:',
     'admin.audit.chain_broken'   => 'AUDIT CHAIN BROKEN — tampering detected at entry',
-
-    // ---- Config — Webmail IMAP settings --------------------------------
-    'admin.config.field.mailbox_is_username_warning' => 'Enable this if the IMAP mailbox name is exactly the username (no domain suffix).',
-
 
     // ---- Audit log -------------------------------------------------------
     'admin.nav.audit_log'               => 'Audit Log',

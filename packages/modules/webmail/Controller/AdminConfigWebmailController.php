@@ -369,6 +369,8 @@ final class AdminConfigWebmailController extends AbstractController
                         $this->t->t('admin.config.field.imap_verify_ssl'));
         $this->ctx->set('label_mailbox_is_username',
                         $this->t->t('admin.config.field.mailbox_is_username'));
+        $this->ctx->set('label_mailbox_is_username_warning',
+                        $this->t->t('admin.config.field.mailbox_is_username_warning'));
         $this->ctx->set('btn_save', $this->t->t('admin.btn.save'));
     }
 }

@@ -11,6 +11,7 @@ return [
     'admin.config.field.imap_login_use_full_address' => 'Accedi con indirizzo completo (utente@dominio)',
     'admin.config.field.imap_verify_ssl'    => 'Verifica certificato SSL',
     'admin.config.field.mailbox_is_username' => 'Il nome della casella è il nome utente',
+    'admin.config.field.mailbox_is_username_warning' => 'Abilita se il nome della casella IMAP corrisponde esattamente al nome utente (senza suffisso dominio).',
 
     'WORDING_ADMIN_CONFIG_WEBMAIL.title'    => 'Config — Webmail',
     'WORDING_ADMIN_CONFIG_WEBMAIL.description' => 'Modifica la configurazione IMAP e webmail.',
