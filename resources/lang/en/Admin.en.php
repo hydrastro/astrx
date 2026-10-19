@@ -113,7 +113,6 @@ return [
     'admin.btn.save'       => 'Save',
     'admin.btn.clear'      => 'Clear',
     'admin.btn.toggle'     => 'Toggle',
-    'admin.btn.filter'     => 'Filter',
 
     // ---- Config — shared ----------------------------------------------------
     'admin.config.saved'   => 'Configuration saved.',
@@ -511,8 +510,6 @@ return [
     'admin.config.field.imap_socks5_port'   => 'SOCKS5 port',
     'admin.config.field.messages_per_page'  => 'Messages per page',
     'admin.config.field.trash_folder'       => 'Trash folder name',
-    'admin.config.field.sent_folder'        => 'Sent folder name',
-    'admin.config.field.drafts_folder'      => 'Drafts folder name',
     'admin.config.field.mail_domain'        => 'Mail domain',
     'admin.config.field.imap_login_use_full_address' => 'Login with full address (user@domain)',
     'admin.config.field.imap_verify_ssl'    => 'Verify SSL certificate',
