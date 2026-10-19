@@ -91,4 +91,9 @@ return [
     'admin.config.chat.access_waiting'                => 'Waiting room (timed)',
     'admin.config.chat.access_approval'               => 'Require moderator approval',
     'admin.config.chat.access_members'                => 'Members only (turn guests away)',
+
+    // Retention targets (Retention\RetentionSource)
+    'admin.retention.label.chat_report'  => 'Chat reports',
+    'admin.retention.label.chat_message' => 'Chat messages',
+    'admin.retention.label.chat_pm'      => 'Private messages',
 ];

@@ -22,4 +22,7 @@ return [
     'admin.tipline.deleted'     => 'Tip deleted.',
     'admin.tipline.purge'       => 'Shred all tips',
     'admin.tipline.purged'      => 'All tips shredded.',
+
+    // Retention target (Retention\RetentionSource)
+    'admin.retention.label.tipline' => 'Sealed tips',
 ];

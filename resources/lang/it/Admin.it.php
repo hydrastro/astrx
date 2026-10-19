@@ -202,11 +202,6 @@ return [
     'admin.retention.reap_hint'   => 'Elimina i file caricati rimasti su disco dopo la rimozione del loro post/messaggio. Viene eseguito automaticamente con la ritenzione; usalo per distruggerli su richiesta.',
     'admin.retention.done'        => 'Ritenzione applicata — righe rimosse:',
     'admin.retention.expiry_note' => 'Scade automaticamente secondo la config della chat.',
-    'admin.retention.label.bot_trap_log' => 'Catture bot-trap',
-    'admin.retention.label.tipline'      => 'Segnalazioni sigillate',
-    'admin.retention.label.chat_report'  => 'Segnalazioni chat',
-    'admin.retention.label.chat_message' => 'Messaggi chat',
-    'admin.retention.label.chat_pm'      => 'Messaggi privati',
 
     // Panico / blocco
     'admin.panic.heading'      => 'Panico / blocco',
