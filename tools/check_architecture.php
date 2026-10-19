@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  * Every top-level AstrX namespace in src/ and packages/ (and every top-level
  * class such as AstrX\ContentManager) is assigned to exactly ONE layer in
- * LAYERS below. The tool tokenizes
+ * LAYERS below (a module's namespace by its package). The tool tokenizes
  * every PHP file, resolves the AstrX names each one references
  * (imports, fully-qualified names, namespace-relative qualified names,
  * attributes, ::class constants) and fails when:
@@ -46,6 +46,9 @@ if (PHP_SAPI !== 'cli') {
  * astrx/library, feature = astrx/cms plus every module package, application =
  * this website (src/AstrX).
  *
+ * The modules are not listed here: every namespace a package of type
+ * astrx-module provides (packages/modules/*) joins the feature layer.
+ *
  * @var array<string, list<string>>
  */
 const LAYERS = [
@@ -55,20 +58,17 @@ const LAYERS = [
         'Template', 'Session', 'Csrf', 'Module', 'Pagination', 'Kernel',
     ],
     'library'     => ['Database', 'Image', 'Auth', 'Api', 'Captcha', 'Identicon', 'Mail'],
-    'feature'     => [
-        'User', 'Admin', 'Page', 'Content', 'Navbar', 'Theme', 'Comment', 'News',
-        'Chat', 'Imageboard', 'Media', 'Search', 'Invite', 'BotTrap', 'Canary',
-        'Downloads', 'Mirrors', 'Tipline', 'Retention', 'Webmail', 'Blocklist',
-        'GitBrowse', 'WebSearch', 'OnionSearch', 'TorrentSearch',
-        'FederatedSearch', 'SuiteAdmin',
-    ],
+    'feature'     => ['User', 'Admin', 'Page', 'Navbar', 'Theme', 'Comment', 'News', 'Invite', 'Retention'],
     'application' => ['Site', 'ContentManager', 'Prelude', 'ApplicationContainer', 'ApplicationPolicies', 'ApplicationPermissions', 'ApplicationModules'],
 ];
 
 require_once __DIR__ . '/lib/sources.php';
 
-/** @var array<string, list<string>> $layers */
+/** @var array<string, list<string>> $layers LAYERS plus the module packages' namespaces */
 $layers = LAYERS;
+foreach (AstrX\Tools\moduleNamespaces(dirname(__DIR__)) as $moduleNs) {
+    $layers['feature'][] = $moduleNs;
+}
 
 // --list=layer[,layer]: print members and stop (no scan needed).
 foreach ($argv as $arg) {
