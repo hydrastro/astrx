@@ -17,14 +17,18 @@ declare(strict_types=1);
  *
  * The admin "Rebuild now" button exec()s this same script in the background.
  *
- * Bootstrap mirrors tools/warm-template-cache.php: define the path constants,
- * register the PSR-4 autoloader, then build the handful of services the indexer
- * needs (PDO + UrlGenerator + Translator, wrapped in SearchSources) directly,
- * without booting the web request pipeline.
+ * Bootstrap: the path constants and the autoloader, then the application's
+ * own container (AstrX\ApplicationContainer — the site's configuration and the
+ * installed modules' translations, so a module page's URL slug is the one the
+ * site serves), plus the handful of services the indexer needs (PDO +
+ * UrlGenerator, wrapped in SearchSources), without booting the web request
+ * pipeline.
  */
 
+use AstrX\ApplicationContainer;
 use AstrX\Config\Config;
 use AstrX\I18n\Translator;
+use AstrX\Injector\Injector;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Routing\UrlGenerator;
@@ -42,32 +46,8 @@ if (PHP_SAPI !== 'cli') {
 
 $root = dirname(__DIR__);
 
-if (!defined('INDEX_DIR'))          { define('INDEX_DIR', $root . DIRECTORY_SEPARATOR); }
-if (!defined('RESOURCES_DIR'))      { define('RESOURCES_DIR', INDEX_DIR . 'resources' . DIRECTORY_SEPARATOR); }
-if (!defined('LANG_DIR'))           { define('LANG_DIR', RESOURCES_DIR . 'lang' . DIRECTORY_SEPARATOR); }
-if (!defined('CONFIG_DIR'))         { define('CONFIG_DIR', RESOURCES_DIR . 'config' . DIRECTORY_SEPARATOR); }
-if (!defined('TEMPLATE_DIR'))       { define('TEMPLATE_DIR', RESOURCES_DIR . 'template' . DIRECTORY_SEPARATOR); }
-if (!defined('TEMPLATE_CACHE_DIR')) { define('TEMPLATE_CACHE_DIR', TEMPLATE_DIR . 'cache' . DIRECTORY_SEPARATOR); }
-if (!defined('SRC_DIR'))            { define('SRC_DIR', INDEX_DIR . 'src' . DIRECTORY_SEPARATOR); }
-if (!defined('CLASS_DIR'))          { define('CLASS_DIR', SRC_DIR . 'AstrX' . DIRECTORY_SEPARATOR); }
-
-spl_autoload_register(static function (string $class): void {
-    $prefix = 'AstrX\\';
-    $len = strlen($prefix);
-    if (strncmp($class, $prefix, $len) !== 0) {
-        return;
-    }
-    $classDir = (string) constant('CLASS_DIR');
-    $file = $classDir . str_replace('\\', '/', substr($class, $len)) . '.php';
-    if (is_file($file)) {
-        require_once $file;
-    }
-});
-
-$supportConstants = (string) constant('CLASS_DIR') . 'Support/constants.php';
-if (is_file($supportConstants)) {
-    require_once $supportConstants;
-}
+require_once $root . '/src/paths.php';
+require_once $root . '/src/autoload.php';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tiny CLI helpers
@@ -102,6 +82,21 @@ function sx_build_pdo(Config $config): PDO
         }
     }
     sx_fail('database connection failed: ' . implode('; ', $why));
+}
+
+/**
+ * @template T of object
+ * @param class-string<T> $class
+ * @return T
+ */
+function sx_service(Injector $injector, string $class): object
+{
+    $result   = $injector->getClass($class);
+    $instance = $result->isOk() ? $result->unwrap() : null;
+    if (!$instance instanceof $class) {
+        sx_fail("could not build {$class}.");
+    }
+    return $instance;
 }
 
 /** Current job status ('idle'|'requested'|'running'), or 'idle' if unreadable. */
@@ -152,7 +147,8 @@ if (!extension_loaded('pdo_mysql')) {
 }
 
 $collector = new DiagnosticsCollector();
-$config    = new Config($collector);
+$injector  = ApplicationContainer::build($collector);
+$config    = sx_service($injector, Config::class);
 $config->loadModuleConfig('Routing');
 $config->loadModuleConfig('PDO');
 
@@ -167,7 +163,7 @@ if ($ifRequested && sx_job_status($pdo) !== 'requested') {
 // Locale + page-slug translations so indexed URLs match what the site serves.
 $locale = $config->getConfigString('Prelude', 'default_language', 'en');
 
-$translator = new Translator($collector);
+$translator = sx_service($injector, Translator::class);
 $translator->setLocale($locale);
 $translator->loadDomain((string) constant('LANG_DIR'), 'pages');
 
