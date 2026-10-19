@@ -38,6 +38,8 @@ final class ChatModule implements Module
                 'chat_wait' => \AstrX\Chat\Controller\ChatWaitController::class,
             ],
             'teardown'     => 'chat.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }

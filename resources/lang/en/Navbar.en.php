@@ -38,8 +38,6 @@ return [
     'WORDING_ADMIN_CONFIG_USERS.label'    => 'Users',
     'WORDING_ADMIN_CONFIG_MAIL.label'     => 'Mail',
     'WORDING_ADMIN_AUDIT_LOG.label'       => 'Audit Log',
-    'WORDING_CHAT.label'                  => 'Chat',
-    'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
     'WORDING_ADMIN_INVITES.label'         => 'Invitations',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Languages',
 

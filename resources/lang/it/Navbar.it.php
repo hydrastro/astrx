@@ -32,8 +32,6 @@ return [
     'WORDING_ADMIN_CONFIG_USERS.label'    => 'Utenti',
     'WORDING_ADMIN_CONFIG_MAIL.label'     => 'Posta',
     'WORDING_ADMIN_AUDIT_LOG.label'       => 'Registro attività',
-    'WORDING_CHAT.label'                  => 'Chat',
-    'WORDING_ADMIN_CONFIG_CHAT.label'     => 'Chat',
     'WORDING_ADMIN_INVITES.label'         => 'Inviti',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
 
