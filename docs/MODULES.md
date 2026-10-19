@@ -88,8 +88,8 @@ final class ImageboardModule implements Module
             'key'          => 'imageboard',                 // on/off key + page.module tag; [a-z][a-z0-9_]*
             'name'         => 'Imageboard',                 // display name
             'version'      => '1.0.0',
-            'nav'          => \AstrX\Imageboard\ImageboardNavContributor::class, // or null
-            'nav_defaults' => ['board_nav' => false],       // vars merged when the module is OFF
+            'nav'          => null,                          // a NavContributor class, or null
+            'nav_defaults' => [],                            // its vars' values when the module is OFF
             'guards'       => [],                            // list of PageGuard classes
             'policies'     => [],                            // resource class => policy class (Gate)
             'permissions'  => [\AstrX\Imageboard\ImageboardPermission::class], // permission enums it declares
@@ -100,6 +100,10 @@ final class ImageboardModule implements Module
             ],
             'teardown'     => 'imageboard.down.sql',         // file in resources/sql/, or null
             'resources'    => 'resources',                   // dir next to this class, or omit
+            'extensions'   => [                              // core extension point => its classes
+                \AstrX\Retention\RetentionSource::class => [\AstrX\Imageboard\ImageboardRetention::class],
+            ],
+            'layout'       => ['nav' => ['partials/board_nav']], // layout slot => partials
         ];
     }
 }
@@ -156,31 +160,74 @@ lists the directories without booting the application, which is how the tools
 (`check_lang_parity`, `check_diagnostics`, `check_config`, the template cache
 warmer and the compiled build) find them.
 
-### Nav contributor (optional)
+### Extension points (optional)
 
-Only needed when a module adds a **section navbar or footer hook** to the shell
-(the imageboard/chat sub-navs, the bot-trap footer link). A module whose only
-navigation is a normal main-nav entry needs none — that entry is a DB
-`navbar_entry` row, and `NavbarHandler` already drops it via `page.module`.
+Core never names a module. Where a core feature needs something from modules,
+it owns an interface — an *extension point* — and asks the registry which
+modules answer it. A module answers by listing classes under that interface in
+its manifest's `extensions`; they are built through the injector, so they take
+the module's own services as constructor arguments.
+
+| Extension point | Asked by | Answer |
+|-----------------|----------|--------|
+| `Retention\RetentionSource` | the retention engine, the admin Retention page, `tools/retention.php` | the tables it prunes (`RetentionTarget`: key, table, column, age or expiry) and the upload directories whose unreferenced files it reaps (`UploadStore`) |
+| `Page\SitemapSource` | `sitemap.xml` | the public pages it serves |
+| `User\LoginListener` | the login forms | told the password once it is accepted (the webmail keeps it for the IMAP login) |
+| `User\UserHomeSection` | the user home page | tiles: page url_id => label key |
+| `Admin\AdminDashboardSection` | the admin dashboard | tiles: page url_id => label key |
 
 ```php
-namespace AstrX\Imageboard;
+'extensions' => [
+    \AstrX\Retention\RetentionSource::class => [\AstrX\Chat\ChatRetention::class],
+],
+```
 
-use AstrX\Module\NavContributor;
+Only enabled modules answer (`ModuleRegistry::extensions()`), except where the
+question is about data that exists whether or not the module is switched on:
+retention asks every installed module (`installedToo: true`), so switching a
+module off never stops its data expiring. Labels such as a retention target's
+`admin.retention.label.<key>` or a dashboard tile's text go in the module's own
+`Admin`/`User` catalog.
 
-final class ImageboardNavContributor implements NavContributor
+A new extension point is an interface in the core feature that asks, plus one
+`$registry->extensions(TheInterface::class)` call there. Keep it small: one
+question, plain values back.
+
+### Layout slots and nav contributor (optional)
+
+A module that adds something to **every page's chrome** — a section navbar
+under the header, a hidden footer link — names partials for the layout's slots
+in `layout`:
+
+```php
+'layout' => ['nav' => ['partials/board_nav']],     // the imageboard's board navbars
+'layout' => ['footer' => ['partials/trap_link']],  // the bot trap's honeypot link
+```
+
+`default.html` renders each slot's list (`{{#nav_partials}}{{> .}}{{/nav_partials}}`,
+`footer_partials`), enabled modules only, in module-key order. The slots are
+`nav` and `footer` (`ModuleRegistry::LAYOUT_SLOTS`). A partial decides for
+itself whether it shows on the current page: the board navbars render only when
+a board controller set `board_nav_show`.
+
+When a partial needs values on *every* page — the trap link's URL — the module
+also has a nav contributor (`nav`), whose `vars()` are merged into every page's
+context while the module is enabled; `nav_defaults` are merged instead when it
+is off.
+
+```php
+final class BotTrapNavContributor implements NavContributor
 {
     /** @return array<string,mixed> */
     public function vars(): array
     {
-        return ['board_nav' => 'partials/board_nav']; // a partial slot; default.html renders {{> board_nav}}
+        return ['trap_enabled' => true, 'trap_url' => '…', 'trap_link_text' => '…'];
     }
 }
 ```
 
-When the module is **off**, the registry merges the manifest's `nav_defaults`
-instead (e.g. `['board_nav' => false]`) — a `false` slot makes `{{> board_nav}}`
-render nothing, with no "undefined variable" diagnostic.
+A module whose only navigation is a main-nav entry needs neither — that entry
+is a DB `navbar_entry` row, and `NavbarHandler` drops it when the module is off.
 
 ### Page guard (optional)
 
@@ -324,11 +371,11 @@ DELETE nid FROM `navbar_entry_ids` nid
 php tools/make_module.php forum --nav --guard
 ```
 
-scaffolds `src/AstrX/Forum/ForumModule.php` (+ a `ForumNavContributor` and
-`ForumPageGuard` if you passed `--nav`/`--guard`), its controller, a
-`resources/` directory with the page's template and its slug and title in both
-locales, and its teardown `resources/sql/forum.down.sql`, then prints the
-remaining steps:
+scaffolds `src/AstrX/Forum/ForumModule.php`, its controller, a `resources/`
+directory with the page's template and its slug and title in both locales, and
+its teardown `resources/sql/forum.down.sql` — plus a section navbar partial in
+the layout's `nav` slot with `--nav`, and a `ForumPageGuard` with `--guard` —
+then prints the remaining steps:
 
 1. Install it: add `Forum\ForumModule::class` to `ApplicationModules::INSTALLED`
    and `'forum' => true` to `resources/config/Modules.config.php` (no flag = off).
@@ -358,7 +405,10 @@ php tools/check_architecture.php                # layered, acyclic namespaces
 `check_modules.php` verifies each manifest loads, has a `key`/`version`, its nav
 contributor implements `NavContributor`, its guards implement `PageGuard`, its
 policies implement `PolicyInterface`, its controllers implement
-`Kernel\Controller` and live in the module's namespace, its teardown file
-exists, and its `resources` directory (if declared) is next to it. CI additionally installs against MariaDB and boots the app
+`Kernel\Controller` and live in the module's namespace, its extensions
+implement the interface they are listed under and live in the module's
+namespace, its layout partials exist in a slot the layout has, its teardown file
+exists, its `resources` directory (if declared) is next to it, and no two SQL
+files share a name. CI additionally installs against MariaDB and boots the app
 with each module off (and with all modules off) to prove they are independently
 optional.

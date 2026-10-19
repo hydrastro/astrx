@@ -4,9 +4,9 @@ This page describes the current repository. The proposed core/application separa
 
 ## Request lifecycle
 
-`public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths, loads `src/autoload.php` and constructs `Prelude`. The autoloader can also be included on its own without booting the application.
+`public/index.php` is the normal entry point. `src/bootstrap.php` defines installation paths (`src/paths.php`), loads `src/autoload.php` and constructs `Prelude`. The paths and the autoloader can also be included on their own without booting the application.
 
-`Prelude` builds shared services for configuration, diagnostics, translation, module loading and dependency injection. It binds the account session as the request's `Auth\Identity` and `Theme\ThemePreference`, registers authorization policies (`ApplicationPolicies` plus each enabled module's manifest) and creates `ContentManager`. That manager initializes the current request, resolves its page, picks the controller from `Site\ControllerMap`, collects diagnostics and renders the response.
+`ApplicationContainer::build()` wires the shared services: configuration (the site's files over the installed modules' defaults), diagnostics, translation, module loading, dependency injection and the installed-module registry. `Prelude` builds it for a web request; a CLI tool (`tools/retention.php`, `tools/search_index.php`) builds the same container, so it sees the configuration, translations and module extensions the site does. `Prelude` then binds the account session as the request's `Auth\Identity` and `Theme\ThemePreference`, registers authorization policies (`ApplicationPolicies` plus each enabled module's manifest) and creates `ContentManager`. That manager initializes the current request, resolves its page, picks the controller from `Site\ControllerMap`, collects diagnostics and renders the response.
 
 Pages and localized route identifiers are part of the bundled application's database model. Routing supports rewritten URLs and query-based requests. This is currently an application bootstrap: including it is not an inert way to load a general-purpose library.
 
@@ -20,7 +20,7 @@ Every top-level namespace under `src/AstrX` belongs to one layer. A namespace ma
 | component | `Config`, `Injector`, `Http`, `Routing`, `ErrorHandler`, `I18n`, `Template`, `Session`, `Csrf`, `Module`, `Pagination`, `Kernel` | framework |
 | library | `Database`, `Image`, `Auth`, `Api`, `Captcha`, `Identicon`, `Mail` | optional building blocks |
 | feature | `User`, `Admin`, `Page` (CMS), `Content`, `Navbar`, `Theme`, `Comment`, `News`, `Chat`, `Imageboard`, `Webmail`, … | optional modules |
-| application | `Site`, `ContentManager`, `Prelude`, `ApplicationPolicies` | this website |
+| application | `Site`, `ContentManager`, `Prelude`, `ApplicationContainer`, `ApplicationPolicies`, `ApplicationPermissions`, `ApplicationModules` | this website |
 
 Lower layers reach upward only through narrow contracts that the application binds:
 
@@ -30,6 +30,8 @@ Lower layers reach upward only through narrow contracts that the application bin
 - `Result\DiagnosticFilter`: which diagnostics a viewer may see. `I18n\DiagnosticRenderer` uses it, and `Admin\DiagnosticVisibilityChecker` implements it.
 
 Each feature owns its controllers (`src/AstrX/<Feature>/Controller/`), its policies and its manifest. `Site` holds this website's own pages and its page context.
+
+Core never names an optional module: only `ApplicationModules`, the list of installed modules, does. Where core needs something from modules it owns an interface — an extension point such as `Retention\RetentionSource`, `Page\SitemapSource` or `User\LoginListener` — and asks `Module\ModuleRegistry::extensions()` which modules answer it; a module's partials join the page layout through its manifest's `layout` slots. See [Modules](MODULES.md).
 
 ## Results and diagnostics
 
