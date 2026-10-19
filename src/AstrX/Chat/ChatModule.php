@@ -15,8 +15,8 @@ final class ChatModule implements Module
             'key'          => 'chat',
             'name'         => 'Chat',
             'version'      => '1.0.0',
-            'nav'          => \AstrX\Chat\ChatNavContributor::class,
-            'nav_defaults' => ['chat_nav' => false],
+            'nav'          => null,
+            'nav_defaults' => [],
             'guards'       => [],
             // Registered with the Gate only while chat is enabled.
             'policies'     => [\AstrX\Chat\ChatMessageResource::class => \AstrX\Chat\ChatPolicy::class],
@@ -44,6 +44,8 @@ final class ChatModule implements Module
             'extensions'   => [
                 \AstrX\Retention\RetentionSource::class => [\AstrX\Chat\ChatRetention::class],
             ],
+            // The chat toolbar joins the nav stack (it shows only on chat pages).
+            'layout'       => ['nav' => ['partials/chat_nav']],
         ];
     }
 }

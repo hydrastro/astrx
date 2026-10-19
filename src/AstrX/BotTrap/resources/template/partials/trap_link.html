@@ -1,0 +1,3 @@
+{{! Bot-trap honeypot: hidden from humans (display:none + aria-hidden), }}
+{{! nofollow so honest crawlers skip it; only greedy bots follow it. }}
+{{#trap_enabled}}<a href="{{trap_url}}" rel="nofollow" aria-hidden="true" tabindex="-1" style="display:none">{{trap_link_text}}</a>{{/trap_enabled}}
