@@ -34,6 +34,8 @@ final class BlocklistModule implements Module
                 'admin_blocklist' => \AstrX\Blocklist\Controller\AdminBlocklistController::class,
             ],
             'teardown'     => 'blocklist.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
