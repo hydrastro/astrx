@@ -24,6 +24,10 @@ final class UserSession implements Identity, ThemePreference
 {
     private const KEY        = 'user';
     private const LOGGED_IN  = 'logged_in';
+    /** Secrets kept for the length of a login (storeSecret()), and the key
+     *  that obfuscates them. */
+    private const SECRETS     = '_login_secrets';
+    private const SECRETS_KEY = '_login_secrets_key';
 
     // -------------------------------------------------------------------------
     // State inspection
@@ -192,33 +196,42 @@ final class UserSession implements Identity, ThemePreference
     }
 
     /**
-     * Store the user's IMAP password in the session, XOR-obfuscated with a
-     * keystream derived from a stable per-session key (see webmailKey()).
+     * Keep a secret for as long as this login lasts: a password a module needs
+     * again later in the session (webmail keeps the IMAP password here), never
+     * written anywhere else. Every secret is dropped when the login ends —
+     * logout, or a password check whose second factor then fails — through
+     * forgetSecrets(). Storing '' forgets that one secret.
      *
-     * Rationale: the obfuscation keeps the password from sitting as a legible
-     * string inside the session payload. Because the per-session key lives in
-     * the SAME session row, this is meaningful defence-in-depth only when the
-     * session store itself is encrypted (SecureSessionHandler encrypt=true, the
-     * default) — a database-only attacker then sees ciphertext for the whole
-     * blob. With encrypt=false the row is plaintext and holds BOTH the key and
-     * the obfuscated password, so it adds no protection against a database-only
-     * compromise; keep session encryption enabled for webmail deployments.
+     * Each value is XOR-obfuscated with a keystream derived from a stable
+     * per-session key, so it does not sit as a legible string inside the
+     * session payload. Because that key lives in the SAME session row, this is
+     * meaningful defence-in-depth only when the session store itself is
+     * encrypted (SecureSessionHandler encrypt=true, the default) — a
+     * database-only attacker then sees ciphertext for the whole blob. With
+     * encrypt=false the row is plaintext and holds BOTH the key and the
+     * obfuscated value, so it adds no protection against a database-only
+     * compromise; keep session encryption enabled when a module stores secrets.
      */
-    public function storeImapPassword(string $password): void
+    public function storeSecret(string $name, string $value): void
     {
-        if ($password === '') {
-            $this->clearImapPassword();
+        $secrets = $this->secrets();
+        if ($value === '') {
+            unset($secrets[$name]);
+        } else {
+            $secrets[$name] = base64_encode($this->xorWithSessionKey($value));
+        }
+        if ($secrets === []) {
+            $this->forgetSecrets();
             return;
         }
-        $obfuscated = $this->xorWithSessionKey($password);
-        $_SESSION['_webmail_pass'] = base64_encode($obfuscated);
+        $_SESSION[self::SECRETS] = $secrets;
     }
 
-    /** Retrieve and de-obfuscate the stored IMAP password, or '' if absent. */
-    public function imapPassword(): string
+    /** A secret kept with storeSecret(), de-obfuscated, or '' if absent. */
+    public function secret(string $name): string
     {
-        $stored = $_SESSION['_webmail_pass'] ?? '';
-        if (!is_string($stored) || $stored === '') {
+        $stored = $this->secrets()[$name] ?? '';
+        if ($stored === '') {
             return '';
         }
         $decoded = base64_decode($stored, strict: true);
@@ -228,21 +241,34 @@ final class UserSession implements Identity, ThemePreference
         return $this->xorWithSessionKey($decoded);
     }
 
-    /** Remove the stored IMAP password (called on logout or failed auth). */
-    public function clearImapPassword(): void
+    /** Drop every secret kept with storeSecret() (the login ended or failed). */
+    public function forgetSecrets(): void
     {
-        unset($_SESSION['_webmail_pass'], $_SESSION['_webmail_key']);
+        unset($_SESSION[self::SECRETS], $_SESSION[self::SECRETS_KEY]);
     }
 
-    /** Stable per-session key for obfuscating the stored IMAP password: created
-     *  once and kept in the session, so it survives session-ID regeneration
-     *  (unlike session_id()). */
-    private function webmailKey(): string
+    /** @return array<string, string> */
+    private function secrets(): array
     {
-        $k = $_SESSION['_webmail_key'] ?? '';
+        $raw = $_SESSION[self::SECRETS] ?? null;
+        $out = [];
+        foreach (is_array($raw) ? $raw : [] as $k => $v) {
+            if (is_string($k) && is_string($v)) {
+                $out[$k] = $v;
+            }
+        }
+        return $out;
+    }
+
+    /** Stable per-session key for obfuscating the secrets: created once and
+     *  kept in the session, so it survives session-ID regeneration (unlike
+     *  session_id()). */
+    private function secretsKey(): string
+    {
+        $k = $_SESSION[self::SECRETS_KEY] ?? '';
         if (!is_string($k) || $k === '') {
             $k = bin2hex(random_bytes(32));
-            $_SESSION['_webmail_key'] = $k;
+            $_SESSION[self::SECRETS_KEY] = $k;
         }
         return $k;
     }
@@ -263,7 +289,7 @@ final class UserSession implements Identity, ThemePreference
         }
         // Derive a keystream of the same length as $data.
         $key = '';
-        $block = hash('sha256', $this->webmailKey(), true); // 32-byte seed block
+        $block = hash('sha256', $this->secretsKey(), true); // 32-byte seed block
         $needed = strlen($data);
         for ($i = 0; strlen($key) < $needed; $i++) {
             // 4-byte big-endian counter — equivalent to pack('N', $i) but
@@ -283,7 +309,7 @@ final class UserSession implements Identity, ThemePreference
         unset($_SESSION[self::KEY]);
         unset($_SESSION['_pw_reset_until'], $_SESSION['_pw_reset_uid']); // don't leak a reset grant across sessions
         unset($_SESSION['_remember_until']); // drop the remember-me re-issue window too
-        $this->clearImapPassword();
+        $this->forgetSecrets();
     }
 
     /**
