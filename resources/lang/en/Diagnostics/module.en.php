@@ -61,10 +61,6 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'A database error occurred while handling invites. Please try again later.',
 
-    'astrx.bottrap/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'A database error occurred while recording the bot-trap hit.',
-
     // Also used as the error id in the JSON body of an API 503 during a panic
     // lockdown, so the wording matches that response.
     'astrx.panic/locked' =>

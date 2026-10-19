@@ -61,10 +61,6 @@ return [
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Si è verificato un errore del database durante la gestione degli inviti. Riprova più tardi.',
 
-    'astrx.bottrap/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'Si è verificato un errore del database durante la registrazione della trappola per bot.',
-
     // Usato anche come id di errore nel corpo JSON di un 503 durante un blocco
     // di emergenza, quindi il testo corrisponde a quella risposta.
     'astrx.panic/locked' =>
