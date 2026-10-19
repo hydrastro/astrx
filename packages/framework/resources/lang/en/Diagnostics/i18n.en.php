@@ -2,6 +2,9 @@
 
 declare(strict_types = 1);
 
+use AstrX\I18n\Diagnostic\InvalidLanguageArrayDiagnostic;
+use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
+use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
 use AstrX\I18n\Diagnostic\LangWriteDiagnostic;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticInterface;
@@ -79,4 +82,33 @@ return [
             assert($d instanceof LangWriteDiagnostic);
             return 'Could not copy the source translation files: ' . $d->message();
         },
+
+    // I18n
+    'astrx.i18n/missing_translation' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof MissingTranslationDiagnostic);
+
+        return "Missing translation key \"{$d->key()}\" for locale \"{$d->locale()}\".";
+    },
+    'astrx.i18n/invalid_language_file' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof InvalidLanguageFileDiagnostic);
+
+        return "Language file does not return an array: \"{$d->file()}\".";
+    },
+    'astrx.i18n/invalid_language_array' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof InvalidLanguageArrayDiagnostic);
+
+        return "Invalid entry for key \"{$d->key()}\" in \"{$d->file()}\".";
+    },
 ];

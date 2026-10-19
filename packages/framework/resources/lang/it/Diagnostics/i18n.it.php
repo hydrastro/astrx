@@ -2,6 +2,9 @@
 
 declare(strict_types = 1);
 
+use AstrX\I18n\Diagnostic\InvalidLanguageArrayDiagnostic;
+use AstrX\I18n\Diagnostic\InvalidLanguageFileDiagnostic;
+use AstrX\I18n\Diagnostic\MissingTranslationDiagnostic;
 use AstrX\I18n\Diagnostic\LangWriteDiagnostic;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticInterface;
@@ -80,4 +83,33 @@ return [
             assert($d instanceof LangWriteDiagnostic);
             return 'Impossibile copiare i file di traduzione di origine: ' . $d->message();
         },
+
+    // I18n
+    'astrx.i18n/missing_translation' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof MissingTranslationDiagnostic);
+
+        return "Chiave di traduzione mancante: \"{$d->key()}\" per la lingua \"{$d->locale()}\".";
+    },
+    'astrx.i18n/invalid_language_file' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof InvalidLanguageFileDiagnostic);
+
+        return "Il file di lingua non restituisce un array: \"{$d->file()}\".";
+    },
+    'astrx.i18n/invalid_language_array' => function (
+        DiagnosticInterface $d,
+        Translator $t
+    )
+    : string {
+        assert($d instanceof InvalidLanguageArrayDiagnostic);
+
+        return "Voce non valida per la chiave \"{$d->key()}\" nel file \"{$d->file()}\".";
+    },
 ];

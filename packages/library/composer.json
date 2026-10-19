@@ -27,5 +27,10 @@
             "AstrX\\Identicon\\": "Identicon/",
             "AstrX\\Mail\\": "Mail/"
         }
+    },
+    "extra": {
+        "astrx": {
+            "resources": "resources"
+        }
     }
 }

@@ -151,4 +151,9 @@ return [
     'astrx.user/avatar_unknown' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'The avatar could not be processed. Please try a different image.',
+
+    'astrx.email/template_missing' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'The email template is missing, so no message was sent. '
+        . 'Check that resources/template/email/ is installed.',
 ];

@@ -118,7 +118,7 @@ namespace {
     /** A DiagnosticRenderer holding the repo's real catalog for one locale. */
     function rendererFor(string $locale): DiagnosticRenderer
     {
-        $t = new Translator(new DiagnosticsCollector());
+        $t = new Translator(new DiagnosticsCollector(), AstrX\ApplicationContainer::resourceRoots());
         $t->setLocale($locale);
         $r = new DiagnosticRenderer($t);
         $r->loadDomain(AstrX\Support\langDir(), 'Diagnostics');
@@ -167,7 +167,7 @@ namespace {
     function managerWith(Config $config): ContentManager
     {
         $collector  = new DiagnosticsCollector();
-        $translator = new Translator($collector);
+        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots());
         $translator->setLocale('en');
 
         return new ContentManager(
@@ -490,12 +490,17 @@ namespace {
         removePdoConfig();
 
         $collector  = new DiagnosticsCollector();
-        $translator = new Translator($collector);
+        $translator = new Translator($collector, AstrX\ApplicationContainer::resourceRoots());
         $translator->setLocale('en');
         $config = new Config($collector);
 
+        // The request's translator is shared, as the application container
+        // shares it: the failsafe's DiagnosticRenderer is built through the
+        // injector and must see the packages' catalogs.
+        $injector = new Injector();
+        $injector->setClass($translator);
         $cm = new ContentManager(
-            new Injector(),
+            $injector,
             $config,
             $collector,
             new ModuleLoader($config, $translator, $collector),

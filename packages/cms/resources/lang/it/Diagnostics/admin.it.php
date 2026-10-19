@@ -16,4 +16,15 @@ return [
             assert($d instanceof AuditLogDiagnostic);
             return 'Scrittura del registro di audit non riuscita (ID: ' . $d->id() . ').';
         },
+
+    // Auth — diagnostic visibility DB errors
+    'astrx.auth/diag_visibility.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            return "Errore del database per la visibilità dei diagnostici (" . $d->id() . ").";
+        },
+
+    'astrx.auth/diag_level_override.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            return "Errore del database per la sostituzione del livello dei diagnostici (" . $d->id() . ").";
+        },
 ];

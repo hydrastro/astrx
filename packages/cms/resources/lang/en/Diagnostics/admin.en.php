@@ -17,4 +17,17 @@ return [
             assert($d instanceof AuditLogDiagnostic);
             return 'Audit log write failed: ' . $d->detail();
         },
+
+    // Auth — diagnostic visibility DB errors
+    'astrx.auth/diag_visibility.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Admin\Diagnostic\DiagnosticVisibilityDbDiagnostic);
+            return 'Diagnostic visibility DB error: ' . $d->detail();
+        },
+
+    'astrx.auth/diag_level_override.db_error' =>
+        function (DiagnosticInterface $d, Translator $t): string {
+            assert($d instanceof \AstrX\Admin\Diagnostic\DiagnosticVisibilityDbDiagnostic);
+            return 'Diagnostic level override DB error: ' . $d->detail();
+        },
 ];

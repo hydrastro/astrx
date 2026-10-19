@@ -20,31 +20,31 @@ return [
     'astrx.mail/imap.connect' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof ImapConnectDiagnostic);
-            return 'Could not connect to the mail server: ' . $d->detail();
+            return 'Impossibile connettersi al server di posta: ' . $d->detail();
         },
 
     'astrx.mail/imap.command' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof ImapCommandFailedDiagnostic);
-            return 'Mail server command failed: ' . $d->detail();
+            return 'Comando del server di posta non riuscito: ' . $d->detail();
         },
 
     'astrx.mail/imap.fetch' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof ImapFetchDiagnostic);
-            return 'Failed to fetch message: ' . $d->detail();
+            return 'Impossibile recuperare il messaggio: ' . $d->detail();
         },
 
     'astrx.mail/imap.append' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof ImapAppendDiagnostic);
-            return 'Failed to save message to folder: ' . $d->detail();
+            return 'Impossibile salvare il messaggio nella cartella: ' . $d->detail();
         },
 
     'astrx.mail/imap.starttls' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof ImapStartTlsDiagnostic);
-            return 'STARTTLS negotiation failed: ' . $d->detail();
+            return 'Negoziazione STARTTLS non riuscita: ' . $d->detail();
         },
 
     // ── SMTP / Mailer ─────────────────────────────────────────────────────────
@@ -52,47 +52,40 @@ return [
     'astrx.mail/send_failed' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof MailSendFailedDiagnostic);
-            return 'Failed to send message: ' . $d->detail();
+            return 'Invio del messaggio non riuscito: ' . $d->detail();
         },
 
-    // Generic on purpose: the offending value is carried on the diagnostic for
-    // logs only and must never be echoed back to the user.
+    // Volutamente generico: il valore non valido è riportato nella diagnostica
+    // solo per i log e non deve mai essere mostrato all'utente.
     'astrx.mail/invalid_recipient' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        'The message could not be sent: a recipient address, sender, or header field was invalid.',
+        "Impossibile inviare il messaggio: un indirizzo del destinatario, del mittente o un campo di intestazione non è valido.",
 
-    // ── Mailbox management API ────────────────────────────────────────────────
+    // ── API di gestione delle caselle di posta ────────────────────────────────
 
     'astrx.mail/mailapi_error' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof MailApiErrorDiagnostic);
-            return 'Mailbox management error: ' . $d->detail();
+            return 'Errore di gestione della casella di posta: ' . $d->detail();
         },
 
     'astrx.mail/invalid_payload' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        'Mailbox API returned an unparseable response.',
+        'La API di gestione delle caselle di posta ha restituito una risposta non analizzabile.',
 
-    // ── Trusted-sender database ───────────────────────────────────────────────
+    // ── Database dei mittenti attendibili ──────────────────────────────────────
 
-
-
-    // ── Mailer not configured ─────────────────────────────────────────────────
+    // ── Mailer non configurato ─────────────────────────────────────────────────
 
     'astrx.mail/not_configured' =>
         function (DiagnosticInterface $d, Translator $t): string {
             assert($d instanceof MailerNotConfiguredDiagnostic);
-            return 'Mailer is not configured. Outbound email (e.g. verification tokens) cannot be sent. Wire PHPMailer in RegisterController to silence.';
+            return "Il mailer non è configurato. Le email in uscita (ad es. i token di verifica) non possono essere inviate. Collega PHPMailer in RegisterController per silenziare l'avviso.";
         },
 
-    // ── Generic mailer failure / missing email template ───────────────────────
+    // ── Errore generico del mailer / modello email mancante ───────────────────
 
     'astrx.mail/error' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
-        'The message could not be sent. Please try again later.',
-
-    'astrx.email/template_missing' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'The email template is missing, so no message was sent. '
-        . 'Check that resources/template/email/ is installed.',
+        'Impossibile inviare il messaggio. Riprova più tardi.',
 ];
