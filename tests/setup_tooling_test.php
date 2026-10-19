@@ -255,6 +255,8 @@ foreach (['content' => 'migrate_zz_content_module.sql',
         in_array($expected, migrationsFor($module), true),
     );
 }
+check('content: purge also forgets its content_link foreign-key migration, so the key comes back too',
+    in_array('migrate_zzzzz_content_link_fk.sql', migrationsFor('content'), true));
 
 // canary/downloads/mirrors own no table at all — their PAGES are the only thing
 // purge destroys, and those come from a migration too.
