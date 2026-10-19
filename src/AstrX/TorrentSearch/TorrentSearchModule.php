@@ -36,6 +36,8 @@ final class TorrentSearchModule implements Module
                 'torrent_search' => \AstrX\TorrentSearch\Controller\TorrentSearchController::class,
             ],
             'teardown'     => 'torrentsearch.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
