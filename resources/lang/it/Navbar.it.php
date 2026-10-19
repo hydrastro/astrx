@@ -42,7 +42,6 @@ return [
     'WORDING_ADMIN_CONFIG_IMAGEBOARD.label' => 'Imageboard',
     'WORDING_ADMIN_BOARDS.label'          => 'Board',
     'WORDING_ADMIN_INVITES.label'         => 'Inviti',
-    'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Lingue',
 
     // Navbar utente — sicurezza account
