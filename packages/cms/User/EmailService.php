@@ -156,7 +156,7 @@ final class EmailService
         array  $vars,
     ): Result {
         // Make sure the Email lang domain is loaded for this locale.
-        $this->t->loadDomain($this->langDir(), 'Email');
+        $this->t->load('Email');
 
         // Subject — comes from the lang catalog so it's editable in EN/IT
         // without touching templates.
@@ -241,15 +241,5 @@ final class EmailService
             $out = str_replace('{{' . $key . '}}', (string) $value, $out);
         }
         return $out;
-    }
-
-    /**
-     * Resolve the lang directory the framework uses. Centralised so tests
-     * can override if needed.
-     */
-    private function langDir(): string
-    {
-        $dir = dirname(__DIR__, 3) . '/resources/lang';
-        return is_dir($dir) ? $dir : (defined('LANG_DIR') ? (string) constant('LANG_DIR') : '');
     }
 }

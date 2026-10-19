@@ -13,7 +13,6 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Imageboard\ImageboardPermission;
 
@@ -50,7 +49,7 @@ final class BoardSearchController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Imageboard');
+        $this->t->load('Imageboard');
         $this->ctx->set('board_nav_show', true);
         $this->ctx->set('board_top_nav', $this->nav->topNav('search'));
 

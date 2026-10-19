@@ -10,7 +10,6 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\News\NewsPermission;
 
@@ -45,7 +44,7 @@ final class GitBrowseController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'GitBrowse');
+        $this->t->load('GitBrowse');
 
         if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);

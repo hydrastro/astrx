@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Pannello di stato della suite (admin) — locale it.
  *
- * Caricato da AdminSuiteController tramite loadDomain(langDir(), 'SuiteAdmin').
+ * Caricato da AdminSuiteController tramite load('SuiteAdmin').
  * Le chiavi rispecchiano 1:1 la controparte en (check_lang_parity.php).
  */
 return [

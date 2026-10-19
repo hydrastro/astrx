@@ -90,7 +90,7 @@ tests/mock_search_server.php                   # mock engine used by bridge_test
   and applies its `'WebSearchConfig'` section to the holder (the exact pattern
   `BotTrapConfig`/`ChatConfig` use). Keys and `#[InjectConfig]` setters match
   1:1, so no unused-key / missing-key diagnostics fire.
-- **Lang**: each controller calls `loadDomain(langDir(), 'WebSearch'|'OnionSearch')`.
+- **Lang**: each controller calls `$this->t->load('WebSearch'|'OnionSearch')`.
 
 ---
 

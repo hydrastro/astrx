@@ -307,7 +307,7 @@ final class RegisterController extends AbstractController
         // Captcha translation domain holds 'captcha.reload'. Without
         // this loadDomain call, t() emits a Missing-translation diagnostic
         // (the fallback still displays correctly, just noise in logs).
-        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->t->load('Captcha');
         $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('captcha_image',      $captchaB64);
         // Invite-only registration: show the code field when the gate is on.

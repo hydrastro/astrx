@@ -18,7 +18,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -59,7 +58,7 @@ final class ChatSettingsController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // Settings belong to an identity; a guest without a nickname has none yet.
         $ident = $this->presence->identity();

@@ -6,7 +6,6 @@ namespace AstrX\BotTrap;
 use AstrX\I18n\Translator;
 use AstrX\Module\NavContributor;
 use AstrX\Routing\UrlGenerator;
-use function AstrX\Support\langDir;
 
 /**
  * Bot-trap's contribution to the site chrome: the hidden footer honeypot link.
@@ -33,7 +32,7 @@ final class BotTrapNavContributor implements NavContributor
             return ['trap_enabled' => false, 'trap_url' => '', 'trap_link_text' => ''];
         }
 
-        $this->t->loadDomain(langDir(), 'BotTrap');
+        $this->t->load('BotTrap');
         return [
             'trap_enabled'   => true,
             'trap_url'       => $this->urlGen->toPage($this->t->t('WORDING_TRAP')),

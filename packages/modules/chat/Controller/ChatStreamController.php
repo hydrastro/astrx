@@ -19,7 +19,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Theme\ThemeService;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -64,7 +63,7 @@ final class ChatStreamController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());
         if (is_string($prgToken) && $prgToken !== '') {

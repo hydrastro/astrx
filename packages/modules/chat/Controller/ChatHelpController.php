@@ -9,7 +9,6 @@ use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -33,7 +32,7 @@ final class ChatHelpController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         $this->ctx->set('help_heading',         $this->t->t('chat.help.heading'));
         $this->ctx->set('help_formatting_head', $this->t->t('chat.help.formatting_head'));

@@ -23,7 +23,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Chat\ChatPermission;
 
@@ -69,7 +68,7 @@ final class ChatController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // PRG replay: a form was posted, stored, and redirected back here.
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());

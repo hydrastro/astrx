@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Ricerca torrent — locale it.
  *
- * Caricato da TorrentSearchController tramite loadDomain(langDir(), 'TorrentSearch').
+ * Caricato da TorrentSearchController tramite load('TorrentSearch').
  * Le chiavi rispecchiano 1:1 la controparte en (check_lang_parity.php).
  */
 return [

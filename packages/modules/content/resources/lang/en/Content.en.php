@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Content module (W/wcms-inspired Markdown pages) — en locale.
- * Loaded via loadDomain(langDir(), 'Content') by ContentController and
+ * Loaded via load('Content') by ContentController and
  * AdminContentController. Keys mirror the it counterpart 1:1.
  */
 return [

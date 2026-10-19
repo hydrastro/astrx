@@ -55,7 +55,7 @@ final class CaptchaFrameController extends AbstractController
         // Load the Captcha translation domain up front so both the error path
         // and the reload label resolve to localized strings. This controller
         // renders its own iframe document and pulls in no other domains.
-        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->t->load('Captcha');
 
         $cid     = self::queryStr($this->request, 'cid', '');
         $refresh = self::queryStr($this->request, 'refresh', '') === '1';

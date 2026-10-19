@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Ricerca federata (unificata) — locale it.
  *
- * Caricato da FederatedSearchController tramite loadDomain(langDir(), 'FederatedSearch').
+ * Caricato da FederatedSearchController tramite load('FederatedSearch').
  * Le chiavi rispecchiano 1:1 la controparte en (check_lang_parity.php).
  */
 return [

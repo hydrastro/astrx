@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Site-wide search — en locale.
  *
- * Loaded by SiteSearchController via loadDomain(langDir(), 'Search').
+ * Loaded by SiteSearchController via load('Search').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

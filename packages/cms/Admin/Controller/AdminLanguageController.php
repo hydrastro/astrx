@@ -20,7 +20,6 @@ use AstrX\I18n\Translator;
 
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
-use function AstrX\Support\langDir;
 
 /**
  * Admin — Languages: a no-JavaScript translation console.
@@ -64,7 +63,7 @@ final class AdminLanguageController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Admin');
+        $this->t->load('Admin');
 
         if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);

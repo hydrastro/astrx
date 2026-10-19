@@ -13,7 +13,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\CurrentUrl;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 use AstrX\News\NewsPermission;
@@ -49,7 +48,7 @@ final class ContentController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Content');
+        $this->t->load('Content');
 
         if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);

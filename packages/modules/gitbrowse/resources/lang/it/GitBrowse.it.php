@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Browser del codice (link-through) — locale it.
  *
- * Caricato da GitBrowseController tramite loadDomain(langDir(), 'GitBrowse').
+ * Caricato da GitBrowseController tramite load('GitBrowse').
  * Le chiavi rispecchiano 1:1 la controparte en (check_lang_parity.php).
  */
 return [

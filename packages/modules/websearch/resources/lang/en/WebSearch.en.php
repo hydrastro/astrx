@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Clear-web search — en locale.
  *
- * Loaded by WebSearchController via loadDomain(langDir(), 'WebSearch').
+ * Loaded by WebSearchController via load('WebSearch').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

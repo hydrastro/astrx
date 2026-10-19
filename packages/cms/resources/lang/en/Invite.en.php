@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Invite module (invite-only registration) — en locale.
- * Loaded via loadDomain(langDir(), 'Invite') by AdminInvitesController.
+ * Loaded via load('Invite') by AdminInvitesController.
  * Keys mirror the it counterpart 1:1.
  */
 return [

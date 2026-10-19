@@ -15,7 +15,6 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\SuiteAdmin\SuiteAdminClient;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -60,7 +59,7 @@ final class AdminSuiteController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'SuiteAdmin');
+        $this->t->load('SuiteAdmin');
 
         if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);

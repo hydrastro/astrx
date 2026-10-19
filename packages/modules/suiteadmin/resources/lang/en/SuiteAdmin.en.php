@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Suite admin / status panel — en locale.
  *
- * Loaded by AdminSuiteController via loadDomain(langDir(), 'SuiteAdmin').
+ * Loaded by AdminSuiteController via load('SuiteAdmin').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

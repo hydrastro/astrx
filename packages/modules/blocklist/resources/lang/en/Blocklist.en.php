@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Blocklist editor (admin) — en locale.
  *
- * Loaded by AdminBlocklistController via loadDomain(langDir(), 'Blocklist').
+ * Loaded by AdminBlocklistController via load('Blocklist').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

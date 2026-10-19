@@ -27,7 +27,6 @@ use AstrX\Template\TemplateVars;
 use AstrX\User\UserRepository;
 use AstrX\User\UserSession;
 use PDO;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Imageboard\ImageboardPermission;
 
@@ -93,7 +92,7 @@ final class BoardModController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Imageboard');
+        $this->t->load('Imageboard');
 
         $slug  = self::queryStr($this->request, 'board');
         $bR    = $this->boards->bySlug($slug);

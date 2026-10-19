@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Torrent search — en locale.
  *
- * Loaded by TorrentSearchController via loadDomain(langDir(), 'TorrentSearch').
+ * Loaded by TorrentSearchController via load('TorrentSearch').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

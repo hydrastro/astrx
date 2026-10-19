@@ -208,7 +208,7 @@ final class LoginController extends AbstractController
         // Captcha translation domain holds 'captcha.reload'. Without
         // this loadDomain call, t() emits a Missing-translation diagnostic
         // (the fallback still displays correctly, just noise in logs).
-        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->t->load('Captcha');
         $this->ctx->set('captcha_reload_label', $this->t->t('captcha.reload', fallback: 'New captcha'));
         $this->ctx->set('register_url',       $this->urlGen->toPage($this->t->t('WORDING_REGISTER')));
         $this->ctx->set('recover_url',        $this->urlGen->toPage($this->t->t('WORDING_RECOVER')));

@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Bot-trap (labirinto honeypot) — locale it.
  *
- * Caricato esplicitamente con loadDomain(langDir(), 'BotTrap') da
+ * Caricato esplicitamente con load('BotTrap') da
  * BotTrapController, AdminTrapController e — solo quando la trappola è attiva —
  * DefaultTemplateContext (per il link nascosto nel footer). Le chiavi
  * corrispondono 1:1 alla controparte en (check_lang_parity.php).

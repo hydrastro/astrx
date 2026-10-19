@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Bot-trap (honeypot labyrinth) — en locale.
  *
- * Loaded explicitly via loadDomain(langDir(), 'BotTrap') by BotTrapController,
+ * Loaded explicitly via load('BotTrap') by BotTrapController,
  * AdminTrapController and — only when the trap is enabled — DefaultTemplateContext
  * (for the hidden footer link). Keys mirror the it counterpart 1:1
  * (check_lang_parity.php).

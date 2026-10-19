@@ -18,7 +18,6 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -74,7 +73,7 @@ final class AdminTrapController extends AbstractController
             return $this->ok();
         }
 
-        $this->t->loadDomain(langDir(), 'BotTrap');
+        $this->t->load('BotTrap');
 
         $resolvedUrlId = $this->page->i18n
             ? $this->t->t($this->page->urlId, fallback: $this->page->urlId)

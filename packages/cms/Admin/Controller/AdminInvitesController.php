@@ -16,7 +16,6 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -57,7 +56,7 @@ final class AdminInvitesController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Invite');
+        $this->t->load('Invite');
 
         // Invite codes ARE the registration access-control on an invite-only
         // deployment, so the whole page (not just mint/revoke) requires

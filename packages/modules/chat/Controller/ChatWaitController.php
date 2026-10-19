@@ -12,7 +12,6 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -47,7 +46,7 @@ final class ChatWaitController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         $identity = $this->presence->identity();
         if ($identity === null) {

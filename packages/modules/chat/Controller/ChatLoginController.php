@@ -82,7 +82,7 @@ final class ChatLoginController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(\AstrX\Support\langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // Chat-disabled kill switch — non-staff see only the disabled message.
         if (!$this->config->chatEnabled() && $this->gate->cannot(ChatPermission::MODERATE)) {
@@ -369,7 +369,7 @@ final class ChatLoginController extends AbstractController
             }
         }
 
-        $this->t->loadDomain(\AstrX\Support\langDir(), 'Captcha');
+        $this->t->load('Captcha');
         $frameUrl = $captchaId !== ''
             ? $this->urlGen->toPage($this->t->t('WORDING_CAPTCHA_FRAME')) . '?cid=' . $captchaId
             : '';

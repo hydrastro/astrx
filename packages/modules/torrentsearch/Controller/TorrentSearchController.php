@@ -12,7 +12,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use AstrX\TorrentSearch\TorrentSearchClient;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\News\NewsPermission;
 
@@ -56,7 +55,7 @@ final class TorrentSearchController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'TorrentSearch');
+        $this->t->load('TorrentSearch');
 
         if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);

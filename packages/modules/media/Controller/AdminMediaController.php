@@ -17,7 +17,6 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -57,7 +56,7 @@ final class AdminMediaController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Media');
+        $this->t->load('Media');
 
         if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);

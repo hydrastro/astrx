@@ -11,7 +11,6 @@ use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -90,7 +89,7 @@ final class BotTrapController extends AbstractController
         }
 
         // The maze's visible words come from i18n (no hardcoded strings).
-        $this->t->loadDomain(langDir(), 'BotTrap');
+        $this->t->load('BotTrap');
         $intro = $this->t->t('bottrap.maze.intro');
         $label = $this->t->t('bottrap.maze.link');
 

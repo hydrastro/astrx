@@ -10,7 +10,6 @@ use AstrX\Http\Request;
 use AstrX\I18n\Translator;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Result\Result;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 
 /**
@@ -48,7 +47,7 @@ final class ChatPmController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         $ident = $this->presence->identity();
         if ($ident === null || !$this->isActive($ident->ident)) {

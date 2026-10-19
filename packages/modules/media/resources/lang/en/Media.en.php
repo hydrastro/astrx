@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Media library module — en locale.
- * Loaded via loadDomain(langDir(), 'Media') by AdminMediaController.
+ * Loaded via load('Media') by AdminMediaController.
  * Keys mirror the it counterpart 1:1.
  */
 return [

@@ -12,7 +12,6 @@ use AstrX\Page\Page;
 use AstrX\Result\DiagnosticLevel;
 use AstrX\Result\DiagnosticsCollector;
 use AstrX\Site\Controller\CommentController;
-use function AstrX\Support\langDir;
 
 /**
  * Runs the page's controller (from the ControllerMap), then the comment
@@ -75,7 +74,7 @@ final class ControllerDispatcher
         if ($page->comments && !$commentsLocked) {
             // Load Comment lang domain — ModuleLoader would look for
             // CommentController.en.php (class short name), not Comment.en.php.
-            $this->translator->loadDomain(langDir(), 'Comment');
+            $this->translator->load('Comment');
             $commentFqcn   = CommentController::class;
             if (class_exists($commentFqcn)) {
                 $commentResult = $this->injector->createClass($commentFqcn)

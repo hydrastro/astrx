@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Ricerca globale del sito — locale it.
  *
- * Caricato da SiteSearchController tramite loadDomain(langDir(), 'Search').
+ * Caricato da SiteSearchController tramite load('Search').
  * Le chiavi rispecchiano 1:1 la controparte en (check_lang_parity.php).
  */
 return [

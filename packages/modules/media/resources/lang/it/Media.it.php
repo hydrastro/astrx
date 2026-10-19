@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Modulo libreria media — locale it.
- * Caricato tramite loadDomain(langDir(), 'Media') da AdminMediaController.
+ * Caricato tramite load('Media') da AdminMediaController.
  * Le chiavi corrispondono 1:1 alla controparte en.
  */
 return [

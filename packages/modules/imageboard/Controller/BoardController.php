@@ -28,7 +28,6 @@ use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserSession;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Imageboard\ImageboardPermission;
 
@@ -174,7 +173,7 @@ final class BoardController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Imageboard');
+        $this->t->load('Imageboard');
 
         if ($this->gate->cannot(ImageboardPermission::VIEW)) {
             http_response_code(404);

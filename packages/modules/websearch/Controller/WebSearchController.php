@@ -12,7 +12,6 @@ use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Template\TemplateVars;
 use AstrX\WebSearch\WebSearchClient;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\News\NewsPermission;
 
@@ -61,7 +60,7 @@ final class WebSearchController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'WebSearch');
+        $this->t->load('WebSearch');
 
         if ($this->gate->cannot(NewsPermission::VIEW)) {
             http_response_code(404);

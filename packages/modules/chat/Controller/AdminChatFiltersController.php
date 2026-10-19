@@ -16,7 +16,6 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Chat\ChatPermission;
 
@@ -53,7 +52,7 @@ final class AdminChatFiltersController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // R12: chat word/nick/link FILTERS are a moderation tool, so this page is
         // scoped to CHAT_MODERATE (a MOD keeps it) — distinct from the chat CONFIG

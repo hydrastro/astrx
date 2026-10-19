@@ -11,7 +11,6 @@ use AstrX\I18n\DiagnosticRenderer;
 use AstrX\Result\Result;
 use AstrX\Routing\UrlGenerator;
 use AstrX\Site\DefaultTemplateContext;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\Controller;
 use AstrX\Admin\AdminPermission;
 
@@ -41,7 +40,7 @@ final class ErrorController implements Controller
         if ($status === 0) {
             $status = 500;
         }
-        $this->t->loadDomain(langDir(), "Http");
+        $this->t->load("Http");
 
         $errorWord = ucfirst($this->t->t('error', fallback: 'Error'));
         $name      = $this->t->t('http.status.' . $status . '.name',    fallback: $errorWord);

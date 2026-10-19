@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Onion search — en locale.
  *
- * Loaded by OnionSearchController via loadDomain(langDir(), 'OnionSearch').
+ * Loaded by OnionSearchController via load('OnionSearch').
  * Keys mirror the it counterpart 1:1 (check_lang_parity.php).
  */
 return [

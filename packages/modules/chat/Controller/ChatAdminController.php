@@ -20,7 +20,6 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
 use AstrX\User\UserGroup;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Chat\ChatPermission;
 
@@ -61,7 +60,7 @@ final class ChatAdminController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // Non-moderators see only the forbidden notice (with the toolbar).
         if ($this->gate->cannot(ChatPermission::MODERATE)) {

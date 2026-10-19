@@ -19,7 +19,6 @@ use AstrX\Routing\UrlGenerator;
 use AstrX\Session\PrgHandler;
 use AstrX\Theme\ThemeService;
 use AstrX\User\UserGroup;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Chat\ChatPermission;
 
@@ -71,7 +70,7 @@ final class ChatUsersController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Chat');
+        $this->t->load('Chat');
 
         // PRG replay: a kick/mute/ban was posted, stored, and redirected here.
         $prgToken = $this->request->query()->get($this->prg->tokenQueryKey());

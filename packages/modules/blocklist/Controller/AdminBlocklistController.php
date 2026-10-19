@@ -15,7 +15,6 @@ use AstrX\Result\Result;
 use AstrX\Session\FlashBag;
 use AstrX\Session\PrgHandler;
 use AstrX\Template\TemplateVars;
-use function AstrX\Support\langDir;
 use AstrX\Kernel\AbstractController;
 use AstrX\Admin\AdminPermission;
 
@@ -70,7 +69,7 @@ final class AdminBlocklistController extends AbstractController
     /** @return Result<mixed> */
     public function handle(): Result
     {
-        $this->t->loadDomain(langDir(), 'Blocklist');
+        $this->t->load('Blocklist');
 
         if ($this->gate->cannot(AdminPermission::ACCESS)) {
             http_response_code(403);
