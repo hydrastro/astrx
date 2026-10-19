@@ -6,7 +6,8 @@ declare(strict_types=1);
  *
  * The command-line switchboard for AstrX's optional modules. It reads and writes
  * resources/config/Modules.config.php (the same file ModuleRegistry reads at
- * runtime) and, for teardown, runs a module's src/setup/modules/<module>.down.sql.
+ * runtime) and, for teardown, runs the module's own teardown file (manifest
+ * 'teardown', in its resources/sql/).
  *
  *   status                 List every manageable module: enabled? installed pages?
  *   keys                   The installed modules' keys, one per line (for CI).
@@ -39,7 +40,6 @@ function m_fail(string $msg): never { m_err("\nERROR: {$msg}\n"); exit(1); }
 $root       = dirname(__DIR__);
 $configDir  = $root . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR;
 $modulesCfg = $configDir . 'Modules.config.php';
-$modulesDir = $root . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup' . DIRECTORY_SEPARATOR . 'modules' . DIRECTORY_SEPARATOR;
 
 // The inert autoloader: classes (the installed module list) plus the Support
 // functions, notably atomicWrite(), which publishes a config file without any
@@ -67,22 +67,45 @@ function m_read_modules(string $file): array
 
 /**
  * Every manageable module = installed modules' keys (ApplicationModules) ∪
- * config keys ∪ modules that ship a teardown file. The installed list is the
- * source of truth; the other two keep the list complete for a module that was
- * uninstalled but still has a flag or tables to purge.
+ * config keys. The installed list is the source of truth; a key that is only
+ * in the config (a module uninstalled while its flag stayed) can still be
+ * switched off. Purging needs the module's own files, so only an installed
+ * module can be purged.
  *
  * @param  array<string,bool> $configured
  * @return list<string>
  */
-function m_known_modules(array $configured, string $modulesDir): array
+function m_known_modules(array $configured): array
 {
-    $keys = array_merge(array_keys($configured), m_installed_keys());
-    foreach (glob($modulesDir . '*.down.sql') ?: [] as $f) {
-        $keys[] = basename($f, '.down.sql');
-    }
-    $keys = array_values(array_unique($keys));
+    $keys = array_values(array_unique(array_merge(array_keys($configured), m_installed_keys())));
     sort($keys);
     return $keys;
+}
+
+/**
+ * The SQL of the application: core's and every installed module's.
+ */
+function m_schema_files(string $root): \AstrX\Database\SchemaFiles
+{
+    return new \AstrX\Database\SchemaFiles(
+        [$root . '/src/setup', $root . '/setup'],
+        \AstrX\Module\ModuleRegistry::resourceRootsFor(\AstrX\ApplicationModules::INSTALLED)
+            ->of(\AstrX\Support\ResourceRoots::SQL),
+    );
+}
+
+/**
+ * An installed module's manifest 'teardown' file name, or ''.
+ */
+function m_teardown_name(string $mod): string
+{
+    foreach (\AstrX\ApplicationModules::INSTALLED as $class) {
+        $manifest = (new $class())->manifest();
+        if (($manifest['key'] ?? null) === $mod) {
+            return isset($manifest['teardown']) && is_string($manifest['teardown']) ? $manifest['teardown'] : '';
+        }
+    }
+    return '';
 }
 
 /**
@@ -288,24 +311,30 @@ function m_dropped_tables(string $downFile): array
 /**
  * Migration files (basenames) that install anything the teardown of $mod removes.
  *
- * The link between "this module" and "these migrations" is DERIVED, not
- * declared, so there is no second list to keep in sync with the manifests. A
- * migration counts when it either
- *   - CREATEs one of the tables the teardown drops, or
- *   - tags pages with `module` = '<mod>' — the ownership pattern every module
- *     migration uses, and the only thing that puts a purged module's `page`
- *     rows back (canary, downloads and mirrors own no table at all, so their
- *     pages are the ONLY thing a purge destroys).
+ * Two sources, so there is no second list to keep in sync with the manifests:
+ *   - every migration the module ships itself (its resources/sql/migrate_*.sql)
+ *     — they built its tables, pages and keys, and must run again on restore;
+ *   - any OTHER migration (core's) that CREATEs one of the tables the teardown
+ *     drops, or tags pages with `module` = '<mod>' — the ownership pattern core
+ *     migrations used for the modules folded into the schema (chat, imageboard,
+ *     bot trap): without re-running it, restored pages would come back untagged
+ *     and therefore ungated.
  *
- * @param  list<string> $tables
+ * @param  list<string> $allMigrations every migration path (SchemaFiles::migrations())
+ * @param  list<string> $tables        the tables the teardown drops
  * @return list<string>
  */
-function m_module_migrations(string $setupDir, array $tables, string $mod): array
+function m_module_migrations(array $allMigrations, string $moduleSqlDir, array $tables, string $mod): array
 {
     $out      = [];
     $ownsPage = '/`?module`?\s*=\s*\'' . preg_quote($mod, '/') . '\'/i';
+    $own      = $moduleSqlDir !== '' ? rtrim($moduleSqlDir, '/\\') . DIRECTORY_SEPARATOR : null;
 
-    foreach (glob($setupDir . 'migrate_*.sql') ?: [] as $file) {
+    foreach ($allMigrations as $file) {
+        if ($own !== null && str_starts_with($file, $own)) {
+            $out[] = basename($file);
+            continue;
+        }
         $sql = @file_get_contents($file);
         if ($sql === false) { continue; }
 
@@ -331,8 +360,8 @@ function m_module_migrations(string $setupDir, array $tables, string $mod): arra
  * This is what makes `purge` reversible. runMigration() short-circuits on a
  * `migration` row whose checksum matches and returns '' — success — WITHOUT
  * executing anything. So after a purge dropped content_page / content_link (or
- * media, or tipline: tables that live in a migration, not in tables.sql, which
- * re-runs unconditionally) the installer printed "ok" for every one of them and
+ * media, or tipline: tables that live in a migration, not in a schema piece,
+ * which re-runs unconditionally) the installer printed "ok" for every one of them and
  * created nothing. Re-enabling the module then 500'd on every page, and no
  * documented command could bring it back.
  *
@@ -402,14 +431,19 @@ function m_cmd_toggle(string $modulesCfg, array $known, string $mod, bool $enabl
 /**
  * @param list<string> $known
  */
-function m_cmd_purge(string $modulesCfg, string $modulesDir, array $known, string $mod, string $configDir): void
+function m_cmd_purge(string $modulesCfg, string $root, array $known, string $mod, string $configDir): void
 {
     if ($mod === '') { m_fail('which module? usage: module.php purge <module>'); }
     if (!in_array($mod, $known, true)) {
         m_fail("unknown module '{$mod}'. Known: " . implode(', ', $known));
     }
-    $downFile = $modulesDir . $mod . '.down.sql';
-    if (!is_file($downFile)) { m_fail("no teardown file for '{$mod}' ({$downFile})."); }
+    if (!in_array($mod, m_installed_keys(), true)) {
+        m_fail("'{$mod}' is not installed (ApplicationModules::INSTALLED), so its teardown file is not available.");
+    }
+    $sqlFiles = m_schema_files($root);
+    $teardown = m_teardown_name($mod);
+    $downFile = $sqlFiles->teardown($teardown);
+    if ($downFile === null) { m_fail("no teardown file for '{$mod}'" . ($teardown !== '' ? " ({$teardown} in its resources/sql/)" : '') . '.'); }
 
     $pdo = m_build_pdo($configDir);
     if (!$pdo instanceof PDO) { m_fail('purge needs a database connection — check resources/config/PDO.config.php.'); }
@@ -422,10 +456,15 @@ function m_cmd_purge(string $modulesCfg, string $modulesDir, array $known, strin
     // teardown is one-way: their `migration` rows still say "applied", so the
     // installer skips them, the tables are never recreated, and re-enabling the
     // module 500s on every page. content/media/tipline create their tables in a
-    // migration rather than in tables.sql, so they are the modules this hits;
-    // the other fifteen only survive because tables.sql re-runs unconditionally.
-    $setupDir   = dirname(rtrim($modulesDir, DIRECTORY_SEPARATOR)) . DIRECTORY_SEPARATOR;
-    $migrations = m_module_migrations($setupDir, m_dropped_tables($downFile), $mod);
+    // migration rather than in a schema piece, so they are the modules this
+    // hits; the others survive because schema pieces re-run unconditionally.
+    $moduleDir  = \AstrX\Module\ModuleRegistry::resourceDirsByKey(\AstrX\ApplicationModules::INSTALLED)[$mod] ?? '';
+    $migrations = m_module_migrations(
+        $sqlFiles->migrations(),
+        $moduleDir !== '' ? $moduleDir . DIRECTORY_SEPARATOR . 'sql' : '',
+        m_dropped_tables($downFile),
+        $mod,
+    );
     $err = m_forget_migrations($pdo, $migrations);
     if ($err !== '') { m_fail("could not reset migration bookkeeping: {$err}"); }
     foreach ($migrations as $m) {
@@ -475,7 +514,7 @@ $cmd  = $argv[1] ?? 'status';
 $mod  = $argv[2] ?? '';
 
 $configured = m_read_modules($modulesCfg);
-$known      = m_known_modules($configured, $modulesDir);
+$known      = m_known_modules($configured);
 
 switch ($cmd) {
     case 'keys':
@@ -495,7 +534,7 @@ switch ($cmd) {
         m_cmd_toggle($modulesCfg, $known, $mod, false);
         break;
     case 'purge':
-        m_cmd_purge($modulesCfg, $modulesDir, $known, $mod, $configDir);
+        m_cmd_purge($modulesCfg, $root, $known, $mod, $configDir);
         break;
     case 'help':
     case '-h':

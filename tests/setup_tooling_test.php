@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Pure-function coverage of the three places the install/teardown tooling was
  * quietly wrong:
  *
- *  1. runSQL() swallowed the whole of SQLSTATE 23000 to make tables.sql
+ *  1. runSQL() swallowed the whole of SQLSTATE 23000 to make the base schema
  *     re-runnable. 23000 also covers foreign-key (1451/1452) and NOT-NULL
  *     (1048) violations, so a migration whose INSERT failed integrity was
  *     recorded as applied and could never run again.
@@ -217,28 +217,42 @@ loadFunctions(
 
 echo "\n== purge: which migrations must be forgotten ==\n";
 
-$setupDir   = $ROOT . '/src/setup/';
-$modulesDir = $setupDir . 'modules/';
+// Core's SQL and every installed module's (each module ships its migrations and
+// teardown in its own resources/sql/).
+require_once $ROOT . '/src/autoload.php';
+$SQL_FILES = new AstrX\Database\SchemaFiles(
+    [$ROOT . '/src/setup'],
+    AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+        ->of(AstrX\Support\ResourceRoots::SQL),
+);
+$MODULE_DIRS = AstrX\Module\ModuleRegistry::resourceDirsByKey(AstrX\ApplicationModules::INSTALLED);
+
+function sqlDirOf(string $module): string
+{
+    global $MODULE_DIRS;
+    return isset($MODULE_DIRS[$module]) ? $MODULE_DIRS[$module] . '/sql' : '';
+}
 
 /**
  * @return list<string>
  */
-function migrationsFor(string $modulesDir, string $setupDir, string $module): array
+function migrationsFor(string $module): array
 {
-    $down = $modulesDir . $module . '.down.sql';
+    global $SQL_FILES;
+    $down = sqlDirOf($module) . '/' . $module . '.down.sql';
     if (!is_file($down)) { return []; }
-    return m_module_migrations($setupDir, m_dropped_tables($down), $module);
+    return m_module_migrations($SQL_FILES->migrations(), sqlDirOf($module), m_dropped_tables($down), $module);
 }
 
 check('content: its teardown drops content_page + content_link',
-    m_dropped_tables($modulesDir . 'content.down.sql') === ['content_link', 'content_page']);
+    m_dropped_tables(sqlDirOf('content') . '/content.down.sql') === ['content_link', 'content_page']);
 
 foreach (['content' => 'migrate_zz_content_module.sql',
           'media'   => 'migrate_zz_media.sql',
           'tipline' => 'migrate_zz_tipline.sql'] as $module => $expected) {
     check(
         "{$module}: purge forgets {$expected}, so --schema-only recreates its tables",
-        in_array($expected, migrationsFor($modulesDir, $setupDir, $module), true),
+        in_array($expected, migrationsFor($module), true),
     );
 }
 
@@ -249,12 +263,20 @@ foreach (['canary' => 'migrate_zz_canary.sql',
           'mirrors' => 'migrate_zz_mirrors.sql'] as $module => $expected) {
     check(
         "{$module}: purge forgets {$expected}, so its pages come back",
-        in_array($expected, migrationsFor($modulesDir, $setupDir, $module), true),
+        in_array($expected, migrationsFor($module), true),
     );
 }
 
-check('a module whose schema is entirely in tables.sql forgets nothing',
-    migrationsFor($modulesDir, $setupDir, 'blocklist') === []);
+// Chat's tables and pages are in its schema pieces (re-applied on every run),
+// but core's ownership migration tags its pages: restored pages must be tagged
+// again, or they would come back ungated.
+check('chat: purge forgets the core migration that tags its pages',
+    in_array('migrate_module_page_ownership.sql', migrationsFor('chat'), true));
+check('chat: and no migration of another module',
+    array_filter(migrationsFor('chat'), static fn(string $m): bool => str_contains($m, 'canary') || str_contains($m, 'content')) === []);
+
+check('a module with no tables, pages or migrations forgets nothing',
+    migrationsFor('blocklist') === []);
 
 check('the restore path the tool prints exists',
     str_contains((string) file_get_contents($ROOT . '/tools/install.php'), "hasFlag(\$args, 'schema-only')"));
