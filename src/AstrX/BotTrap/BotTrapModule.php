@@ -24,6 +24,8 @@ final class BotTrapModule implements Module
                 'bot_trap' => \AstrX\BotTrap\Controller\BotTrapController::class,
             ],
             'teardown'     => 'bottrap.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }

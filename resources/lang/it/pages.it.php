@@ -126,12 +126,6 @@ return [
     // Honeypot per bot. WORDING_TRAP è una pagina con controller raw (template=0):
     // titolo/descrizione non vengono mai mostrati — il controller genera il suo
     // labirinto e fa exit(), raggiunta solo dal link nascosto e dai bot scorretti.
-    'WORDING_TRAP'                        => 'trap',
-    'WORDING_TRAP.title'                  => 'Archivio',
-    'WORDING_TRAP.description'            => 'Archivio del sito.',
-    'WORDING_ADMIN_TRAP'                  => 'admin-trap',
-    'WORDING_ADMIN_TRAP.title'            => 'Admin — Trappola per bot',
-    'WORDING_ADMIN_TRAP.description'      => 'Esamina le richieste catturate dall\'honeypot.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD' => 'admin-config-imageboard',
     'WORDING_ADMIN_BOARDS' => 'admin-boards',

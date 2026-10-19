@@ -126,12 +126,6 @@ return [
     // Bot-trap honeypot. WORDING_TRAP is a template=0 raw-controller page (its
     // title/description are never rendered — the controller emits its own maze
     // and exit()s), reached only by the hidden footer link + misbehaving bots.
-    'WORDING_TRAP'                        => 'trap',
-    'WORDING_TRAP.title'                  => 'Archive',
-    'WORDING_TRAP.description'            => 'Site archive.',
-    'WORDING_ADMIN_TRAP'                  => 'admin-trap',
-    'WORDING_ADMIN_TRAP.title'            => 'Admin — Bot trap',
-    'WORDING_ADMIN_TRAP.description'      => 'Review requests caught by the honeypot.',
     'WORDING_ADMIN_CONFIG_CHAT' => 'admin-config-chat',
     'WORDING_ADMIN_CONFIG_IMAGEBOARD' => 'admin-config-imageboard',
     'WORDING_ADMIN_BOARDS' => 'admin-boards',

@@ -52,7 +52,6 @@ return [
     'WORDING_ADMIN_INVITES.label'         => 'Invitations',
     'WORDING_ADMIN_MEDIA.label'           => 'Media',
     'WORDING_ADMIN_LANGUAGE.label'        => 'Languages',
-    'WORDING_ADMIN_TRAP.label'            => 'Bot trap',
 
     // User navbar — account security
     'WORDING_TWOFACTOR.label'             => 'Two-Factor Auth',
