@@ -32,5 +32,10 @@
             "AstrX\\Invite\\": "Invite/",
             "AstrX\\Retention\\": "Retention/"
         }
+    },
+    "extra": {
+        "astrx": {
+            "resources": "resources"
+        }
     }
 }

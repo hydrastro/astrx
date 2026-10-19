@@ -3,39 +3,16 @@
 declare(strict_types = 1);
 
 use AstrX\I18n\Translator;
-use AstrX\Injector\Diagnostic\CircularDependencyDiagnostic;
 use AstrX\Result\DiagnosticInterface;
 
 /**
- * Diagnostiche dei sottosistemi dei moduli opzionali (contenuti, media, ricerca,
- * inviti, trappola per bot, blocco di emergenza) più la guardia sui cicli
- * dell'injector — locale it. Ogni id qui presente veniva prima reso come timbro
- * grezzo "[FALLBACK:…]" in entrambe le lingue.
- *
- * Gli errori di database mostrano di proposito una frase generica: la
- * diagnostica conserva il messaggio del driver per i log lato server, ma quel
- * messaggio nomina tabelle, colonne e talvolta valori, e questo testo può
- * arrivare a una pagina pubblica. Stessa politica di astrx.news/db_error.
+ * Diagnostics — it: the site's request pipeline (a page with no controller,
+ * the panic lockdown).
  */
 return [
-    'astrx.injector/circular_dependency' =>
-        function (DiagnosticInterface $d, Translator $t): string {
-            assert($d instanceof CircularDependencyDiagnostic);
-            return "Dipendenza circolare durante la costruzione di \"{$d->getClassName()}\" — "
-                . 'due classi si richiedono a vicenda nei costruttori.';
-        },
-
     'astrx.content/controller_missing' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         'Questa pagina è configurata per usare un controller che non esiste.',
-
-
-
-
-
-    'astrx.invite/db_error' =>
-        fn(DiagnosticInterface $d, Translator $t): string =>
-        'Si è verificato un errore del database durante la gestione degli inviti. Riprova più tardi.',
 
     // Usato anche come id di errore nel corpo JSON di un 503 durante un blocco
     // di emergenza, quindi il testo corrisponde a quella risposta.

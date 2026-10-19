@@ -129,7 +129,8 @@ echo "1. Isolated tree\n";
 check('framework layers listed by the architecture gate (expected 10+)', count($framework) >= 10, implode(', ', $framework));
 $present = array_values(array_filter(
     array_diff(scandir($tmp . '/packages/framework') ?: [], ['.', '..']),
-    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e),
+    // Namespace directories; resources/ holds the package's catalogs.
+    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e) && $e !== 'resources',
 ));
 sort($present);
 $expected = $framework;

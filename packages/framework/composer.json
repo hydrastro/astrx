@@ -41,5 +41,10 @@
         "files": [
             "Support/constants.php"
         ]
+    },
+    "extra": {
+        "astrx": {
+            "resources": "resources"
+        }
     }
 }

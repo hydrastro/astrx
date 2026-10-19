@@ -133,4 +133,9 @@ return [
     'astrx.user/avatar_unknown' =>
         fn(DiagnosticInterface $d, Translator $t): string =>
         "Impossibile elaborare l'avatar. Prova con un'altra immagine.",
+
+    'astrx.email/template_missing' =>
+        fn(DiagnosticInterface $d, Translator $t): string =>
+        'Il modello dell\'email è mancante, quindi non è stato inviato alcun messaggio. '
+        . 'Verifica che resources/template/email/ sia installato.',
 ];

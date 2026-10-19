@@ -13,4 +13,7 @@ declare(strict_types=1);
  * @return list<string>
  */
 return [
+    __DIR__ . '/../packages/framework/resources', // astrx/framework
+    __DIR__ . '/../packages/library/resources', // astrx/library
+    __DIR__ . '/../packages/cms/resources', // astrx/cms
 ];
