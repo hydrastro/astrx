@@ -9,6 +9,9 @@ declare(strict_types=1);
  *   - src/AstrX/<Studly>/Controller/<Studly>Controller.php  its page controller
  *   - src/AstrX/<Studly>/<Studly>NavContributor.php   (only with --nav)
  *   - src/AstrX/<Studly>/<Studly>PageGuard.php         (only with --guard)
+ *   - src/AstrX/<Studly>/resources/          its own resources (see docs/MODULES.md):
+ *       template/<key>.html                 the page's template
+ *       lang/{en,it}/pages.{en,it}.php       its page slug + title (merged into `pages`)
  *   - src/setup/modules/<key>.down.sql       teardown stub for `module.php purge`
  * then prints the remaining manual steps (install it in ApplicationModules,
  * config flag, page tagging, architecture layer).
@@ -106,6 +109,8 @@ final class {$studly}Module implements Module
                 '{$key}' => \\AstrX\\{$studly}\\Controller\\{$studly}Controller::class,
             ],
             'teardown'     => '{$key}.down.sql',
+            // Templates, translations and default config, next to this class.
+            'resources'    => 'resources',
         ];
     }
 }
@@ -221,6 +226,37 @@ DELETE ne FROM `navbar_entry` ne
 
 SQL);
 
+// ── Resources: template + page translations ───────────────────────────────────
+$wording = 'WORDING_' . strtoupper($key);
+$slug    = str_replace('_', '-', $key);
+foreach (["{$moduleDir}/resources/template", "{$moduleDir}/resources/lang/en", "{$moduleDir}/resources/lang/it"] as $dir) {
+    if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
+        mk_fail("could not create {$dir}");
+    }
+}
+$emit("{$moduleDir}/resources/template/{$key}.html", <<<HTML
+<h2>{{{$key}_heading}}</h2>
+
+HTML);
+foreach (['en' => 'English', 'it' => 'Italian'] as $locale => $language) {
+    $emit("{$moduleDir}/resources/lang/{$locale}/pages.{$locale}.php", <<<PHP
+<?php
+declare(strict_types=1);
+
+/**
+ * pages — {$locale}: the {$studly} module's page (merged into the site's pages
+ * catalog). {$language} slug, title and description; keep the keys in step
+ * with the other locale (tools/check_lang_parity.php).
+ */
+return [
+    '{$wording}'             => '{$slug}',
+    '{$wording}.title'       => '{$studly}',
+    '{$wording}.description' => '{$studly}',
+];
+
+PHP);
+}
+
 // ── Report ───────────────────────────────────────────────────────────────────
 mk_out("Scaffolded module '{$key}' ({$studly}):\n");
 foreach ($written as $w) {
@@ -232,8 +268,10 @@ Next steps:
   1. Install it: add  {$studly}\\{$studly}Module::class  to
      ApplicationModules::INSTALLED (src/AstrX/ApplicationModules.php), and
      '{$key}' => true  to resources/config/Modules.config.php (no flag = off).
-  2. Tag its pages so they can be gated — in a migrate_*.sql, e.g.:
+  2. Add its page row (url_id '{$wording}', file_name '{$key}') and tag it so
+     it can be gated — in a migrate_*.sql, e.g.:
          UPDATE `page` SET `module` = '{$key}' WHERE `file_name` LIKE '{$key}%';
+     Its template and page title are already in resources/.
   3. Fill in the {$key}.down.sql DROP TABLEs (and the nav/guard stubs if generated).
   4. Add the module's namespace to LAYERS in tools/check_architecture.php
      (usually 'feature').
