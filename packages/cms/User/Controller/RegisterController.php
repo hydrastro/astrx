@@ -20,7 +20,8 @@ use AstrX\Config\Config;
 use AstrX\Invite\InviteRepository;
 use AstrX\Invite\InviteService;
 use AstrX\User\UserService;
-use AstrX\Config\InjectConfig;
+use AstrX\Module\ModuleRegistry;
+use AstrX\User\MailboxNaming;
 use AstrX\User\UserSession;
 use AstrX\Kernel\AbstractController;
 
@@ -28,19 +29,13 @@ use AstrX\Kernel\AbstractController;
  * Registration form controller.
  * Email sending (verification token) is stubbed — wire PHPMailer when ready.
  */
-#[\AstrX\Config\ConfigDomain('WebmailService', file: 'Mail')]
 final class RegisterController extends AbstractController
 {
     private const FORM = 'register';
 
-    // Fix 7.3: cached config so duplicated reads stay in sync.
-    private bool $mailboxIsUsername = false;
-
-    #[InjectConfig('mailbox_is_username')]
-    public function setMailboxIsUsername(bool $v): void
-    {
-        $this->mailboxIsUsername = $v;
-    }
+    /** Asked once per request (see mailboxIsUsername()), so the submission
+     *  and the form it re-renders always agree. */
+    private ?bool $mailboxIsUsername = null;
 
     public function __construct(
         DiagnosticsCollector                   $collector,
@@ -59,8 +54,24 @@ final class RegisterController extends AbstractController
         private readonly UserRepository        $userRepo,
         private readonly InviteService         $inviteService,
         private readonly InviteRepository      $inviteRepo,
+        private readonly ModuleRegistry        $modules,
     ) {
         parent::__construct($collector);
+    }
+
+    /** Whether an installed module names mailboxes after usernames (MailboxNaming). */
+    private function mailboxIsUsername(): bool
+    {
+        if ($this->mailboxIsUsername === null) {
+            $this->mailboxIsUsername = false;
+            foreach ($this->modules->extensions(MailboxNaming::class, installedToo: true) as $naming) {
+                if ($naming->mailboxIsUsername()) {
+                    $this->mailboxIsUsername = true;
+                    break;
+                }
+            }
+        }
+        return $this->mailboxIsUsername;
     }
 
     /** @return Result<mixed> */
@@ -90,8 +101,7 @@ final class RegisterController extends AbstractController
         $username    = self::mStr($posted, 'username', '');
         $password    = self::mStr($posted, 'password', '');
         $repeat      = self::mStr($posted, 'repeat', '');
-        // Fix 7.3: use cached config (set once via #[InjectConfig]).
-        $mailbox     = $this->mailboxIsUsername
+        $mailbox     = $this->mailboxIsUsername()
             ? $username
             : self::mStr($posted, 'mailbox', '');
         $email       = self::mStr($posted, 'email', '');
@@ -303,7 +313,7 @@ final class RegisterController extends AbstractController
         // Invite-only registration: show the code field when the gate is on.
         $this->ctx->set('show_invite',        $this->inviteService->requireInvite());
         $this->ctx->set('invite_code_value',  $inviteCode);
-        $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$this->mailboxIsUsername);
+        $this->ctx->set('show_mailbox', $this->userService->requireEmail() && !$this->mailboxIsUsername());
         $this->ctx->set('show_email',         $this->userService->requireRecoveryEmail());
         $this->ctx->set('show_display_name',  $this->userService->requireDisplayName());
         $this->ctx->set('show_birth_date',    $this->userService->requireBirthDate());
