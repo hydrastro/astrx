@@ -36,6 +36,8 @@ final class DownloadsModule implements Module
                 'downloads' => \AstrX\Downloads\Controller\DownloadsController::class,
             ],
             'teardown'     => 'downloads.down.sql',
+            // Templates, translations and default config (see docs/MODULES.md).
+            'resources'    => 'resources',
         ];
     }
 }
