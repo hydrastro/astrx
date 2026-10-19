@@ -39,7 +39,7 @@ require $root . '/src/autoload.php';
 
 /** @var array<string,string> $langRoots label => directory holding en/ and it/ */
 $langRoots = ['resources/lang' => $root . '/resources/lang'];
-foreach (AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+foreach (AstrX\ApplicationContainer::resourceRoots()
              ->of(AstrX\Support\ResourceRoots::LANG) as $dir) {
     $langRoots[ltrim(substr(rtrim($dir, '/'), strlen($root)), '/')] = rtrim($dir, '/');
 }

@@ -826,7 +826,7 @@ try {
     require_once $ROOT . '/src/autoload.php';
     $onDisk = count((new AstrX\Database\SchemaFiles(
         [$ROOT . '/src/setup'],
-        AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+        AstrX\ApplicationContainer::resourceRoots()
             ->of(AstrX\Support\ResourceRoots::SQL),
     ))->migrations());
     $ledger = rows($pdoFresh, 'SELECT file_name FROM `migration` ORDER BY file_name');

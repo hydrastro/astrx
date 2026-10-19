@@ -4,8 +4,9 @@ declare(strict_types=1);
 namespace AstrX\Support;
 
 /**
- * The resource directories the installed modules ship, in precedence order
- * (lowest first).
+ * The resource directories the application's packages and installed modules
+ * ship, in precedence order (lowest first): the core packages' (framework,
+ * library, CMS), then the modules'.
  *
  * Each directory has the same layout as the site's own resources/:
  *
@@ -17,15 +18,15 @@ namespace AstrX\Support;
  * The site's own resources/ directory is NOT in this list: it is the top layer
  * and always wins. Consumers combine the two the same way:
  *
- *   - templates: the site's file, else the first module that has one;
- *   - catalogs and config: module files first, then the site's, so the site's
- *     keys override the module defaults key by key;
+ *   - templates: the site's file, else the first directory that has one;
+ *   - catalogs and config: these files first, in order, then the site's, so
+ *     the site's keys override the package defaults key by key;
  *   - writes (admin config, the language editor): the site's files only. A
- *     module's directory is read-only — once modules are Composer packages it
- *     lives under vendor/.
+ *     package's directory is read-only — installed with Composer it lives
+ *     under vendor/.
  *
- * Built once by the composition root from the installed modules
- * (ModuleRegistry::resourceRootsFor()) and shared through the injector.
+ * Built once by the composition root (ApplicationContainer::resourceRoots())
+ * and shared through the injector.
  */
 final class ResourceRoots
 {
@@ -37,7 +38,7 @@ final class ResourceRoots
     /** @var list<string> */
     private readonly array $dirs;
 
-    /** @param list<string> $dirs module resource directories, lowest precedence first */
+    /** @param list<string> $dirs resource directories, lowest precedence first */
     public function __construct(array $dirs = [])
     {
         $clean = [];
@@ -51,7 +52,7 @@ final class ResourceRoots
     }
 
     /**
-     * The module resource directories themselves.
+     * The resource directories themselves.
      *
      * @return list<string>
      */

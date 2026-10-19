@@ -222,7 +222,7 @@ echo "\n== purge: which migrations must be forgotten ==\n";
 require_once $ROOT . '/src/autoload.php';
 $SQL_FILES = new AstrX\Database\SchemaFiles(
     [$ROOT . '/src/setup'],
-    AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED)
+    AstrX\ApplicationContainer::resourceRoots()
         ->of(AstrX\Support\ResourceRoots::SQL),
 );
 $MODULE_DIRS = AstrX\Module\ModuleRegistry::resourceDirsByKey(AstrX\ApplicationModules::INSTALLED);

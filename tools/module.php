@@ -89,7 +89,7 @@ function m_schema_files(string $root): \AstrX\Database\SchemaFiles
 {
     return new \AstrX\Database\SchemaFiles(
         [$root . '/src/setup', $root . '/setup'],
-        \AstrX\Module\ModuleRegistry::resourceRootsFor(\AstrX\ApplicationModules::INSTALLED)
+        \AstrX\ApplicationContainer::resourceRoots()
             ->of(\AstrX\Support\ResourceRoots::SQL),
     );
 }

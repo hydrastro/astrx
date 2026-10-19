@@ -187,6 +187,14 @@ final class AstrXCompiler
         // Each module's own resources. Unlike the site's config (per-install and
         // mutable, so never embedded), a module's config/ holds shipped
         // defaults and travels with it.
+        // The core packages' own resources (src/resources.php).
+        $coreResources = is_file($this->root . '/src/resources.php') ? require $this->root . '/src/resources.php' : [];
+        foreach (is_array($coreResources) ? $coreResources : [] as $dir) {
+            $real = is_string($dir) ? realpath($dir) : false;
+            if ($real !== false) {
+                $resourceRoots[] = $this->slash($this->relative($real));
+            }
+        }
         foreach (AstrX\Tools\sourceDirs($this->root) as $sourceDir) {
             foreach ([...(glob($sourceDir . '/resources', GLOB_ONLYDIR) ?: []), ...(glob($sourceDir . '/*/resources', GLOB_ONLYDIR) ?: [])] as $dir) {
                 $resourceRoots[] = $this->slash($this->relative($dir));

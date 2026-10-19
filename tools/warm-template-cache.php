@@ -18,7 +18,7 @@ require_once $root . '/src/paths.php';
 require_once $root . '/src/autoload.php';
 
 $collector = new AstrX\Result\DiagnosticsCollector();
-$roots = AstrX\Module\ModuleRegistry::resourceRootsFor(AstrX\ApplicationModules::INSTALLED);
+$roots = AstrX\ApplicationContainer::resourceRoots();
 $engine = new AstrX\Template\TemplateEngine($collector, $roots);
 /** @var mixed $loadedConfig */
 $loadedConfig = require CONFIG_DIR . 'TemplateEngine.config.php';
