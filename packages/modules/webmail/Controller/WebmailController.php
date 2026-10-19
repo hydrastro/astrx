@@ -9,6 +9,7 @@ use AstrX\Http\Request;
 use AstrX\Http\Response;
 use AstrX\I18n\Translator;
 use AstrX\Webmail\HtmlEmailSanitizer;
+use AstrX\Webmail\WebmailCredentials;
 use AstrX\Webmail\WebmailService;
 use AstrX\Webmail\WebmailTrustedSenderRepository;
 use AstrX\Page\Page;
@@ -67,6 +68,7 @@ final class WebmailController extends AbstractController
         private readonly Request                    $request,
         private readonly UserSession                $session,
         private readonly WebmailService             $webmail,
+        private readonly WebmailCredentials         $credentials,
         private readonly WebmailTrustedSenderRepository $trustedSenders,
         private readonly HtmlEmailSanitizer         $sanitizer,
         private readonly Gate                       $gate,
@@ -117,7 +119,7 @@ final class WebmailController extends AbstractController
         }
 
         // ── Require IMAP password ─────────────────────────────────────────────
-        $imapPass = $this->session->imapPassword();
+        $imapPass = $this->credentials->password();
         if ($imapPass === '') {
             if ($this->webmail->mailserverIsLocal()) {
                 // mailserver_is_local=true means the login password should have
@@ -136,7 +138,7 @@ final class WebmailController extends AbstractController
         $connectR = $this->webmail->connect($mailbox, $imapPass, $username);
         if (!$connectR->isOk()) {
             $connectR->drainTo($this->collector);
-            $this->session->clearImapPassword();
+            $this->credentials->clear();
             $this->buildLoginContext($selfUrl, imapError: true);
             return $this->ok();
         }
@@ -191,7 +193,7 @@ final class WebmailController extends AbstractController
             }
             $password = self::mStr($posted, 'imap_password', '');
             if ($password !== '') {
-                $this->session->storeImapPassword($password);
+                $this->credentials->store($password);
             }
             return $selfUrl;
         }
@@ -204,7 +206,7 @@ final class WebmailController extends AbstractController
         }
 
         // Establish IMAP for mutation actions
-        $imapPass = $this->session->imapPassword();
+        $imapPass = $this->credentials->password();
         if ($imapPass !== '') {
             $this->webmail->connect($this->session->mailbox(), $imapPass, $this->session->username())
                 ->drainTo($this->collector);
@@ -302,7 +304,7 @@ final class WebmailController extends AbstractController
                 return $selfUrl . '?' . http_build_query(['folder' => $folder, 'uid' => $uid]);
 
             case 'disconnect':
-                $this->session->clearImapPassword();
+                $this->credentials->clear();
                 return $selfUrl;
         }
 
@@ -375,7 +377,7 @@ final class WebmailController extends AbstractController
 
     private function handleAttachmentDownload(string $selfUrl): void
     {
-        $imapPass = $this->session->imapPassword();
+        $imapPass = $this->credentials->password();
         if ($imapPass === '') { return; }
 
         $folderQRaw = $this->request->query()->get('folder');

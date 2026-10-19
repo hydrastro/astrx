@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace AstrX\Webmail;
 
 use AstrX\User\LoginListener;
-use AstrX\User\UserSession;
 
 /**
  * When the mail server shares the site's accounts (mailserver_is_local), the
@@ -20,14 +19,14 @@ use AstrX\User\UserSession;
 final class WebmailLoginListener implements LoginListener
 {
     public function __construct(
-        private readonly WebmailService $webmail,
-        private readonly UserSession    $session,
+        private readonly WebmailService     $webmail,
+        private readonly WebmailCredentials $credentials,
     ) {}
 
     public function passwordAccepted(string $password, bool $secondFactorPending): void
     {
         if ($this->webmail->mailserverIsLocal() && $password !== '') {
-            $this->session->storeImapPassword($password);
+            $this->credentials->store($password);
         }
     }
 }

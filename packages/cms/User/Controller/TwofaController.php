@@ -116,7 +116,7 @@ final class TwofaController extends AbstractController
         $state = $this->userService->totpInfo($uid)->drainTo($this->collector);
         if (!$state->isOk() || !$state->unwrap()['enabled']) {
             $this->clearPending();
-            $this->session->clearImapPassword();
+            $this->session->forgetSecrets();
             $this->flash->set('error', $this->t->t('twofa.bad_code'));
             return;
         }

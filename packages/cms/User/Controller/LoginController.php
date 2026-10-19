@@ -131,7 +131,7 @@ final class LoginController extends AbstractController
         $factor = $this->userService->isTotpEnabled($uid)->drainTo($this->collector);
         if (!$factor->isOk()) {
             unset($_SESSION['astrx_pending_2fa'], $_SESSION['astrx_pending_2fa_data'], $_SESSION['astrx_pending_2fa_ts']);
-            $this->session->clearImapPassword();
+            $this->session->forgetSecrets();
             return $factor;
         }
         if ($factor->unwrap()) {
