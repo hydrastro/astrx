@@ -72,34 +72,39 @@ final class NavbarHandler
         return $entries;
     }
 
+    /** @var array<int,true>|null see disabledPageIds() */
+    private ?array $disabledPageIdsMemo = null;
+
     /**
-     * Page ids owned by a currently-disabled module. Empty (no query) when every
-     * module is on — the common case.
+     * Page ids owned by a module that is not live — disabled, or not installed
+     * at all (see ModuleRegistry::pageOwnerEnabled(), the page gate's rule).
      *
      * @return array<int,true>
      */
     private function disabledPageIds(): array
     {
-        $disabled = $this->registry->disabledModules();
-        if ($disabled === []) {
-            return [];
+        // Several navbars are built per request; the page table is read once.
+        if ($this->disabledPageIdsMemo !== null) {
+            return $this->disabledPageIdsMemo;
         }
-
-        $placeholders = implode(',', array_fill(0, count($disabled), '?'));
         $ids = [];
         try {
-            $stmt = $this->pdo->prepare("SELECT `id` FROM `page` WHERE `module` IN ({$placeholders})");
-            $stmt->execute(array_values($disabled));
-            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
-                if (is_int($id)) {
+            $rows = $this->pdo->query("SELECT `id`, `module` FROM `page` WHERE `module` <> ''");
+            foreach (($rows === false ? [] : $rows->fetchAll(PDO::FETCH_ASSOC)) as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $id     = $row['id'] ?? null;
+                $module = $row['module'] ?? '';
+                if (is_int($id) && is_string($module) && !$this->registry->pageOwnerEnabled($module)) {
                     $ids[$id] = true;
                 }
             }
         } catch (\PDOException) {
             // page.module predates the ownership migration — no filtering yet.
-            return [];
+            return $this->disabledPageIdsMemo = [];
         }
-        return $ids;
+        return $this->disabledPageIdsMemo = $ids;
     }
 
     /**

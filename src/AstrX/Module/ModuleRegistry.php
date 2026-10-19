@@ -80,6 +80,30 @@ final class ModuleRegistry
     }
 
     /**
+     * Whether a page owned by $pageModule (the `page.module` column) is live.
+     *
+     * A core page (empty owner) always is. Otherwise the owner must be an
+     * INSTALLED module that is enabled; the value is matched case- and
+     * whitespace-insensitively, and an owner no installed module claims — a
+     * typo, or a module that was uninstalled while its page rows stayed — is
+     * not live (fail closed). The page gate, the navbar and the JS manifest
+     * all ask this one question, so a page is never linked where it 404s.
+     */
+    public function pageOwnerEnabled(string $pageModule): bool
+    {
+        $raw = strtolower(trim($pageModule));
+        if ($raw === '') {
+            return true;
+        }
+        foreach ($this->moduleKeys() as $k) {
+            if (strtolower(trim($k)) === $raw) {
+                return $this->enabled($k);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Every module that ships a manifest (enabled or not).
      *
      * @return list<string>

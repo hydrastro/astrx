@@ -92,6 +92,15 @@ try {
     check('no controllers', !isset($r->controllers()['webmail']));
     check('no permissions', !in_array(AstrX\Webmail\WebmailPermission::class, $r->permissionEnums(), true));
 
+    echo "\n3b. Whose pages are live (the page gate, navbar and JS manifest share this)\n";
+    $r = registry($both, ['chat' => true, 'imageboard' => false]);
+    check('a core page (no owner) is live', $r->pageOwnerEnabled(''));
+    check("an enabled module's page is live", $r->pageOwnerEnabled('chat'));
+    check('the owner is matched case- and whitespace-insensitively', $r->pageOwnerEnabled(' Chat '));
+    check("a disabled module's page is not", !$r->pageOwnerEnabled('imageboard'));
+    check("an uninstalled module's page is not (its rows outlive it)", !$r->pageOwnerEnabled('webmail'));
+    check('an owner nobody claims is not (fail closed)', !$r->pageOwnerEnabled('nope'));
+
     echo "\n4. Bad lists fail loudly\n";
     check('a class that is not a Module', threw(static fn() => registry([stdClass::class], [])->moduleKeys()));
     check('a missing class', threw(static fn() => registry(['AstrX\\Nope\\NopeModule'], [])->moduleKeys()));
