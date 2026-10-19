@@ -25,7 +25,7 @@ use AstrX\Page\PageGuard;
  *     namespace that implements Auth\Permission;
  *   - every `controllers` entry maps a page file_name to an existing class that
  *     implements Kernel\Controller and lives in the module's own namespace;
- *   - its `teardown` (if named) exists under src/setup/modules/;
+ *   - its `teardown` (if named) exists in its resources/sql/;
  *   - its `resources` (if named) is a directory inside the module's own
  *     directory (templates, catalogs, default config, SQL);
  *   - its key has a boolean flag in resources/config/Modules.config.php (an
@@ -95,7 +95,6 @@ if (is_file($configFile)) {
     }
 }
 
-$modulesDir = SRC_DIR . 'setup' . DIRECTORY_SEPARATOR . 'modules' . DIRECTORY_SEPARATOR;
 
 // Present but not installed: a Module class on disk that the application
 // does not list is inert — worth a warning, since it is usually a forgotten
@@ -226,8 +225,11 @@ foreach (cm_installed() as $class) {
     // teardown
     $teardownLabel = '—';
     if (isset($raw['teardown']) && is_string($raw['teardown']) && $raw['teardown'] !== '') {
-        if (!is_file($modulesDir . $raw['teardown'])) {
-            $errors[] = "{$key}: teardown 'src/setup/modules/{$raw['teardown']}' not found";
+        $res = isset($raw['resources']) && is_string($raw['resources']) ? $raw['resources'] : '';
+        $sqlDir = dirname((string) (new ReflectionClass($class))->getFileName()) . DIRECTORY_SEPARATOR
+            . $res . DIRECTORY_SEPARATOR . 'sql' . DIRECTORY_SEPARATOR;
+        if ($res === '' || !is_file($sqlDir . $raw['teardown'])) {
+            $errors[] = "{$key}: teardown '{$raw['teardown']}' not found in the module's resources/sql/";
         } else {
             $teardownLabel = $raw['teardown'];
         }
@@ -266,6 +268,20 @@ foreach (cm_installed() as $class) {
         'guards'   => $guardCount,
         'teardown' => $teardownLabel,
     ];
+}
+
+// SQL file names must be unique across core and every installed module: the
+// installer orders schema pieces and migrations by file name, and the migration
+// ledger records them by it.
+try {
+    $sqlFiles = new AstrX\Database\SchemaFiles(
+        [dirname(SRC_DIR) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'setup'],
+        AstrX\Module\ModuleRegistry::resourceRootsFor(ApplicationModules::INSTALLED)->of(AstrX\Support\ResourceRoots::SQL),
+    );
+    $sqlFiles->schema();
+    $sqlFiles->migrations();
+} catch (LogicException $e) {
+    $errors[] = 'SQL: ' . $e->getMessage();
 }
 
 // ── Report ───────────────────────────────────────────────────────────────────

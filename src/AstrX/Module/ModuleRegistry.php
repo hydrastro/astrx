@@ -307,6 +307,25 @@ final class ModuleRegistry
         return self::rootsOf(self::buildManifests($modules));
     }
 
+    /**
+     * Module key => that module's resources directory, for the installed
+     * modules that have one (the tools that act on ONE module — purge — need
+     * to know whose directory is whose).
+     *
+     * @param list<string> $modules installed module classes
+     * @return array<string,string>
+     */
+    public static function resourceDirsByKey(array $modules): array
+    {
+        $out = [];
+        foreach (self::buildManifests($modules) as $m) {
+            if ($m['resources'] !== null) {
+                $out[$m['key']] = $m['resources'];
+            }
+        }
+        return $out;
+    }
+
     /** @param list<Manifest> $manifests */
     private static function rootsOf(array $manifests): ResourceRoots
     {

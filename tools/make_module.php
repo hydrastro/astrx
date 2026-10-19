@@ -12,7 +12,7 @@ declare(strict_types=1);
  *   - src/AstrX/<Studly>/resources/          its own resources (see docs/MODULES.md):
  *       template/<key>.html                 the page's template
  *       lang/{en,it}/pages.{en,it}.php       its page slug + title (merged into `pages`)
- *   - src/setup/modules/<key>.down.sql       teardown stub for `module.php purge`
+ *       sql/<key>.down.sql                   teardown stub for `module.php purge`
  * then prints the remaining manual steps (install it in ApplicationModules,
  * config flag, page tagging, architecture layer).
  *
@@ -53,7 +53,7 @@ $studly = str_replace(' ', '', ucwords(str_replace('_', ' ', $key)));
 $root      = dirname(__DIR__);
 $moduleDir = $root . "/src/AstrX/{$studly}";
 $manifest  = "{$moduleDir}/{$studly}Module.php";
-$downFile  = $root . "/src/setup/modules/{$key}.down.sql";
+$downFile  = "{$moduleDir}/resources/sql/{$key}.down.sql";
 
 if (is_file($manifest)) {
     mk_fail("module already exists: src/AstrX/{$studly}/{$studly}Module.php");
@@ -71,6 +71,8 @@ $written = [];
 /** Write a file only if absent, recording its relative path in $written. */
 $emit = static function (string $path, string $body) use ($root, &$written): void {
     if (is_file($path)) { return; }
+    $dir = dirname($path);
+    if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) { mk_fail("could not create {$dir}"); }
     if (@file_put_contents($path, $body) === false) { mk_fail("could not write {$path}"); }
     $written[] = substr($path, strlen($root) + 1);
 };

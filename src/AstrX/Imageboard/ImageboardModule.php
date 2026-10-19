@@ -11,7 +11,7 @@ use AstrX\Module\Module;
  * Installed by listing it in ApplicationModules::INSTALLED; read by
  * {@see \AstrX\Module\ModuleRegistry}. Core names no module. `nav` is a NavContributor whose vars are merged when the
  * module is on; `nav_defaults` are merged instead when it is off (inert no-ops).
- * `teardown` is a file under src/setup/modules/ that tools/module.php purge runs.
+ * `teardown` is a file in the module's resources/sql/ that tools/module.php purge runs.
  */
 final class ImageboardModule implements Module
 {
