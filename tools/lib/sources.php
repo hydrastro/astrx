@@ -10,13 +10,29 @@ namespace AstrX\Tools;
  */
 
 /**
+ * src/sources.php names, for a package's namespace, every place the package
+ * may be: in this repository (packages/…) and installed by Composer
+ * (vendor/astrx/…). The tools see each namespace once, at the first of those
+ * that exists — in a checkout that also ran `composer install`, vendor/
+ * holds links back to packages/, and walking both would count every class
+ * twice.
+ *
  * @return array<string, list<string>> namespace prefix => source directories
  */
 function sources(string $root): array
 {
     /** @var array<string, list<string>> $map */
     $map = require $root . '/src/sources.php';
-    return $map;
+    $out = [];
+    foreach ($map as $prefix => $dirs) {
+        foreach ($dirs as $dir) {
+            if (is_dir($dir)) {
+                $out[$prefix] = [$dir];
+                break;
+            }
+        }
+    }
+    return $out;
 }
 
 /**
@@ -88,12 +104,66 @@ function classFiles(string $root): array
 }
 
 /**
- * The repository's own Composer packages: every directory with a
- * composer.json that a path repository of the root composer.json matches.
+ * The AstrX packages the application is built from: in this repository, every
+ * directory with a composer.json that a path repository of the root
+ * composer.json matches; in an application that gets them from Composer
+ * instead (no such directory), the astrx/* packages Composer installed into
+ * vendor/.
  *
  * @return array<string, array{dir: string, json: array<string, mixed>}> name => package (dir relative to the root)
  */
 function packages(string $root): array
+{
+    $local = localPackages($root);
+    return $local !== [] ? $local : installedPackages($root);
+}
+
+/**
+ * Whether the packages are this repository's own (packages/…), as opposed to
+ * installed by Composer.
+ */
+function packagesAreLocal(string $root): bool
+{
+    return localPackages($root) !== [];
+}
+
+/**
+ * The astrx/* packages Composer installed (vendor/composer/installed.json).
+ *
+ * @return array<string, array{dir: string, json: array<string, mixed>}>
+ */
+function installedPackages(string $root): array
+{
+    $file = $root . '/vendor/composer/installed.json';
+    $installed = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+    $list = is_array($installed) ? ($installed['packages'] ?? $installed) : [];
+    $out = [];
+    foreach (is_array($list) ? $list : [] as $entry) {
+        $name = is_array($entry) ? ($entry['name'] ?? null) : null;
+        if (!is_string($name) || !str_starts_with($name, 'astrx/')) {
+            continue;
+        }
+        $dir = 'vendor/' . $name;
+        $json = is_file($root . '/' . $dir . '/composer.json')
+            ? json_decode((string) file_get_contents($root . '/' . $dir . '/composer.json'), true)
+            : null;
+        if (!is_array($json)) {
+            continue;
+        }
+        $data = [];
+        foreach ($json as $key => $value) {
+            $data[(string) $key] = $value;
+        }
+        $out[$name] = ['dir' => $dir, 'json' => $data];
+    }
+    ksort($out);
+    return $out;
+}
+
+/**
+ * @return array<string, array{dir: string, json: array<string, mixed>}>
+ */
+function localPackages(string $root): array
 {
     $rootJson = json_decode((string) file_get_contents($root . '/composer.json'), true);
     $out = [];

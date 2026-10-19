@@ -6,7 +6,9 @@ declare(strict_types=1);
  *
  * The code lives in Composer packages inside this repository (packages/*,
  * packages/modules/*), found through the root composer.json's path
- * repositories. This tool keeps the pieces that describe them in agreement:
+ * repositories — or, in an application that gets them from Composer instead,
+ * the astrx/* packages installed under vendor/. This tool keeps the pieces
+ * that describe them in agreement:
  *
  *   - every package has a name, a type and a PSR-4 map whose directories
  *     exist, and no namespace is declared by two packages;
@@ -17,14 +19,20 @@ declare(strict_types=1);
  *   - src/sources.php — the map the application's own class loader and the
  *     tools read — is the union of the packages' PSR-4 maps, and
  *     src/support.php loads the union of their `files` (functions, which
- *     cannot be autoloaded);
+ *     cannot be autoloaded). Each package is named at both places it can be,
+ *     packages/<dir> and vendor/<name>, and whichever exists is used, so the
+ *     same generated files serve this repository and an application that
+ *     installs the packages with Composer;
  *   - src/resources.php lists the resource directories of the packages that
  *     are not modules (composer.json extra.astrx.resources: templates,
  *     catalogs, default config), the lowest-level package first. Modules
  *     declare theirs in their manifest instead.
  *
  * --write regenerates src/sources.php, src/support.php and src/resources.php
- * instead of checking them.
+ * instead of checking them. --installed generates (or checks) them as an
+ * application that installs the packages with Composer has them, naming
+ * vendor/<name> only — what the site's own repository holds once the
+ * packages live elsewhere (tools/split.php).
  * Exit 0 when everything holds; exit 1 otherwise. Database-free, zero-dependency.
  */
 
@@ -35,6 +43,18 @@ if (PHP_SAPI !== 'cli') {
 
 $root  = dirname(__DIR__);
 $write = in_array('--write', $argv, true);
+// Generate for the layout of an application that installs the packages with
+// Composer: vendor/<name> only (tools/split.php uses it for the site).
+$installedLayout = in_array('--installed', $argv, true);
+// --write-to=DIR: write the generated files under DIR/src/ instead of here.
+$writeTo = null;
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--write-to=')) {
+        $writeTo = rtrim(substr($arg, 11), '/');
+        $write   = true;
+    }
+}
+require_once __DIR__ . '/lib/sources.php';
 
 /** @return array<string, mixed> */
 function pk_json(string $file): array
@@ -108,16 +128,22 @@ foreach ((array) ($rootJson['repositories'] ?? []) as $repo) {
 }
 ksort($packages);
 if ($packages === []) {
-    $errors[] = 'the root composer.json names no path repository with a package in it';
+    // No package in this repository: an application that installs them with
+    // Composer. Take the ones it installed.
+    $packages = AstrX\Tools\installedPackages($root);
+}
+if ($packages === []) {
+    $errors[] = 'no package found: the root composer.json names no path repository with a package in it, '
+        . 'and vendor/ holds no installed astrx/* package (run composer install)';
 }
 
 // ── Namespaces: prefix => [package, directory]; function files ──────────────
 /** @var array<string, array{0: string, 1: string}> $owner */
 $owner = [];
-/** @var list<string> $functionFiles relative to the root */
+/** @var list<array{0: string, 1: string}> $functionFiles [path relative to the root, package] */
 $functionFiles = [];
 foreach (pk_files($rootJson) as $file) {
-    $functionFiles[] = $file;
+    $functionFiles[] = [$file, '(root)'];
 }
 foreach (pk_psr4($rootJson) as $prefix => $dir) {
     $owner[$prefix] = ['(root)', rtrim($dir, '/')];
@@ -130,7 +156,7 @@ foreach ($packages as $name => $pkg) {
         if (!is_file($root . '/' . $pkg['dir'] . '/' . $file)) {
             $errors[] = "{$name}: autoloaded file {$file} does not exist";
         }
-        $functionFiles[] = $pkg['dir'] . '/' . $file;
+        $functionFiles[] = [$pkg['dir'] . '/' . $file, $name];
     }
     $map = pk_psr4($pkg['json']);
     if ($map === []) {
@@ -204,10 +230,42 @@ foreach ($packages as $name => $pkg) {
 }
 
 // ── src/sources.php: the union of the PSR-4 maps ─────────────────────────────
+/**
+ * Every place a file of a package may be, relative to src/: the package's
+ * own directory (packages/… here, vendor/… when installed), then where
+ * Composer installs it. The application's own files (src/…) are only here.
+ *
+ * @return list<string>
+ */
+$candidates = static function (string $path, string $package) use ($packages, $installedLayout): array {
+    if ($package === '(root)') {
+        return [str_starts_with($path, 'src/') ? substr($path, 4) : '../' . $path];
+    }
+    $dir = $packages[$package]['dir'];
+    $sub = substr($path, strlen($dir));        // '' or '/Sub/Dir'
+    $installed = 'vendor/' . $package . $sub;
+    $out = $installedLayout || $installed === $path ? [] : ['../' . $path];
+    $out[] = '../' . $installed;
+    return $out;
+};
+/**
+ * PHP source: a list of __DIR__-relative paths.
+ *
+ * @param list<string> $rels
+ */
+function pk_export_list(array $rels): string
+{
+    $parts = [];
+    foreach ($rels as $rel) {
+        $parts[] = '__DIR__ . ' . var_export('/' . $rel, true);
+    }
+    return implode(', ', $parts);
+}
+$exportList = pk_export_list(...);
+
 $lines = [];
-foreach ($owner as $prefix => [, $path]) {
-    $rel = str_starts_with($path, 'src/') ? substr($path, 4) : '../' . $path;
-    $lines[] = '    ' . var_export($prefix, true) . ' => [__DIR__ . ' . var_export('/' . $rel, true) . '],';
+foreach ($owner as $prefix => [$pkgName, $path]) {
+    $lines[] = '    ' . var_export($prefix, true) . ' => [' . $exportList($candidates($path, $pkgName)) . '],';
 }
 $sources = <<<PHP
 <?php
@@ -219,6 +277,10 @@ declare(strict_types=1);
  * src/classloader.php loads classes from it, and the tools that scan the
  * source (architecture, config and module checks, the compiled build) walk it.
  *
+ * A package is listed at each place it can be — in this repository
+ * (packages/…) and installed by Composer (vendor/astrx/…); the loader uses
+ * the first that has the file.
+ *
  * Generated by `php tools/packages.php --write`; do not edit by hand.
  *
  * @return array<string, list<string>>
@@ -228,18 +290,34 @@ return [
 PHP . implode("\n", $lines) . "\n];\n";
 
 $requires = [];
-foreach ($functionFiles as $file) {
-    $rel = str_starts_with($file, 'src/') ? substr($file, 4) : '../' . $file;
-    $requires[] = 'require_once __DIR__ . ' . var_export('/' . $rel, true) . ';';
+foreach ($functionFiles as [$file, $pkgName]) {
+    $requires[] = 'require_once \\AstrX\\Bootstrap\\firstFile(' . $exportList($candidates($file, $pkgName)) . ');';
 }
 $support = <<<PHP
 <?php
 declare(strict_types=1);
 
 // The packages' function files (composer.json `files`: functions cannot be
-// autoloaded), loaded eagerly: the AstrX\\Support helpers.
+// autoloaded), loaded eagerly: the AstrX\\Support helpers. Each is named at
+// every place its package can be (see src/sources.php); the first that
+// exists is loaded.
 //
 // Generated by `php tools/packages.php --write`; do not edit by hand.
+
+namespace AstrX\\Bootstrap;
+
+if (!function_exists(__NAMESPACE__ . '\\firstFile')) {
+    /** The first of \$paths that exists, or the first one (so require reports it). */
+    function firstFile(string ...\$paths): string
+    {
+        foreach (\$paths as \$path) {
+            if (file_exists(\$path)) {
+                return \$path;
+            }
+        }
+        return \$paths[0];
+    }
+}
 
 
 PHP . implode("\n", $requires) . "\n";
@@ -282,7 +360,7 @@ foreach (array_keys($ordered) as $name) {
         $errors[] = "{$name}: a module declares its resources in its manifest, not in composer.json";
         continue;
     }
-    $resourceLines[] = '    __DIR__ . ' . var_export('/../' . $dir, true) . ', // ' . $name;
+    $resourceLines[] = '    [' . $exportList($candidates($dir, $name)) . '], // ' . $name;
 }
 $resources = <<<PHP
 <?php
@@ -292,24 +370,26 @@ declare(strict_types=1);
  * The resource directories of the packages that are not modules (templates,
  * catalogs, default config), lowest-level package first. The application
  * layers them under the installed modules' and the site's own resources/
- * (ApplicationContainer::resourceRoots()).
+ * (ApplicationContainer::resourceRoots()). Each entry lists every place the
+ * package can be (see src/sources.php); the first that exists is used.
  *
  * Generated by `php tools/packages.php --write` from each package's
  * composer.json extra.astrx.resources; do not edit by hand.
  *
- * @return list<string>
+ * @return list<list<string>>
  */
 return [
 
 PHP . implode("\n", $resourceLines) . ($resourceLines === [] ? '' : "\n") . "];\n";
 
+$outRoot = $writeTo ?? $root;
 $generated = [
-    $root . '/src/sources.php'   => $sources,
-    $root . '/src/support.php'   => $support,
-    $root . '/src/resources.php' => $resources,
+    $outRoot . '/src/sources.php'   => $sources,
+    $outRoot . '/src/support.php'   => $support,
+    $outRoot . '/src/resources.php' => $resources,
 ];
 foreach ($generated as $file => $content) {
-    $rel = substr($file, strlen($root) + 1);
+    $rel = substr($file, strlen($outRoot) + 1);
     if ($write) {
         file_put_contents($file, $content);
         fwrite(STDOUT, "wrote {$rel}\n");

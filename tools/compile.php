@@ -189,10 +189,14 @@ final class AstrXCompiler
         // defaults and travels with it.
         // The core packages' own resources (src/resources.php).
         $coreResources = is_file($this->root . '/src/resources.php') ? require $this->root . '/src/resources.php' : [];
-        foreach (is_array($coreResources) ? $coreResources : [] as $dir) {
-            $real = is_string($dir) ? realpath($dir) : false;
-            if ($real !== false) {
-                $resourceRoots[] = $this->slash($this->relative($real));
+        foreach (is_array($coreResources) ? $coreResources : [] as $entry) {
+            // Every place the package can be; the first that exists.
+            foreach (is_array($entry) ? $entry : [$entry] as $dir) {
+                $real = is_string($dir) ? realpath($dir) : false;
+                if ($real !== false) {
+                    $resourceRoots[] = $this->slash($this->relative($real));
+                    break;
+                }
             }
         }
         foreach (AstrX\Tools\sourceDirs($this->root) as $sourceDir) {

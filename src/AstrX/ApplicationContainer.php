@@ -149,9 +149,14 @@ final class ApplicationContainer
         if (is_file($file)) {
             /** @var mixed $listed */
             $listed = require $file;
-            foreach (is_array($listed) ? $listed : [] as $dir) {
-                if (is_string($dir)) {
-                    $core[] = $dir;
+            // Each entry names every place the package can be (in this
+            // repository, or installed by Composer); use the one that exists.
+            foreach (is_array($listed) ? $listed : [] as $entry) {
+                foreach (is_array($entry) ? $entry : [$entry] as $dir) {
+                    if (is_string($dir) && is_dir($dir)) {
+                        $core[] = $dir;
+                        break;
+                    }
                 }
             }
         }
