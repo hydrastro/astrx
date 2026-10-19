@@ -56,7 +56,7 @@ src/AstrX/WebSearch/resources/template/web_search.html             # no-JS GET f
 src/AstrX/WebSearch/resources/config/WebSearch.config.php          # section 'WebSearchConfig'
 src/AstrX/WebSearch/resources/lang/en/WebSearch.en.php             # UI strings (domain 'WebSearch')
 src/AstrX/WebSearch/resources/lang/it/WebSearch.it.php             # key-for-key IT
-src/setup/modules/websearch.down.sql           # teardown for `module.php purge websearch`
+src/AstrX/WebSearch/resources/sql/websearch.down.sql           # teardown for `module.php purge websearch`
 ```
 
 ### `onionsearch`
@@ -69,7 +69,7 @@ src/AstrX/OnionSearch/resources/template/onion_search.html           # no-JS GET
 src/AstrX/OnionSearch/resources/config/OnionSearch.config.php        # section 'OnionSearchConfig'
 src/AstrX/OnionSearch/resources/lang/en/OnionSearch.en.php           # UI strings (domain 'OnionSearch')
 src/AstrX/OnionSearch/resources/lang/it/OnionSearch.it.php           # key-for-key IT
-src/setup/modules/onionsearch.down.sql         # teardown for `module.php purge onionsearch`
+src/AstrX/OnionSearch/resources/sql/onionsearch.down.sql         # teardown for `module.php purge onionsearch`
 ```
 
 ### Test (not shipped into the app)
@@ -122,8 +122,8 @@ return [
 ## One-time SQL (run once; NOT kept as a repo migration)
 
 This registers the two pages, tags `page.module`, and adds the public-navbar
-entries — mirroring exactly how the internal site-search page is seeded in
-`src/setup/tables.sql`. Run it once against your AstrX database (it is idempotent;
+entries — mirroring exactly how the internal site-search page is seeded in the Search
+module's `resources/sql/schema/0300_search_page.sql`. Run it once against your AstrX database (it is idempotent;
 `INSERT IGNORE` + guarded nav inserts). It assumes the standard
 `migrate_module_page_ownership.sql` has already run (it adds `page.module`), which
 is true for any current install.
@@ -267,7 +267,7 @@ Then `php tools/module.php disable websearch` (nav drops, page 404s; reversible)
 or `php tools/module.php purge websearch` (also runs `websearch.down.sql`).
 
 ### Undo (remove the pages)
-Run `src/setup/modules/websearch.down.sql` / `onionsearch.down.sql` (what
+Run `src/AstrX/WebSearch/resources/sql/websearch.down.sql` / OnionSearch's `onionsearch.down.sql` (what
 `module.php purge` runs), then delete the added lang keys.
 
 ---
@@ -362,7 +362,7 @@ src/AstrX/TorrentSearch/resources/template/torrent_search.html           # no-JS
 src/AstrX/TorrentSearch/resources/config/TorrentSearch.config.php         # section 'TorrentSearchConfig'
 src/AstrX/TorrentSearch/resources/lang/en/TorrentSearch.en.php            # UI strings (domain 'TorrentSearch')
 src/AstrX/TorrentSearch/resources/lang/it/TorrentSearch.it.php            # key-for-key IT
-src/setup/modules/torrentsearch.down.sql          # teardown
+src/AstrX/TorrentSearch/resources/sql/torrentsearch.down.sql          # teardown
 ```
 
 One-time SQL (public page + public navbar, `noindex` because it triggers a
@@ -433,7 +433,7 @@ src/AstrX/SuiteAdmin/resources/template/admin/admin_suite.html         # status 
 src/AstrX/SuiteAdmin/resources/config/SuiteAdmin.config.php            # section 'SuiteAdminConfig'
 src/AstrX/SuiteAdmin/resources/lang/en/SuiteAdmin.en.php               # UI strings (domain 'SuiteAdmin')
 src/AstrX/SuiteAdmin/resources/lang/it/SuiteAdmin.it.php               # key-for-key IT
-src/setup/modules/suiteadmin.down.sql             # teardown
+src/AstrX/SuiteAdmin/resources/sql/suiteadmin.down.sql             # teardown
 ```
 
 Config — the four base URLs via `#[InjectConfig]` (`src/AstrX/SuiteAdmin/resources/config/SuiteAdmin.config.php`):
@@ -507,7 +507,7 @@ src/AstrX/GitBrowse/resources/template/git_browse.html                # link-thr
 src/AstrX/GitBrowse/resources/config/GitBrowse.config.php             # section 'GitBrowseConfig'
 src/AstrX/GitBrowse/resources/lang/en/GitBrowse.en.php                # UI strings (domain 'GitBrowse')
 src/AstrX/GitBrowse/resources/lang/it/GitBrowse.it.php                # key-for-key IT
-src/setup/modules/gitbrowse.down.sql              # teardown
+src/AstrX/GitBrowse/resources/sql/gitbrowse.down.sql              # teardown
 ```
 
 One-time SQL (public page + public navbar; indexable — it is a static link page,
@@ -653,7 +653,7 @@ src/AstrX/FederatedSearch/resources/template/federated_search.html           # n
 src/AstrX/FederatedSearch/resources/config/FederatedSearch.config.php         # section 'FederatedSearchConfig'
 src/AstrX/FederatedSearch/resources/lang/en/FederatedSearch.en.php            # UI strings (domain 'FederatedSearch')
 src/AstrX/FederatedSearch/resources/lang/it/FederatedSearch.it.php            # key-for-key IT
-src/setup/modules/fedsearch.down.sql                # teardown
+src/AstrX/FederatedSearch/resources/sql/fedsearch.down.sql                # teardown
 ```
 
 One-time SQL (public page + public navbar, `noindex` because it triggers backend
@@ -721,7 +721,7 @@ src/AstrX/Blocklist/resources/template/admin/admin_blocklist.html # two CSRF/PRG
 src/AstrX/Blocklist/resources/config/Blocklist.config.php # section 'BlocklistConfig'
 src/AstrX/Blocklist/resources/lang/en/Blocklist.en.php # UI strings (domain 'Blocklist')
 src/AstrX/Blocklist/resources/lang/it/Blocklist.it.php # key-for-key IT
-src/setup/modules/blocklist.down.sql               # teardown
+src/AstrX/Blocklist/resources/sql/blocklist.down.sql               # teardown
 ```
 
 Config — two base URLs + two SECRET tokens (`resources/config/Blocklist.config.php`):
