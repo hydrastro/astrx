@@ -201,7 +201,7 @@ return [
     'admin.retention.reap'        => 'Distruggi ora i file orfani',
     'admin.retention.reap_hint'   => 'Elimina i file caricati rimasti su disco dopo la rimozione del loro post/messaggio. Viene eseguito automaticamente con la ritenzione; usalo per distruggerli su richiesta.',
     'admin.retention.done'        => 'Ritenzione applicata — righe rimosse:',
-    'admin.retention.expiry_note' => 'Scade automaticamente secondo la config della chat.',
+    'admin.retention.expiry_note' => 'Scade da sé, secondo le impostazioni del suo modulo.',
 
     // Panico / blocco
     'admin.panic.heading'      => 'Panico / blocco',
@@ -226,7 +226,6 @@ return [
     'admin.comments.lift_mute'   => 'Rimuovi silenziamento',
     'admin.comments.mute_lifted' => 'Silenziamento rimosso.',
 
-    'admin.config.field.mailbox_is_username_warning' => 'Abilita se il nome della casella IMAP corrisponde esattamente al nome utente (senza suffisso dominio).',
 
     // ---- Bug-fix additions (fix94) -------------------------------------------
     'admin.banlist.route_added'         => 'Rotta aggiunta.',

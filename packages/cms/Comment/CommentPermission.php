@@ -22,7 +22,7 @@ enum CommentPermission: string implements Permission
     case HIDE_ANY     = 'comment.hide.any';
     case DELETE_OWN   = 'comment.delete.own';
     case DELETE_ANY   = 'comment.delete.any';
-    case FLAG         = 'comment.flag';  // ---- Chat ---------------------------------------------------------------
+    case FLAG         = 'comment.flag';
     case ADMIN        = 'admin.comments';
     case ADMIN_CONFIG = 'admin.config.comments';  // Comment service + antispam
 }
