@@ -7,7 +7,7 @@
         "no-javascript",
         "server-rendered"
     ],
-    "homepage": "https://github.com/hydrastro/astrx",
+    "homepage": "https://github.com/hydrastro/library",
     "require": {
         "php": ">=8.4",
         "ext-filter": "*",
@@ -32,5 +32,11 @@
         "astrx": {
             "resources": "resources"
         }
-    }
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/framework"
+        }
+    ]
 }
