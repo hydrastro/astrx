@@ -23,28 +23,7 @@ namespace AstrX\Tools\History;
 /** Run git in $repo; stdout (untrimmed), or throw. */
 function git(string $repo, string $args, ?string $stdin = null): string
 {
-    $proc = proc_open(
-        'git -C ' . escapeshellarg($repo) . ' ' . $args,
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-    );
-    if (!is_resource($proc)) {
-        throw new \RuntimeException("git {$args}: could not start");
-    }
-    // Write stdin in one go and read stdout/stderr concurrently enough for
-    // our sizes: fast-import's output is small, fast-export's input is none.
-    if ($stdin !== null) {
-        fwrite($pipes[0], $stdin);
-    }
-    fclose($pipes[0]);
-    $out = (string) stream_get_contents($pipes[1]);
-    $err = (string) stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    if (proc_close($proc) !== 0) {
-        throw new \RuntimeException("git {$args}:\n{$err}");
-    }
-    return $out;
+    return gitEnv($repo, $args, $stdin ?? '', '');
 }
 
 /**
@@ -262,4 +241,84 @@ function rewrite(string $repo, string $rev, \Closure $map, string $ref): string
     $out .= "reset {$ref}\nfrom {$last}\n\n";
     git($repo, 'fast-import --quiet --force', $out . "done\n");
     return trim(git($repo, 'rev-parse ' . escapeshellarg($ref)));
+}
+
+/**
+ * Sign every commit of $branch: re-create each one, oldest first, with
+ * `git commit-tree -S` — same tree, same parents (re-created), same author,
+ * committer, dates and message — and move the branch to the result. The
+ * history keeps its exact shape (roots, merges), which `git rebase --exec
+ * 'git commit --amend -S'` does not: it re-plays commits and stumbles over
+ * a second root. Signs with the repository's own signing configuration
+ * (user.signingkey, gpg.format). Returns the new tip's id.
+ */
+function sign(string $repo, string $branch): string
+{
+    $map = [];
+    $list = git($repo, 'rev-list --reverse --topo-order --parents ' . escapeshellarg('refs/heads/' . $branch));
+    foreach (explode("\n", trim($list)) as $row) {
+        $ids    = explode(' ', $row);
+        $commit = array_shift($ids);
+        $raw    = git($repo, 'cat-file commit ' . escapeshellarg($commit));
+        [$header, $message] = explode("\n\n", $raw, 2) + [1 => ''];
+        $env  = [];
+        $tree = '';
+        $encoding = null;
+        foreach (explode("\n", $header) as $h) {
+            if (preg_match('/^(author|committer) (.*) <(.*)> (\d+ [+-]\d{4})$/', $h, $m) === 1) {
+                $who = strtoupper($m[1]);
+                $env['GIT_' . $who . '_NAME']  = $m[2];
+                $env['GIT_' . $who . '_EMAIL'] = $m[3];
+                $env['GIT_' . $who . '_DATE']  = '@' . $m[4];
+            } elseif (str_starts_with($h, 'tree ')) {
+                $tree = substr($h, 5);
+            } elseif (str_starts_with($h, 'encoding ')) {
+                $encoding = substr($h, 9);
+            }
+        }
+        if ($tree === '' || count($env) !== 6) {
+            throw new \RuntimeException("{$commit}: could not read its tree, author or committer");
+        }
+        $args = 'commit-tree ' . escapeshellarg($tree) . ' -S';
+        foreach ($ids as $p) {
+            $args .= ' -p ' . escapeshellarg($map[$p] ?? $p);
+        }
+        if ($encoding !== null) {
+            $args = '-c i18n.commitEncoding=' . escapeshellarg($encoding) . ' ' . $args;
+        }
+        $prefix = '';
+        foreach ($env as $k => $v) {
+            $prefix .= $k . '=' . escapeshellarg($v) . ' ';
+        }
+        $map[$commit] = trim(gitEnv($repo, $args, $message, $prefix));
+    }
+    $tip = $map[trim(git($repo, 'rev-parse ' . escapeshellarg('refs/heads/' . $branch)))] ?? '';
+    if ($tip === '') {
+        throw new \RuntimeException("{$branch}: nothing to sign");
+    }
+    git($repo, 'update-ref ' . escapeshellarg('refs/heads/' . $branch) . ' ' . escapeshellarg($tip));
+    return $tip;
+}
+
+/** git() with environment assignments ($prefix: "VAR='value' …") and $stdin. */
+function gitEnv(string $repo, string $args, string $stdin, string $prefix): string
+{
+    $proc = proc_open(
+        $prefix . 'git -C ' . escapeshellarg($repo) . ' ' . $args,
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+    if (!is_resource($proc)) {
+        throw new \RuntimeException("git {$args}: could not start");
+    }
+    fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    $out = (string) stream_get_contents($pipes[1]);
+    $err = (string) stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    if (proc_close($proc) !== 0) {
+        throw new \RuntimeException("git {$args}:\n{$err}");
+    }
+    return $out;
 }

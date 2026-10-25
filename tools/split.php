@@ -44,15 +44,14 @@ declare(strict_types=1);
  *                          packages first.
  *                      The commit is authored by this repository's
  *                      configured user.
+ *   --sign             sign every commit of each branch with this repository's
+ *                      signing key (user.signingkey, gpg.format), keeping the
+ *                      history's exact shape, author, committer, dates and
+ *                      messages; implies --run. Extraction rewrites commits, so
+ *                      without it the branches are unsigned.
  *   --push=URL         also push each branch to URL's main branch ({name} as
  *                      above, e.g. git@github.com:Vxmdzhb/{name}.git); implies
  *                      --run. The target repositories must exist (empty).
- *
- * Extraction rewrites commits, so the branches' commits carry no signature.
- * Sign them before pushing them anywhere they become the reference copy:
- *
- *     git switch split/framework
- *     git rebase --root --committer-date-is-author-date --exec 'git commit --amend --no-edit -S'
  *
  * The working tree is not touched (the branches are written straight into
  * the repository). Exit 0 on success, 1 on a failed git command, 2 on a bad argument.
@@ -69,19 +68,23 @@ require_once __DIR__ . '/lib/split_adapt.php';
 require_once __DIR__ . '/lib/history.php';
 
 $run     = false;
+$sign    = false;
 $push    = null;
 $repoUrl = null;
 $wanted  = [];
 foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--run') {
         $run = true;
+    } elseif ($arg === '--sign') {
+        $sign = true;
+        $run  = true;
     } elseif (str_starts_with($arg, '--push=')) {
         $push = substr($arg, 7);
         $run  = true;
     } elseif (str_starts_with($arg, '--repo-url=')) {
         $repoUrl = substr($arg, 11);
     } elseif ($arg === '--help' || $arg === '-h') {
-        fwrite(STDOUT, "Usage: php tools/split.php [--run] [--repo-url=URL-with-{name}] [--push=URL-with-{name}] [part…]\n");
+        fwrite(STDOUT, "Usage: php tools/split.php [--run] [--sign] [--repo-url=URL-with-{name}] [--push=URL-with-{name}] [part…]\n");
         exit(0);
     } elseif (str_starts_with($arg, '--')) {
         fwrite(STDERR, "ERROR: unknown option {$arg}\n");
@@ -341,6 +344,15 @@ foreach ($parts as $short => $part) {
     if (sp_git($root, 'branch -f ' . escapeshellarg($branch) . ' ' . escapeshellarg($sha)) === null) {
         $failed = true;
         continue;
+    }
+    if ($sign) {
+        try {
+            $sha = AstrX\Tools\History\sign($root, $branch);
+        } catch (RuntimeException $e) {
+            fwrite(STDERR, "  {$short}: signing failed: " . $e->getMessage() . "\n");
+            $failed = true;
+            continue;
+        }
     }
     $line = sprintf('%-26s %s', $branch, substr($sha, 0, 10));
 

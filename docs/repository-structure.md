@@ -33,7 +33,7 @@ These are dependency boundaries before they are repository boundaries. Start by 
      - a package gets its homepage, the repositories of the packages it requires, and a CI workflow that installs it alone and loads every class;
      - the suite gets its workflow at its own root;
      - the site gets the packages from Composer (`vendor/astrx/…`, which the class loader, the tools and the tests already accept) and the suite's compose file from a checkout next to it (`../astrx-suite`).
-   - **Signatures.** Extraction rewrites commits, so the branches are unsigned. Sign each before pushing it where it becomes the reference copy: `git rebase --root --committer-date-is-author-date --exec 'git commit --amend --no-edit -S'`.
+   - **Signatures.** Extraction rewrites commits, so their signatures cannot carry over. `--sign` signs every commit of every branch with this repository's signing key, re-creating each with `git commit-tree -S`: trees, authors, committers, dates, messages, merges and roots stay exactly as they were. (`git rebase --exec 'git commit --amend -S'` does not: the site's history has two roots and four merges.)
    - **Rehearsed end to end** with local repositories:
      - the site installed its 21 packages from their repositories, passed every check, PHPStan and the whole test suite, and rendered the same 232 pages as this repository;
      - each package installed alone and loaded every class;
