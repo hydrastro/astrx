@@ -198,7 +198,8 @@ use AstrX\Admin\AdminPermission;
         !$inAnyRoot('admin_themes.html') && $inAnyRoot('admin/admin_themes.html'),
     );
 
-    $migration = $ROOT . '/packages/cms/resources/sql/migrate_zzzz_admin_closure_fix.sql';
+    require_once __DIR__ . '/lib/packages.php';
+    $migration = AstrX\TestSupport\packageDir('astrx/cms') . '/resources/sql/migrate_zzzz_admin_closure_fix.sql';
     check('a NEW migration ships the missing closure rows', is_file($migration));
     if (is_file($migration)) {
         $sql = (string) file_get_contents($migration);

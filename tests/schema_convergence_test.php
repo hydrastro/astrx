@@ -340,8 +340,9 @@ function installer(string $installerRoot, string $host, int $port, string $db, s
 
 /**
  * A throwaway installer root: the SAME tools/install.php and a copy of src/
- * and packages/ (the installer reads the installed-module list and every
- * module's SQL from them) with every migrate_*.sql removed, so the shipped installer applies the
+ * and of the packages — packages/ in this repository, vendor/astrx/ where
+ * Composer installed them (the installer reads the installed-module list and
+ * every module's SQL from them) — with every migrate_*.sql removed, so the shipped installer applies the
  * base schema and nothing else. This is how the "before" database is built
  * without hand-rolling a second SQL runner: install.php resolves everything
  * from dirname(__DIR__), so such a directory is a complete installer root.
@@ -361,9 +362,11 @@ function baseOnlyRoot(string $realRoot, ?string $legacySchema = null): string
         throw new RuntimeException('Could not copy tools/install.php into the scratch installer root');
     }
     copyTree($realRoot . '/src', $tmp . '/src');
-    copyTree($realRoot . '/packages', $tmp . '/packages');
+    // Wherever the packages are (src/sources.php names both places).
+    $packageDir = is_dir($realRoot . '/packages') ? '/packages' : '/vendor/astrx';
+    copyTree($realRoot . $packageDir, $tmp . $packageDir);
 
-    foreach ([...sqlFilesUnder($tmp . '/src'), ...sqlFilesUnder($tmp . '/packages')] as $file) {
+    foreach ([...sqlFilesUnder($tmp . '/src'), ...sqlFilesUnder($tmp . $packageDir)] as $file) {
         $isMigration = str_starts_with(basename($file), 'migrate_');
         $isPiece     = (bool) preg_match('~/schema/\d{4}_[^/]+\.sql$~', $file);
         if ($isMigration || ($legacySchema !== null && $isPiece)) {

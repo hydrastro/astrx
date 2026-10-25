@@ -38,6 +38,7 @@ namespace {
     require_once dirname(__DIR__) . '/src/classloader.php';
 
     require_once __DIR__ . '/lib/scratch.php';
+    require_once __DIR__ . '/lib/packages.php';
     $scratch = AstrX\TestSupport\scratchDir('astrx_user_test_');
 
     // Every file this test could write — the server secret's config-dir and
@@ -197,7 +198,7 @@ namespace {
         'the shipped config default is ALWAYS, not the threshold mode',
         (static function (): bool {
             /** @var mixed $cfg */
-            $cfg = require dirname(__DIR__) . '/packages/cms/resources/config/User.config.php';
+            $cfg = require AstrX\TestSupport\packageDir('astrx/cms') . '/resources/config/User.config.php';
             return is_array($cfg)
                 && is_array($cfg['UserService'] ?? null)
                 && ($cfg['UserService']['login_captcha_type'] ?? null) === UserService::CAPTCHA_SHOW_ALWAYS;
@@ -208,7 +209,7 @@ namespace {
         'username_regex bounds the username at the VARCHAR(64) the column is',
         (static function (): bool {
             /** @var mixed $cfg */
-            $cfg = require dirname(__DIR__) . '/packages/cms/resources/config/User.config.php';
+            $cfg = require AstrX\TestSupport\packageDir('astrx/cms') . '/resources/config/User.config.php';
             if (!is_array($cfg) || !is_array($cfg['UserService'] ?? null)) { return false; }
             $rules = $cfg['UserService']['username_regex'] ?? [];
             if (!is_array($rules)) { return false; }

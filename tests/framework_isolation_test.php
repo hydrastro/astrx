@@ -104,12 +104,15 @@ $framework = array_values(array_filter(array_map(
 )));
 $tmp = rtrim(sys_get_temp_dir(), '/') . '/astrx-isolation-' . bin2hex(random_bytes(6));
 mkdir($tmp . '/src', 0o700, true);
-// The framework package exactly as published (packages/framework), and the
-// application's class loader pointed at it alone: the package's own
-// composer.json says which namespaces it provides and which files it loads.
-copyTree($root . '/packages/framework', $tmp . '/packages/framework');
+// The framework package exactly as published (packages/framework here,
+// vendor/astrx/framework where Composer installed it), and the application's
+// class loader pointed at it alone: the package's own composer.json says which
+// namespaces it provides and which files it loads.
+require_once __DIR__ . '/lib/packages.php';
+$fwSource = AstrX\TestSupport\packageDir('astrx/framework');
+copyTree($fwSource, $tmp . '/packages/framework');
 /** @var array{autoload: array{psr-4: array<string,string>, files?: list<string>}} $fwJson */
-$fwJson = json_decode((string) file_get_contents($root . '/packages/framework/composer.json'), true);
+$fwJson = json_decode((string) file_get_contents($fwSource . '/composer.json'), true);
 $map = '';
 foreach ($fwJson['autoload']['psr-4'] as $prefix => $dir) {
     $map .= '    ' . var_export($prefix, true) . " => [__DIR__ . '/../packages/framework/" . rtrim($dir, '/') . "'],\n";
@@ -130,7 +133,8 @@ check('framework layers listed by the architecture gate (expected 10+)', count($
 $present = array_values(array_filter(
     array_diff(scandir($tmp . '/packages/framework') ?: [], ['.', '..']),
     // Namespace directories; resources/ holds the package's catalogs.
-    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e) && $e !== 'resources',
+    // .git: a package Composer cloned carries its VCS metadata.
+    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e) && $e !== 'resources' && $e !== '.git',
 ));
 sort($present);
 $expected = $framework;
