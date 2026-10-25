@@ -1,0 +1,372 @@
+#  The gate that already exists, run on every push.
+#
+#   `astrx-suite/install_rust_suite.sh --ci` has always been green — but nothing
+#   ran it, and that is how a whole audit's worth of fixes went missing from the
+#   remote without anyone noticing. This runs it, plus the two things a laptop
+#   cannot check: that the suite builds on the declared MSRV, and that it behaves
+#   the same across `git` versions.
+#
+#   Design notes:
+#     * Every job is `--locked`, so a lockfile drift fails the build instead of
+#       silently resolving to something new.
+#     * The zero-dependency invariant is ASSERTED, not assumed. It is the
+#       project's central claim; a claim nothing checks is a claim that decays.
+#     * The git matrix exists because a real failure came from it: git renders a
+#       zero UTC offset as `+00:00` up to 2.43 and as `Z` after, which changed
+#       `gitweb`'s public output under an operator's routine upgrade.
+name: astrx-suite
+
+on:
+  push:
+  pull_request:
+  # A RUSTSEC advisory can land on a week nobody pushes. Without this the
+  # supply-chain check only ever runs when something else already changed.
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: .
+
+env:
+  CARGO_TERM_COLOR: always
+
+  # The toolchain the lint bar is measured against. PINNED, and bumped by hand.
+  #
+  # `-D warnings` against a floating `stable` means Rust's release train decides
+  # when this repository's CI goes red. Every six weeks clippy gains lints, they
+  # fire on code that has not changed, and a build breaks with no commit behind
+  # it — which is how a red CI becomes something people learn to ignore. That
+  # already happened here: a 1.9x release added a lint, and all five clippy
+  # tiers plus the installer failed on a tree that had just passed locally.
+  #
+  # It must be RUSTUP_TOOLCHAIN rather than the action's version argument:
+  # `astrx-suite/rust-toolchain.toml` pins channel = "stable" and rustup honours
+  # that file over whatever an action selected. That is the same trap that made
+  # the MSRV job a false pass for months, and it silently defeats a pin here in
+  # exactly the same way.
+  #
+  # `clippy-floating` below runs the same lints on real stable and does NOT
+  # gate, so a new lint arrives as a report to act on rather than a broken
+  # build. When it goes yellow: fix the findings, then raise this number.
+  LINT_TOOLCHAIN: '1.95.0'
+
+  # NB: RUSTFLAGS is deliberately NOT set here. A workflow-level `-D warnings`
+  # applies to DEPENDENCY compilation too, so a new warning inside tokio — code
+  # this repository does not control and cannot fix — would break the build with
+  # no change to the tree. Warnings are denied where they belong: on the clippy
+  # invocations below, which are scoped to `--workspace`.
+
+jobs:
+  # ---------------------------------------------------------------- style
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned for the same reason as clippy: rustfmt's output is not frozen
+      # across releases, so a floating toolchain can decide this repository is
+      # misformatted on a day nobody touched it. Less volatile than clippy —
+      # this job has never actually broken — but there is no reason for the two
+      # halves of the style gate to be measured against different compilers.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: rustfmt
+      - run: cargo fmt --all --check
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+
+  # ------------------------------------------------- lints, every feature tier
+  clippy:
+    name: clippy (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The four tiers the crates actually ship. A lint clean only under
+        # --all-features says nothing about the zero-dependency build, which is
+        # the one most people will compile.
+        features: ['--no-default-features', '', '--features rand', '--features net', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      - name: Prove the lint bar is the pinned toolchain, not whatever stable is
+        run: cargo clippy --version
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+      - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+
+  # ------------------------------------ the same lints, on whatever stable is
+  #
+  # The early warning that `LINT_TOOLCHAIN` has fallen behind. It reports what a
+  # newer clippy dislikes; the fix is to address the findings and raise the pin.
+  #
+  # It does NOT go red to do that. The first version of this job ran clippy with
+  # `-D warnings` and relied on `continue-on-error` — which stops the workflow
+  # failing but still paints a red X in the checks list, so an advisory job was
+  # indistinguishable at a glance from a broken build. That is the same "red CI
+  # nobody reads" failure this whole file has been working against, just wearing
+  # a different hat.
+  #
+  # So: warnings stay warnings, findings become GitHub annotations and a job
+  # summary, and the step exits 0. A HARD failure — code that no longer compiles
+  # on new stable — is a different thing and does exit non-zero, because that is
+  # not an opinion about style.
+  #
+  # Only the two tiers that between them cover every line: the zero-dependency
+  # build and the full one. Five tiers of advisory output is noise.
+  clippy-floating:
+    name: clippy on current stable (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['--no-default-features', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      # rust-toolchain.toml says channel = "stable", so this is already what
+      # rustup would pick; naming it is what stops a future edit to that file
+      # from quietly turning this job into a duplicate of the pinned one.
+      - run: cargo clippy --version
+        env: { RUSTUP_TOOLCHAIN: stable }
+
+      - name: What current stable would say (reported, not enforced)
+        env: { RUSTUP_TOOLCHAIN: stable }
+        run: |
+          set -uo pipefail
+          ver=$(cargo clippy --version)
+          # No `-D warnings`: the exit code must mean "did it compile", not
+          # "does it have opinions". --message-format short gives one
+          # file:line:col: level: message per finding, which is what an
+          # annotation needs.
+          out=$(cargo clippy --workspace --all-targets --locked \
+                  ${{ matrix.features }} --message-format short 2>&1) || rc=$?
+          rc=${rc:-0}
+          printf '%s\n' "$out"
+
+          findings=$(printf '%s\n' "$out" | grep -E '^[^ ]+:[0-9]+:[0-9]+: warning:' || true)
+          n=$(printf '%s' "$findings" | grep -c . || true)
+
+          {
+            echo "## clippy on \`${ver}\` — \`${{ matrix.features }}\`"
+            echo
+            echo "Pinned lint toolchain: \`${LINT_TOOLCHAIN}\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$n" -gt 0 ]; then
+            echo "::notice::${n} lint finding(s) on ${ver} that the pinned ${LINT_TOOLCHAIN} does not report. Fix them, then raise LINT_TOOLCHAIN."
+            # One annotation each, so the findings are readable from the run
+            # summary without opening the log.
+            printf '%s\n' "$findings" | while IFS= read -r line; do
+              f=${line%%:*}; rest=${line#*:}
+              l=${rest%%:*};  rest=${rest#*:}
+              c=${rest%%:*};  msg=${rest#*: warning: }
+              echo "::warning file=${f},line=${l},col=${c}::${msg}"
+            done
+            {
+              echo "${n} finding(s):"
+              echo '```'
+              printf '%s\n' "$findings"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no new lints on ${ver}"
+            echo "No findings — \`LINT_TOOLCHAIN\` can be raised to this release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Lints are advisory; not compiling is not.
+          if printf '%s\n' "$out" | grep -qE '^error(\[|:)'; then
+            echo "::error::the workspace does not COMPILE on ${ver} — this is not a style opinion"
+            exit "$rc"
+          fi
+          exit 0
+
+  # ----------------------------------------------------------------- tests
+  test:
+    name: tests (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['--no-default-features', '--all-features']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      - run: cargo test --workspace --locked ${{ matrix.features }}
+
+  # ------------------------------------------------------ the MSRV is a promise
+  msrv:
+    name: MSRV 1.89
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      # `astrx-suite/rust-toolchain.toml` pins channel = "stable", and rustup
+      # honours that file over whatever toolchain an action selected — so this
+      # job used to install the MSRV and then build with stable, passing
+      # while testing nothing. RUSTUP_TOOLCHAIN takes precedence over the file.
+      - name: Prove the toolchain really is the MSRV
+        run: rustc --version | tee /dev/stderr | grep -q '1\.89\.'
+        env: { RUSTUP_TOOLCHAIN: '1.89.0' }
+      # Build, not test: dev-dependencies and test harnesses may legitimately
+      # want newer Rust than the shipped library does.
+      - run: cargo build --workspace --locked --all-features
+        env: { RUSTUP_TOOLCHAIN: '1.89.0' }
+
+  # ------------------------------- the project's central claim, asserted not assumed
+  zero-deps:
+    name: zero third-party dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The member list is read from the manifest rather than typed out, because
+      # a hand-written list silently stops covering a crate the day one is
+      # added — and it already had: `astrx`, the entrypoint that depends on all
+      # five engines, was missing, so the one crate whose whole job is to pull
+      # the others in was the one nobody checked.
+      #
+      # The filter is anchored to the workspace members too. `grep -v crawlcore`
+      # dropped any line CONTAINING that string, so a third-party crate named
+      # `crawlcore-anything` would have been waved through; matching the tree's
+      # `name v0.0.0` field against the member list cannot be fooled that way.
+      - name: Every crate resolves to nothing but first-party code by default
+        run: |
+          set -euo pipefail
+          # Each member's [package] name, straight from its own manifest. Not
+          # `cargo metadata | sed`: that JSON has a "name" field on every TARGET
+          # and every dependency too, so a naive match yields the 70-odd test
+          # binaries as well, and `cargo tree -p xcheck_json` then fails with
+          # "did not match any packages" — which the old `|| true` reported as
+          # a clean zero.
+          members=$(for f in crates/*/Cargo.toml; do
+            [ -f "$f" ] || continue
+            sed -n '/^\[package\]/,/^\[/ s/^name *= *"\([^"]*\)".*/\1/p' "$f"
+          done | sort -u)
+          # The `[ -f ]` guard is so an unmatched glob reaches THIS line instead
+          # of dying inside sed under `set -e`: a gate that cannot find anything
+          # to check should say that, not emit "No such file or directory".
+          test -n "$members" || {
+            echo "::error::no workspace members found under crates/ — this job checked nothing"
+            exit 1
+          }
+          echo "workspace members: $(echo "$members" | tr '\n' ' ')"
+
+          fail=0
+          for c in $members; do
+            # Capture the tree separately so a cargo failure is a failure. The
+            # previous version piped straight into `grep -c . || true`, which
+            # turned any cargo error into "0 third-party crates" — a gate that
+            # reports success precisely when it could not run.
+            tree=$(cargo tree -p "$c" --edges normal --locked --prefix none) \
+              || { echo "::error::cargo tree failed for $c"; fail=1; continue; }
+            # Compare the crate NAME column against the member list, not a
+            # substring: `grep -v crawlcore` would also have waved through a
+            # third-party crate called `crawlcore-anything`.
+            third=$(printf '%s\n' "$tree" | tail -n +2 | awk 'NF {print $1}' | sort -u \
+                    | grep -vxF "$members" || true)
+            n=$(printf '%s\n' "$third" | grep -c . || true)
+            if [ "$n" -ne 0 ]; then
+              echo "::error::$c pulls $n third-party crate(s) in the default build: $(echo "$third" | tr '\n' ' ')"
+              printf '%s\n' "$tree"
+              fail=1
+            else
+              echo "$c: 0"
+            fi
+          done
+          exit "$fail"
+
+  # ---------------------------------- git's output is not a stable format
+  git-versions:
+    name: gitweb vs git ${{ matrix.git }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `gitweb` shells out to `git` and parses what comes back, so the
+        # installed git is part of its contract. This caught a real regression:
+        # `%aI` renders a zero UTC offset as `+00:00` up to 2.43 and as the RFC
+        # 3339 `Z` after it, which silently changed the crate's public output.
+        git: ['system', 'newest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      - name: Install a newer git
+        if: matrix.git == 'newest'
+        run: |
+          sudo add-apt-repository -y ppa:git-core/ppa
+          sudo apt-get update -qq && sudo apt-get install -y git
+      - run: git --version
+      - run: cargo test -p gitweb --locked --all-features
+
+  # ------------------------------------------------ the shipped installer itself
+  installer:
+    name: install_rust_suite.sh --ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
+          components: 'rustfmt, clippy'
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: . }
+      # The script an operator is told to run. If it breaks, the documented
+      # install path is broken, whatever the rest of this file says.
+      #
+      # `--ci` makes the script run clippy as a hard gate, so this job inherits
+      # the floating-toolchain problem the pinned `clippy` job above exists to
+      # avoid — and it did: it failed alongside all five clippy tiers on a tree
+      # that passed locally. The SCRIPT stays unpinned, because an operator runs
+      # it with whatever toolchain they have and that is the thing being tested;
+      # the pin lives here, in the job, where reproducibility is the point.
+      - run: bash install_rust_suite.sh --ci
+        env: { RUSTUP_TOOLCHAIN: '${{ env.LINT_TOOLCHAIN }}' }
+
+  # ------------------------------------------------------------- supply chain
+  #
+  # Split deliberately. `bans`, `licenses` and `sources` are decided entirely by
+  # this repository's own lockfile and deny.toml, so they are reproducible and
+  # they block. `advisories` reads a LIVE feed — a RUSTSEC advisory published
+  # tomorrow would fail this build with no change to the tree, and blocking a
+  # merge on someone else's publication schedule is how a red CI becomes
+  # background noise people stop reading. It runs, it reports, it does not gate;
+  # the scheduled run below is what surfaces a new advisory on a quiet day.
+  deny:
+    name: cargo-deny (bans, licenses, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: Cargo.toml
+          command: check bans licenses sources
+
+  advisories:
+    name: cargo-deny (advisories, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: Cargo.toml
+          command: check advisories
