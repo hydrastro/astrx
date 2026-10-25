@@ -8,13 +8,17 @@ declare(strict_types=1);
  * branch that can be pushed to a repository of its own:
  *
  *   - every Composer package in packages/ → split/<short> (short is the
- *     Composer name without the vendor: "framework", "module-chat"), by
- *     `git subtree split`;
- *   - the Rust workspace astrx-suite/ → split/astrx-suite, the same way;
+ *     Composer name without the vendor: "framework", "module-chat");
+ *   - the Rust workspace astrx-suite/ → split/astrx-suite;
  *   - the site — everything else: src/, public/, resources/, tools/, tests/,
  *     docs/ … — → split/<site>, where <site> is the root composer.json name
- *     without the vendor ("astrx"). Its history is this repository's with
- *     packages/ and astrx-suite/ filtered out of every commit.
+ *     without the vendor ("astrx"), with packages/ and astrx-suite/ filtered
+ *     out of every commit.
+ *
+ * A package's (and the suite's) history follows each of its files back
+ * through its renames, so it starts at the file's first commit — not where
+ * the package's directory appeared, as `git subtree split` would
+ * (tools/lib/history.php). Only git is needed.
  *
  * Without --run it lists what would be extracted. With --run it creates or
  * moves the split/* branches. A part is named by its Composer name, its short
@@ -50,8 +54,8 @@ declare(strict_types=1);
  *     git switch split/framework
  *     git rebase --root --committer-date-is-author-date --exec 'git commit --amend --no-edit -S'
  *
- * The working tree is not touched (the site is filtered in a temporary
- * clone). Exit 0 on success, 1 on a failed git command, 2 on a bad argument.
+ * The working tree is not touched (the branches are written straight into
+ * the repository). Exit 0 on success, 1 on a failed git command, 2 on a bad argument.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -62,6 +66,7 @@ if (PHP_SAPI !== 'cli') {
 $root = dirname(__DIR__);
 require_once __DIR__ . '/lib/sources.php';
 require_once __DIR__ . '/lib/split_adapt.php';
+require_once __DIR__ . '/lib/history.php';
 
 $run     = false;
 $push    = null;
@@ -258,31 +263,27 @@ function sp_commit_on(string $root, string $sha, array $files, string $message, 
     return $new !== null && sp_git($root, 'fetch --quiet ' . escapeshellarg($dir) . ' ' . escapeshellarg($new)) !== null ? $new : null;
 }
 
-$failed = false;
+$failed  = false;
+$renames = null;
 foreach ($parts as $short => $part) {
     $branch = 'split/' . $short;
 
-    // 1. Extract the history.
-    if ($part['kind'] === 'site') {
-        $dir = $scratch();
-        $filter = 'git rm -r -q --cached --ignore-unmatch packages astrx-suite';
-        if ($dir === null || sp_git($dir, 'filter-branch --force --prune-empty --index-filter '
-                . escapeshellarg($filter) . ' HEAD', ['FILTER_BRANCH_SQUELCH_WARNING' => '1']) === null) {
-            $failed = true;
-            continue;
+    // 1. Extract the history (tools/lib/history.php).
+    try {
+        if ($part['kind'] === 'site') {
+            // Everything but the packages and the suite, under the same names.
+            $map = static fn(string $path, string $commit): ?string =>
+                str_starts_with($path, 'packages/') || str_starts_with($path, 'astrx-suite/') ? null : $path;
+        } else {
+            // The directory's files, following each back through its renames.
+            $renames ??= AstrX\Tools\History\renames($root, 'HEAD');
+            $map = AstrX\Tools\History\followDirectory($root, 'HEAD', $part['dir'], $renames);
         }
-        $sha = sp_git($dir, 'rev-parse HEAD');
-        if ($sha === null || sp_git($root, 'fetch --quiet ' . escapeshellarg($dir) . ' ' . escapeshellarg($sha)) === null) {
-            $failed = true;
-            continue;
-        }
-    } else {
-        $out = sp_git($root, 'subtree split --prefix=' . escapeshellarg($part['dir']) . ' HEAD');
-        if ($out === null || preg_match('/([0-9a-f]{40})\s*$/', $out, $m) !== 1) {
-            $failed = true;
-            continue;
-        }
-        $sha = $m[1];
+        $sha = AstrX\Tools\History\rewrite($root, 'HEAD', $map, 'refs/heads/' . $branch);
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "  {$short}: " . $e->getMessage() . "\n");
+        $failed = true;
+        continue;
     }
 
     // 2. Make it work as a repository of its own.
@@ -299,7 +300,8 @@ foreach ($parts as $short => $part) {
                 $message = "Run the suite's CI from its own root\n\n"
                     . "The workflow ran inside astrx-suite/ of the repository it shared with\n"
                     . "the site. The job that guarded the boundary between the two goes:\n"
-                    . "separate repositories are that boundary.";
+                    . "separate repositories are that boundary. rust.yml, the inactive\n"
+                    . "predecessor GitHub never ran from the subdirectory, goes too.";
             } else {
                 $gen = rtrim(sys_get_temp_dir(), '/') . '/astrx-split-gen-' . bin2hex(random_bytes(5));
                 mkdir($gen . '/src', 0o700, true);
