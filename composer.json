@@ -8,7 +8,7 @@
         "server-rendered",
         "cms"
     ],
-    "homepage": "https://github.com/hydrastro/astrx",
+    "homepage": "https://github.com/hydrastro/cms",
     "require": {
         "php": ">=8.4",
         "ext-ctype": "*",
@@ -37,5 +37,15 @@
         "astrx": {
             "resources": "resources"
         }
-    }
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/framework"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/library"
+        }
+    ]
 }
