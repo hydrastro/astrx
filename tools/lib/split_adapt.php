@@ -200,7 +200,10 @@ function package(string $name, array $packages, string $repoUrl): array
  * The suite's repository: its workflow, which lived at the monorepo's root
  * and ran inside astrx-suite/, now at its own root. The `boundary` job
  * guarded the line between the suite and the site inside one repository;
- * separate repositories are that line, so it goes.
+ * separate repositories are that line, so it goes. So does the suite's own
+ * .github/workflows/rust.yml: GitHub never ran it inside astrx-suite/ (its
+ * header says so), the root workflow superseded it, and at the new root its
+ * astrx-suite/ path filters would never match.
  *
  * @return array<string, ?string>
  */
@@ -234,7 +237,10 @@ function suite(string $root): array
             }
         }
     }
-    return ['.github/workflows/ci.yml' => $yml];
+    return [
+        '.github/workflows/ci.yml'   => $yml,
+        '.github/workflows/rust.yml' => null,
+    ];
 }
 
 // ── The site ─────────────────────────────────────────────────────────────────
