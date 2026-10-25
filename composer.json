@@ -8,7 +8,7 @@
         "server-rendered",
         "astrx-module"
     ],
-    "homepage": "https://github.com/hydrastro/astrx",
+    "homepage": "https://github.com/hydrastro/module-suiteadmin",
     "require": {
         "php": ">=8.4",
         "astrx/cms": "self.version",
@@ -19,5 +19,19 @@
         "psr-4": {
             "AstrX\\SuiteAdmin\\": ""
         }
-    }
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/cms"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/framework"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/library"
+        }
+    ]
 }

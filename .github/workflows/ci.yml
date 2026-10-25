@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Installs alone, every file parses, every class loads
+    runs-on: ubuntu-latest
+    env:
+      # The packages require each other at the same version (self.version);
+      # a pull request's detached checkout has no branch to guess it from.
+      COMPOSER_ROOT_VERSION: dev-main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: 
+          coverage: none
+
+      - name: composer.json is valid
+        run: composer validate --no-check-publish
+
+      # Only the packages this one declares: one it uses without declaring
+      # fails to load below.
+      - name: Install with the declared packages only
+        run: composer install --no-interaction --no-progress
+
+      - name: Every PHP file parses
+        run: find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
+
+      - name: Every class loads
+        run: |
+          php -r '
+            require "vendor/autoload.php";
+            $json = json_decode(file_get_contents("composer.json"), true);
+            $missing = [];
+            foreach ($json["autoload"]["psr-4"] as $prefix => $dir) {
+                $base = rtrim($dir === "" ? "." : $dir, "/");
+                $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS));
+                foreach ($it as $f) {
+                    $rel = substr($f->getPathname(), strlen($base) + 1);
+                    if ($f->getExtension() !== "php" || str_starts_with($rel, "vendor/") || str_contains("/" . $rel, "/resources/") || basename($rel) === "constants.php") {
+                        continue;
+                    }
+                    $class = $prefix . str_replace("/", "\\", substr($rel, 0, -4));
+                    if (!class_exists($class) && !interface_exists($class) && !trait_exists($class) && !enum_exists($class)) {
+                        $missing[] = $class;
+                    }
+                }
+            }
+            if ($missing !== []) { fwrite(STDERR, implode("\n", $missing) . "\n"); exit(1); }
+            echo "every class loads\n";
+          '
