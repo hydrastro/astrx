@@ -8,7 +8,7 @@
         "server-rendered",
         "framework"
     ],
-    "homepage": "https://github.com/hydrastro/astrx",
+    "homepage": "https://github.com/hydrastro/framework",
     "require": {
         "php": ">=8.4",
         "ext-filter": "*",
