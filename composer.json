@@ -8,7 +8,7 @@
         "server-rendered",
         "astrx-module"
     ],
-    "homepage": "https://github.com/hydrastro/astrx",
+    "homepage": "https://github.com/hydrastro/module-search",
     "require": {
         "php": ">=8.4",
         "ext-mbstring": "*",
@@ -21,5 +21,19 @@
         "psr-4": {
             "AstrX\\Search\\": ""
         }
-    }
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/cms"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/framework"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/library"
+        }
+    ]
 }
