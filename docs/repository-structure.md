@@ -26,8 +26,19 @@ These are dependency boundaries before they are repository boundaries. Start by 
 3. **Started:** `examples/minimal` is a second application built from the framework layers alone (HTML, form with POST/redirect/GET, JSON, 404). `tests/framework_isolation_test.php` serves it from a directory containing only the framework package. Next: have the CMS consume the same core API.
 4. **Done in this repository:** the code is Composer packages in `packages/` — `astrx/framework`, `astrx/library`, `astrx/cms` and one `astrx/module-<key>` per module — each requiring exactly the packages it uses (`tools/packages.php` checks it in CI), reached from the root `composer.json` through path repositories. Optional modules reach core only through declared extension points ([modules](MODULES.md#extension-points-optional)), and the site runs with no module package present. Still to do before advertising a reusable distribution: choose explicit PHP licensing and make tagged releases. No third-party Composer runtime packages are required.
 5. Specify compatibility for the PHP/Rust HTTP APIs and test the PHP clients against actual pinned Rust binaries, alongside existing mock tests.
-6. If independent maintenance is useful, move the application and Rust workspace into their own repositories using reviewed history extraction in disposable clones.
-7. **Ready:** each package can be published as a read-only mirror repository while development stays here. `php tools/split.php` prints the extraction for every package; `--run` extracts each one's history (`git subtree split`) onto a local `split/<name>` branch, and `--push=git@github.com:<org>/{name}.git` also pushes it to that repository's `main`. Splitting again later only adds the new commits. A package's history starts where its directory appeared under `packages/`. Every package has its own `README.md`, and `tests/package_isolation_test.php` proves each one loads with only the packages its `composer.json` declares.
+6. **Ready:** the application and the Rust workspace can each move into a repository of their own (step 7 extracts them with the packages).
+7. **Ready:** every part can become a repository of its own. `php tools/split.php` lists the parts: each package, the Rust suite (`astrx-suite/`) and the site (everything else). `--run --repo-url=https://github.com/<org>/{name}` extracts each one onto a local `split/<name>` branch, and `--push=git@github.com:<org>/{name}.git` also pushes it to that repository's `main`.
+   - **History.** A part keeps the full history of its files: each file is followed back through its renames (`tools/lib/history.php`), so a package's history reaches back to when its code lived under `src/AstrX/`. Commits that change nothing in a part are dropped. Every extracted tree is identical to its directory here.
+   - **Adaptation.** On top of each branch, one commit makes the part work alone (`tools/lib/split_adapt.php`):
+     - a package gets its homepage, the repositories of the packages it requires, and a CI workflow that installs it alone and loads every class;
+     - the suite gets its workflow at its own root;
+     - the site gets the packages from Composer (`vendor/astrx/…`, which the class loader, the tools and the tests already accept) and the suite's compose file from a checkout next to it (`../astrx-suite`).
+   - **Signatures.** Extraction rewrites commits, so the branches are unsigned. Sign each before pushing it where it becomes the reference copy: `git rebase --root --committer-date-is-author-date --exec 'git commit --amend --no-edit -S'`.
+   - **Rehearsed end to end** with local repositories:
+     - the site installed its 21 packages from their repositories, passed every check, PHPStan and the whole test suite, and rendered the same 232 pages as this repository;
+     - each package installed alone and loaded every class;
+     - the suite built and passed its tests at its own root.
+   Every package has its own `README.md`, and `tests/package_isolation_test.php` proves each one loads with only the packages its `composer.json` declares.
 
 Do not split every module into a repository immediately. A separate consumer or release cadence is a better reason to create a package than the existence of a module manifest.
 
