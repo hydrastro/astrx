@@ -133,8 +133,9 @@ check('framework layers listed by the architecture gate (expected 10+)', count($
 $present = array_values(array_filter(
     array_diff(scandir($tmp . '/packages/framework') ?: [], ['.', '..']),
     // Namespace directories; resources/ holds the package's catalogs.
-    // .git: a package Composer cloned carries its VCS metadata.
-    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e) && $e !== 'resources' && $e !== '.git',
+    // Dot-directories are not namespaces: a package Composer cloned carries
+    // .git, and its own repository has .github.
+    static fn(string $e): bool => is_dir($tmp . '/packages/framework/' . $e) && $e !== 'resources' && $e[0] !== '.',
 ));
 sort($present);
 $expected = $framework;
