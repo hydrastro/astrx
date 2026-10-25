@@ -26,14 +26,18 @@ declare(strict_types=1);
  *                      name, e.g. https://github.com/Vxmdzhb/{name} (or
  *                      https://github.com/Vxmdzhb/astrx-{name}). Required to
  *                      extract the site, and with it a final commit is added
- *                      on top of every extracted branch:
- *                        - packages: composer.json "homepage" points at the
- *                          package's own repository;
- *                        - the site: composer.json gets the packages from
- *                          those repositories instead of packages/, and
- *                          src/sources.php, src/support.php and
- *                          src/resources.php name vendor/ only
- *                          (tools/packages.php --installed).
+ *                      on top of every extracted branch that makes the part
+ *                      work as a repository of its own (tools/lib/split_adapt.php):
+ *                        - a package: its homepage, where Composer finds the
+ *                          packages it requires, and a CI workflow that
+ *                          installs it alone and loads every class;
+ *                        - the suite: its CI workflow at its own root;
+ *                        - the site: Composer installs the packages from
+ *                          their repositories and the class loader looks in
+ *                          vendor/ only (tools/packages.php --installed); the
+ *                          containers mount vendor/; the suite's compose file
+ *                          is included from ../astrx-suite; CI installs the
+ *                          packages first.
  *                      The commit is authored by this repository's
  *                      configured user.
  *   --push=URL         also push each branch to URL's main branch ({name} as
@@ -57,6 +61,7 @@ if (PHP_SAPI !== 'cli') {
 
 $root = dirname(__DIR__);
 require_once __DIR__ . '/lib/sources.php';
+require_once __DIR__ . '/lib/split_adapt.php';
 
 $run     = false;
 $push    = null;
@@ -134,12 +139,6 @@ function sp_json(string $file): array
     return $out;
 }
 
-/** @param array<string, mixed> $data */
-function sp_json_text(array $data): string
-{
-    return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
-}
-
 // ── The parts ────────────────────────────────────────────────────────────────
 if (!AstrX\Tools\packagesAreLocal($root)) {
     fwrite(STDERR, "ERROR: this repository holds no packages to split (they come from Composer here).\n");
@@ -148,9 +147,10 @@ if (!AstrX\Tools\packagesAreLocal($root)) {
 $rootJson  = sp_json($root . '/composer.json');
 $siteShort = sp_short(is_string($rootJson['name'] ?? null) ? $rootJson['name'] : 'site/site');
 
+$allPackages = AstrX\Tools\packages($root);
 /** @var array<string, array{kind: string, dir: string, aliases: list<string>}> $parts short => part */
 $parts = [];
-foreach (AstrX\Tools\packages($root) as $name => $pkg) {
+foreach ($allPackages as $name => $pkg) {
     $parts[sp_short($name)] = ['kind' => 'package', 'dir' => $pkg['dir'], 'aliases' => [$name, $pkg['dir']]];
 }
 if (is_dir($root . '/astrx-suite')) {
@@ -218,7 +218,7 @@ $scratch = static function () use ($root): ?string {
  * Commit $files (path relative to the work tree => new content) on top of
  * $sha in a scratch clone; the new commit's id, or null.
  *
- * @param array<string, string> $files
+ * @param array<string, ?string> $files null removes the file
  * @param array<string, string> $author
  * @param callable(): ?string $scratch
  */
@@ -230,6 +230,12 @@ function sp_commit_on(string $root, string $sha, array $files, string $message, 
         return null;
     }
     foreach ($files as $rel => $content) {
+        if ($content === null) {
+            if (is_file($dir . '/' . $rel) && sp_git($dir, 'rm --quiet -- ' . escapeshellarg($rel)) === null) {
+                return null;
+            }
+            continue;
+        }
         if (!is_dir(dirname($dir . '/' . $rel))) {
             mkdir(dirname($dir . '/' . $rel), 0o755, true);
         }
@@ -279,41 +285,48 @@ foreach ($parts as $short => $part) {
         $sha = $m[1];
     }
 
-    // 2. Point it at its new home.
-    if ($repoUrl !== null && $part['kind'] !== 'suite') {
-        $home = str_replace('{name}', $short, $repoUrl);
-        if ($part['kind'] === 'package') {
-            $json = sp_json($root . '/' . $part['dir'] . '/composer.json');
-            $json['homepage'] = $home;
-            $files   = ['composer.json' => sp_json_text($json)];
-            $message = "Point the package's homepage at its own repository";
-        } else {
-            // The site: the packages come from their repositories now.
-            $json = $rootJson;
-            $json['homepage'] = $home;
-            $repos = [];
-            foreach (AstrX\Tools\packages($root) as $name => $_pkg) {
-                $repos[] = ['type' => 'vcs', 'url' => str_replace('{name}', sp_short($name), $repoUrl)];
+    // 2. Make it work as a repository of its own.
+    if ($repoUrl !== null) {
+        try {
+            if ($part['kind'] === 'package') {
+                $name    = $part['aliases'][0];
+                $files   = AstrX\Tools\Split\package($name, $allPackages, $repoUrl);
+                $message = "Make the package a repository of its own\n\n"
+                    . "Its homepage is this repository, Composer finds the packages it\n"
+                    . "requires in theirs, and CI installs it alone and loads every class.";
+            } elseif ($part['kind'] === 'suite') {
+                $files   = AstrX\Tools\Split\suite($root);
+                $message = "Run the suite's CI from its own root\n\n"
+                    . "The workflow ran inside astrx-suite/ of the repository it shared with\n"
+                    . "the site. The job that guarded the boundary between the two goes:\n"
+                    . "separate repositories are that boundary.";
+            } else {
+                $gen = rtrim(sys_get_temp_dir(), '/') . '/astrx-split-gen-' . bin2hex(random_bytes(5));
+                mkdir($gen . '/src', 0o700, true);
+                $genOut  = [];
+                $genCode = 0;
+                exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/tools/packages.php')
+                    . ' --installed ' . escapeshellarg('--write-to=' . $gen) . ' 2>&1', $genOut, $genCode);
+                if ($genCode !== 0) {
+                    throw new RuntimeException("tools/packages.php --installed failed:\n" . implode("\n", $genOut));
+                }
+                $generated = [];
+                foreach (['sources.php', 'support.php', 'resources.php'] as $f) {
+                    $generated['src/' . $f] = (string) file_get_contents($gen . '/src/' . $f);
+                }
+                exec('rm -rf ' . escapeshellarg($gen));
+                $files   = AstrX\Tools\Split\site($root, $rootJson, $allPackages, $repoUrl, $short, $generated);
+                $message = "Get the packages from their own repositories\n\n"
+                    . "The packages and the Rust suite no longer live in this repository.\n"
+                    . "Composer installs the packages from their repositories, the class\n"
+                    . "loader finds them under vendor/, the containers mount vendor/, and\n"
+                    . "the suite's services come from a checkout next to this one\n"
+                    . "(../astrx-suite). CI installs the packages before it runs anything.";
             }
-            $json['repositories'] = $repos;
-            $files = ['composer.json' => sp_json_text($json)];
-            $gen = rtrim(sys_get_temp_dir(), '/') . '/astrx-split-gen-' . bin2hex(random_bytes(5));
-            mkdir($gen . '/src', 0o700, true);
-            exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/tools/packages.php')
-                . ' --installed ' . escapeshellarg('--write-to=' . $gen) . ' 2>&1', $genOut, $genCode);
-            if ($genCode !== 0) {
-                fwrite(STDERR, "  tools/packages.php --installed failed:\n  " . implode("\n  ", $genOut) . "\n");
-                $failed = true;
-                continue;
-            }
-            foreach (['sources.php', 'support.php', 'resources.php'] as $f) {
-                $files['src/' . $f] = (string) file_get_contents($gen . '/src/' . $f);
-            }
-            exec('rm -rf ' . escapeshellarg($gen));
-            $message = "Get the packages from their own repositories\n\n"
-                . "The packages no longer live in this repository: composer.json\n"
-                . "installs them from their repositories, and the class loader finds\n"
-                . "them under vendor/.";
+        } catch (RuntimeException $e) {
+            fwrite(STDERR, "  {$short}: " . $e->getMessage() . "\n");
+            $failed = true;
+            continue;
         }
         $new = sp_commit_on($root, $sha, $files, $message, $author, $scratch);
         if ($new === null) {
