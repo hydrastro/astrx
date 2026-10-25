@@ -42,12 +42,88 @@
     },
     "repositories": [
         {
-            "type": "path",
-            "url": "packages/*"
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/cms"
         },
         {
-            "type": "path",
-            "url": "packages/modules/*"
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/framework"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/library"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-blocklist"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-bottrap"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-canary"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-chat"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-content"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-downloads"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-fedsearch"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-gitbrowse"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-imageboard"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-media"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-mirrors"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-onionsearch"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-search"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-suiteadmin"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-tipline"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-torrentsearch"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-webmail"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/hydrastro/module-websearch"
         }
     ],
     "autoload": {

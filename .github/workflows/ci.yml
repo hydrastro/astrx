@@ -23,6 +23,9 @@ jobs:
           extensions: pdo_mysql, pdo_sqlite, gd, gettext, exif
           coverage: none
 
+      - name: Install the packages (Composer)
+        run: composer install --no-interaction --no-progress
+
       - name: Download PHPStan (pinned)
         run: curl -fsSL -o phpstan.phar https://github.com/phpstan/phpstan/releases/download/2.1.55/phpstan.phar
 
@@ -47,9 +50,9 @@ jobs:
       - name: Architecture (layers + no namespace cycles)
         run: php tools/check_architecture.php
 
-      # The code ships as Composer packages in packages/ (framework, library,
-      # cms, one per module): each one names the packages it uses, and
-      # src/sources.php (the class loader's map) is generated from them.
+      # The packages come from Composer (vendor/astrx/…): each one names the
+      # packages it uses, and src/sources.php (the class loader's map) is
+      # generated from them.
       - name: Packages (dependencies declared, class map current)
         run: php tools/packages.php
 
@@ -60,10 +63,6 @@ jobs:
       - name: Composer metadata + autoloader
         run: |
           composer validate --no-check-publish
-          for pkg in packages/*/composer.json packages/modules/*/composer.json; do
-            composer validate --no-check-publish --working-dir="$(dirname "$pkg")"
-          done
-          composer update --no-interaction --no-progress
 
       # Section↔file routing, #[InjectConfig] keys, dead keys and write targets —
       # catches an admin page that persists to a config file nothing loads.
@@ -113,6 +112,9 @@ jobs:
           php-version: '8.4'
           extensions: pdo_mysql, gd, gettext, exif
           coverage: none
+
+      - name: Install the packages (Composer)
+        run: composer install --no-interaction --no-progress
 
       - name: Install schema + migrations (core + all modules)
         run: |

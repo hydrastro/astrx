@@ -23,4 +23,4 @@ if (!function_exists(__NAMESPACE__ . '\firstFile')) {
     }
 }
 
-require_once \AstrX\Bootstrap\firstFile(__DIR__ . '/../packages/framework/Support/constants.php', __DIR__ . '/../vendor/astrx/framework/Support/constants.php');
+require_once \AstrX\Bootstrap\firstFile(__DIR__ . '/../vendor/astrx/framework/Support/constants.php');

@@ -12,5 +12,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install the packages (Composer)
+        run: composer install --no-interaction --no-progress
+      # docker-compose.yml includes the Rust suite's compose file from a
+      # checkout next to this one.
+      - name: Fetch the Rust suite's compose file
+        run: git clone --depth 1 https://github.com/hydrastro/astrx-suite ../astrx-suite
       - name: Build and install the production Compose image
         run: sh tools/ci-production-install.sh

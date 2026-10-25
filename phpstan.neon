@@ -2,7 +2,6 @@ parameters:
     level: 10
     paths:
         - src
-        - packages
         - public
         - tools
         - examples
@@ -11,7 +10,6 @@ parameters:
         analyseAndScan:
             - build/*
             - resources/template/cache/*
-            - packages/modules/*/resources/*
             - public/compiled.php
             - public/compile/index.php
             - public/setup.php

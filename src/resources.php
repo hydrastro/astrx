@@ -14,7 +14,7 @@ declare(strict_types=1);
  * @return list<list<string>>
  */
 return [
-    [__DIR__ . '/../packages/framework/resources', __DIR__ . '/../vendor/astrx/framework/resources'], // astrx/framework
-    [__DIR__ . '/../packages/library/resources', __DIR__ . '/../vendor/astrx/library/resources'], // astrx/library
-    [__DIR__ . '/../packages/cms/resources', __DIR__ . '/../vendor/astrx/cms/resources'], // astrx/cms
+    [__DIR__ . '/../vendor/astrx/framework/resources'], // astrx/framework
+    [__DIR__ . '/../vendor/astrx/library/resources'], // astrx/library
+    [__DIR__ . '/../vendor/astrx/cms/resources'], // astrx/cms
 ];
